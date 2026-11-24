@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // A call made for one registration of an entry fails UNAVAILABLE, unsent,
@@ -29,18 +31,18 @@ func TestCallOnRefusesAnotherRegistration(t *testing.T) {
 	}
 	before := len(g.methods())
 	err := h.CallOn(context.Background(), e.Key, first, []string{"a"}, "wire.detect", nil, nil)
-	var ce *CallError
-	if !errors.As(err, &ce) || ce.Class != ClassUnavailable {
+	var ce *pluginmodel.CallError
+	if !errors.As(err, &ce) || ce.Class != pluginmodel.ClassUnavailable {
 		t.Fatalf("call on an earlier registration = %v", err)
 	}
-	if _, err := h.ObserveFeedOn(context.Background(), e.Key, first, "a", batch(1)); !errors.As(err, &ce) || ce.Class != ClassUnavailable {
+	if _, err := h.ObserveFeedOn(context.Background(), e.Key, first, "a", batch(1)); !errors.As(err, &ce) || ce.Class != pluginmodel.ClassUnavailable {
 		t.Fatalf("feed.observe on an earlier registration = %v", err)
 	}
 	if len(g.methods()) != before {
 		t.Fatal("nothing was sent")
 	}
 	_ = f
-	if _, ok := h.Registration(EntryKey{"other", "default"}); ok {
+	if _, ok := h.Registration(pluginmodel.EntryKey{Name: "other", Instance: "default"}); ok {
 		t.Fatal("an unknown entry has no registration")
 	}
 }

@@ -12,91 +12,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
-
-// Refusal is why a plugin was refused: the reason of the PLUGIN_REFUSED
-// error at basalt plugin add. At engine start every refusal shows in status
-// as PLUGIN_NOT_TRUSTED.
-type Refusal string
-
-// The refusals verification gives.
-const (
-	// RefusedBadManifest: the manifest breaks a rule of CONTRACT.md, Plugins,
-	// Manifest.
-	RefusedBadManifest Refusal = "BAD_MANIFEST"
-	// RefusedNotTrusted: the signature, a file's hash, the copy's contents or
-	// a path's owner or permissions failed.
-	RefusedNotTrusted Refusal = "NOT_TRUSTED"
-)
-
-// VerifyError is a refused plugin. It names the file or directory and the
-// rule that failed, never a file's contents, a value from the manifest or
-// key material.
-type VerifyError struct {
-	Reason Refusal
-	// File is the path the check failed on: the manifest, its signature, an
-	// installed file, a directory, or a key in the trust store.
-	File string
-	// Why is the rule that failed, in fixed words.
-	Why string
-	// Path is set when the path rule refused File for who can write it, a
-	// symlink or its owner: something on the machine to fix, which no
-	// trusted key changes. It is nil for every other refusal.
-	Path *PathFault
-}
-
-// PathFaultKind is which part of the path rule a path failed.
-type PathFaultKind string
-
-// The path rule's parts a refusal names.
-const (
-	// PathWritable: someone besides the owner can write the path.
-	PathWritable PathFaultKind = "WRITABLE"
-	// PathSymlink: the path is a symlink the rule does not follow.
-	PathSymlink PathFaultKind = "SYMLINK"
-	// PathOwner: the path is owned by a user the rule does not allow there.
-	PathOwner PathFaultKind = "OWNER"
-)
-
-// PathFault is what the path rule found at a refused path, read from the
-// path itself (not followed if it is a symlink).
-type PathFault struct {
-	Kind PathFaultKind
-	// UID and GID own the path; Mode is its mode.
-	UID, GID uint32
-	Mode     fs.FileMode
-	// Owners are the users allowed to own it there: root and the required
-	// owner above a root, the required owner from a root down, root for a
-	// symlink above a root.
-	Owners []uint32
-}
-
-// Error implements error.
-func (e *VerifyError) Error() string {
-	return "plugin " + e.File + ": " + e.Why + " (" + string(e.Reason) + ")"
-}
 
 // whyFilesNameManifest: a listed file would overwrite the manifest or its
 // signature in the copy.
 const whyFilesNameManifest = "files names the manifest or its signature"
-
-// Verified is a plugin copy that passed every check.
-type Verified struct {
-	// Manifest is the copy's manifest.
-	Manifest Manifest
-	// ManifestSHA256 is the SHA-256 of the manifest's exact bytes, lowercase
-	// hex: the entry's manifestSha256 and the copy's directory name.
-	ManifestSHA256 string
-	// Signer is who vouches for the copy: KNOWN when a built-in publisher
-	// key signed the manifest, UNKNOWN otherwise.
-	Signer SignerState
-	// SignerKeyID is the id of the key that signed the manifest: a trusted
-	// key's without RequireApproval, and with it only a KNOWN signer's,
-	// empty otherwise.
-	SignerKeyID string
-	// Dir is the copy's directory.
-	Dir string
-}
 
 // Patterns of an entry key and an installed copy's directory name
 // (api/plugin/config.schema.json).
@@ -104,9 +26,6 @@ var (
 	instancePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
 	sha256Pattern   = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
-
-// DefaultInstance is an entry's instance when engine.json names none.
-const DefaultInstance = "default"
 
 // Verify checks the installed copy of entry key at
 // <root>/<name>/<instance>/<manifestSHA256>/, as the engine does at every
@@ -126,29 +45,29 @@ const DefaultInstance = "default"
 //
 // A failure is a *VerifyError; the entry must then not be started, and
 // status shows PLUGIN_NOT_TRUSTED for its agents.
-func Verify(root string, key EntryKey, manifestSHA256 string, trust TrustStore, mode Mode, opts ...Option) (Verified, error) {
-	owner, err := mode.owner()
+func Verify(root string, key pluginmodel.EntryKey, manifestSHA256 string, trust TrustStore, mode pluginmodel.Mode, opts ...Option) (pluginmodel.Verified, error) {
+	owner, err := requiredOwner(mode)
 	if err != nil {
-		return Verified{}, err
+		return pluginmodel.Verified{}, err
 	}
 	if err := trust.matches(owner); err != nil {
-		return Verified{}, err
+		return pluginmodel.Verified{}, err
 	}
 	if err := checkKey(key); err != nil {
-		return Verified{}, err
+		return pluginmodel.Verified{}, err
 	}
 	if !sha256Pattern.MatchString(manifestSHA256) {
-		return Verified{}, &VerifyError{Reason: RefusedNotTrusted, File: root, Why: "the entry's manifestSha256 is not lowercase hex SHA-256"}
+		return pluginmodel.Verified{}, &pluginmodel.VerifyError{Reason: pluginmodel.RefusedNotTrusted, File: root, Why: "the entry's manifestSha256 is not lowercase hex SHA-256"}
 	}
 	return verifyCopy(root, key, manifestSHA256, manifestSHA256, trust, owner, optionsOf(opts))
 }
 
-func checkKey(key EntryKey) error {
+func checkKey(key pluginmodel.EntryKey) error {
 	if !namePattern.MatchString(key.Name) {
-		return &VerifyError{Reason: RefusedBadManifest, File: ManifestFile, Why: "the plugin's name is not a plugin name"}
+		return &pluginmodel.VerifyError{Reason: pluginmodel.RefusedBadManifest, File: ManifestFile, Why: "the plugin's name is not a plugin name"}
 	}
 	if !instancePattern.MatchString(key.Instance) {
-		return &VerifyError{Reason: RefusedBadManifest, File: key.Name, Why: "the instance must be lowercase letters, digits and underscores, starting with a letter"}
+		return &pluginmodel.VerifyError{Reason: pluginmodel.RefusedBadManifest, File: key.Name, Why: "the instance must be lowercase letters, digits and underscores, starting with a letter"}
 	}
 	return nil
 }
@@ -162,66 +81,66 @@ type copyEntry struct {
 // verifyCopy checks the copy in <root>/<name>/<instance>/<dirName>. wantSHA
 // is the manifest's expected SHA-256, or "" while the copy is a temporary
 // one at add.
-func verifyCopy(root string, key EntryKey, dirName, wantSHA string, trust TrustStore, owner uint32, o options) (Verified, error) {
+func verifyCopy(root string, key pluginmodel.EntryKey, dirName, wantSHA string, trust TrustStore, owner uint32, o options) (pluginmodel.Verified, error) {
 	nameDir := filepath.Join(root, key.Name)
 	instDir := filepath.Join(nameDir, key.Instance)
 	dir := filepath.Join(instDir, dirName)
 
 	// 1. The path rule, for the copy and for the trust store.
 	if err := checkUnder(owner, root, nameDir, instDir, dir); err != nil {
-		return Verified{}, err
+		return pluginmodel.Verified{}, err
 	}
 	entries, err := walkCopy(dir, owner)
 	if err != nil {
-		return Verified{}, err
+		return pluginmodel.Verified{}, err
 	}
 	if err := trust.check(); err != nil {
-		return Verified{}, err
+		return pluginmodel.Verified{}, err
 	}
 
 	// 2. The manifest's hash.
 	manifestPath := filepath.Join(dir, ManifestFile)
 	manifest, err := readNoFollow(manifestPath, MaxManifestBytes)
 	if err != nil {
-		return Verified{}, err
+		return pluginmodel.Verified{}, err
 	}
 	sum := sha256.Sum256(manifest)
 	sha := hex.EncodeToString(sum[:])
 	if wantSHA != "" && sha != wantSHA {
-		return Verified{}, &VerifyError{Reason: RefusedNotTrusted, File: manifestPath, Why: "its SHA-256 is not the entry's manifestSha256"}
+		return pluginmodel.Verified{}, &pluginmodel.VerifyError{Reason: pluginmodel.RefusedNotTrusted, File: manifestPath, Why: "its SHA-256 is not the entry's manifestSha256"}
 	}
 
 	// 3. The signature.
 	signer, keyID, err := verifySignature(dir, manifest, entries, trust, o)
 	if err != nil {
-		return Verified{}, err
+		return pluginmodel.Verified{}, err
 	}
 
 	// 4. The manifest's rules.
 	m, err := ParseManifest(manifest)
 	if err != nil {
-		return Verified{}, inFile(err, manifestPath)
+		return pluginmodel.Verified{}, inFile(err, manifestPath)
 	}
 	if m.Name != key.Name {
-		return Verified{}, &VerifyError{Reason: RefusedBadManifest, File: manifestPath, Why: "the manifest names another plugin than the entry"}
+		return pluginmodel.Verified{}, &pluginmodel.VerifyError{Reason: pluginmodel.RefusedBadManifest, File: manifestPath, Why: "the manifest names another plugin than the entry"}
 	}
 
 	// 5. The files, and nothing else.
 	if err := checkContents(dir, m, entries, o.requireApproval); err != nil {
-		return Verified{}, err
+		return pluginmodel.Verified{}, err
 	}
 	for _, rel := range sortedKeys(m.Files) {
 		if err := checkFileHash(filepath.Join(dir, filepath.FromSlash(rel)), m.Files[rel]); err != nil {
-			return Verified{}, err
+			return pluginmodel.Verified{}, err
 		}
 	}
-	return Verified{Manifest: m, ManifestSHA256: sha, Signer: signer, SignerKeyID: keyID, Dir: dir}, nil
+	return pluginmodel.Verified{Manifest: m, ManifestSHA256: sha, Signer: signer, SignerKeyID: keyID, Dir: dir}, nil
 }
 
 // verifySignature reads the copy's .sig and works out its signer
 // (signerOf). With approval a copy whose walk found no .sig is unsigned;
 // without it a missing .sig is refused when it is read, as before.
-func verifySignature(dir string, manifest []byte, entries []copyEntry, trust TrustStore, o options) (SignerState, string, error) {
+func verifySignature(dir string, manifest []byte, entries []copyEntry, trust TrustStore, o options) (pluginmodel.SignerState, string, error) {
 	sigPath := filepath.Join(dir, SignatureFile)
 	if o.requireApproval && !hasFile(entries, SignatureFile) {
 		return signerOf(sigPath, manifest, nil, false, trust, o)
@@ -255,7 +174,7 @@ func checkSignature(sigPath string, manifest, raw []byte, trust TrustStore) (str
 		return "", inFile(err, sigPath)
 	}
 	if !verifyManifestSig(pub, manifest, sig) {
-		return "", &VerifyError{Reason: RefusedNotTrusted, File: sigPath, Why: "the signature does not verify over the manifest"}
+		return "", &pluginmodel.VerifyError{Reason: pluginmodel.RefusedNotTrusted, File: sigPath, Why: "the signature does not verify over the manifest"}
 	}
 	return keyID, nil
 }
@@ -263,7 +182,7 @@ func checkSignature(sigPath string, manifest, raw []byte, trust TrustStore) (str
 // inFile sets a refusal's file to the full path when it named only the
 // file's base name.
 func inFile(err error, full string) error {
-	var ve *VerifyError
+	var ve *pluginmodel.VerifyError
 	if errors.As(err, &ve) && ve.File == filepath.Base(full) {
 		cp := *ve
 		cp.File = full
@@ -278,24 +197,24 @@ func walkCopy(dir string, owner uint32) ([]copyEntry, error) {
 	var out []copyEntry
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return pathRefusal(p, "cannot be read")
+			return pluginmodel.PathRefusal(p, "cannot be read")
 		}
 		if p == dir {
 			return nil
 		}
 		fi, err := d.Info()
 		if err != nil {
-			return pathRefusal(p, "cannot be read")
+			return pluginmodel.PathRefusal(p, "cannot be read")
 		}
 		if err := checkStrictInfo(p, fi, owner); err != nil {
 			return err
 		}
 		if !fi.IsDir() && !fi.Mode().IsRegular() {
-			return pathRefusal(p, "is not a regular file")
+			return pluginmodel.PathRefusal(p, "is not a regular file")
 		}
 		rel, err := filepath.Rel(dir, p)
 		if err != nil {
-			return pathRefusal(p, "cannot be read")
+			return pluginmodel.PathRefusal(p, "cannot be read")
 		}
 		out = append(out, copyEntry{rel: filepath.ToSlash(rel), isDir: fi.IsDir()})
 		return nil
@@ -310,12 +229,12 @@ func walkCopy(dir string, owner uint32) ([]copyEntry, error) {
 // files and the directories that lead to them, and nothing else. With
 // sigOptional (an entry that requires approval) the signature may be
 // missing.
-func checkContents(dir string, m Manifest, entries []copyEntry, sigOptional bool) error {
+func checkContents(dir string, m pluginmodel.Manifest, entries []copyEntry, sigOptional bool) error {
 	wantFiles := map[string]bool{ManifestFile: true, SignatureFile: true}
 	wantDirs := map[string]bool{}
 	for rel := range m.Files {
 		if rel == ManifestFile || rel == SignatureFile {
-			return &VerifyError{Reason: RefusedBadManifest, File: filepath.Join(dir, ManifestFile), Why: whyFilesNameManifest}
+			return &pluginmodel.VerifyError{Reason: pluginmodel.RefusedBadManifest, File: filepath.Join(dir, ManifestFile), Why: whyFilesNameManifest}
 		}
 		wantFiles[rel] = true
 		for d := path.Dir(rel); d != "."; d = path.Dir(d) {
@@ -330,12 +249,12 @@ func checkContents(dir string, m Manifest, entries []copyEntry, sigOptional bool
 		case !e.isDir && wantFiles[e.rel]:
 			seen[e.rel] = true
 		default:
-			return &VerifyError{Reason: RefusedNotTrusted, File: full, Why: "is not in the manifest's files"}
+			return &pluginmodel.VerifyError{Reason: pluginmodel.RefusedNotTrusted, File: full, Why: "is not in the manifest's files"}
 		}
 	}
 	for rel := range wantFiles {
 		if !seen[rel] && (rel != SignatureFile || !sigOptional) {
-			return &VerifyError{Reason: RefusedNotTrusted, File: filepath.Join(dir, filepath.FromSlash(rel)), Why: "is missing"}
+			return &pluginmodel.VerifyError{Reason: pluginmodel.RefusedNotTrusted, File: filepath.Join(dir, filepath.FromSlash(rel)), Why: "is missing"}
 		}
 	}
 	return nil
@@ -344,21 +263,21 @@ func checkContents(dir string, m Manifest, entries []copyEntry, sigOptional bool
 // checkFileHash reads a listed file once, refusing a symlink or anything not
 // regular, and compares its SHA-256 with the manifest's.
 func checkFileHash(p, want string) error {
-	f, err := os.OpenFile(p, noFollowFlags, 0)
+	f, err := os.OpenFile(p, noFollowFlags(), 0)
 	if err != nil {
-		return pathRefusal(p, "cannot be opened, or is a symlink")
+		return pluginmodel.PathRefusal(p, "cannot be opened, or is a symlink")
 	}
 	defer func() { _ = f.Close() }()
 	fi, err := f.Stat()
 	if err != nil || !fi.Mode().IsRegular() {
-		return pathRefusal(p, "is not a regular file")
+		return pluginmodel.PathRefusal(p, "is not a regular file")
 	}
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
-		return pathRefusal(p, "cannot be read")
+		return pluginmodel.PathRefusal(p, "cannot be read")
 	}
 	if got := fmt.Sprintf("sha256:%x", h.Sum(nil)); got != want {
-		return &VerifyError{Reason: RefusedNotTrusted, File: p, Why: "its SHA-256 is not the one the manifest states"}
+		return &pluginmodel.VerifyError{Reason: pluginmodel.RefusedNotTrusted, File: p, Why: "its SHA-256 is not the one the manifest states"}
 	}
 	return nil
 }

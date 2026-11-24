@@ -6,6 +6,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // AddedKeys are the ids of the keys the person added to the trust store, in
@@ -23,7 +25,7 @@ func (t TrustStore) AddedKeys() ([]string, error) {
 	}
 	entries, err := os.ReadDir(t.dir)
 	if err != nil {
-		return nil, pathRefusal(t.dir, "cannot be read")
+		return nil, pluginmodel.PathRefusal(t.dir, "cannot be read")
 	}
 	var out []string
 	for _, e := range entries {

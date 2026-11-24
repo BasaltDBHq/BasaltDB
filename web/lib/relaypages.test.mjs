@@ -14,7 +14,7 @@ import { APPROVE_REOPEN, linkFailure, personText, REVERT_REOPEN } from "./page.j
 import { relayTransport } from "./relay.js";
 import { sameOriginSession } from "./transport.js";
 
-const fixtures = JSON.parse(readFileSync(new URL("../../internal/approval/testdata/fixtures.json", import.meta.url), "utf8"));
+const fixtures = JSON.parse(readFileSync(new URL("../../internal/core/approval/testdata/fixtures.json", import.meta.url), "utf8"));
 const id = fixtures.request.approvalId;
 const SECRET = "oo3hsfnTW0SXS80SkQL_vQ";
 const ENGINE = "R68WFYxAcGgIjMENS5Oqrw";

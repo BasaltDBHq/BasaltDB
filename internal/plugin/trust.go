@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // trustFileExt is a trusted key's file extension: <keyId>.pem.
@@ -35,8 +37,8 @@ type TrustStore struct {
 // NewTrustStore is the trust store of an engine run in mode on goos, whose
 // engine.json is in configDir: TrustDir(mode, goos, configDir), with the
 // owner the path rule requires in that mode.
-func NewTrustStore(mode Mode, goos, configDir string) (TrustStore, error) {
-	owner, err := mode.owner()
+func NewTrustStore(mode pluginmodel.Mode, goos, configDir string) (TrustStore, error) {
+	owner, err := requiredOwner(mode)
 	if err != nil {
 		return TrustStore{}, err
 	}
@@ -110,7 +112,7 @@ func (t TrustStore) check() error {
 	}
 	entries, err := os.ReadDir(t.dir)
 	if err != nil {
-		return pathRefusal(t.dir, "cannot be read")
+		return pluginmodel.PathRefusal(t.dir, "cannot be read")
 	}
 	for _, e := range entries {
 		if _, err := checkStrict(filepath.Join(t.dir, e.Name()), t.owner); err != nil {
@@ -127,18 +129,18 @@ func (t TrustStore) check() error {
 // PEM PUBLIC KEY whose computed id is keyID. Anything else is not trusted.
 func (t TrustStore) key(keyID string) (*ecdsa.PublicKey, error) {
 	if !keyIDPattern.MatchString(keyID) {
-		return nil, &VerifyError{Reason: RefusedNotTrusted, File: SignatureFile, Why: "the signature's keyId is not a key id"}
+		return nil, &pluginmodel.VerifyError{Reason: pluginmodel.RefusedNotTrusted, File: SignatureFile, Why: "the signature's keyId is not a key id"}
 	}
 	if pub, ok := t.embedded[keyID]; ok {
 		return pub, nil
 	}
-	notTrusted := &VerifyError{Reason: RefusedNotTrusted, File: SignatureFile, Why: WhyKeyNotTrusted}
+	notTrusted := &pluginmodel.VerifyError{Reason: pluginmodel.RefusedNotTrusted, File: SignatureFile, Why: WhyKeyNotTrusted}
 	entries, err := os.ReadDir(t.dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, notTrusted
 	}
 	if err != nil {
-		return nil, pathRefusal(t.dir, "cannot be read")
+		return nil, pluginmodel.PathRefusal(t.dir, "cannot be read")
 	}
 	name := keyID + trustFileExt
 	for _, e := range entries {
@@ -152,10 +154,10 @@ func (t TrustStore) key(keyID string) (*ecdsa.PublicKey, error) {
 		}
 		pub, id, err := ParsePublicKey(b)
 		if err != nil {
-			return nil, &VerifyError{Reason: RefusedNotTrusted, File: path, Why: "is not a trusted key: " + err.Error()}
+			return nil, &pluginmodel.VerifyError{Reason: pluginmodel.RefusedNotTrusted, File: path, Why: "is not a trusted key: " + err.Error()}
 		}
 		if id != keyID {
-			return nil, &VerifyError{Reason: RefusedNotTrusted, File: path, Why: "is not a trusted key: its name is not the id of the key it holds"}
+			return nil, &pluginmodel.VerifyError{Reason: pluginmodel.RefusedNotTrusted, File: path, Why: "is not a trusted key: its name is not the id of the key it holds"}
 		}
 		return pub, nil
 	}
@@ -193,7 +195,7 @@ func (t TrustStore) Add(pemBytes []byte) (keyID string, added bool, err error) {
 	if err != nil {
 		return "", false, err
 	}
-	if err := writeFileAtomic(t.dir, id+trustFileExt, canonical, keyFileMode); err != nil {
+	if err := pluginhostWriteFileAtomic(t.dir, id+trustFileExt, canonical, keyFileMode); err != nil {
 		return "", false, err
 	}
 	return id, true, nil
@@ -209,7 +211,7 @@ func (t TrustStore) Add(pemBytes []byte) (keyID string, added bool, err error) {
 func ensureDir(boundary, dir string, owner uint32) error {
 	boundary, dir = filepath.Clean(boundary), filepath.Clean(dir)
 	if !within(boundary, dir) {
-		return pathRefusal(dir, "is not inside "+boundary)
+		return pluginmodel.PathRefusal(dir, "is not inside "+boundary)
 	}
 	missing, err := checkExisting(boundary, dir, owner)
 	if err != nil {
@@ -219,10 +221,10 @@ func ensureDir(boundary, dir string, owner uint32) error {
 		// The parent passed the path rule, so only its owner or root can
 		// put anything at this name; Mkdir fails rather than reuse it.
 		if err := os.Mkdir(missing[i], dirMode); err != nil {
-			return pathRefusal(missing[i], "cannot be created")
+			return pluginmodel.PathRefusal(missing[i], "cannot be created")
 		}
 		if err := os.Chmod(missing[i], dirMode); err != nil {
-			return pathRefusal(missing[i], "cannot be set to mode 0755")
+			return pluginmodel.PathRefusal(missing[i], "cannot be set to mode 0755")
 		}
 	}
 	return nil
@@ -235,7 +237,7 @@ func ensureDir(boundary, dir string, owner uint32) error {
 func checkExisting(boundary, dir string, owner uint32) ([]string, error) {
 	boundary, dir = filepath.Clean(boundary), filepath.Clean(dir)
 	if !within(boundary, dir) {
-		return nil, pathRefusal(dir, "is not inside "+boundary)
+		return nil, pluginmodel.PathRefusal(dir, "is not inside "+boundary)
 	}
 	var missing []string
 	existing := dir
@@ -245,12 +247,12 @@ func checkExisting(boundary, dir string, owner uint32) ([]string, error) {
 			break
 		}
 		if !errors.Is(err, fs.ErrNotExist) {
-			return nil, pathRefusal(existing, "cannot be read")
+			return nil, pluginmodel.PathRefusal(existing, "cannot be read")
 		}
 		missing = append(missing, existing)
 		parent := filepath.Dir(existing)
 		if parent == existing {
-			return nil, pathRefusal(existing, "cannot be read")
+			return nil, pluginmodel.PathRefusal(existing, "cannot be read")
 		}
 		existing = parent
 	}
@@ -286,13 +288,13 @@ func chain(base, p string) []string {
 	return out
 }
 
-// writeFileAtomic writes name in dir through a temporary file and a rename,
-// with mode set explicitly.
-func writeFileAtomic(dir, name string, b []byte, mode os.FileMode) error {
+// pluginhostWriteFileAtomic writes name in dir through a temporary file and
+// a rename, with mode set explicitly.
+func pluginhostWriteFileAtomic(dir, name string, b []byte, mode os.FileMode) error {
 	path := filepath.Join(dir, name)
 	f, err := os.CreateTemp(dir, ".tmp-")
 	if err != nil {
-		return pathRefusal(path, "cannot be written")
+		return pluginmodel.PathRefusal(path, "cannot be written")
 	}
 	tmp := f.Name()
 	ok := false
@@ -303,21 +305,21 @@ func writeFileAtomic(dir, name string, b []byte, mode os.FileMode) error {
 	}()
 	if _, err := f.Write(b); err != nil {
 		_ = f.Close()
-		return pathRefusal(path, "cannot be written")
+		return pluginmodel.PathRefusal(path, "cannot be written")
 	}
 	if err := f.Chmod(mode); err != nil {
 		_ = f.Close()
-		return pathRefusal(path, "cannot be written")
+		return pluginmodel.PathRefusal(path, "cannot be written")
 	}
 	if err := f.Sync(); err != nil {
 		_ = f.Close()
-		return pathRefusal(path, "cannot be written")
+		return pluginmodel.PathRefusal(path, "cannot be written")
 	}
 	if err := f.Close(); err != nil {
-		return pathRefusal(path, "cannot be written")
+		return pluginmodel.PathRefusal(path, "cannot be written")
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		return pathRefusal(path, "cannot be written")
+		return pluginmodel.PathRefusal(path, "cannot be written")
 	}
 	ok = true
 	return nil
@@ -326,18 +328,18 @@ func writeFileAtomic(dir, name string, b []byte, mode os.FileMode) error {
 // readOwned is readNoFollow that also applies the path rule to the file it
 // opened: owned by owner and writable by no one else.
 func readOwned(path string, limit int64, owner uint32) ([]byte, error) {
-	f, err := os.OpenFile(path, noFollowFlags, 0)
+	f, err := os.OpenFile(path, noFollowFlags(), 0)
 	if err != nil {
 		// A symlink in the trust store is the path rule's refusal.
 		if fi, lerr := os.Lstat(path); lerr == nil && fi.Mode()&fs.ModeSymlink != 0 {
-			return nil, ruleRefusal(path, "is a symlink", PathSymlink, fi)
+			return nil, ruleRefusal(path, "is a symlink", pluginmodel.PathSymlink, fi)
 		}
-		return nil, pathRefusal(path, "cannot be opened, or is a symlink")
+		return nil, pluginmodel.PathRefusal(path, "cannot be opened, or is a symlink")
 	}
 	defer func() { _ = f.Close() }()
 	fi, err := f.Stat()
 	if err != nil {
-		return nil, pathRefusal(path, "cannot be read")
+		return nil, pluginmodel.PathRefusal(path, "cannot be read")
 	}
 	if err := checkStrictInfo(path, fi, owner); err != nil {
 		return nil, err
@@ -349,14 +351,14 @@ func readOwned(path string, limit int64, owner uint32) ([]byte, error) {
 // component, a file larger than limit, and anything not regular. Errors name
 // the path, never the contents.
 func readNoFollow(path string, limit int64) ([]byte, error) {
-	f, err := os.OpenFile(path, noFollowFlags, 0)
+	f, err := os.OpenFile(path, noFollowFlags(), 0)
 	if err != nil {
-		return nil, pathRefusal(path, "cannot be opened, or is a symlink")
+		return nil, pluginmodel.PathRefusal(path, "cannot be opened, or is a symlink")
 	}
 	defer func() { _ = f.Close() }()
 	fi, err := f.Stat()
 	if err != nil {
-		return nil, pathRefusal(path, "cannot be read")
+		return nil, pluginmodel.PathRefusal(path, "cannot be read")
 	}
 	return readOpened(f, fi, path, limit)
 }
@@ -365,17 +367,17 @@ func readNoFollow(path string, limit int64) ([]byte, error) {
 // bytes.
 func readOpened(f *os.File, fi fs.FileInfo, path string, limit int64) ([]byte, error) {
 	if !fi.Mode().IsRegular() {
-		return nil, pathRefusal(path, "is not a regular file")
+		return nil, pluginmodel.PathRefusal(path, "is not a regular file")
 	}
 	if fi.Size() > limit {
-		return nil, pathRefusal(path, "is too large")
+		return nil, pluginmodel.PathRefusal(path, "is too large")
 	}
 	b, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
-		return nil, pathRefusal(path, "cannot be read")
+		return nil, pluginmodel.PathRefusal(path, "cannot be read")
 	}
 	if int64(len(b)) > limit {
-		return nil, pathRefusal(path, "is too large")
+		return nil, pluginmodel.PathRefusal(path, "is too large")
 	}
 	return b, nil
 }

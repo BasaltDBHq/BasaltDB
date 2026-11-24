@@ -14,7 +14,7 @@ Owner decisions, Decided Nov 12. Every link is built from one pages base URL (`p
 
 ### Page origins
 
-Chat-only operator CO-8. The origins a link may point at, and that the engine and the CLI accept for passkeys, are a closed list compiled into the binary (Go: `links.Portal` and the checks of `internal/engine/config`; JS: `relyingParty` in `web/lib/codec.js`):
+Chat-only operator CO-8. The origins a link may point at, and that the engine and the CLI accept for passkeys, are a closed list compiled into the binary (Go: `links.Portal` and the checks of `internal/config`; JS: `relyingParty` in `web/lib/codec.js`):
 
 - `https://portal.basaltvault.app`, always (RP ID `basaltvault.app`).
 - `http://localhost:<port>` (the host is `localhost` exactly: a passkey's origin, and so the page a link opens, is `localhost` only, RP ID `localhost`, so a `pagesUrl`, `approvalPage` or `--pages-url` on `127.0.0.1`, `[::1]` or another spelling is refused, not rewritten, with `the local pages run only at localhost; use http://localhost:<port>`), only when `operatedBy` is `PERSON`: the engine runs on the person's own machine, so the loopback page is theirs.

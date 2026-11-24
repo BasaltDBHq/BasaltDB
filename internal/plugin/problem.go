@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // ProblemNotTrusted is the status problem for an entry the engine refused to
@@ -29,16 +31,16 @@ func (e *AgentInGroupError) Error() string {
 
 // NotTrustedMessage is the message of the PLUGIN_NOT_TRUSTED problem that
 // agent's status shows for entry, which the engine refused with err. It
-// names the entry and the failed check (VerifyFailure), never a path a
+// names the entry and the failed check (PluginhostVerifyFailure), never a path a
 // plugin could have named. It never names another agent: when another
 // agent's OS user is in the engine's group, it says so without the name.
-func NotTrustedMessage(entry EntryKey, err error, agent string) string {
+func NotTrustedMessage(entry pluginmodel.EntryKey, err error, agent string) string {
 	head := "plugin " + entry.String() + " was not started: "
-	var ve *VerifyError
+	var ve *pluginmodel.VerifyError
 	var ge *AgentInGroupError
 	switch {
 	case errors.As(err, &ve):
-		return head + VerifyFailure(ve)
+		return head + PluginhostVerifyFailure(ve)
 	case errors.As(err, &ge) && ge.Agent == agent:
 		return head + "this agent's OS user is in the engine's group, so it could reach plugin sockets"
 	case errors.As(err, &ge):
@@ -48,12 +50,12 @@ func NotTrustedMessage(entry EntryKey, err error, agent string) string {
 	}
 }
 
-// VerifyFailure describes a refused verification for status and the
+// PluginhostVerifyFailure describes a refused verification for status and the
 // engine's log: which check failed, in fixed words. It names the manifest or
 // the signature, and any other path only as "a path": a local plugin runs
 // in its installed copy, so a file there may carry a name it chose. The
 // full path is for basalt plugin check, on the person's terminal.
-func VerifyFailure(ve *VerifyError) string {
+func PluginhostVerifyFailure(ve *pluginmodel.VerifyError) string {
 	switch filepath.Base(ve.File) {
 	case ManifestFile:
 		return "its manifest " + ve.Why
@@ -117,4 +119,13 @@ func checkAgentUsers(gid string, agentOSUsers map[string]string, groups groupLoo
 		}
 	}
 	return nil
+}
+
+// BasaltVerifyFailure names the failed check of a verification in fixed
+// words, for basalt service install's warning about an entry it leaves out.
+func BasaltVerifyFailure(err error) string {
+	if ve, ok := err.(*pluginmodel.VerifyError); ok { //nolint:errorlint // Verify returns it unwrapped
+		return PluginhostVerifyFailure(ve)
+	}
+	return "it could not be verified"
 }

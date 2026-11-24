@@ -11,7 +11,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/plugin/protocol"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
 
 // fakeClock records every wait the supervisor asks for; a test fires them
@@ -48,7 +49,7 @@ func (c *fakeClock) next(t *testing.T, d time.Duration) fakeWait {
 // initialize from its manifest, health with its status and shutdown by
 // exiting. Every call is logged in order, with "close" for Close.
 type proc struct {
-	m      Manifest
+	m      pluginmodel.Manifest
 	exited chan struct{}
 	once   sync.Once
 	health atomic.Value // string
@@ -63,9 +64,9 @@ type proc struct {
 	log []string
 }
 
-func newProc(m Manifest) *proc {
+func newProc(m pluginmodel.Manifest) *proc {
 	p := &proc{m: m, exited: make(chan struct{})}
-	p.health.Store(protocol.HealthReady)
+	p.health.Store(pluginproto.HealthReady)
 	return p
 }
 
@@ -94,18 +95,18 @@ func (p *proc) dead() bool {
 
 func (p *proc) Call(ctx context.Context, method string, _, result any) error {
 	if p.dead() {
-		return Fail(ClassExited)
+		return pluginmodel.Fail(pluginmodel.ClassExited)
 	}
 	switch method {
-	case protocol.MethodInitialize:
+	case pluginproto.MethodInitialize:
 		r := goodInit(p.m)
 		if p.badInit {
-			r.Hooks = map[string]protocol.HookDecl{string(HookFeedObserve): {Contract: "feed/1"}}
+			r.Hooks = map[string]pluginproto.HookDecl{string(HookFeedObserve): {Contract: "feed/1"}}
 		}
-		*result.(*protocol.InitializeResponse) = *r
-	case protocol.MethodHealth:
-		*result.(*protocol.HealthResponse) = protocol.HealthResponse{Status: p.health.Load().(string)}
-	case protocol.MethodShutdown:
+		*result.(*pluginproto.InitializeResponse) = *r
+	case pluginproto.MethodHealth:
+		*result.(*pluginproto.HealthResponse) = pluginproto.HealthResponse{Status: p.health.Load().(string)}
+	case pluginproto.MethodShutdown:
 		p.record(method)
 		if p.hangShutdown {
 			<-ctx.Done()
@@ -136,14 +137,14 @@ func (p *proc) Exited() <-chan struct{} { return p.exited }
 // dialer hands out a new proc per start, or fails while failing is set.
 type dialer struct {
 	mu      sync.Mutex
-	procs   map[EntryKey][]*proc
+	procs   map[pluginmodel.EntryKey][]*proc
 	failing atomic.Bool
-	setup   func(k EntryKey, p *proc)
+	setup   func(k pluginmodel.EntryKey, p *proc)
 }
 
-func newDialer() *dialer { return &dialer{procs: map[EntryKey][]*proc{}} }
+func newDialer() *dialer { return &dialer{procs: map[pluginmodel.EntryKey][]*proc{}} }
 
-func (d *dialer) dial(_ context.Context, e Entry) (Transport, error) {
+func (d *dialer) dial(_ context.Context, e pluginmodel.Entry) (pluginmodel.Transport, error) {
 	if d.failing.Load() {
 		return nil, errors.New("its command could not be started")
 	}
@@ -157,7 +158,7 @@ func (d *dialer) dial(_ context.Context, e Entry) (Transport, error) {
 	return p, nil
 }
 
-func (d *dialer) last(k EntryKey) *proc {
+func (d *dialer) last(k pluginmodel.EntryKey) *proc {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	ps := d.procs[k]
@@ -167,7 +168,7 @@ func (d *dialer) last(k EntryKey) *proc {
 	return ps[len(ps)-1]
 }
 
-func (d *dialer) starts(k EntryKey) int {
+func (d *dialer) starts(k pluginmodel.EntryKey) int {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return len(d.procs[k])
@@ -175,7 +176,7 @@ func (d *dialer) starts(k EntryKey) int {
 
 // runSupervisor runs entries until the test ends and returns a stop that
 // ends Run and waits for it.
-func runSupervisor(t *testing.T, h *Host, d *dialer, c Clock, entries ...Entry) (*Supervisor, func()) {
+func runSupervisor(t *testing.T, h *Host, d *dialer, c Clock, entries ...pluginmodel.Entry) (*Supervisor, func()) {
 	t.Helper()
 	s := NewSupervisor(h, d.dial, c)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -192,7 +193,7 @@ func runSupervisor(t *testing.T, h *Host, d *dialer, c Clock, entries ...Entry) 
 	return s, stop
 }
 
-func waitReady(t *testing.T, h *Host, k EntryKey) {
+func pluginhostWaitReady(t *testing.T, h *Host, k pluginmodel.EntryKey) {
 	t.Helper()
 	require.Eventually(t, func() bool { return h.State(k) == StateReady }, 5*time.Second, time.Millisecond, "%s never READY", k)
 }
@@ -207,29 +208,29 @@ func TestKilledPluginRestarts(t *testing.T) {
 	s, _ := runSupervisor(t, h, d, c, e)
 
 	c.next(t, HealthInterval)
-	waitReady(t, h, e.Key)
+	pluginhostWaitReady(t, h, e.Key)
 	first := d.last(e.Key)
 
 	d.failing.Store(true)
 	first.kill()
 	w := c.next(t, MinBackoff)
 	require.Equal(t, StateUnavailable, h.State(e.Key), "UNAVAILABLE while it is down")
-	require.Equal(t, ClassExited, s.Failure(e.Key))
+	require.Equal(t, pluginmodel.ClassExited, s.Failure(e.Key))
 	err := h.Call(context.Background(), e.Key, []string{"a"}, "detect", nil, nil)
-	assertClass(t, err, ClassUnavailable)
+	assertClass(t, err, pluginmodel.ClassUnavailable)
 
 	for _, want := range []time.Duration{2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 32 * time.Second, MaxBackoff, MaxBackoff} {
 		w.fire <- time.Now()
 		w = c.next(t, want)
 		require.Equal(t, StateUnavailable, h.State(e.Key))
-		require.Equal(t, ClassUnavailable, s.Failure(e.Key), "a start that fails is UNAVAILABLE")
+		require.Equal(t, pluginmodel.ClassUnavailable, s.Failure(e.Key), "a start that fails is UNAVAILABLE")
 	}
 	require.Equal(t, 1, d.starts(e.Key), "no process while the start fails")
 
 	d.failing.Store(false)
 	w.fire <- time.Now()
 	w = c.next(t, HealthInterval)
-	waitReady(t, h, e.Key)
+	pluginhostWaitReady(t, h, e.Key)
 	require.Equal(t, 2, d.starts(e.Key))
 	second := d.last(e.Key)
 	require.NotSame(t, first, second)
@@ -251,11 +252,11 @@ func TestNotReadyIsUnavailable(t *testing.T) {
 	runSupervisor(t, h, d, c, e)
 	w := c.next(t, HealthInterval)
 	p := d.last(e.Key)
-	p.health.Store(protocol.HealthNotReady)
+	p.health.Store(pluginproto.HealthNotReady)
 	w.fire <- time.Now()
 	w = c.next(t, HealthInterval)
 	require.Equal(t, StateUnavailable, h.State(e.Key))
-	p.health.Store(protocol.HealthReady)
+	p.health.Store(pluginproto.HealthReady)
 	w.fire <- time.Now()
 	c.next(t, HealthInterval)
 	require.Equal(t, StateReady, h.State(e.Key))
@@ -269,8 +270,8 @@ func TestSupervisedInstancesAreSeparate(t *testing.T) {
 	h, d, c := NewHost(), newDialer(), newFakeClock()
 	def, cx := entry("acme", "default", "a"), entry("acme", "client_x", "b")
 	s, _ := runSupervisor(t, h, d, c, def, cx)
-	waitReady(t, h, def.Key)
-	waitReady(t, h, cx.Key)
+	pluginhostWaitReady(t, h, def.Key)
+	pluginhostWaitReady(t, h, cx.Key)
 	pd, pc := d.last(def.Key), d.last(cx.Key)
 	require.NotSame(t, pd, pc)
 
@@ -282,11 +283,11 @@ func TestSupervisedInstancesAreSeparate(t *testing.T) {
 	require.Equal(t, StateReady, h.State(def.Key))
 	require.NoError(t, h.Call(context.Background(), def.Key, []string{"a"}, "detect", nil, nil))
 	require.False(t, pd.dead(), "default's process runs on")
-	require.NotContains(t, pd.calls(), protocol.MethodShutdown)
+	require.NotContains(t, pd.calls(), pluginproto.MethodShutdown)
 	err := h.Call(context.Background(), cx.Key, []string{"b"}, "detect", nil, nil)
-	assertClass(t, err, ClassUnavailable)
+	assertClass(t, err, pluginmodel.ClassUnavailable)
 	// Each instance serves only its own agents.
-	require.ErrorIs(t, h.Call(context.Background(), def.Key, []string{"b"}, "detect", nil, nil), ErrAgentNotListed)
+	require.ErrorIs(t, h.Call(context.Background(), def.Key, []string{"b"}, "detect", nil, nil), pluginmodel.ErrAgentNotListed)
 }
 
 // Stopping drains first: a call in flight finishes, a new call is refused,
@@ -298,7 +299,7 @@ func TestDrainBeforeUnregister(t *testing.T) {
 	e.Timeout = 5 * time.Second
 	started := make(chan struct{})
 	release := make(chan struct{})
-	d.setup = func(_ EntryKey, p *proc) {
+	d.setup = func(_ pluginmodel.EntryKey, p *proc) {
 		p.hook = func(context.Context) error {
 			close(started)
 			<-release
@@ -306,7 +307,7 @@ func TestDrainBeforeUnregister(t *testing.T) {
 		}
 	}
 	s, _ := runSupervisor(t, h, d, c, e)
-	waitReady(t, h, e.Key)
+	pluginhostWaitReady(t, h, e.Key)
 	callErr := make(chan error, 1)
 	go func() { callErr <- h.Call(context.Background(), e.Key, []string{"a"}, "detect", nil, nil) }()
 	<-started
@@ -314,13 +315,13 @@ func TestDrainBeforeUnregister(t *testing.T) {
 	stopped := make(chan struct{})
 	go func() { s.Stop(e.Key); close(stopped) }()
 	require.Eventually(t, func() bool { return h.State(e.Key) == StateUnavailable }, 5*time.Second, time.Millisecond)
-	assertClass(t, h.Call(context.Background(), e.Key, []string{"a"}, "detect", nil, nil), ClassUnavailable)
+	assertClass(t, h.Call(context.Background(), e.Key, []string{"a"}, "detect", nil, nil), pluginmodel.ClassUnavailable)
 	p := d.last(e.Key)
-	require.NotContains(t, p.calls(), protocol.MethodShutdown, "no shutdown while a call is in flight")
+	require.NotContains(t, p.calls(), pluginproto.MethodShutdown, "no shutdown while a call is in flight")
 	close(release)
 	require.NoError(t, <-callErr, "the call in flight finished")
 	<-stopped
-	require.Equal(t, []string{protocol.MethodInitialize, "detect", protocol.MethodShutdown, "close"}, p.calls())
+	require.Equal(t, []string{pluginproto.MethodInitialize, "detect", pluginproto.MethodShutdown, "close"}, p.calls())
 }
 
 // The engine stops every plugin within 5 s, even with a call that would
@@ -329,10 +330,10 @@ func TestShutdownWithin5s(t *testing.T) {
 	t.Parallel()
 	h, d, c := NewHost(), newDialer(), newFakeClock()
 	busy, deaf, fine := entry("busy", "default", "a"), entry("deaf", "default", "a"), entry("fine", "default", "a")
-	for _, e := range []*Entry{&busy, &deaf, &fine} {
-		e.Timeout = MaxTimeout
+	for _, e := range []*pluginmodel.Entry{&busy, &deaf, &fine} {
+		e.Timeout = pluginmodel.MaxTimeout
 	}
-	d.setup = func(k EntryKey, p *proc) {
+	d.setup = func(k pluginmodel.EntryKey, p *proc) {
 		switch k.Name {
 		case "busy":
 			// Runs until its deadline (a minute) or until the process is
@@ -342,7 +343,7 @@ func TestShutdownWithin5s(t *testing.T) {
 				case <-ctx.Done():
 					return ctx.Err()
 				case <-p.exited:
-					return Fail(ClassExited)
+					return pluginmodel.Fail(pluginmodel.ClassExited)
 				}
 			}
 		case "deaf":
@@ -350,33 +351,33 @@ func TestShutdownWithin5s(t *testing.T) {
 		}
 	}
 	_, stop := runSupervisor(t, h, d, c, busy, deaf, fine)
-	for _, k := range []EntryKey{busy.Key, deaf.Key, fine.Key} {
-		waitReady(t, h, k)
+	for _, k := range []pluginmodel.EntryKey{busy.Key, deaf.Key, fine.Key} {
+		pluginhostWaitReady(t, h, k)
 	}
-	for range protocol.MaxInFlight {
+	for range pluginproto.MaxInFlight {
 		go func() { _ = h.Call(context.Background(), busy.Key, []string{"a"}, "detect", nil, nil) }()
 	}
 	require.Eventually(t, func() bool {
 		h.mu.RLock()
 		defer h.mu.RUnlock()
-		return len(h.entries[busy.Key].sem) == protocol.MaxInFlight
+		return len(h.entries[busy.Key].sem) == pluginproto.MaxInFlight
 	}, 5*time.Second, time.Millisecond)
 
 	start := time.Now()
 	stop()
 	require.Less(t, time.Since(start), StopWait, "every plugin stopped within 5 s")
-	for _, k := range []EntryKey{busy.Key, deaf.Key, fine.Key} {
+	for _, k := range []pluginmodel.EntryKey{busy.Key, deaf.Key, fine.Key} {
 		p := d.last(k)
 		require.True(t, p.dead(), "%s stopped", k)
 		require.Contains(t, p.calls(), "close")
 		require.Equal(t, StateUnavailable, h.State(k))
 	}
-	require.Equal(t, []string{protocol.MethodInitialize, protocol.MethodShutdown, "close"}, d.last(fine.Key).calls())
+	require.Equal(t, []string{pluginproto.MethodInitialize, pluginproto.MethodShutdown, "close"}, d.last(fine.Key).calls())
 }
 
 // holdHooks starts protocol.MaxInFlight hook calls on k that run until
 // their deadline or the process is killed, and waits until all hold a slot.
-func holdHooks(t *testing.T, h *Host, d *dialer, k EntryKey) {
+func holdHooks(t *testing.T, h *Host, d *dialer, k pluginmodel.EntryKey) {
 	t.Helper()
 	p := d.last(k)
 	// Set before any hook call starts (the go statements below order it).
@@ -385,16 +386,16 @@ func holdHooks(t *testing.T, h *Host, d *dialer, k EntryKey) {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-p.exited:
-			return Fail(ClassExited)
+			return pluginmodel.Fail(pluginmodel.ClassExited)
 		}
 	}
-	for range protocol.MaxInFlight {
+	for range pluginproto.MaxInFlight {
 		go func() { _ = h.Call(context.Background(), k, []string{"a"}, "detect", nil, nil) }()
 	}
 	require.Eventually(t, func() bool {
 		h.mu.RLock()
 		defer h.mu.RUnlock()
-		return len(h.entries[k].sem) == protocol.MaxInFlight
+		return len(h.entries[k].sem) == pluginproto.MaxInFlight
 	}, 5*time.Second, time.Millisecond)
 }
 
@@ -404,10 +405,10 @@ func TestHealthGetsThroughFourHookCalls(t *testing.T) {
 	t.Parallel()
 	h, d, c := NewHost(), newDialer(), newFakeClock()
 	e := entry("acme", "default", "a")
-	e.Timeout = MaxTimeout
+	e.Timeout = pluginmodel.MaxTimeout
 	s, _ := runSupervisor(t, h, d, c, e)
 	w := c.next(t, HealthInterval)
-	waitReady(t, h, e.Key)
+	pluginhostWaitReady(t, h, e.Key)
 	holdHooks(t, h, d, e.Key)
 
 	w.fire <- time.Now()
@@ -424,9 +425,9 @@ func TestShutdownGetsThroughFourHookCalls(t *testing.T) {
 	t.Parallel()
 	h, d, c := NewHost(), newDialer(), newFakeClock()
 	e := entry("acme", "default", "a")
-	e.Timeout = MaxTimeout
+	e.Timeout = pluginmodel.MaxTimeout
 	_, stop := runSupervisor(t, h, d, c, e)
-	waitReady(t, h, e.Key)
+	pluginhostWaitReady(t, h, e.Key)
 	holdHooks(t, h, d, e.Key)
 	p := d.last(e.Key)
 
@@ -434,7 +435,7 @@ func TestShutdownGetsThroughFourHookCalls(t *testing.T) {
 	stop()
 	require.Less(t, time.Since(start), StopWait)
 	calls := p.calls()
-	i := slices.Index(calls, protocol.MethodShutdown)
+	i := slices.Index(calls, pluginproto.MethodShutdown)
 	require.GreaterOrEqual(t, i, 0, "shutdown was sent: %v", calls)
 	require.Less(t, i, slices.Index(calls, "close"), "shutdown before the process was killed: %v", calls)
 }
@@ -444,14 +445,14 @@ func TestShutdownGetsThroughFourHookCalls(t *testing.T) {
 func TestSupervisorRefusesInitializeHookMismatch(t *testing.T) {
 	t.Parallel()
 	h, d, c := NewHost(), newDialer(), newFakeClock()
-	d.setup = func(_ EntryKey, p *proc) { p.badInit = true }
+	d.setup = func(_ pluginmodel.EntryKey, p *proc) { p.badInit = true }
 	e := entry("acme", "default", "a")
 	s, _ := runSupervisor(t, h, d, c, e)
 	w := c.next(t, MinBackoff)
 	require.Equal(t, StateUnavailable, h.State(e.Key))
-	require.Equal(t, ClassBadResponse, s.Failure(e.Key))
+	require.Equal(t, pluginmodel.ClassBadResponse, s.Failure(e.Key))
 	p := d.last(e.Key)
-	require.Equal(t, []string{protocol.MethodInitialize, "close"}, p.calls(), "refused and closed, nothing else sent")
+	require.Equal(t, []string{pluginproto.MethodInitialize, "close"}, p.calls(), "refused and closed, nothing else sent")
 	w.fire <- time.Now()
 	c.next(t, 2*MinBackoff)
 	require.Equal(t, 2, d.starts(e.Key))
@@ -462,7 +463,7 @@ func TestRunRefusesARepeatedEntry(t *testing.T) {
 	d := newDialer()
 	s := NewSupervisor(NewHost(), d.dial, newFakeClock())
 	e := entry("acme", "default", "a")
-	require.ErrorIs(t, s.Run(context.Background(), []Entry{e, e}), ErrDuplicateEntry)
+	require.ErrorIs(t, s.Run(context.Background(), []pluginmodel.Entry{e, e}), ErrDuplicateEntry)
 	require.Zero(t, d.starts(e.Key))
 }
 
@@ -475,11 +476,11 @@ func TestAddWhileRunning(t *testing.T) {
 	h, d, c := NewHost(), newDialer(), newFakeClock()
 	def := entry("acme", "default", "a")
 	s, stop := runSupervisor(t, h, d, c, def)
-	waitReady(t, h, def.Key)
+	pluginhostWaitReady(t, h, def.Key)
 
 	cx := entry("acme", "client_x", "b")
 	require.NoError(t, s.Add(cx))
-	waitReady(t, h, cx.Key)
+	pluginhostWaitReady(t, h, cx.Key)
 	require.ErrorIs(t, s.Add(cx), ErrDuplicateEntry)
 	require.NoError(t, h.Call(context.Background(), cx.Key, []string{"b"}, "detect", nil, nil))
 
@@ -489,15 +490,15 @@ func TestAddWhileRunning(t *testing.T) {
 	wider := entry("acme", "client_x", "b")
 	wider.Agents = []string{"b", "c"}
 	require.NoError(t, s.Add(wider), "a stopped key is added again with its new agents")
-	waitReady(t, h, cx.Key)
+	pluginhostWaitReady(t, h, cx.Key)
 	require.NoError(t, h.Call(context.Background(), cx.Key, []string{"c"}, "detect", nil, nil))
-	require.ElementsMatch(t, []EntryKey{def.Key, cx.Key}, s.Supervised())
+	require.ElementsMatch(t, []pluginmodel.EntryKey{def.Key, cx.Key}, s.Supervised())
 
 	added := d.last(cx.Key)
 	stop()
-	require.Contains(t, added.calls(), protocol.MethodShutdown, "Run stopped the added entry before it returned")
+	require.Contains(t, added.calls(), pluginproto.MethodShutdown, "Run stopped the added entry before it returned")
 	require.ErrorIs(t, s.Add(entry("acme", "late", "a")), ErrNotRunning)
-	require.Zero(t, d.starts(EntryKey{Name: "acme", Instance: "late"}))
+	require.Zero(t, d.starts(pluginmodel.EntryKey{Name: "acme", Instance: "late"}))
 }
 
 func TestAddBeforeStartRefused(t *testing.T) {

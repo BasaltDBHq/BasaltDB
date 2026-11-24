@@ -9,10 +9,11 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/links"
-	"github.com/basaltdbhq/basaltdb/internal/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/setuprun"
+	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // PasskeyRequest is one registration of the person's portal passkey: the
@@ -57,7 +58,7 @@ func PasskeyRequestFor(c PasskeyChallenge, label string) (PasskeyRequest, error)
 	if label == "" || len(label) > setuprun.MaxPasskeyLabel || !utf8.ValidString(label) {
 		return PasskeyRequest{}, fmt.Errorf("the passkey label must be 1 to %d bytes of UTF-8", setuprun.MaxPasskeyLabel)
 	}
-	req, err := passkey.RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
+	req, err := setuprun.RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
 	if err != nil {
 		return PasskeyRequest{}, err
 	}
@@ -115,16 +116,16 @@ func registerInTx(ctx context.Context, tx pgx.Tx, pk *Passkey) (*RegisteredPassk
 	return pk.registered(), nil
 }
 
-// requirePasskey refuses PASSKEY_REQUIRED, in the setup's transaction,
-// when the database needs the person's passkey and none was given: the
-// setup rolls back.
-func requirePasskey(ctx context.Context, tx pgx.Tx, add bool) error {
-	need, err := setuprun.PasskeyNeeded(ctx, tx, add)
+// requirePasskey refuses PASSKEY_REQUIRED, in the setup's transaction
+// before its script runs, when the database needs the person's passkey and
+// none was given: nothing changed.
+func requirePasskey(ctx context.Context, tx setuprun.Querier, add bool) error {
+	need, err := setuprun.PasskeyNeeded(ctx, store, tx, add)
 	if err != nil {
 		return err
 	}
 	if need {
-		return &setuprun.RefusalError{Code: CodePasskeyRequired, Message: "this setup needs the person's portal passkey, and none was given"}
+		return &setuprun.SetuprunRefusalError{Code: CodePasskeyRequired, Message: "this setup needs the person's portal passkey, and none was given"}
 	}
 	return nil
 }
@@ -133,7 +134,7 @@ func requirePasskey(ctx context.Context, tx pgx.Tx, add bool) error {
 // 7): it asks for the person's passkey and stores it when the database has
 // no active portal passkey, or in.AddPasskey asks for another.
 func askPasskey(ctx context.Context, conn *pgx.Conn, in RunInput) (*RegisteredPasskey, error) {
-	need, err := setuprun.PasskeyNeeded(ctx, conn, in.AddPasskey)
+	need, err := setuprun.PasskeyNeeded(ctx, store, pgquerier.Neutralize(conn), in.AddPasskey)
 	if err != nil || !need {
 		return nil, err
 	}

@@ -8,10 +8,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/setupcode"
-	"github.com/basaltdbhq/basaltdb/internal/setuprun"
+	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // The Update check on the connect page (CONTRACT.md, Connect, Update on the
@@ -83,14 +83,14 @@ type Revoked struct {
 // active passkey is ANSWERS_INVALID, nothing changed. A refusal is an
 // *Error.
 func RevokePasskey(ctx context.Context, conn *pgx.Conn, req Request, credentialID []byte) (Revoked, error) {
-	s, err := setuprun.New(req.Code, req.Now, true)
+	s, err := setuprun.NewSetuprun(store, req.Code, req.Now, true)
 	if err != nil {
 		return Revoked{}, asError(err)
 	}
 	if s.P.Target == nil {
-		return Revoked{}, asError(&setuprun.RefusalError{Code: string(setupcode.RefusalInvalid), Message: "a connect-only setup code names no database to remove a passkey from; ask your agent for a new one"})
+		return Revoked{}, asError(&setuprun.SetuprunRefusalError{Code: string(setupcode.RefusalInvalid), Message: "a connect-only setup code names no database to remove a passkey from; ask your agent for a new one"})
 	}
-	if err := setuprun.CheckConnTarget(s.P, conn.Config()); err != nil {
+	if err := setuprun.CheckConnTarget(s.P, adminAt(conn)); err != nil {
 		return Revoked{}, asError(err)
 	}
 	installed, err := guard.InstalledPrefix(ctx, conn)
@@ -115,7 +115,7 @@ func RevokePasskey(ctx context.Context, conn *pgx.Conn, req Request, credentialI
 			}
 		}
 		if !found {
-			return &setuprun.RefusalError{Code: CodeAnswersInvalid, Message: msgPasskeyNotActive}
+			return &setuprun.SetuprunRefusalError{Code: CodeAnswersInvalid, Message: msgPasskeyNotActive}
 		}
 		if _, err := guard.RevokePasskey(ctx, tx, credentialID, true); err != nil {
 			return err

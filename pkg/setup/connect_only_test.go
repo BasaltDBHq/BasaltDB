@@ -8,8 +8,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/pkg/setup"
 )
 
@@ -103,11 +103,16 @@ func TestConnectOnlyAllTablesInstalls(t *testing.T) {
 	require.False(t, writes, "a table without a primary key is read only")
 }
 
-// The tables of an allTables code are read again in the setup's own
-// transaction. Without ticks (the laptop command), a table made after the
-// check the person approved stops the setup; with ticks, a ticked table
-// dropped meanwhile does, and one made meanwhile is not included. Either
-// way TABLES_CHANGED, nothing changed.
+// The tables of an allTables code are read again after Approve, in the
+// setup's transaction, and compared with the plan's. The Approve callbacks
+// run their SQL on the admin connection, so inside that same transaction:
+// this tests that RecheckTables sees a change made after the plan and
+// before the script, not a change from another session. Without ticks (the
+// laptop command), a table made after the plan stops the setup; with
+// ticks, a ticked table dropped meanwhile does, and one made meanwhile is
+// not included. Either way TABLES_CHANGED, nothing changed. (A second
+// session could not drop payroll here: the setup's transaction holds a
+// lock on it from the row-level security read.)
 func TestAllTablesReadAgainInTheTransaction(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

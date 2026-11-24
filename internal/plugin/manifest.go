@@ -13,7 +13,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/basaltdbhq/basaltdb/internal/plugin/protocol"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
 
 // The files of a plugin's directory that are not in its manifest's files.
@@ -96,16 +97,16 @@ const remoteTransport = "connectrpc"
 // case-insensitively. Unknown fields are ignored where the schema allows
 // them. A refusal is a *VerifyError with reason BAD_MANIFEST; its text names
 // the field and the rule, never a value from the manifest.
-func ParseManifest(b []byte) (Manifest, error) {
+func ParseManifest(b []byte) (pluginmodel.Manifest, error) {
 	if len(b) > MaxManifestBytes {
-		return Manifest{}, badManifest("the manifest is larger than 1 MiB")
+		return pluginmodel.Manifest{}, badManifest("the manifest is larger than 1 MiB")
 	}
 	if err := checkStrictJSON(b); err != nil {
-		return Manifest{}, badManifest("the manifest is not valid JSON: " + err.Error())
+		return pluginmodel.Manifest{}, badManifest("the manifest is not valid JSON: " + err.Error())
 	}
 	top, ok := objectOf(b)
 	if !ok {
-		return Manifest{}, badManifest("the manifest is not a JSON object")
+		return pluginmodel.Manifest{}, badManifest("the manifest is not a JSON object")
 	}
 	p := manifestParser{top: top}
 	return p.parse()
@@ -113,17 +114,17 @@ func ParseManifest(b []byte) (Manifest, error) {
 
 type manifestParser struct {
 	top jsonObject
-	m   Manifest
+	m   pluginmodel.Manifest
 }
 
-func (p *manifestParser) parse() (Manifest, error) {
+func (p *manifestParser) parse() (pluginmodel.Manifest, error) {
 	for _, k := range []string{"manifestVersion", "name", "version", "publisher", "protocol", "hooks", "endpoint", "network"} {
 		if _, ok := p.top[k]; !ok {
-			return Manifest{}, badManifest(k + " is missing")
+			return pluginmodel.Manifest{}, badManifest(k + " is missing")
 		}
 	}
 	if _, ok := p.top["entitlement"]; ok {
-		return Manifest{}, badManifest("entitlement is reserved")
+		return pluginmodel.Manifest{}, badManifest("entitlement is reserved")
 	}
 	steps := []func() error{
 		p.header, p.protocols, p.hooks, p.endpoint, p.files, p.network, p.resources,
@@ -131,7 +132,7 @@ func (p *manifestParser) parse() (Manifest, error) {
 	}
 	for _, step := range steps {
 		if err := step(); err != nil {
-			return Manifest{}, err
+			return pluginmodel.Manifest{}, err
 		}
 	}
 	return p.m, nil
@@ -170,8 +171,8 @@ func (p *manifestParser) protocols() error {
 			return badManifest("protocol lists a value that is not a basalt-plugin/N version")
 		}
 	}
-	if !slices.Contains(list, protocol.Version1) {
-		return badManifest("protocol must include " + protocol.Version1)
+	if !slices.Contains(list, pluginproto.Version1) {
+		return badManifest("protocol must include " + pluginproto.Version1)
 	}
 	p.m.Protocol = list
 	return nil
@@ -182,7 +183,7 @@ func (p *manifestParser) hooks() error {
 	if !ok || len(obj) == 0 {
 		return badManifest("hooks must be an object with at least one hook")
 	}
-	p.m.Hooks = make(map[string]protocol.HookDecl, len(obj))
+	p.m.Hooks = make(map[string]pluginproto.HookDecl, len(obj))
 	for name, raw := range obj {
 		h := Hook(name)
 		if h == HookWireVerdict {
@@ -211,13 +212,13 @@ func (p *manifestParser) has(h Hook) bool {
 	return ok
 }
 
-func (p *manifestParser) hookDecl(h Hook, raw json.RawMessage) (protocol.HookDecl, error) {
+func (p *manifestParser) hookDecl(h Hook, raw json.RawMessage) (pluginproto.HookDecl, error) {
 	where := "hooks." + string(h)
 	obj, ok := objectOf(raw)
 	if !ok {
-		return protocol.HookDecl{}, badManifest(where + " must be an object")
+		return pluginproto.HookDecl{}, badManifest(where + " must be an object")
 	}
-	var d protocol.HookDecl
+	var d pluginproto.HookDecl
 	rawContract, present := obj["contract"]
 	if !present {
 		return d, badManifest(where + ".contract is missing")
@@ -300,7 +301,7 @@ func (p *manifestParser) localEndpoint(raw json.RawMessage) error {
 	if !ok {
 		return badManifest("endpoint.local must be an object")
 	}
-	var e LocalEndpoint
+	var e pluginmodel.LocalEndpoint
 	if e.Transport, ok = stringOf(obj["transport"]); !ok || !slices.Contains(localTransports, e.Transport) {
 		return badManifest("endpoint.local.transport must be jsonrpc-stdio, jsonrpc-unix or connectrpc")
 	}
@@ -317,7 +318,7 @@ func (p *manifestParser) localEndpoint(raw json.RawMessage) error {
 			}
 		}
 	}
-	p.m.Endpoint = Endpoint{Local: &e}
+	p.m.Endpoint = pluginmodel.Endpoint{Local: &e}
 	return nil
 }
 
@@ -326,14 +327,14 @@ func (p *manifestParser) remoteEndpoint(raw json.RawMessage) error {
 	if !ok {
 		return badManifest("endpoint.remote must be an object")
 	}
-	var e RemoteEndpoint
+	var e pluginmodel.RemoteEndpoint
 	if e.Transport, ok = stringOf(obj["transport"]); !ok || e.Transport != remoteTransport {
 		return badManifest("endpoint.remote.transport must be connectrpc")
 	}
 	if e.URL, ok = stringOf(obj["url"]); !ok || utf8.RuneCountInString(e.URL) > maxURLRunes || !remoteURLPattern.MatchString(e.URL) {
 		return badManifest("endpoint.remote.url must be an https URL with no user name, password, query or fragment")
 	}
-	p.m.Endpoint = Endpoint{Remote: &e}
+	p.m.Endpoint = pluginmodel.Endpoint{Remote: &e}
 	return nil
 }
 
@@ -384,7 +385,7 @@ func (p *manifestParser) network() error {
 			return badManifest("network.egress lists an entry that is not a lowercase host:port")
 		}
 	}
-	p.m.Network = Network{Egress: list}
+	p.m.Network = pluginmodel.Network{Egress: list}
 	return nil
 }
 
@@ -397,7 +398,7 @@ func (p *manifestParser) resources() error {
 	if !ok {
 		return badManifest("resources must be an object")
 	}
-	var r Resources
+	var r pluginmodel.Resources
 	if rawMem, present := obj["memoryMB"]; present {
 		v, ok := integerOf(rawMem)
 		if !ok || v < minMemoryMB || v > maxMemoryMB {
@@ -470,8 +471,8 @@ func unique(list []string) bool {
 	return true
 }
 
-func badManifest(why string) *VerifyError {
-	return &VerifyError{Reason: RefusedBadManifest, File: ManifestFile, Why: why}
+func badManifest(why string) *pluginmodel.VerifyError {
+	return &pluginmodel.VerifyError{Reason: pluginmodel.RefusedBadManifest, File: ManifestFile, Why: why}
 }
 
 // --- strict JSON ---

@@ -1,0 +1,20 @@
+name: Postgres without autovacuum
+description: >-
+  Turn autovacuum off on the job's Postgres service container, so a test's
+  install transaction never deadlocks with autovacuum's ANALYZE on a table
+  it attaches a trigger to. autovacuum is a server setting (reloaded, no
+  restart), so it cannot be set per database.
+inputs:
+  container:
+    description: The service container's id (job.services.postgres.id).
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: autovacuum off
+      shell: bash
+      env:
+        CONTAINER: ${{ inputs.container }}
+      run: |
+        docker exec "$CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 -c 'ALTER SYSTEM SET autovacuum = off' -c 'SELECT pg_reload_conf()'
+        test "$(docker exec "$CONTAINER" psql -U postgres -Atc 'SHOW autovacuum')" = off

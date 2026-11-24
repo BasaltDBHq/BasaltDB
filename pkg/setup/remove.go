@@ -7,9 +7,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/basaltdbhq/basaltdb/internal/demo"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/setuprun"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/demo"
+	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // Removing BasaltDB from a database (CONTRACT.md, Setup jobs, Remove Basalt)
@@ -67,7 +68,7 @@ func CheckRemove(ctx context.Context, conn *pgx.Conn) (Removal, error) {
 	if err != nil {
 		return Removal{}, asError(err)
 	}
-	p, err := setuprun.PlanRemove(ctx, tx, prefix)
+	p, err := setuprun.PlanRemove(ctx, store, pgquerier.Neutralize(tx), prefix)
 	if err != nil {
 		return Removal{}, asError(err)
 	}
@@ -87,14 +88,14 @@ func RunRemove(ctx context.Context, conn *pgx.Conn, confirmName string) (Removed
 	var out Removed
 	err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
 		// The typed name first: a wrong one learns nothing of the guard.
-		if err := setuprun.CheckTypedName(ctx, tx, confirmName); err != nil {
+		if err := setuprun.CheckTypedName(ctx, store, pgquerier.Neutralize(tx), confirmName); err != nil {
 			return err
 		}
 		prefix, err := removalPrefix(ctx, tx)
 		if err != nil {
 			return err
 		}
-		p, kept, err := setuprun.RunRemove(ctx, tx, prefix, confirmName)
+		p, kept, err := setuprun.RunRemove(ctx, store, pgquerier.Neutralize(tx), prefix, confirmName)
 		if err != nil {
 			return err
 		}
@@ -117,5 +118,5 @@ func RunRemove(ctx context.Context, conn *pgx.Conn, confirmName string) (Removed
 // removalPrefix is the installed guard's prefix, or the default; a
 // basalt_meta whose owner is not a guard role is refused PREFIX_MISMATCH.
 func removalPrefix(ctx context.Context, tx pgx.Tx) (string, error) {
-	return setuprun.InstalledRemovalPrefix(ctx, tx, guard.DefaultPrefix)
+	return setuprun.InstalledRemovalPrefix(ctx, store, pgquerier.Neutralize(tx), guardmodel.DefaultPrefix)
 }

@@ -17,8 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
-	"github.com/basaltdbhq/basaltdb/internal/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/shim"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
+	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 )
 
 // restartTools are an engine build's tools: write counts its runs, slow
@@ -36,13 +36,13 @@ func newRestartTools(build string) *restartTools {
 	return &restartTools{build: build, started: make(chan struct{}, 1), release: make(chan struct{})}
 }
 
-func (r *restartTools) server() *mcp.Server {
-	return mcp.NewServer(mcp.Info{Name: "basalt", Version: r.build},
-		mcp.Tool{Name: "write", Call: func(context.Context, json.RawMessage) (any, error) {
+func (r *restartTools) server() *mcpserver.Server {
+	return mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: r.build},
+		mcpserver.Tool{Name: "write", Call: func(context.Context, json.RawMessage) (any, error) {
 			r.writes.Add(1)
 			return map[string]string{"build": r.build}, nil
 		}},
-		mcp.Tool{Name: "slow", Call: func(ctx context.Context, _ json.RawMessage) (any, error) {
+		mcpserver.Tool{Name: "slow", Call: func(ctx context.Context, _ json.RawMessage) (any, error) {
 			r.started <- struct{}{}
 			select {
 			case <-r.release:
@@ -64,8 +64,8 @@ type restartingEngine struct {
 
 func startRestarting(t *testing.T, socket string, tools *restartTools, upgrade <-chan struct{}, idle, drain time.Duration) *restartingEngine {
 	t.Helper()
-	a := engine.Agent{Name: "bot", UID: myUID(), SocketPath: socket, Server: tools.server()}
-	e := engine.New(slog.New(slog.DiscardHandler), []engine.Agent{a}).WithRestart(engine.RestartOptions{
+	a := engine.Agent{Name: "bot", UID: myUID(), SocketPath: socket, Server: mcpServer{tools.server()}}
+	e := engine.New(slog.New(slog.DiscardHandler), mcpLines{}, []engine.Agent{a}).WithRestart(engine.Restart{
 		Upgrade: func(ctx context.Context) error {
 			select {
 			case <-upgrade:

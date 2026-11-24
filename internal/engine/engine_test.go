@@ -20,8 +20,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
-	"github.com/basaltdbhq/basaltdb/internal/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/shim"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
+	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 )
 
 // shortDir is a socket directory short enough for macOS's ~104-byte Unix
@@ -34,8 +34,8 @@ func shortDir(t *testing.T) string {
 	return dir
 }
 
-func whoami(name string) mcp.Tool {
-	return mcp.Tool{Name: "whoami", Call: func(context.Context, json.RawMessage) (any, error) {
+func whoami(name string) mcpserver.Tool {
+	return mcpserver.Tool{Name: "whoami", Call: func(context.Context, json.RawMessage) (any, error) {
 		return map[string]string{"agent": name}, nil
 	}}
 }
@@ -45,15 +45,29 @@ func agent(name, dir string, uid uint32) engine.Agent {
 		Name:       name,
 		UID:        uid,
 		SocketPath: filepath.Join(dir, name+".sock"),
-		Server:     mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}, whoami(name)),
+		Server:     mcpServer{mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, whoami(name))},
 	}
+}
+
+// mcpServer is an MCP server as the engine serves it.
+type mcpServer struct{ *mcpserver.Server }
+
+func (s mcpServer) ServeGated(ctx context.Context, in io.Reader, out io.Writer, gate engine.Gate) error {
+	return s.Server.ServeGated(ctx, in, out, gate)
+}
+
+// mcpLines writes the engine's refusal line in the MCP wire format.
+type mcpLines struct{}
+
+func (mcpLines) WritePeerRefused(w io.Writer, message string) error {
+	return mcpserver.WritePeerRefused(w, message)
 }
 
 func startEngine(t *testing.T, agents ...engine.Agent) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	e := engine.New(slog.New(slog.DiscardHandler), agents)
+	e := engine.New(slog.New(slog.DiscardHandler), mcpLines{}, agents)
 	go func() { done <- e.Serve(ctx) }()
 	t.Cleanup(func() {
 		cancel()
@@ -83,17 +97,17 @@ func waitListening(t *testing.T, path string) {
 // testFallback stands in for what basalt mcp answers while the engine is
 // down; a request the engine took and dropped gets an error marked
 // "abandoned".
-type testFallback struct{ *mcp.Server }
+type testFallback struct{ *mcpserver.Server }
 
 func (testFallback) Abandoned(_ context.Context, out io.Writer, line []byte) error {
-	req, ok := mcp.RequestOf(line)
+	req, ok := mcpserver.RequestOf(line)
 	if !ok {
 		return nil
 	}
-	return mcp.WriteError(out, req.ID, mcp.ErrCodeServer, "abandoned")
+	return mcpserver.WriteError(out, req.ID, mcpserver.ErrCodeServer, "abandoned")
 }
 
-var fallback = testFallback{mcp.NewServer(mcp.Info{Name: "fallback", Version: "test"}, mcp.Tool{
+var fallback = testFallback{mcpserver.NewServer(mcpserver.Info{Name: "fallback", Version: "test"}, mcpserver.Tool{
 	Name: "whoami",
 	Call: func(context.Context, json.RawMessage) (any, error) {
 		return map[string]string{"agent": "the shim"}, nil
@@ -154,7 +168,7 @@ func TestConnectionFromAnotherOSUserIsRefused(t *testing.T) {
 	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
 	line, err := bufio.NewReader(conn).ReadString('\n')
 	require.NoError(t, err)
-	msg := mcp.PeerRefusal([]byte(line))
+	msg := mcpserver.PeerRefusal([]byte(line))
 	require.Contains(t, msg, `agent "bot"`, line)
 	require.Contains(t, msg, "osUser", "it names who may use the socket")
 	require.NotContains(t, line, `"agent": "bot"`, "nothing ran")
@@ -180,7 +194,7 @@ func TestPeerCredentialFailureClosesTheConnection(t *testing.T) {
 	bot := agent("bot", dir, myUID())
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	e := engine.New(slog.New(slog.DiscardHandler), []engine.Agent{bot}).
+	e := engine.New(slog.New(slog.DiscardHandler), mcpLines{}, []engine.Agent{bot}).
 		WithPeerUID(func(*net.UnixConn) (uint32, error) { return 0, io.ErrUnexpectedEOF })
 	go func() { _ = e.Serve(ctx) }()
 	waitListening(t, bot.SocketPath)
@@ -220,7 +234,7 @@ func TestStaleSocketIsReplacedButOtherFilesAreNot(t *testing.T) {
 
 	other := agent("other", dir, myUID())
 	require.NoError(t, os.WriteFile(other.SocketPath, []byte("keep me"), 0o600))
-	err = engine.New(slog.New(slog.DiscardHandler), []engine.Agent{other}).Serve(context.Background())
+	err = engine.New(slog.New(slog.DiscardHandler), mcpLines{}, []engine.Agent{other}).Serve(context.Background())
 	require.ErrorContains(t, err, "not a socket")
 	raw, err := os.ReadFile(other.SocketPath)
 	require.NoError(t, err)
@@ -240,9 +254,10 @@ func TestShimAnswersItselfWithoutAnEngine(t *testing.T) {
 
 func TestNewPanicsWithoutAgents(t *testing.T) {
 	t.Parallel()
-	require.Panics(t, func() { engine.New(slog.New(slog.DiscardHandler), nil) })
-	require.Panics(t, func() { engine.New(nil, []engine.Agent{agent("a", "/tmp", 0)}) })
-	require.Panics(t, func() { engine.New(slog.New(slog.DiscardHandler), []engine.Agent{{Name: "a"}}) })
+	require.Panics(t, func() { engine.New(slog.New(slog.DiscardHandler), mcpLines{}, nil) })
+	require.Panics(t, func() { engine.New(nil, mcpLines{}, []engine.Agent{agent("a", "/tmp", 0)}) })
+	require.Panics(t, func() { engine.New(slog.New(slog.DiscardHandler), nil, []engine.Agent{agent("a", "/tmp", 0)}) })
+	require.Panics(t, func() { engine.New(slog.New(slog.DiscardHandler), mcpLines{}, []engine.Agent{{Name: "a"}}) })
 }
 
 // Refused peers are drained a few at a time per agent; past the cap the
@@ -254,7 +269,7 @@ func TestRefusedDrainsAreCapped(t *testing.T) {
 	bot := agent("bot", dir, myUID()+1)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	e := engine.New(slog.New(slog.DiscardHandler), []engine.Agent{bot}).WithRefusedDrains(2).
+	e := engine.New(slog.New(slog.DiscardHandler), mcpLines{}, []engine.Agent{bot}).WithRefusedDrains(2).
 		// A long drain window, so no drain times out while the test runs.
 		WithRefuseDrain(time.Minute)
 	done := make(chan struct{})
@@ -271,7 +286,7 @@ func TestRefusedDrainsAreCapped(t *testing.T) {
 		require.NoError(t, c.SetReadDeadline(time.Now().Add(5*time.Second)))
 		line, err := r.ReadString('\n')
 		require.NoError(t, err)
-		require.NotEmpty(t, mcp.PeerRefusal([]byte(line)))
+		require.NotEmpty(t, mcpserver.PeerRefusal([]byte(line)))
 		return c
 	}
 	// Probes are two bytes each; keep their number far below the engine's

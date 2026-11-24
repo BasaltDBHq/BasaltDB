@@ -1,0 +1,32 @@
+# Release end-to-end test
+
+Walks the built `basalt` binary through the main path of a person-operated
+engine: install the engine service, set up on the setup page with a passkey,
+the agent's MCP session, a held write's approval, a revert, and removal.
+
+```
+sh e2e/release/run.sh <bin-dir>     # <bin-dir> holds the basalt binary under test
+```
+
+It installs Postgres and the engine as a system service and needs passwordless
+`sudo`, Go and Node, so it runs on a CI runner only, never on a developer
+machine. Run it from the CI workflow's manual `release-e2e` job
+(`gh workflow run ci.yml --ref <branch>`), which runs it on a snapshot build on
+macOS (arm64 and Intel) and Ubuntu. The release workflow runs the same script
+against the archives it built.
+
+- `run.sh`: copies the binary to a root-owned folder, starts Postgres and
+  seeds `public.items` (20 rows), installs the Node dependencies and Chromium,
+  and runs `flow.mjs`. It removes the service on exit.
+- `flow.mjs`: the steps, each printing `e2e: <step> ok`. The browser is
+  Chromium with a virtual authenticator, so the passkey needs no person.
+- `mcp.mjs`: a stdio JSON-RPC client for `basalt mcp`.
+- `service.sh`: the install and remove scripts that `basalt init` runs through
+  the administrator dialog, run under `sudo` instead, and the cleanup that
+  collects the engine's logs. A job that calls `run.sh` should also run
+  `sh e2e/release/service.sh cleanup e2e/release/out` in a step with
+  `if: always()`, and upload `e2e/release/out` as an artifact.
+- `installscript/`: prints those scripts from the same code `init` uses.
+
+When a main path changes (install, the setup page, the agent's read and write,
+a held write's approval, revert, remove), update the steps in the same change.

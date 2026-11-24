@@ -3,24 +3,8 @@ package plugin
 import (
 	"bytes"
 	"encoding/json"
-)
 
-// SignerState is who vouches for a copy (CONTRACT.md, Plugins, Plugin
-// approval, Signer states).
-type SignerState string
-
-// The signer states.
-const (
-	// SignerKnown: the manifest's .sig names a publisher key built into the
-	// engine, passes its schema and verifies. Verified.SignerKeyID is that
-	// key's id.
-	SignerKnown SignerState = "KNOWN"
-	// SignerUnknown: everything else. With RequireApproval that is no .sig,
-	// a .sig that fails its schema, or one naming a key the engine does not
-	// have built in, and Verified.SignerKeyID is empty: such a key id cannot
-	// be checked and could be made up. Without it, the copy was signed by a
-	// key from the person's trust store, whose id SignerKeyID holds.
-	SignerUnknown SignerState = "UNKNOWN"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // Option changes how Stage, Install and Verify check a copy.
@@ -62,35 +46,35 @@ func optionsOf(opts []Option) options {
 // pass its schema and verify, or it is refused: that is damage or
 // tampering. Anything else is UNKNOWN with no key id, and the trust store is
 // not read for it.
-func signerOf(sigPath string, manifest, raw []byte, signed bool, trust TrustStore, o options) (SignerState, string, error) {
+func signerOf(sigPath string, manifest, raw []byte, signed bool, trust TrustStore, o options) (pluginmodel.SignerState, string, error) {
 	if !o.requireApproval {
 		keyID, err := checkSignature(sigPath, manifest, raw, trust)
 		if err != nil {
 			return "", "", err
 		}
 		if _, ok := trust.embedded[keyID]; ok {
-			return SignerKnown, keyID, nil
+			return pluginmodel.SignerKnown, keyID, nil
 		}
-		return SignerUnknown, keyID, nil
+		return pluginmodel.SignerUnknown, keyID, nil
 	}
 	if !signed {
-		return SignerUnknown, "", nil
+		return pluginmodel.SignerUnknown, "", nil
 	}
 	keyID, sig, err := parseSignatureFile(raw)
 	if err != nil {
 		if namesBuiltInKey(raw, trust) {
 			return "", "", inFile(err, sigPath)
 		}
-		return SignerUnknown, "", nil
+		return pluginmodel.SignerUnknown, "", nil
 	}
 	pub, ok := trust.embedded[keyID]
 	if !ok {
-		return SignerUnknown, "", nil
+		return pluginmodel.SignerUnknown, "", nil
 	}
 	if !verifyManifestSig(pub, manifest, sig) {
-		return "", "", &VerifyError{Reason: RefusedNotTrusted, File: sigPath, Why: "the signature does not verify over the manifest"}
+		return "", "", &pluginmodel.VerifyError{Reason: pluginmodel.RefusedNotTrusted, File: sigPath, Why: "the signature does not verify over the manifest"}
 	}
-	return SignerKnown, keyID, nil
+	return pluginmodel.SignerKnown, keyID, nil
 }
 
 // namesBuiltInKey reports whether a .sig that fails its schema still names

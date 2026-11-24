@@ -57,7 +57,7 @@ script-checks: install-sh-check npm-check web-check portal-build ## The script c
 test-root-container: ## Plugin isolation and the service install script as root in a Linux container without systemd (needs Docker)
 	@docker run --rm -v "$(CURDIR)":/src:ro -v basalt-gomod:/go/pkg/mod -w /src -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false \
 		-e BASALT_TEST_PLUGIN_ISOLATION=1 golang:$(GO_VERSION) sh -c \
-		"go test -count=1 -v -run 'TestPluginIsolationAsRoot|TestInstallScriptAsRoot|TestRemoveScriptAsRoot' ./internal/engine/service/"
+		"go test -count=1 -v -run 'TestPluginIsolationAsRoot|TestInstallScriptAsRoot|TestRemoveScriptAsRoot' ./internal/platform/osservice/"
 
 .PHONY: test-systemd
 test-systemd: ## A plugin under its systemd unit, isolation checked live (throwaway host with systemd and passwordless sudo only: changes it as root)
@@ -73,7 +73,7 @@ test-cover: bin/gotestsum ## Tests with coverage.out
 	@go tool cover -func=coverage.out | tail -1
 
 VERSION ?= $(shell git describe --tags --always --match 'v*' 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X github.com/basaltdbhq/basaltdb/internal/buildinfo.Version=$(VERSION)
+LDFLAGS := -s -w -X github.com/basaltdbhq/basaltdb/internal/lib/buildinfo.Version=$(VERSION)
 
 .PHONY: build
 build: ## Build the static basalt binary (CGO_ENABLED=0)

@@ -6,8 +6,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/pkg/setup"
 )
 
@@ -19,7 +20,7 @@ func TestCheckRefusesAnOlderInstall(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	ctx := context.Background()
-	d.Init(t, guard.AgentSpec{Name: "other", Password: guard.NewPassword(), Write: []string{"public.leads"}})
+	d.Init(t, guardmodel.AgentSpec{Name: "other", Password: guard.NewPassword(), Write: []string{"public.leads"}})
 	d.Exec(t, `SET ROLE `+d.Names.Guard()+`;
 		DROP TABLE basalt_meta.installs CASCADE;
 		INSERT INTO basalt_meta.schema_version (version) VALUES (30);
@@ -27,11 +28,11 @@ func TestCheckRefusesAnOlderInstall(t *testing.T) {
 	code := newCode(t, d, nil)
 
 	_, err := setup.Check(ctx, d.Admin, request(code))
-	require.Equal(t, setup.CodeSetupFailed, codeOf(t, err))
+	require.Equal(t, setup.CodeGuardUnusable, codeOf(t, err))
 	require.Contains(t, err.Error(), "older BasaltDB install")
 	require.Contains(t, err.Error(), "docs/remove-old-install.md")
 	_, err = setup.Run(ctx, d.Admin, request(code), setup.RunInput{})
-	require.Equal(t, setup.CodeSetupFailed, codeOf(t, err))
+	require.Equal(t, setup.CodeGuardUnusable, codeOf(t, err))
 	var versions int
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT count(*) FROM basalt_meta.schema_version WHERE version = 30`).Scan(&versions))
 	require.Equal(t, 1, versions, "nothing changed")

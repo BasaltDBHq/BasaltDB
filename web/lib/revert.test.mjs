@@ -1,5 +1,5 @@
 // Runs with `node --test web/lib/*.test.mjs` (make web-check). Reads the
-// fixtures the Go tests write, so the revert page and internal/revert agree.
+// fixtures the Go tests write, so the revert page and internal/core/revert agree.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -27,7 +27,7 @@ import {
 import { agentTag, lineGroups, rowKeyText } from "./revert.js";
 
 const fixtures = JSON.parse(
-  readFileSync(new URL("../../internal/revert/testdata/fixtures.json", import.meta.url), "utf8"),
+  readFileSync(new URL("../../internal/core/revert/testdata/fixtures.json", import.meta.url), "utf8"),
 );
 
 function requestFragment(obj) {
@@ -106,7 +106,7 @@ test("revert request refuses anything that does not match the binding", async ()
 test("a revert link is not an approval link and the other way round", async () => {
   await assert.rejects(parseApprovalRequest(fixtures.request.fragment), /unknown field|missing/);
   const approvals = JSON.parse(
-    readFileSync(new URL("../../internal/approval/testdata/fixtures.json", import.meta.url), "utf8"),
+    readFileSync(new URL("../../internal/core/approval/testdata/fixtures.json", import.meta.url), "utf8"),
   );
   await assert.rejects(parseRevertRequest(approvals.request.fragment), /unknown field|missing/);
 });

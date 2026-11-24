@@ -8,7 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/plugin/protocol"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
 
 // Supervision timing (CONTRACT.md, Plugins, Protocol and Failure).
@@ -55,7 +56,7 @@ func RealClock() Clock { return realClock{} }
 // DialFunc starts or connects to an entry's plugin and returns its
 // transport. ctx bounds the start. Errors must hold no value a plugin or its
 // config gave: the supervisor logs nothing, but the caller may.
-type DialFunc func(ctx context.Context, e Entry) (Transport, error)
+type DialFunc func(ctx context.Context, e pluginmodel.Entry) (pluginmodel.Transport, error)
 
 // Exiter is a transport to a local process: Exited is closed once the
 // process has exited. The supervisor uses it to give a plugin that
@@ -76,7 +77,7 @@ type Supervisor struct {
 	log   *slog.Logger
 
 	mu   sync.Mutex
-	runs map[EntryKey]*entryRun
+	runs map[pluginmodel.EntryKey]*entryRun
 	// base is Start's context: every run, added later too, ends with it.
 	// closed is set once Wait saw it end, after which Add starts nothing;
 	// wg counts the runs not yet stopped.
@@ -87,14 +88,14 @@ type Supervisor struct {
 
 // entryRun is one supervised entry.
 type entryRun struct {
-	entry  Entry
+	entry  pluginmodel.Entry
 	cancel context.CancelFunc
 	done   chan struct{}
 
 	mu sync.Mutex
 	// failure is why the entry is not running, "" when it is or before
 	// its first start ended.
-	failure FailureClass
+	failure pluginmodel.FailureClass
 }
 
 // NewSupervisor returns a supervisor of entries on h, started with dial.
@@ -102,7 +103,7 @@ func NewSupervisor(h *Host, dial DialFunc, clock Clock) *Supervisor {
 	if h == nil || dial == nil || clock == nil {
 		panic("plugin: a supervisor needs a host, a dial function and a clock")
 	}
-	return &Supervisor{h: h, dial: dial, clock: clock, log: slog.New(slog.DiscardHandler), runs: map[EntryKey]*entryRun{}}
+	return &Supervisor{h: h, dial: dial, clock: clock, log: slog.New(slog.DiscardHandler), runs: map[pluginmodel.EntryKey]*entryRun{}}
 }
 
 // WithLog logs each start and failure to log: the entry and the failure
@@ -124,7 +125,7 @@ var ErrNotRunning = errors.New("plugin: the supervisor is not running")
 // close) and returns once all have stopped. An entry that cannot start is
 // retried with the backoff; it never stops Run or another entry. Run
 // returns an error, starting nothing, only when an entry key repeats.
-func (s *Supervisor) Run(ctx context.Context, entries []Entry) error {
+func (s *Supervisor) Run(ctx context.Context, entries []pluginmodel.Entry) error {
 	if err := s.Start(ctx, entries); err != nil {
 		return err
 	}
@@ -135,13 +136,13 @@ func (s *Supervisor) Run(ctx context.Context, entries []Entry) error {
 // Start starts supervising entries until ctx is done and returns at once;
 // Add can give it more entries from then on. It refuses, starting
 // nothing, an entry key that repeats, and a second Start.
-func (s *Supervisor) Start(ctx context.Context, entries []Entry) error {
+func (s *Supervisor) Start(ctx context.Context, entries []pluginmodel.Entry) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.base != nil {
 		return errors.New("plugin: the supervisor was started already")
 	}
-	seen := map[EntryKey]bool{}
+	seen := map[pluginmodel.EntryKey]bool{}
 	for _, e := range entries {
 		if seen[e.Key] {
 			return fmt.Errorf("%w: %s", ErrDuplicateEntry, e.Key)
@@ -157,7 +158,7 @@ func (s *Supervisor) Start(ctx context.Context, entries []Entry) error {
 
 // Add supervises one more entry, while the context Start was given runs.
 // The key must not be supervised now (Stop it first to replace it).
-func (s *Supervisor) Add(e Entry) error {
+func (s *Supervisor) Add(e pluginmodel.Entry) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.base == nil || s.closed || s.base.Err() != nil {
@@ -172,7 +173,7 @@ func (s *Supervisor) Add(e Entry) error {
 }
 
 // startLocked starts e's run until ctx is done; s.mu is held.
-func (s *Supervisor) startLocked(ctx context.Context, e Entry) {
+func (s *Supervisor) startLocked(ctx context.Context, e pluginmodel.Entry) {
 	ectx, cancel := context.WithCancel(ctx)
 	r := &entryRun{entry: e, cancel: cancel, done: make(chan struct{})}
 	s.runs[e.Key] = r
@@ -203,10 +204,10 @@ func (s *Supervisor) Wait() {
 }
 
 // Supervised are the keys of the entries supervised now.
-func (s *Supervisor) Supervised() []EntryKey {
+func (s *Supervisor) Supervised() []pluginmodel.EntryKey {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]EntryKey, 0, len(s.runs))
+	out := make([]pluginmodel.EntryKey, 0, len(s.runs))
 	for k := range s.runs {
 		out = append(out, k)
 	}
@@ -216,7 +217,7 @@ func (s *Supervisor) Supervised() []EntryKey {
 // Stop stops one supervised entry (drain, shutdown, close) and returns once
 // it has stopped; the others run on. An unknown or stopped entry is a
 // no-op.
-func (s *Supervisor) Stop(k EntryKey) {
+func (s *Supervisor) Stop(k pluginmodel.EntryKey) {
 	s.mu.Lock()
 	r := s.runs[k]
 	s.mu.Unlock()
@@ -229,7 +230,7 @@ func (s *Supervisor) Stop(k EntryKey) {
 
 // Failure is why entry k is not running: the failure class of its last
 // start or health check, or "" when it is running or not supervised.
-func (s *Supervisor) Failure(k EntryKey) FailureClass {
+func (s *Supervisor) Failure(k pluginmodel.EntryKey) pluginmodel.FailureClass {
 	s.mu.Lock()
 	r := s.runs[k]
 	s.mu.Unlock()
@@ -248,13 +249,13 @@ func (s *Supervisor) forget(r *entryRun) {
 	s.mu.Unlock()
 }
 
-func (r *entryRun) failureClass() FailureClass {
+func (r *entryRun) failureClass() pluginmodel.FailureClass {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.failure
 }
 
-func (r *entryRun) setFailure(c FailureClass) {
+func (r *entryRun) setFailure(c pluginmodel.FailureClass) {
 	r.mu.Lock()
 	r.failure = c
 	r.mu.Unlock()
@@ -311,20 +312,20 @@ func (s *Supervisor) runOnce(ctx context.Context, r *entryRun) bool {
 		select {
 		case <-s.clock.After(HealthInterval):
 		case <-exited:
-			r.setFailure(ClassExited)
+			r.setFailure(pluginmodel.ClassExited)
 			s.h.SetState(k, StateUnavailable)
 			s.stopEntry(ctx, k, t)
 			return healthy
 		case <-s.h.Down(k):
-			r.setFailure(ClassExited)
+			r.setFailure(pluginmodel.ClassExited)
 			s.stopEntry(ctx, k, t)
 			return healthy
 		case <-ctx.Done():
 			s.stopEntry(ctx, k, t)
 			return healthy
 		}
-		var resp protocol.HealthResponse
-		err := s.h.Control(ctx, k, protocol.MethodHealth, protocol.HealthRequest{}, &resp)
+		var resp pluginproto.HealthResponse
+		err := s.h.Control(ctx, k, pluginproto.MethodHealth, pluginproto.HealthRequest{}, &resp)
 		switch {
 		case ctx.Err() != nil:
 			s.stopEntry(ctx, k, t)
@@ -333,7 +334,7 @@ func (s *Supervisor) runOnce(ctx context.Context, r *entryRun) bool {
 			r.setFailure(classOf(err))
 			s.stopEntry(ctx, k, t)
 			return healthy
-		case resp.Status == protocol.HealthReady:
+		case resp.Status == pluginproto.HealthReady:
 			healthy = true
 			r.setFailure("")
 			s.h.SetState(k, StateReady)
@@ -341,7 +342,7 @@ func (s *Supervisor) runOnce(ctx context.Context, r *entryRun) bool {
 			// The process is up and says it is not ready: it takes no hook
 			// call, and is asked again at the next interval rather than
 			// started again.
-			r.setFailure(ClassUnavailable)
+			r.setFailure(pluginmodel.ClassUnavailable)
 			s.h.SetState(k, StateUnavailable)
 		}
 	}
@@ -349,7 +350,7 @@ func (s *Supervisor) runOnce(ctx context.Context, r *entryRun) bool {
 
 // start dials and registers e. On error nothing is registered or left
 // running.
-func (s *Supervisor) start(ctx context.Context, e Entry) (Transport, error) {
+func (s *Supervisor) start(ctx context.Context, e pluginmodel.Entry) (pluginmodel.Transport, error) {
 	sctx, cancel := context.WithTimeout(ctx, StartWait)
 	defer cancel()
 	t, err := s.dial(sctx, e)
@@ -368,7 +369,7 @@ func (s *Supervisor) start(ctx context.Context, e Entry) (Transport, error) {
 // drains the entry's calls, sends
 // shutdown, gives a local process the rest of the time to exit, then
 // unregisters it, which closes the transport and kills the process group.
-func (s *Supervisor) stopEntry(ctx context.Context, k EntryKey, t Transport) {
+func (s *Supervisor) stopEntry(ctx context.Context, k pluginmodel.EntryKey, t pluginmodel.Transport) {
 	base := context.WithoutCancel(ctx)
 	deadline := time.Now().Add(StopWait)
 	drainCtx, cancelDrain := context.WithDeadline(base, deadline.Add(-shutdownReserve))
@@ -376,7 +377,7 @@ func (s *Supervisor) stopEntry(ctx context.Context, k EntryKey, t Transport) {
 	cancelDrain()
 	exitCtx, cancelExit := context.WithDeadline(base, deadline.Add(-killReserve))
 	defer cancelExit()
-	if err := s.h.Control(exitCtx, k, protocol.MethodShutdown, protocol.ShutdownRequest{}, nil); err == nil {
+	if err := s.h.Control(exitCtx, k, pluginproto.MethodShutdown, pluginproto.ShutdownRequest{}, nil); err == nil {
 		if ex, ok := t.(Exiter); ok {
 			select {
 			case <-ex.Exited():
@@ -389,14 +390,14 @@ func (s *Supervisor) stopEntry(ctx context.Context, k EntryKey, t Transport) {
 
 // classOf is err's failure class: a CallError's, a transport's, else
 // UNAVAILABLE (a plugin that could not be started or reached).
-func classOf(err error) FailureClass {
-	var ce *CallError
+func classOf(err error) pluginmodel.FailureClass {
+	var ce *pluginmodel.CallError
 	if errors.As(err, &ce) {
 		return ce.Class
 	}
-	var c Classed
+	var c pluginmodel.Classed
 	if errors.As(err, &c) {
 		return c.FailureClass()
 	}
-	return ClassUnavailable
+	return pluginmodel.ClassUnavailable
 }

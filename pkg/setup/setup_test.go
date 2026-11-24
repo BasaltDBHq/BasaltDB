@@ -21,13 +21,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/channel"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
-	"github.com/basaltdbhq/basaltdb/internal/pgdial"
-	"github.com/basaltdbhq/basaltdb/internal/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/pkg/setup"
 )
 
@@ -86,7 +87,7 @@ func personPasskey(t *testing.T) (*passkeytest.Authenticator, func(context.Conte
 			return setup.Passkey{}, err
 		}
 		_, frag, _ := strings.Cut(link, "#")
-		page, err := passkey.ParseRegistrationRequest(frag)
+		page, err := passkeytest.ParseRegistrationRequest(frag)
 		if err != nil {
 			return setup.Passkey{}, err
 		}
@@ -285,6 +286,24 @@ func TestRunRefusesByTheDatabasesState(t *testing.T) {
 	require.Equal(t, setup.CodeEngineRevoked, codeOf(t, err))
 }
 
+// A first install with the engine's key: the engines read finds no guard
+// yet (undefined_table), which the setup's own transaction survives, and
+// the engine is recorded with the install.
+func TestRunInstallsWithAnEngineKeyOnAFreshDatabase(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d := guardtest.New(t).WithDemo(t)
+	require.Zero(t, installedVersion(t, d), "no guard yet")
+	eng, _, _ := engineKey(t)
+	code := newCode(t, d, func(p *setupcode.Payload) { p.Engine = eng })
+	_, give := personPasskey(t)
+	res, err := setup.Run(ctx, d.Admin, request(code), setup.RunInput{Passkey: verified(t, give)})
+	require.NoError(t, err)
+	require.True(t, res.Ran)
+	require.True(t, res.EngineRecorded)
+	require.NotZero(t, installedVersion(t, d))
+}
+
 // A code's engine is recorded by its key alone; the other engines the
 // database records are left as they are.
 func TestRunRecordsTheEngine(t *testing.T) {
@@ -329,7 +348,7 @@ func TestRunStopsWhenNotApproved(t *testing.T) {
 }
 
 // With no passkey given, a setup that needs one is refused in its
-// transaction: nothing changes.
+// transaction, before its script runs: nothing changes.
 func TestRunWithoutTheNeededPasskey(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -414,7 +433,9 @@ func TestRunRollsBackWhenThePasskeyIsNotRegistered(t *testing.T) {
 		Passkey: verified(t, give), Committed: func(setup.Result) { committed = true },
 	})
 	require.Equal(t, setup.CodeSetupFailed, codeOf(t, err))
-	require.Contains(t, err.Error(), "this passkey was revoked")
+	require.Contains(t, err.Error(), "Postgres error", "the person reads the SQLSTATE")
+	require.NotContains(t, err.Error(), "this passkey was revoked", "never the database's words")
+	require.Contains(t, errors.Unwrap(err).Error(), "this passkey was revoked", "they stay in the error, for a log")
 	require.False(t, res.Ran)
 	require.Nil(t, res.Passkey)
 	require.False(t, committed)
@@ -530,19 +551,21 @@ func TestMessagesCarryNoConnectionSecret(t *testing.T) {
 	for _, q := range checked.Questions.RowSecurity {
 		out = append(out, q.Text)
 	}
+	// With the passkey given, so the run reaches its script, which fails
+	// (the passkey rule refuses a run without one before the script).
+	_, give := personPasskey(t)
 	_, err = setup.Run(ctx, conn, request(code), setup.RunInput{Approve: func(p setup.Plan) error {
 		out = append(out, p.SQL)
 		other.Exec(t, "CREATE ROLE "+other.Names.Prefix+"_agent_bot NOLOGIN")
 		return nil
-	}})
+	}, Passkey: verified(t, give)})
 	require.Equal(t, setup.CodeSetupFailed, codeOf(t, err))
-	require.Contains(t, err.Error(), "already exists")
+	require.Contains(t, errors.Unwrap(err).Error(), "already exists")
 	require.Zero(t, installedVersion(t, other), "the transaction rolled back")
 	note(nil, err)
 
 	// A run that goes through, with its warnings.
 	other.Exec(t, "DROP ROLE "+other.Names.Prefix+"_agent_bot")
-	_, give := personPasskey(t)
 	res, err := setup.Run(ctx, conn, request(newCode(t, other, func(p *setupcode.Payload) { p.Agent.Read = []string{"public.payroll"} })), setup.RunInput{
 		Approve: func(p setup.Plan) error { out = append(out, p.SQL); out = append(out, p.Warnings...); return nil },
 		Passkey: verified(t, give),
@@ -649,7 +672,7 @@ func TestCheckAsksOnlyAboutTheAgentsRLSTables(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	d := guardtest.New(t).WithDemo(t)
-	d.Init(t, guard.AgentSpec{Name: "other", Password: guard.NewPassword(), Read: []string{"public.lead_notes"}})
+	d.Init(t, guardmodel.AgentSpec{Name: "other", Password: guard.NewPassword(), Read: []string{"public.lead_notes"}})
 	d.Exec(t, `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 		ALTER TABLE public.payroll ENABLE ROW LEVEL SECURITY;
 		GRANT SELECT ON public.payroll TO PUBLIC`)

@@ -166,7 +166,7 @@ A failed call has one of the failure classes `TIMEOUT`, `EXITED`, `BAD_RESPONSE`
 
 - **Data-path hooks fail closed.** While a `wire.detect` entry listed for an agent is failing or not running, every request of that agent to the AI provider is refused (`DETECTOR_FAILED`, naming the entry and the class), until the plugin is back or the person disables it. `status` shows `PLUGIN_UNAVAILABLE`. An entry that requires approval and is withheld because it waits for its approval, its approval expired unsigned or it was turned off is not active, so it never fails anything closed; one withheld because it no longer matches its approval counts as failing ([Plugin approvals at engine start](plugins-approval.md#plugin-approvals-at-engine-start)).
 - `feed.observe` and `approval.deliver` never block anything; `classify.suggest` lets classify go on and says so.
-- **Stderr.** A plugin may see PII, so the engine never logs its stderr and never reads it. In service mode the service manager keeps it, apart from the engine's log: on Linux in the journal under the plugin's unit, on macOS in a log file of the plugin's own ([Service units](#service-units)). In same-user mode it is discarded, unless the engine runs in the foreground with `--plugin-debug`, which shows it on that terminal only, never in a log file.
+- **Stderr.** A plugin may see PII, so the engine never logs its stderr and never reads it. In service mode the service manager keeps it, apart from the engine's log: on Linux in the journal under the plugin's unit, on macOS in a log file of the plugin's own ([Service units](#service-units)). In same-user mode it is discarded.
 
 ### Isolation and trust
 

@@ -34,7 +34,7 @@ func ensurePrivateDir(euid int, d string) error {
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
-	} else if err := os.MkdirAll(d, stateDirMode); err != nil {
+	} else if err := os.MkdirAll(d, StateDirMode); err != nil {
 		return err
 	}
 	f, err := os.OpenFile(d, os.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW, 0)
@@ -50,10 +50,10 @@ func ensurePrivateDir(euid int, d string) error {
 		return err
 	}
 	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok || int(st.Uid) != euid || fi.Mode().Perm()&^stateDirMode == 0 {
+	if !ok || int(st.Uid) != euid || fi.Mode().Perm()&^StateDirMode == 0 {
 		return nil
 	}
-	if err := f.Chmod(stateDirMode); err != nil {
+	if err := f.Chmod(StateDirMode); err != nil {
 		return fmt.Errorf("make %s private: %w", d, err)
 	}
 	return nil

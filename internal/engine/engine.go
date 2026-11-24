@@ -18,8 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/peercred"
-	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/lib/peercred"
 )
 
 const (
@@ -36,7 +35,28 @@ type Agent struct {
 	// UID is the only peer uid allowed on the socket.
 	UID        uint32
 	SocketPath string
-	Server     *mcp.Server
+	Server     Server
+}
+
+// Gate admits the calls a server runs: Begin before each call, false when
+// the call is answered as restarting and not run; End after each admitted
+// call is answered.
+type Gate interface {
+	Begin() bool
+	End()
+}
+
+// Server is an agent's MCP server: it serves one connection, each call
+// admitted by gate.
+type Server interface {
+	ServeGated(ctx context.Context, in io.Reader, out io.Writer, gate Gate) error
+}
+
+// MCP writes the engine's lines in the MCP wire format.
+type MCP interface {
+	// WritePeerRefused writes the one line that refuses a peer of another
+	// OS user.
+	WritePeerRefused(w io.Writer, message string) error
 }
 
 // PeerUIDFunc reads the uid of a connection's peer.
@@ -45,6 +65,7 @@ type PeerUIDFunc func(*net.UnixConn) (uint32, error)
 // Engine serves agents over their sockets.
 type Engine struct {
 	log     *slog.Logger
+	mcp     MCP
 	agents  []Agent
 	peerUID PeerUIDFunc
 	// drains holds, per agent, a slot for each refused connection being
@@ -53,26 +74,27 @@ type Engine struct {
 	// drainFor bounds how long one refused connection is drained.
 	drainFor time.Duration
 
-	restart RestartOptions
-	gate    *callGate
+	restart Restart
+	gate    *CallGate
 }
 
 // refusedDrains is how many refused connections of one agent are drained
 // at a time (refusePeer); more are answered and closed at once.
 const refusedDrains = 8
 
-// New returns an engine for agents. It panics on a nil logger, no agents, or
-// an agent without a socket or server.
-func New(log *slog.Logger, agents []Agent) *Engine {
-	if log == nil || len(agents) == 0 {
-		panic("engine: logger and at least one agent required")
+// New returns an engine for agents, writing its refusals through m. It
+// panics on a nil logger or m, no agents, or an agent without a socket or
+// server.
+func New(log *slog.Logger, m MCP, agents []Agent) *Engine {
+	if log == nil || m == nil || len(agents) == 0 {
+		panic("engine: logger, MCP and at least one agent required")
 	}
 	for _, a := range agents {
 		if a.Name == "" || a.SocketPath == "" || a.Server == nil {
 			panic("engine: agent needs a name, a socket path and a server")
 		}
 	}
-	e := &Engine{log: log, agents: agents, peerUID: peercred.UID, gate: newCallGate(), drainFor: refuseDrain}
+	e := &Engine{log: log, mcp: m, agents: agents, peerUID: peercred.UID, gate: NewCallGate(), drainFor: refuseDrain}
 	return e.WithRefusedDrains(refusedDrains)
 }
 
@@ -104,7 +126,7 @@ func (e *Engine) WithPeerUID(f PeerUIDFunc) *Engine {
 // socket files.
 // WithRestart turns on the restart onto a new binary: when o.Upgrade
 // returns, Serve stops between calls and returns ErrRestart.
-func (e *Engine) WithRestart(o RestartOptions) *Engine {
+func (e *Engine) WithRestart(o Restart) *Engine {
 	e.restart = o.withDefaults()
 	return e
 }
@@ -165,9 +187,9 @@ func (e *Engine) Serve(ctx context.Context) error {
 	return ErrRestart
 }
 
-// withGate makes the engine share g with the other servers whose requests
+// WithGate makes the engine share g with the other servers whose requests
 // a restart waits for (the person socket, page sessions).
-func (e *Engine) withGate(g *callGate) *Engine {
+func (e *Engine) WithGate(g *CallGate) *Engine {
 	e.gate = g
 	return e
 }
@@ -268,7 +290,7 @@ func (e *Engine) serveConn(ctx, draining context.Context, a Agent, conn *net.Uni
 	// Closing the connection on shutdown unblocks the server's read.
 	stop := context.AfterFunc(ctx, func() { conn.Close() })
 	defer stop()
-	gate := connGate{callGate: e.gate, conn: conn}
+	gate := connGate{CallGate: e.gate, conn: conn}
 	stopDrain := context.AfterFunc(draining, gate.stopReading)
 	defer stopDrain()
 	err = a.Server.ServeGated(ctx, conn, conn, gate)
@@ -293,7 +315,7 @@ func (e *Engine) refusePeer(ctx context.Context, conn *net.UnixConn, agentName s
 	msg := fmt.Sprintf("the basalt engine refused this connection: the socket of agent %q serves only that agent's OS user "+
 		"(osUser in the engine config), and this process runs as uid %d. Start the MCP client as the agent's OS user, "+
 		"or ask the person to set the agent's osUser in the engine config", agentName, uid)
-	if err := mcp.WritePeerRefused(conn, msg); err != nil {
+	if err := e.mcp.WritePeerRefused(conn, msg); err != nil {
 		return
 	}
 	_ = conn.CloseWrite()

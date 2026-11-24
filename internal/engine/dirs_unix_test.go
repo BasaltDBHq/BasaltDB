@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
 func TestEnsurePrivateDirsRecreates(t *testing.T) {
@@ -82,7 +82,7 @@ func TestEnsureOwnDirsKeepsASharedSocketDir(t *testing.T) {
 	require.NoError(t, os.Chmod(cfg.SocketDir, 0o755))
 	euid := os.Geteuid()
 
-	require.NoError(t, ensureOwnDirs(cfg, map[string]uint32{"a": uint32(euid), "b": uint32(euid + 1)}, euid))
+	require.NoError(t, EnsureOwnDirs(cfg, map[string]uint32{"a": uint32(euid), "b": uint32(euid + 1)}, euid))
 	fi, err := os.Stat(cfg.SocketDir)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o755), fi.Mode().Perm(), "another user's agent reaches it")
@@ -90,7 +90,7 @@ func TestEnsureOwnDirsKeepsASharedSocketDir(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o700), fi.Mode().Perm())
 
-	require.NoError(t, ensureOwnDirs(cfg, map[string]uint32{"a": uint32(euid)}, euid))
+	require.NoError(t, EnsureOwnDirs(cfg, map[string]uint32{"a": uint32(euid)}, euid))
 	fi, err = os.Stat(cfg.SocketDir)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o700), fi.Mode().Perm())
@@ -100,7 +100,7 @@ func TestEnsureOwnDirsSkipsAServiceEngine(t *testing.T) {
 	t.Parallel()
 	base := t.TempDir()
 	cfg := config.Config{SocketDir: filepath.Join(base, "run"), StateDir: filepath.Join(base, "state"), Mode: config.ModeService}
-	require.NoError(t, ensureOwnDirs(cfg, map[string]uint32{"a": uint32(os.Geteuid())}, os.Geteuid()))
+	require.NoError(t, EnsureOwnDirs(cfg, map[string]uint32{"a": uint32(os.Geteuid())}, os.Geteuid()))
 	_, err := os.Stat(cfg.StateDir)
 	require.ErrorIs(t, err, os.ErrNotExist)
 }

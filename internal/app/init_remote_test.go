@@ -359,7 +359,7 @@ func TestInitRemoteMakesATargetCode(t *testing.T) {
 	require.Equal(t, &setupcode.AllTables{Schemas: []string{"public"}}, p.Agent.AllTables, "the person ticks the tables")
 	require.Nil(t, p.Agent.Write)
 	require.Nil(t, p.Agent.Read)
-	require.Equal(t, guardmodel.DefaultStatementTimeout.Milliseconds(), p.Agent.StatementTimeoutMs)
+	require.Equal(t, guardmodel.DefaultRoleStatementTimeout.Milliseconds(), p.Agent.StatementTimeoutMs)
 	requireVerifierOf(t, p.Agent.Verifier, "0123abcd")
 	require.Equal(t, "0123abcd", credentialPassword(t, r.credFile), "the credential stays")
 	requireNoSecret(t, r, cfg, "0123abcd")

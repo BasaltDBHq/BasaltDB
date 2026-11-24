@@ -194,7 +194,7 @@ func planAgent(ctx context.Context, q Querier, n guardmodel.Names, spec guardmod
 	}
 	timeout := spec.StatementTimeout
 	if timeout <= 0 {
-		timeout = guardmodel.DefaultStatementTimeout
+		timeout = guardmodel.DefaultRoleStatementTimeout
 	}
 	grants, err := planGrants(ctx, q, role, spec)
 	if err != nil {

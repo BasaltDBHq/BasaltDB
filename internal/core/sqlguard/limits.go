@@ -8,6 +8,11 @@ import (
 
 // Default limits for agent statements (the default
 // policy: a SELECT runs within a row limit and a time limit).
+//
+// DefaultStatementTimeout is the engine's limit on one agent statement,
+// set on each transaction. It is deliberately shorter than the role
+// default a setup writes (guardmodel.DefaultRoleStatementTimeout, 30s),
+// which only bounds a connection that does not go through the engine.
 const (
 	DefaultStatementTimeout = 5 * time.Second
 	DefaultReadRowLimit     = 1000

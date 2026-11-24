@@ -27,6 +27,11 @@ import (
 
 const (
 	fakeBin = "/opt/basalt/bin/basalt"
+	// olderBuild is older than any build of this binary, a test's
+	// 0.0.0-dev included: the lowest version there is.
+	olderBuild = "0.0.0-0"
+	// newerBuild is newer than any build of this binary.
+	newerBuild = "999.0.0"
 )
 
 // leakedAdmin is an admin connection string an agent was handed; no output
@@ -174,11 +179,11 @@ type localHost struct{}
 var fakeSum = strings.Repeat("cd", 32)
 
 func (localHost) OSInstallScript(goos, binary string) (string, error) {
-	return osservice.InstallScript(goos, osservice.Source{Path: binary, SHA256: fakeSum})
+	return osservice.InstallScript(goos, osservice.Source{Path: binary, SHA256: fakeSum, Size: 1})
 }
 
 func (localHost) OSRestartScript(goos, binary string) (string, error) {
-	return osservice.RestartScript(goos, osservice.Source{Path: binary, SHA256: fakeSum})
+	return osservice.RestartScript(goos, osservice.Source{Path: binary, SHA256: fakeSum, Size: 1})
 }
 
 func (localHost) OSServiceBinary(goos string) string { return osservice.ServiceBinary(goos) }
@@ -254,7 +259,7 @@ func TestInitInstallsThroughTheDialogThenPrintsAndOpensTheLink(t *testing.T) {
 	r, read := localInit(t, h, "--demo")
 	require.Equal(t, cli.ExitOK, r.code, r.stderr)
 
-	script, err := osservice.InstallScript("linux", osservice.Source{Path: fakeBin, SHA256: fakeSum})
+	script, err := osservice.InstallScript("linux", osservice.Source{Path: fakeBin, SHA256: fakeSum, Size: 1})
 	require.NoError(t, err)
 	require.Equal(t, []string{script}, h.dialogs, "one password, in the administrator dialog")
 	require.Contains(t, r.stderr, "copy "+fakeBin+" to "+osservice.ServiceBinary("linux")+", root's,")
@@ -308,13 +313,13 @@ func TestInitWithTheServiceInstalledAsksNoPassword(t *testing.T) {
 // old to report a build counts as another one.
 func TestInitRestartsAnEngineThatRunsAnotherBuild(t *testing.T) {
 	t.Parallel()
-	for _, build := range []string{"0.0.1-old", ""} {
+	for _, build := range []string{olderBuild, ""} {
 		h := newFakeHost()
 		h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
 		h.build, h.silent = build, build == ""
 		r, _ := localInit(t, h, "--demo")
 		require.Equal(t, cli.ExitOK, r.code, r.stderr)
-		want, err := osservice.RestartScript("linux", osservice.Source{Path: fakeBin, SHA256: fakeSum})
+		want, err := osservice.RestartScript("linux", osservice.Source{Path: fakeBin, SHA256: fakeSum, Size: 1})
 		require.NoError(t, err)
 		require.Contains(t, want, "copy_binary", "the upgraded basalt is copied to the service in the same dialog")
 		require.Equal(t, []string{want}, h.dialogs)
@@ -322,6 +327,22 @@ func TestInitRestartsAnEngineThatRunsAnotherBuild(t *testing.T) {
 		require.Contains(t, r.stderr, "different build")
 		require.Contains(t, h.opened[0], "#1.", "init goes on to the link")
 	}
+}
+
+// An engine on a newer build than this basalt is never moved back: init
+// opens no dialog and says to update this basalt first, with no sudo.
+func TestInitNeverMovesTheServiceToAnOlderBuild(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost()
+	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+	h.build = newerBuild
+	r, _ := localInit(t, h, "--demo")
+	require.Equal(t, cli.ExitError, r.code, r.stderr)
+	require.Empty(t, h.dialogs, "no password for a downgrade")
+	require.Contains(t, r.stderr, "runs basalt "+newerBuild+", newer than this basalt")
+	require.Contains(t, r.stderr, "Update this basalt to "+newerBuild+" or later first")
+	require.NotContains(t, r.stderr, "sudo")
+	require.Empty(t, h.opened)
 }
 
 // The same build, an engine that does not answer, and a first install
@@ -334,7 +355,7 @@ func TestInitRestartsNothingWhenTheBuildsMatch(t *testing.T) {
 	down.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
 	down.buildErr = errors.New("connection refused")
 	fresh := newFakeHost()
-	fresh.build = "0.0.1-old"
+	fresh.build = olderBuild
 	for _, h := range []*fakeHost{same, down, fresh} {
 		r, _ := localInit(t, h, "--demo")
 		require.Equal(t, cli.ExitOK, r.code, r.stderr)
@@ -355,7 +376,7 @@ func TestInitRestartStops(t *testing.T) {
 	closed.dialogErr = servicespec.ErrDialogCancelled
 	for name, h := range map[string]*fakeHost{"no dialog": noDialog, "closed": closed} {
 		h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
-		h.build = "0.0.1-old"
+		h.build = olderBuild
 		r, _ := localInit(t, h, "--demo")
 		require.Equal(t, cli.ExitError, r.code, name)
 		require.Contains(t, r.stderr, "different build", name)
@@ -375,7 +396,7 @@ func TestInitRestartWaitsForTheEngineToAnswer(t *testing.T) {
 	t.Parallel()
 	h := newFakeHost()
 	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
-	h.build = "0.0.1-old"
+	h.build = olderBuild
 	h.downAfterRestart = 3
 	r, _ := localInit(t, h, "--demo")
 	require.Equal(t, cli.ExitOK, r.code, r.stderr)
@@ -389,7 +410,7 @@ func TestInitRestartStopsWhenTheEngineNeverAnswers(t *testing.T) {
 	t.Parallel()
 	h := newFakeHost()
 	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
-	h.build = "0.0.1-old"
+	h.build = olderBuild
 	h.downAfterRestart = -1
 	r, _ := localInitWithin(t, 2*time.Second, h, "--demo")
 	require.Equal(t, cli.ExitError, r.code, r.stderr)
@@ -408,7 +429,7 @@ func TestInitRestartThatChangesNothingOrFails(t *testing.T) {
 	failed.dialogErr = errors.New("osascript exploded")
 	for name, h := range map[string]*fakeHost{"stuck": stuck, "failed": failed} {
 		h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
-		h.build = "0.0.1-old"
+		h.build = olderBuild
 		r, _ := localInit(t, h, "--demo")
 		require.Equal(t, cli.ExitError, r.code, name)
 		require.Contains(t, r.stderr, "basalt init again", name)

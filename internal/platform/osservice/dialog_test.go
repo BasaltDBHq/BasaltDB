@@ -18,12 +18,15 @@ import (
 
 const dialogBinary = "/usr/local/bin/basalt"
 
-// dialogSum stands in for the running basalt's SHA-256.
+// dialogSum and dialogSize stand in for the running basalt's SHA-256 and
+// size.
 var dialogSum = strings.Repeat("ab", 32)
+
+const dialogSize = 4096
 
 // dialogSource is a basalt the person's account may own, as Homebrew's is:
 // the script copies it to the service's own path.
-var dialogSource = osservice.Source{Path: dialogBinary, SHA256: dialogSum}
+var dialogSource = osservice.Source{Path: dialogBinary, SHA256: dialogSum, Size: dialogSize}
 
 func TestInstallScriptIsBuiltFromConstants(t *testing.T) {
 	t.Parallel()
@@ -37,7 +40,7 @@ func TestInstallScriptIsBuiltFromConstants(t *testing.T) {
 			"make_root_dir /opt/basalt 0755",
 			"make_root_dir /opt/basalt/run 0755",
 			"ExecStart=/usr/libexec/basalt engine --config /etc/basalt/engine.json --supervise\n",
-			"make_root_dir /usr/libexec 0755\ncopy_binary \"$src\" /usr/libexec/basalt " + dialogSum + "\n",
+			"make_root_dir /usr/libexec 0755\ncopy_binary \"$src\" /usr/libexec/basalt " + dialogSum + " 4096\n",
 		}},
 		{"darwin", osservice.LaunchdPlist, "launchctl bootstrap system " + osservice.LaunchdPlist, []string{
 			"dscl . -create /Users/_basalt UniqueID \"$id\"",
@@ -46,7 +49,7 @@ func TestInstallScriptIsBuiltFromConstants(t *testing.T) {
 			"make_dir '/Library/Application Support/Basalt/state' 0750 _basalt _basalt",
 			"make_dir /Library/Logs/Basalt 0755 0 0",
 			"make_root_dir /Library/Basalt 0755",
-			"make_root_dir /usr/local 0755\nmake_root_dir /usr/local/libexec 0755\ncopy_binary \"$src\" /usr/local/libexec/basalt " + dialogSum + "\n",
+			"make_root_dir /usr/local 0755\nmake_root_dir /usr/local/libexec 0755\ncopy_binary \"$src\" /usr/local/libexec/basalt " + dialogSum + " 4096\n",
 			"<string>/usr/local/libexec/basalt</string>\n\t\t<string>engine</string>\n\t\t<string>--config</string>\n\t\t<string>/Library/Application Support/Basalt/engine.json</string>\n\t\t<string>--supervise</string>",
 		}},
 	} {
@@ -98,7 +101,7 @@ func TestInstallScriptChecksBeforeItCreates(t *testing.T) {
 		checks, _, ok := strings.Cut(rest, osservice.ScriptPreflightEnd)
 		require.True(t, ok)
 		dest := osservice.ServiceBinary(v.goos)
-		for _, c := range append(v.checks, "src='/usr/local/bin/basalt'\n", `[ -f "$src" ] || fail`, "trusted "+filepath.Dir(dest)+" \"\"\n", "no_link "+dest+"\n") {
+		for _, c := range append(v.checks, "src='/usr/local/bin/basalt'\n", `[ -f "$src" ] || fail`, "( trusted "+filepath.Dir(dest)+" \"\" ) ||\n", "no_link "+dest+"\n") {
 			require.Contains(t, checks, c, v.goos)
 		}
 		for _, change := range []string{"useradd", "dscl . -create", "make_dir", "make_root_dir", "copy_binary", "mkdir", "put_file", "chown", "chmod", "systemctl", "launchctl", ": >"} {
@@ -135,12 +138,16 @@ func TestInstallScriptRefusesAnUnsafeBinaryPath(t *testing.T) {
 	for _, bin := range []string{
 		"basalt", "relative/basalt", "/usr/local/bin/../bin/basalt", "/usr/local/bin/basalt\nExecStartPre=/bin/sh", "/usr/local/bin/basalt\r",
 	} {
-		_, err := osservice.InstallScript("linux", osservice.Source{Path: bin, SHA256: dialogSum})
+		_, err := osservice.InstallScript("linux", osservice.Source{Path: bin, SHA256: dialogSum, Size: dialogSize})
 		require.Error(t, err, bin)
 	}
 	for _, sum := range []string{"", "AB" + dialogSum[2:], dialogSum + "\nid", dialogSum[1:]} {
 		_, err := osservice.InstallScript("linux", osservice.Source{Path: dialogBinary, SHA256: sum})
 		require.Error(t, err, sum)
+	}
+	for _, size := range []int64{0, -1} {
+		_, err := osservice.InstallScript("linux", osservice.Source{Path: dialogBinary, SHA256: dialogSum, Size: size})
+		require.Error(t, err, size)
 	}
 	_, err := osservice.InstallScript("windows", dialogSource)
 	require.Error(t, err)
@@ -153,7 +160,7 @@ func TestInstallScriptQuotesTheSourcePath(t *testing.T) {
 	for _, bin := range []string{
 		"/usr/local/bin/basalt'; rm -rf /; '", "/opt/my basalt/basalt", "/usr/local/bin/$(id)", "/usr/local/bin/`id`", "/usr/local/bin/basalt\\", "/usr/local/bin/a\"b",
 	} {
-		script, err := osservice.InstallScript("linux", osservice.Source{Path: bin, SHA256: dialogSum})
+		script, err := osservice.InstallScript("linux", osservice.Source{Path: bin, SHA256: dialogSum, Size: dialogSize})
 		require.NoError(t, err, bin)
 		_, rest, ok := strings.Cut(script, osservice.ScriptHelpersEnd)
 		require.True(t, ok)
@@ -171,7 +178,7 @@ func TestInstallScriptRunFromTheServiceCopyCopiesNothing(t *testing.T) {
 	t.Parallel()
 	for _, goos := range []string{"linux", "darwin"} {
 		dest := osservice.ServiceBinary(goos)
-		script, err := osservice.InstallScript(goos, osservice.Source{Path: dest, SHA256: dialogSum})
+		script, err := osservice.InstallScript(goos, osservice.Source{Path: dest, SHA256: dialogSum, Size: dialogSize})
 		require.NoError(t, err)
 		require.NotContains(t, script, "copy_binary \"")
 		require.NotContains(t, script, "src=")
@@ -379,10 +386,10 @@ func TestScriptPutFile(t *testing.T) {
 // the copy first, checked as the install does. No other platform has one.
 func TestRestartScript(t *testing.T) {
 	t.Parallel()
-	got, err := osservice.RestartScript("darwin", osservice.Source{Path: osservice.ServiceBinary("darwin"), SHA256: dialogSum})
+	got, err := osservice.RestartScript("darwin", osservice.Source{Path: osservice.ServiceBinary("darwin"), SHA256: dialogSum, Size: dialogSize})
 	require.NoError(t, err)
 	require.Equal(t, "launchctl kickstart -k system/"+servicespec.LaunchdLabel+"\n", got)
-	got, err = osservice.RestartScript("linux", osservice.Source{Path: osservice.ServiceBinary("linux"), SHA256: dialogSum})
+	got, err = osservice.RestartScript("linux", osservice.Source{Path: osservice.ServiceBinary("linux"), SHA256: dialogSum, Size: dialogSize})
 	require.NoError(t, err)
 	require.Equal(t, "systemctl restart "+servicespec.SystemdUnitName+"\n", got)
 	for goos, restart := range map[string]string{
@@ -394,13 +401,13 @@ func TestRestartScript(t *testing.T) {
 		checks, body, ok := strings.Cut(got, osservice.ScriptPreflightEnd)
 		require.True(t, ok)
 		require.Contains(t, checks, "src='/usr/local/bin/basalt'\n")
-		require.Contains(t, body, "copy_binary \"$src\" "+osservice.ServiceBinary(goos)+" "+dialogSum+"\n")
+		require.Contains(t, body, "copy_binary \"$src\" "+osservice.ServiceBinary(goos)+" "+dialogSum+" 4096\n")
 		require.True(t, strings.HasSuffix(body, restart), goos)
 		require.Less(t, strings.Index(body, "copy_binary"), strings.Index(body, restart), "copied before the restart")
 		out, err := exec.Command("/bin/sh", "-n", "-c", got).CombinedOutput()
 		require.NoError(t, err, "the script parses: %s", out)
 	}
-	_, err = osservice.RestartScript("linux", osservice.Source{Path: "relative", SHA256: dialogSum})
+	_, err = osservice.RestartScript("linux", osservice.Source{Path: "relative", SHA256: dialogSum, Size: dialogSize})
 	require.Error(t, err)
 	_, err = osservice.RestartScript("windows", dialogSource)
 	require.Error(t, err)

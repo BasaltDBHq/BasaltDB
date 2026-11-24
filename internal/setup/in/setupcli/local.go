@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/lib/semver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
@@ -110,6 +111,10 @@ func restartOlderEngine(c *cli.IO, h LocalHost) error {
 	if build == buildinfo.Version {
 		return nil
 	}
+	newer, err := newerThanEngine(build)
+	if err != nil || !newer {
+		return err
+	}
 	bin, err := c.Host.ResolvedExecutable()
 	if err != nil {
 		return fmt.Errorf("the engine service runs a different build of basalt than this one, and this basalt's links do not resolve, so it cannot be copied to the service: %w", err)
@@ -145,6 +150,28 @@ func restartOlderEngine(c *cli.IO, h LocalHost) error {
 	}
 	fmt.Fprintln(c.Stderr, "basalt: the engine service is restarted onto this build.")
 	return nil
+}
+
+// newerThanEngine reports whether this basalt is a newer build than the
+// engine's, the only case init copies it to the service: it never moves the
+// service to an older build. An engine that sends no build is older than
+// the rule that added it. The same version spelled apart is no change; an
+// older this basalt, or one whose order cannot be told, is an error that
+// names both builds and says to update this basalt first.
+func newerThanEngine(build string) (bool, error) {
+	if build == "" {
+		return true, nil
+	}
+	c, ok := semver.CompareStrings(buildinfo.Version, build)
+	switch {
+	case ok && c > 0:
+		return true, nil
+	case ok && c == 0:
+		return false, nil
+	case ok:
+		return false, fmt.Errorf("the engine service runs basalt %s, newer than this basalt (%s), and basalt init never moves it to an older build. Update this basalt to %s or later first (brew upgrade basaltdbhq/tap/basaltdb, or the release page), then run basalt init again", build, buildinfo.Version, build)
+	}
+	return false, fmt.Errorf("the engine service runs basalt %s and this basalt is %s, and which is newer cannot be told, so basalt init leaves the service as it is. Run basalt init again from a released basalt build", build, buildinfo.Version)
 }
 
 // restartAnswerWait bounds how long init waits for the engine to answer

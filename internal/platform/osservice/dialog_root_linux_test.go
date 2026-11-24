@@ -82,7 +82,7 @@ func TestInstallScriptAsRoot(t *testing.T) {
 	clean := func() {
 		sh(t, "userdel basalt 2>/dev/null; groupdel basalt 2>/dev/null; rm -rf /etc/basalt /opt/basalt "+osservice.SystemdUnitPath+
 			" "+serviceBinary+" "+serviceBinary+".basalt-new /tmp/evil-basalt"+
-			"; mkdir -p /usr/libexec; chmod 0755 /etc/systemd/system /usr/local/bin /usr/libexec; chown root:root "+rootBinary+"; chmod 0755 "+rootBinary+"; true")
+			"; mkdir -p /usr/libexec; chown root:root /usr/libexec; chmod 0755 /etc/systemd/system /usr/local/bin /usr/libexec; chown root:root "+rootBinary+"; chmod 0755 "+rootBinary+"; true")
 	}
 	clean()
 	t.Cleanup(clean)
@@ -134,6 +134,36 @@ func TestInstallScriptAsRoot(t *testing.T) {
 		sh(t, "chmod 0777 /usr/libexec")
 		requireRefused(t, "/usr/libexec is writable by group or others")
 		require.NoFileExists(t, serviceBinary)
+	})
+	t.Run("a copy folder a person owns: named, with its owner, and nothing is created", func(t *testing.T) {
+		defer clean()
+		sh(t, "chown nobody /usr/libexec")
+		out, err := runInstall(t, rootBinary)
+		require.Error(t, err, out)
+		require.Contains(t, out, "/usr/libexec is owned by uid ")
+		require.Contains(t, out, "the folder named above is not one only root can change")
+		require.NotContains(t, out, "sudo")
+		require.NoFileExists(t, serviceBinary)
+		require.False(t, exists("getent passwd basalt"), out)
+	})
+	t.Run("copy_binary reads a plain file only, and no more than its size", func(t *testing.T) {
+		defer clean()
+		script, err := osservice.InstallScript("linux", osservice.Source{Path: rootBinary, SHA256: strings.Repeat("0", 64), Size: 1})
+		require.NoError(t, err)
+		helpers, _, ok := strings.Cut(script, osservice.ScriptHelpersEnd)
+		require.True(t, ok)
+		sh(t, "ln -sf "+rootBinary+" /tmp/basalt-link")
+		out, err := exec.Command("/bin/sh", "-c", helpers+"copy_binary /tmp/basalt-link "+serviceBinary+" x 1").CombinedOutput()
+		require.Error(t, err, string(out))
+		require.Contains(t, string(out), "/tmp/basalt-link is not a plain file")
+		// A file longer than the size read: only SIZE bytes are copied.
+		sh(t, "rm -f /tmp/basalt-link && head -c 100 /dev/urandom >/tmp/basalt-big")
+		out, err = exec.Command("/bin/sh", "-c", helpers+`sum=$(head -c 10 /tmp/basalt-big | sha256sum | awk '{ print $1 }'); copy_binary /tmp/basalt-big `+serviceBinary+` "$sum" 10`).CombinedOutput()
+		require.NoError(t, err, string(out))
+		st, err := os.Stat(serviceBinary)
+		require.NoError(t, err)
+		require.EqualValues(t, 10, st.Size(), "no more than the size init read")
+		sh(t, "rm -f /tmp/basalt-big")
 	})
 	t.Run("a basalt changed after init read it: nothing is created", func(t *testing.T) {
 		defer clean()

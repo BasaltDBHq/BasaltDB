@@ -24,7 +24,7 @@ func TestCompare(t *testing.T) {
 			} else if i > j {
 				want = 1
 			}
-			if got := a.compare(b); got != want {
+			if got := a.Compare(b); got != want {
 				t.Errorf("%s vs %s = %d, want %d", order[i], order[j], got, want)
 			}
 		}
@@ -34,7 +34,7 @@ func TestCompare(t *testing.T) {
 			t.Errorf("parseVersion(%q) accepted", bad)
 		}
 	}
-	if v, ok := parseVersion("v1.2.3+build5"); !ok || v.core != [3]uint64{1, 2, 3} {
+	if v, ok := parseVersion("v1.2.3+build5"); !ok || v.Core != [3]uint64{1, 2, 3} {
 		t.Errorf("v1.2.3+build5 = %v %v", v, ok)
 	}
 }
@@ -289,6 +289,18 @@ func TestAgentMessageSaysToRunBasaltInit(t *testing.T) {
 	for _, exe := range []string{"/opt/homebrew/bin/basalt", "/usr/local/bin/basalt"} {
 		got := n.AgentMessage(exe)
 		if !strings.Contains(got, "you run basalt init so the engine runs the new binary") || strings.Contains(got, "sudo") {
+			t.Errorf("%s: %q", exe, got)
+		}
+	}
+}
+
+// The engine service runs its own copy, which does not say how basalt was
+// installed: its message names both ways, then basalt init.
+func TestAgentMessageFromTheServiceCopyNamesBothWays(t *testing.T) {
+	n := Notice{Current: "0.0.1", Latest: "0.0.2", URL: "u"}
+	for _, exe := range []string{"/usr/local/libexec/basalt", "/usr/libexec/basalt"} {
+		want := "They upgrade the way they installed it: brew upgrade basaltdbhq/tap/basaltdb if it came from Homebrew, otherwise the new release at u, then you run basalt init so the engine runs the new binary (with the engine service, it asks for their password once)."
+		if got := n.AgentMessage(exe); !strings.Contains(got, want) {
 			t.Errorf("%s: %q", exe, got)
 		}
 	}

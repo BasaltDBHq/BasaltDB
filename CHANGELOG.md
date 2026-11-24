@@ -6,11 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Fixed
-
-- The engine's systemd unit now escapes `%` and `$` in the binary and config paths, so a path containing them starts the engine instead of being expanded by systemd.
-- Commands the CLI prints now quote an argument that starts with `=`, so a zsh user can paste them: zsh expands `=cmd` to a path.
-
 ## [0.1.0-alpha] - 2026-11-24
 
 The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup moves from the terminal to a page: the agent runs `basalt init` and the person finishes on the page it links. The CLI only starts things. Expect bugs and breaking changes between alpha releases, and read "Breaking for alpha installs" before you upgrade.
@@ -35,19 +30,10 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 - The CLI's help and the MCP instructions say that one engine serves many agents, each on one database, and that another database needs another agent.
 - The portal has a home page and a not-found page.
 
-**Plugins.** No published plugin exists yet. The entries below describe the plugin platform that ships in the binary.
-
-- The `request_plugin` MCP tool: the agent prepares a plugin install, change or removal, and you approve it with your passkey on the plugin approval page (`/plugin/` on your own computer, a portal `/plugins/*` link through the BasaltDB Vault on a computer you cannot reach). The engine runs the plugin only once the database has verified the signature. On a bot's computer the agent and BasaltDB run as one user, so the approval is consent, not containment, and the page says so. Without a Vault connection there, `request_plugin` refuses with `NO_PORTAL_LINK`.
-- The engine verifies each plugin's installed copy, starts it, checks its health every 30 seconds, restarts it with a backoff and stops it with the engine. A plugin that fails never stops the engine. `status` shows each plugin's health and `PLUGIN_UNAVAILABLE`, `PLUGIN_NOT_TRUSTED` or `PLUGIN_AWAITING_APPROVAL`.
-- In service mode `basalt service install` gives each local plugin its own service unit, OS user and socket directory, and makes the root-owned plugin folder (`/opt/basalt` on Linux, `/Library/Basalt` on macOS). On macOS a plugin's stderr goes to its own log under `/Library/Logs/Basalt/plugins/`, and `/Library/Logs/Basalt` is now owned by root.
-- Two hooks. `feed.observe` gets what the agent did as CloudEvents (ids, operation, table, row counts; never a row value or a statement). `approval.deliver` gets the link of each held write, prepared revert and reissued link.
-- Each agent's ledger records the plugins served to it, the keys that signed them and each plugin approval signed with a passkey.
-- The Go plugin SDK, `github.com/basaltdbhq/basalt-plugin-go`, in its own repository, with a starter template and a complete notifier. It makes signing keys and signs plugins.
-
 ### Changed
 
 - Every next step, warning and person message hands the person a link, never a `basalt` command. A setup job is an agent step that runs `basalt init` (`basalt init --remote` on an agent-operated engine), which prints the link.
-- Approvals, reverts and plugin approvals are signed only on a page with a passkey: the engine's own pages on your computer, or the portal on a bot's computer, whose signature the hosted relay carries to the engine. Nothing is pasted. A whole-task revert is `request_revert` with `taskId`, widened on the signing page, and a revert too large to prepare in one call is split with `runs` or `tables`.
+- Approvals and reverts are signed only on a page with a passkey: the engine's own pages on your computer, or the portal on a bot's computer, whose signature the hosted relay carries to the engine. Nothing is pasted. A whole-task revert is `request_revert` with `taskId`, widened on the signing page, and a revert too large to prepare in one call is split with `runs` or `tables`.
 - A portal short link (`/approvals/*`, `/reverts/*`) opens an end-to-end encrypted session to the engine through the BasaltDB Vault relay (`wss://relay.basaltvault.app`). The page shows the engine's fingerprint to compare before you sign, and the engine's receipt for the signature.
 - `basalt init --remote` prints the `basalt mcp` line with the absolute path of the running binary, so an agent app whose `PATH` lacks it can still start it. A binary in a temporary folder gets a warning to move it.
 - The README, `llms.txt` and `docs/` describe the simplified product. No guide asks a person to type a `basalt` command or to paste an admin connection string into a terminal.
@@ -88,8 +74,9 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 - Remove on macOS keeps the engine user and its group together, and says so when macOS refuses to delete the user.
 - Reinstall repairs a missing engine group and gives root-owned leftover engine folders back to the engine user, so `basalt init` no longer fails with `chown: _basalt: illegal group name` or leaves the engine crash-looping.
 - `basalt init` stops and names the log when the engine service keeps crashing, instead of waiting out the 30 seconds.
-- The plugin approval page names the plugin's fingerprint "Plugin fingerprint", apart from the engine's fingerprint.
 - `apply_revert_batch` errors for a revert that is not signed yet point at the revert page instead of the removed `basalt revert`.
+- The engine's systemd unit now escapes `%` and `$` in the binary and config paths, so a path containing them starts the engine instead of being expanded by systemd.
+- Commands the CLI prints now quote an argument that starts with `=`, so a zsh user can paste them: zsh expands `=cmd` to a path.
 
 ### Security
 

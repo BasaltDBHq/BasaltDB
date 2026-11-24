@@ -55,7 +55,7 @@ func updateChecker(getenv func(string) string) (*updatecheck.Checker, error) {
 	if buildinfo.Version == updatecheck.DevVersion {
 		return nil, errDevBuild
 	}
-	dir, err := updatecheck.CacheDir(getenv(envCacheDir))
+	dir, err := updatecheck.CacheDir()
 	if err != nil {
 		return nil, err
 	}

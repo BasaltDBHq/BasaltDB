@@ -40,7 +40,6 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	fs := cli.NewFlagSet("engine")
 	fs.SetOutput(io.Err)
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
-	pluginDebug := fs.Bool("plugin-debug", false, "show local plugins' stderr on this terminal (a foreground engine only; never logged)")
 	supervised := fs.Bool("supervise", false, "run the engine as a child and restart it when it crashes")
 	startedBy := fs.String("started-by", startedByHand, "why this engine started: hand, mcp or crash (set by basalt mcp and --supervise)")
 	if fs.Parse(args) != nil || fs.NArg() > 0 {
@@ -48,10 +47,6 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	}
 	if !slices.Contains([]string{startedByHand, engine.StartedByMCP, engine.StartedByCrash}, *startedBy) {
 		_, _ = fmt.Fprintf(io.Err, "basalt engine: --started-by is hand, mcp or crash, not %q\n", *startedBy)
-		return cli.ExitUsage
-	}
-	if *supervised && *pluginDebug {
-		_, _ = fmt.Fprintln(io.Err, "basalt engine: --plugin-debug shows a foreground engine's plugin output; drop --supervise to use it")
 		return cli.ExitUsage
 	}
 	*configPath = cli.ConfigOrFallback(h, fs, *configPath)
@@ -84,9 +79,6 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 		o := restartOptions{Restart: r}
 		o.StartedBy = *startedBy
 		o.PagesListener, handed = handed, nil
-		if *pluginDebug {
-			o.PluginStderr = io.Err
-		}
 		return runWith(ctx, cfg, engine.EnginePath(*configPath), log, o)
 	}
 	// A reload (a connect-only agent's setup changed) serves the config as

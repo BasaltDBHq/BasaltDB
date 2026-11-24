@@ -48,7 +48,7 @@ The agent's `status` shows both kinds of entry served to it, with their health (
   - its own process group, with its installed copy as the working directory and no environment but `BASALT_PLUGIN_SOCKET`;
   - a socket directory new for each start, under the OS temporary directory (on Linux the engine unit's private `/tmp`), with the same checks; every local transport works, `jsonrpc-stdio` included, as in same-user mode;
   - crash records in `<stateDir>/plugin-runs/`, and restarts after a failure from the copy the entry names, verified again;
-  - stderr discarded (shown on the terminal only with `--plugin-debug` in the foreground, which a service engine is not);
+  - stderr discarded;
   - `shutdown` and a kill of its process group when it stops.
 
   **This replaces the rule that an engine in service mode never starts a local plugin itself, for approved engine-kept entries only** ([Isolation and trust](plugins-runtime.md#isolation-and-trust)). Config entries keep their own units, and the engine still never starts, signals or kills a config entry's process.

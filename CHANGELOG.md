@@ -43,6 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Removed
 
+- `basalt engine --plugin-debug` and the environment variables `BASALT_ADMIN_DATABASE_URL`, `BASALT_DATABASE_URL`, `BASALT_CACHE_DIR` and `BASALTDB_ALLOWED_HOSTS`. A plugin's stderr is now always discarded; the update notice's cache is the `basalt` folder of your user cache directory; `basalt init --remote` no longer warns about an admin connection string in the environment.
 - The unused agent-context marker `BASALT_AGENT_CONTEXT` (and the coding agents' markers `basalt` listed with it): nothing read them since the commands they guarded were removed.
 - `basalt passkey`, `basalt trust` and `basalt classify`, with their flags, and the `/passkeys/check` and `/passkeys/forget` pages. Passkeys, a changed certificate and column labels are fixed on the page `basalt init` opens (`basalt init --remote` on an agent-operated engine), and every hint that named one of these commands now says to run `basalt init`.
 - `basalt init --setup-code` and the laptop half of the setup code, with the `init` flags the setup page replaced. Every code `basalt init --remote` makes is run on the connect page: the output is its link, or where to paste the code.

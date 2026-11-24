@@ -468,23 +468,23 @@ func TestRootStartsNoLocalPlugin(t *testing.T) {
 	require.Empty(t, ep.pluginProblems("client_x"))
 }
 
-// A plugin's stderr reaches the --plugin-debug writer only, and never the
+// A plugin's stderr reaches the writer in Options only, and never the
 // engine's log.
-func TestPluginStderrOnlyUnderPluginDebug(t *testing.T) {
+func TestPluginStderrOnlyToItsWriter(t *testing.T) {
 	t.Parallel()
-	for _, debug := range []bool{true, false} {
+	for _, withWriter := range []bool{true, false} {
 		f := newPluginFixture(t)
 		p := f.install("default", dial.TransportStdio, "product_a")
 		var stderr, logged syncBuffer
 		o := Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: os.Geteuid()}
-		if debug {
+		if withWriter {
 			o.Stderr = &stderr
 		}
 		ep := f.pluginsWith(o, slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug})))
 		stop := runPlugins(t, ep)
 		waitReady(t, ep, p.Key())
 		stop()
-		require.Equal(t, debug, strings.Contains(stderr.String(), pluginStderrMarker))
+		require.Equal(t, withWriter, strings.Contains(stderr.String(), pluginStderrMarker))
 		require.NotContains(t, logged.String(), pluginStderrMarker)
 	}
 }
@@ -522,14 +522,4 @@ func TestLocalPluginRefusedInServiceModeAndAsRoot(t *testing.T) {
 	for _, ep := range []*Plugins{service, root, user} {
 		require.Empty(t, ep.localRefusal(p, remote))
 	}
-}
-
-// --plugin-debug reaches a foreground engine's stderr only.
-func TestPluginDebugOnlyInTheForeground(t *testing.T) {
-	t.Parallel()
-	discard := slog.New(slog.DiscardHandler)
-	var w strings.Builder
-	require.Equal(t, io.Writer(&w), DebugWriter(config.Config{}, &w, discard))
-	require.Nil(t, DebugWriter(config.Config{Mode: config.ModeService}, &w, discard))
-	require.Nil(t, DebugWriter(config.Config{}, nil, discard))
 }

@@ -114,11 +114,30 @@ func (c *IO) SystemConfig() string {
 type PathOverrides struct{ Config, SocketDir, CredFile string }
 
 // FindConfig is the engine.json this command uses ([Config discovery]).
-func (c *IO) FindConfig() (string, error) {
+// With an agent named, and two configs, it is the one that holds the agent.
+func (c *IO) FindConfig(agent string) (string, error) {
 	if c.Paths.Config != "" {
 		return c.Paths.Config, nil
 	}
-	return DiscoverConfig(c.Host, c.SystemConfig())
+	return DiscoverConfigFor(c.Host, c.SystemConfig(), agent, func(path string) (bool, bool) {
+		cfg, err := LoadEngineConfig(c, path)
+		if err == nil {
+			return HoldsAgent(cfg, agent), true
+		}
+		// A service engine's config this person cannot read: its socket
+		// says which agents it serves.
+		return path == c.SystemConfig() && c.serves(agent), false
+	})
+}
+
+// serves reports whether a service engine's socket directory has the
+// agent's socket.
+func (c *IO) serves(agent string) bool {
+	if !config.ValidAgentName(agent) {
+		return false
+	}
+	fi, err := os.Stat(config.SocketPath(cmp.Or(c.Paths.SocketDir, config.DefaultSocketDir(c.Goos)), agent))
+	return err == nil && fi.Mode()&os.ModeSocket != 0
 }
 
 // RefuseSecondConfig is the error of a setup that would write the person's

@@ -88,7 +88,7 @@ func withDB(t *testing.T) remoteEnv {
 func (e remoteEnv) io(stdout, stderr *bytes.Buffer) *cli.IO {
 	c := newIO(context.Background(), cli.Stdio{In: strings.NewReader(""), Out: stdout, Err: stderr},
 		func(k string) string {
-			if k == setup.EnvAdminURL {
+			if k == envAdminURL {
 				return "postgres://admin:" + adminSecret + "@db.example.com/postgres"
 			}
 			return e.env[k]

@@ -176,7 +176,7 @@ func runWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	// nothing is read or started.
 	pluginLog := log.With("component", "plugins")
 	pluginOpts := pluginOptions{
-		Stderr: pluginDebugWriter(cfg, restart.PluginStderr, log), euid: plugin.EUID(),
+		euid: plugin.EUID(),
 		runs: pluginRuns(cfg, env.stateDir, plugin.EUID(), pluginLog), stateDir: env.stateDir,
 	}
 	keepsPlugins := plugin.KeepsEntries(cfg)

@@ -1,0 +1,9 @@
+{
+  "name": "basalt-release-e2e",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end test of the release binaries (setup, approval, revert, remove).",
+  "dependencies": {
+    "playwright": "1.65.1"
+  }
+}

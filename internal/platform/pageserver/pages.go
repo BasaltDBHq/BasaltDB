@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
@@ -207,6 +208,10 @@ func (s *Server) Add(a Agent) {
 	s.agents = append(s.agents, a)
 }
 
+// BuildHeader is the response header of GET /healthz that carries the
+// engine's build, so basalt init can tell an engine running an older binary.
+const BuildHeader = "basalt-build"
+
 // Handler routes the pages, their files and the relay.
 func (s *Server) Handler() http.Handler {
 	s.mounted()
@@ -216,6 +221,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set(BuildHeader, buildinfo.Version)
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	// The pages at their RESTful paths (links; owner decisions, Decided

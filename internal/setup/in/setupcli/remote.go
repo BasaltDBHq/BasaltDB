@@ -263,7 +263,7 @@ func (r *remoteInit) paths() error {
 	dir := filepath.Dir(r.f.ConfigPath)
 	r.settings = config.Settings{SocketDir: config.DefaultSocketDir(r.c.Goos), PagesURL: links.Portal}
 	if r.c.Host.Euid() != 0 && r.c.Paths.Config == "" {
-		if _, err := r.c.FindConfig(); err != nil {
+		if _, err := r.c.FindConfig(r.f.Agent); err != nil {
 			return err
 		}
 		if err := r.c.RefuseSecondConfig(); err != nil {

@@ -66,6 +66,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `basalt mcp --agent NAME` and `basalt init --agent NAME` with two engine configs (a service engine's and your own) use the one that holds the agent, where before they stopped on the two configs and the MCP server never connected. They stop only when both hold the agent or neither does, naming the agent and both paths.
 - Every MCP tool now also refuses (`ADMIN_CREDENTIAL`) an admin connection string in a JSON-text parameter from Go's default encoder (`\u0026` for `&`), with a percent-encoded scheme or `password` name, with a space in the password, with a driver in the scheme (`postgresql+psycopg2://`), or as a libpq key and value string (`host=h user=u password=…`), so the password no longer reaches the ledger or the result. Text that only mentions a password is still allowed.
 - The admin connection string pasted on the local setup page takes only the connection parameters the engine needs. `passfile`, `sslkey`, `sslcert`, `sslrootcert`, `service` and every other key are refused (`CONNECTION_STRING_REFUSED`) before anything connects, so the engine no longer reads files a pasted string names. Trust a private CA with the page's certificate step instead of `sslrootcert`.
 - Certificate errors, the `status` problems and the person messages no longer suggest adding `sslrootcert` to a connection string. They point at the setup page's trust step that `basalt init` links to.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
@@ -30,7 +31,15 @@ func RunMCPAt(ctx context.Context, args []string, io cli.Stdio, h cli.Machine, m
 	if fs.Parse(args) != nil || fs.NArg() > 0 {
 		return cli.ExitUsage
 	}
-	cfgPath, err := cli.DiscoverConfig(h, system)
+	// With --agent and two configs, the one that holds the agent: a config
+	// this person cannot read is a service engine's, which holds the agents
+	// its socket directory has a socket for.
+	cfgPath, err := cli.DiscoverConfigFor(h, system, *name, func(path string) bool {
+		if cfg, err := config.Load(path); err == nil {
+			return cli.HoldsAgent(cfg, *name)
+		}
+		return path == system && slices.Contains(engine.SocketAgents(config.DefaultSocketDir(runtime.GOOS)), *name)
+	})
 	if err != nil {
 		return m.Fail(io.Err, "mcp", err)
 	}

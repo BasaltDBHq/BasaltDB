@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/agentcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgcatalog"
@@ -184,7 +185,7 @@ func agentUpdate(cached func() *updatecheck.Notice) func() *status.ReleaseNotice
 }
 
 // NewAgentCatalog is the store's catalog as the agent reads it.
-func NewAgentCatalog(c *postgres.Catalog) agentsvc.Catalog { return agentCatalog{pg: c} }
+func NewAgentCatalog(c *postgres.Catalog) agentsvc.Catalog { return agentcatalog.New(c) }
 
 // NewAgentProbe is the store's probe as the agent reads it.
 func NewAgentProbe(p postgres.Probe) status.Probe { return agentProbe{p} }

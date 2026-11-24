@@ -25,13 +25,14 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/agentcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
 
 // fakeCatalog is the Postgres catalog over fixed relations and details;
-// describe reads it through the agent's wiring (agentCatalog).
+// describe reads it through the agent's wiring (agentcatalog).
 type fakeCatalog struct {
 	visible    []pgcatalog.Relation
 	notGranted int
@@ -161,14 +162,14 @@ func ordersDetail() pgcatalog.Detail {
 	return d
 }
 
-func describeService(t *testing.T, cat pgCatalog, classes fakeClasses, operatedBy string) *Service {
+func describeService(t *testing.T, cat agentcatalog.Postgres, classes fakeClasses, operatedBy string) *Service {
 	t.Helper()
 	d := deps()
 	cmds, err := newCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	d.Core.Commands = cmds
 	d.Status.OperatedBy = operatedBy
-	d.Agent.Limits, d.Agent.Catalog, d.Agent.Classes = testLimits(), agentCatalog{pg: cat}, agentClasses{pg: classes}
+	d.Agent.Limits, d.Agent.Catalog, d.Agent.Classes = testLimits(), agentcatalog.New(cat), agentClasses{pg: classes}
 	return NewService(d)
 }
 
@@ -184,10 +185,10 @@ func (noChecker) Check(string, action.Tool) (action.Statement, error) {
 }
 
 // describeUseCase is the describe use case over cat, on the commands cmds.
-func describeUseCase(cmds guidance.Commands, cat pgCatalog) *agentsvc.Service {
+func describeUseCase(cmds guidance.Commands, cat agentcatalog.Postgres) *agentsvc.Service {
 	set := agentsvc.StoreSet{
 		Kind: action.StorePostgres, Family: agentstore.FamilySQL, Language: sqllang.New(noChecker{}),
-		Data: agentData{limits: testLimits()}, Catalog: agentCatalog{pg: cat}, Classes: agentClasses{pg: fakeClasses{}},
+		Data: agentData{limits: testLimits()}, Catalog: agentcatalog.New(cat), Classes: agentClasses{pg: fakeClasses{}},
 	}
 	return agentsvc.New(agentsvc.Core{Commands: cmds}, set, nil, func() *guidance.UpdateInfo { return nil })
 }
@@ -744,7 +745,7 @@ func TestDescribeWithoutClassesFailsClosed(t *testing.T) {
 	t.Parallel()
 	cat, _ := ordersCatalog()
 	d := deps()
-	d.Agent.Limits, d.Agent.Catalog = testLimits(), agentCatalog{pg: cat}
+	d.Agent.Limits, d.Agent.Catalog = testLimits(), agentcatalog.New(cat)
 	s := NewService(d)
 	for _, args := range []map[string]any{{}, {"query": "orders"}, {"resource": "shop.orders"}} {
 		body, isError := callDescribe(t, s, args)

@@ -187,18 +187,29 @@ jobs:
 
       # e2e/release/run.sh is the full test (setup page, passkey, MCP, held
       # write, approval, revert, remove); it cleans up after itself, also on
-      # failure. A commit without it runs the archive smoke only.
+      # failure, and writes engine and browser logs to E2E_LOG_DIR. A commit
+      # without it runs the archive smoke only.
       - name: End-to-end test
         env:
           EXPECT_UNAME: ${{ matrix.expect_uname }}
+          E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
         run: |
           set -eu
+          mkdir -p "$E2E_LOG_DIR"
           if [ -f e2e/release/run.sh ]; then
             sh e2e/release/run.sh "$PWD/dist/extract"
           else
             echo "e2e/release/run.sh is not in this commit: archive smoke only"
             sh scripts/release-archive-smoke.sh dist/extract
           fi
+
+      - name: Upload e2e logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-logs-${{ matrix.runner }}
+          path: ${{ runner.temp }}/e2e-logs
+          if-no-files-found: ignore
 
   publish:
     needs: [kind, e2e]
@@ -222,6 +233,10 @@ jobs:
           STABLE: ${{ needs.kind.outputs.stable }}
         run: |
           set -eu
+          # upload-artifact fails only when nothing matched; a release is
+          # never published without its checksums and their signature.
+          test -f dist/SHA256SUMS
+          test -f dist/SHA256SUMS.sigstore.json
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release upload "$TAG" --clobber dist/*
           else

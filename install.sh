@@ -11,7 +11,7 @@ PREFIX="${PREFIX:-}"
 usage() {
 	cat <<'EOF'
 usage: install.sh [latest|nightly|vX.Y.Z]
-  VERSION         latest (default; includes prereleases), nightly, or a v* tag
+  VERSION         latest (default; includes prereleases, never a release candidate), nightly, or a v* tag
   PREFIX          install dir (default: /usr/local/bin if writable, else ~/.local/bin)
   BASALTDB_REPO   owner/name (default: BasaltDBHq/BasaltDB)
 EOF

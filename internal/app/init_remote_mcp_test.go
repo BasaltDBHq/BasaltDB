@@ -13,6 +13,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
 )
 
 func skipIfSystemConfig(t *testing.T) {
@@ -81,4 +83,25 @@ func TestInitRemoteRefusesASecondConfigBesideTheSystemOne(t *testing.T) {
 	require.Contains(t, stderr.String(), system)
 	_, err := os.Stat(filepath.Join(h.configDir, config.UserDirName, "engine.json"))
 	require.ErrorIs(t, err, os.ErrNotExist, "no second config")
+}
+
+// Not root, with a system config and the user's own config both in place and
+// the agent only in the user's: init --remote --agent goes on in the user's
+// config, where the agent lives, and writes no second one.
+func TestInitRemoteGoesOnInTheUserConfigWhenTheAgentIsOnlyThere(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	system := filepath.Join(h.configDir, "etc", "engine.json")
+	user := filepath.Join(h.configDir, config.UserDirName, "engine.json")
+	for p, agent := range map[string]string{system: "other", user: "bot"} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o700))
+		require.NoError(t, os.WriteFile(p, []byte(`{"socketDir": "/s", "stateDir": "`+filepath.Join(h.configDir, config.UserDirName, setup.StateDirName)+`", "operatedBy": "AGENT", "pagesUrl": "https://portal.basaltvault.app", "agents": [{"name": "`+agent+`", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "`+filepath.Join(h.configDir, "cred", agent+".url")+`"}}]}`), 0o600))
+	}
+	require.NoError(t, os.MkdirAll(filepath.Join(filepath.Dir(user), setup.StateDirName), 0o700))
+	var stdout, stderr bytes.Buffer
+	c := newIO(context.Background(), cli.Stdio{In: strings.NewReader(""), Out: &stdout, Err: &stderr},
+		func(string) string { return "" })
+	c.Host, c.AgentLogin, c.Probe, c.SystemConfigPath = h, refusedLogin, noNetworkProbe, system
+	_, err := setupcli.InitRemote(c, setupHost{}, []string{"--remote", "--agent", "bot"})
+	require.NoError(t, err, stderr.String())
 }

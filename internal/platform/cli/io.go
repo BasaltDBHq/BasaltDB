@@ -119,14 +119,14 @@ func (c *IO) FindConfig(agent string) (string, error) {
 	if c.Paths.Config != "" {
 		return c.Paths.Config, nil
 	}
-	return DiscoverConfigFor(c.Host, c.SystemConfig(), agent, func(path string) bool {
+	return DiscoverConfigFor(c.Host, c.SystemConfig(), agent, func(path string) (bool, bool) {
 		cfg, err := LoadEngineConfig(c, path)
 		if err == nil {
-			return HoldsAgent(cfg, agent)
+			return HoldsAgent(cfg, agent), true
 		}
 		// A service engine's config this person cannot read: its socket
 		// says which agents it serves.
-		return path == c.SystemConfig() && c.serves(agent)
+		return path == c.SystemConfig() && c.serves(agent), false
 	})
 }
 
@@ -136,7 +136,7 @@ func (c *IO) serves(agent string) bool {
 	if !config.ValidAgentName(agent) {
 		return false
 	}
-	fi, err := os.Stat(config.SocketPath(config.DefaultSocketDir(c.Goos), agent))
+	fi, err := os.Stat(config.SocketPath(cmp.Or(c.Paths.SocketDir, config.DefaultSocketDir(c.Goos)), agent))
 	return err == nil && fi.Mode()&os.ModeSocket != 0
 }
 

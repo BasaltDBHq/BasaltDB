@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -90,4 +91,40 @@ func TestFindConfigWithOneConfigIgnoresTheAgent(t *testing.T) {
 	got, err := c.FindConfig("nobody")
 	require.NoError(t, err)
 	require.Equal(t, sys, got)
+}
+
+// The owner's case: the system config is a service engine's and this person
+// cannot read it. The agent's socket in the service's socket directory says
+// the system config is the one; with no socket and the agent not in the
+// user's config, the refusal says the service config cannot be read.
+func TestFindConfigWithAnUnreadableSystemConfig(t *testing.T) {
+	t.Parallel()
+	c, sys, user := twoConfigs(t, []string{"bot"}, []string{"other"})
+	require.NoError(t, os.Chmod(sys, 0))
+	t.Cleanup(func() { _ = os.Chmod(sys, 0o600) })
+	if _, err := os.ReadFile(sys); err == nil {
+		t.Skip("the file is readable here (root)")
+	}
+	c.Paths.SocketDir = filepath.Join(filepath.Dir(sys), "run")
+	require.NoError(t, os.MkdirAll(c.Paths.SocketDir, 0o700))
+
+	_, err := c.FindConfig("bot")
+	var e *AgentConfigsError
+	require.ErrorAs(t, err, &e)
+	require.True(t, e.SystemUnreadable)
+	require.ErrorContains(t, err, "cannot be read")
+	require.ErrorContains(t, err, "not running")
+	require.NotContains(t, err.Error(), "in neither")
+
+	ln, err := net.Listen("unix", filepath.Join(c.Paths.SocketDir, "bot.sock"))
+	if err != nil {
+		t.Skip("no unix socket here: " + err.Error())
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	got, err := c.FindConfig("bot")
+	require.NoError(t, err)
+	require.Equal(t, sys, got)
+	got, err = c.FindConfig("other")
+	require.NoError(t, err)
+	require.Equal(t, user, got)
 }

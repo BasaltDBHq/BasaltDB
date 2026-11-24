@@ -92,7 +92,7 @@ func RunLocal(c *cli.IO, h LocalHost, args []string) int {
 	return cli.ExitOK
 }
 
-// restartOlderEngine restarts the engine service when it runs another
+// restartOlderEngine restarts the engine service when it runs a different
 // build than this basalt: a new binary installed at the service's path is
 // not the running engine until the service restarts. The restart is the
 // administrator dialog's fixed script; with no dialog init stops and says
@@ -102,7 +102,7 @@ func restartOlderEngine(c *cli.IO, h LocalHost) error {
 	if err != nil {
 		// Nothing answers: the engine is starting or down, and the wait
 		// for its page says which.
-		return nil //nolint:nilerr // an engine that does not answer is not an older one
+		return nil //nolint:nilerr // an engine that does not answer is not a different build
 	}
 	if build == buildinfo.Version {
 		return nil
@@ -111,15 +111,20 @@ func restartOlderEngine(c *cli.IO, h LocalHost) error {
 	if err != nil {
 		return err
 	}
+	command := strings.TrimSpace(script)
 	if err := c.Host.DialogAvailable(c.Goos); err != nil {
-		return fmt.Errorf("the engine service runs an older build of basalt than this one, and restarting it needs the system's administrator dialog, which cannot be shown here (%w). Restart it as root: %s", err, strings.TrimSpace(script))
+		return fmt.Errorf("the engine service runs a different build of basalt than this one, and restarting it needs the system's administrator dialog, which cannot be shown here (%w). Restart it as root: %s", err, command)
 	}
-	fmt.Fprintln(c.Stderr, "basalt: the engine service runs an older build than this basalt. Asking for your password in the system's administrator dialog to restart it: it runs "+strings.TrimSpace(script))
+	fmt.Fprintln(c.Stderr, "basalt: the engine service runs a different build than this basalt. Asking for your password in the system's administrator dialog to restart it: it runs "+command)
 	if err := c.Host.AdminDialog(c.Ctx, c.Goos, servicespec.RestartPrompt, script, c.Stderr); err != nil {
 		if errors.Is(err, servicespec.ErrDialogCancelled) {
-			return errors.New("the administrator dialog was closed, so the engine service was not restarted and still runs the older build. Run basalt init again to restart it")
+			return fmt.Errorf("the administrator dialog was closed, so the engine service was not restarted and still runs a different build. Restart it as root: %s, or run basalt init again", command)
 		}
-		return fmt.Errorf("the engine service was not restarted: %w", err)
+		return fmt.Errorf("the engine service was not restarted: %w. Restart it as root: %s", err, command)
+	}
+	// The restart may have started the same old binary: read the build again.
+	if again, err := c.Host.EngineBuild(c.Ctx, links.DefaultLocal); err == nil && again != buildinfo.Version {
+		return fmt.Errorf("the engine service was restarted but still runs a different build of basalt than this one: the service starts the binary its unit file names (%s), which is not this basalt. Install this basalt there, or point the unit at it, and restart the service as root: %s", h.OSUnitPath(c.Goos), command)
 	}
 	fmt.Fprintln(c.Stderr, "basalt: the engine service is restarted onto this build.")
 	return nil

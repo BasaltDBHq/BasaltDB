@@ -63,6 +63,8 @@ type fakeHost struct {
 	buildErr error
 	// silent is an engine too old to report a build.
 	silent bool
+	// stuck is a restart that starts the same old build again.
+	stuck bool
 	// runs are what ServiceRuns reads, one per call (the last one repeats),
 	// with lastExit; none is no service manager.
 	runs     []int
@@ -121,6 +123,9 @@ func (h *fakeHost) SetupState(context.Context, string) (string, error) {
 func (h *fakeHost) AdminDialog(_ context.Context, _, prompt, script string, _ io.Writer) error {
 	h.prompts = append(h.prompts, prompt)
 	h.dialogs = append(h.dialogs, script)
+	if h.dialogErr == nil && !h.stuck {
+		h.build, h.silent = "", false // the restart runs this binary
+	}
 	return h.dialogErr
 }
 
@@ -281,7 +286,7 @@ func TestInitRestartsAnEngineThatRunsAnotherBuild(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []string{want}, h.dialogs)
 		require.Equal(t, []string{servicespec.RestartPrompt}, h.prompts)
-		require.Contains(t, r.stderr, "older build")
+		require.Contains(t, r.stderr, "different build")
 		require.Contains(t, h.opened[0], "#1.", "init goes on to the link")
 	}
 }
@@ -319,10 +324,32 @@ func TestInitRestartStops(t *testing.T) {
 		h.build = "0.0.1-old"
 		r, _ := localInit(t, h, "--demo")
 		require.Equal(t, cli.ExitError, r.code, name)
-		require.Contains(t, r.stderr, "older build", name)
+		require.Contains(t, r.stderr, "different build", name)
 		require.Empty(t, h.opened, name)
 		if name == "no dialog" {
 			require.Contains(t, r.stderr, "systemctl restart", "it names the command")
+		}
+	}
+}
+
+// A restart that leaves the service on another build stops init and names
+// the unit that starts the other binary; another dialog failure names the
+// root command too.
+func TestInitRestartThatChangesNothingOrFails(t *testing.T) {
+	t.Parallel()
+	stuck := newFakeHost()
+	stuck.stuck = true
+	failed := newFakeHost()
+	failed.dialogErr = errors.New("osascript exploded")
+	for name, h := range map[string]*fakeHost{"stuck": stuck, "failed": failed} {
+		h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+		h.build = "0.0.1-old"
+		r, _ := localInit(t, h, "--demo")
+		require.Equal(t, cli.ExitError, r.code, name)
+		require.Contains(t, r.stderr, "systemctl restart", name)
+		require.Empty(t, h.opened, name)
+		if name == "stuck" {
+			require.Contains(t, r.stderr, osservice.UnitPath("linux"))
 		}
 	}
 }

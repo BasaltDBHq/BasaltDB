@@ -33,11 +33,17 @@ func DiscoverConfig(h Machine, system string) (string, error) {
 type AgentConfigsError struct {
 	Agent, System, User string
 	InBoth              bool
+	// SystemUnreadable: this person cannot read the system config, so the
+	// agent's socket was the only sign of it, and there is none.
+	SystemUnreadable bool
 }
 
 func (e *AgentConfigsError) Error() string {
 	if e.InBoth {
 		return fmt.Sprintf("agent %q is in both engine configs, %s and %s: remove it from the one you do not use", e.Agent, e.System, e.User)
+	}
+	if e.SystemUnreadable {
+		return fmt.Sprintf("agent %q is not in %s, and the service config %s cannot be read by this user and its engine is not running for that agent (no socket)", e.Agent, e.User, e.System)
 	}
 	return fmt.Sprintf("agent %q is in neither engine config, %s or %s", e.Agent, e.System, e.User)
 }
@@ -45,21 +51,22 @@ func (e *AgentConfigsError) Error() string {
 // DiscoverConfigFor is DiscoverConfig for a command that names its agent:
 // when two configs exist, the one that holds the agent. It refuses when
 // both hold it or neither does. holds says whether the config at a path
-// holds the agent. Without an agent the plain rule stays.
-func DiscoverConfigFor(h Machine, system, agent string, holds func(path string) bool) (string, error) {
+// holds the agent, and whether it could be read. Without an agent the plain rule stays.
+func DiscoverConfigFor(h Machine, system, agent string, holds func(path string) (holds, readable bool)) (string, error) {
 	path, err := DiscoverConfig(h, system)
 	var both *config.BothConfigsError
 	if agent == "" || !errors.As(err, &both) {
 		return path, err
 	}
-	inSystem, inUser := holds(both.System), holds(both.User)
+	inSystem, systemReadable := holds(both.System)
+	inUser, _ := holds(both.User)
 	switch {
 	case inSystem && !inUser:
 		return both.System, nil
 	case inUser && !inSystem:
 		return both.User, nil
 	}
-	return "", &AgentConfigsError{Agent: agent, System: both.System, User: both.User, InBoth: inSystem}
+	return "", &AgentConfigsError{Agent: agent, System: both.System, User: both.User, InBoth: inSystem, SystemUnreadable: !systemReadable}
 }
 
 // HoldsAgent says whether cfg lists the agent.

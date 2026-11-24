@@ -34,11 +34,11 @@ func RunMCPAt(ctx context.Context, args []string, io cli.Stdio, h cli.Machine, m
 	// With --agent and two configs, the one that holds the agent: a config
 	// this person cannot read is a service engine's, which holds the agents
 	// its socket directory has a socket for.
-	cfgPath, err := cli.DiscoverConfigFor(h, system, *name, func(path string) bool {
+	cfgPath, err := cli.DiscoverConfigFor(h, system, *name, func(path string) (bool, bool) {
 		if cfg, err := config.Load(path); err == nil {
-			return cli.HoldsAgent(cfg, *name)
+			return cli.HoldsAgent(cfg, *name), true
 		}
-		return path == system && slices.Contains(engine.SocketAgents(config.DefaultSocketDir(runtime.GOOS)), *name)
+		return path == system && slices.Contains(engine.SocketAgents(config.DefaultSocketDir(runtime.GOOS)), *name), false
 	})
 	if err != nil {
 		return m.Fail(io.Err, "mcp", err)

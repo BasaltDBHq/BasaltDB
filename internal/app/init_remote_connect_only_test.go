@@ -226,7 +226,7 @@ func TestInitRemoteRecoveryIgnoresOldSavedFlags(t *testing.T) {
 	require.NotEqual(t, first.res.SetupID, again.res.SetupID)
 	require.Equal(t, string(setupcode.KindAgent), again.res.Kind)
 	require.Equal(t, guardmodel.DefaultPrefix, again.payload.Prefix)
-	require.Equal(t, guardmodel.DefaultStatementTimeout.Milliseconds(), again.payload.Agent.StatementTimeoutMs)
+	require.Equal(t, guardmodel.DefaultRoleStatementTimeout.Milliseconds(), again.payload.Agent.StatementTimeoutMs)
 	require.True(t, again.payload.KeepsGrants())
 	require.Equal(t, mcpcontract.OperatedByAgent, again.cfg.OperatedBy)
 	raw, err = os.ReadFile(cfg)

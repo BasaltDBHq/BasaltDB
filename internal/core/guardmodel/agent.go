@@ -6,8 +6,13 @@ import (
 )
 
 const (
-	// DefaultStatementTimeout is the agent role's query time limit.
-	DefaultStatementTimeout = 30 * time.Second
+	// DefaultRoleStatementTimeout is the statement_timeout a setup sets on
+	// the agent's role (ALTER ROLE ... SET), the limit on any connection
+	// made with the role's credential. It is not the limit the engine puts
+	// on the agent's own statements: the engine sets sqlguard's
+	// DefaultStatementTimeout (5s, or limits.statementTimeoutMs) on every
+	// transaction it runs, which wins over this role default.
+	DefaultRoleStatementTimeout = 30 * time.Second
 )
 
 // UnpickedGrantsDetail is what the detail of the guard's BS008 refusal of

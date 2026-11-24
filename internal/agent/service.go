@@ -89,8 +89,8 @@ type Visibility interface {
 }
 
 // StoreSet is the agent's store as the agent use cases read it, built by
-// the wiring for the store's kind. The service reads Capabilities, never
-// the kind.
+// the wiring for the store's kind. The service may read Capabilities; it
+// never switches on the kind.
 type StoreSet struct {
 	// Kind is the kind of store the agent is bound to, as describe reports it.
 	Kind action.StoreKind
@@ -223,7 +223,7 @@ func (ds *Service) SetPorts(delivery Delivery, approvals Approvals, upgrade Upgr
 }
 
 // StatementTimeout is the agent's statement timeout, 0 when the service
-// knows no store data.
+// knows no store data or its Data has zero Limits.
 func (ds *Service) StatementTimeout() time.Duration {
 	return ds.store.Data.Limits().StatementTimeout
 }

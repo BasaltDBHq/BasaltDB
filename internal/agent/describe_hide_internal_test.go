@@ -146,3 +146,73 @@ func TestResourceFingerprintReadsTheStableForm(t *testing.T) {
 	}
 	require.Equal(t, fp(1, 1), fp(99, 50))
 }
+
+// TestHideFieldsFailsWhenClassesAreShort: a field with no class is never
+// taken as not SECRET; describe fails closed.
+func TestHideFieldsFailsWhenClassesAreShort(t *testing.T) {
+	t.Parallel()
+	d, classes := customersDoc()
+	_, err := hideFields(d, classes[:len(classes)-1])
+	require.ErrorIs(t, err, errClassesShort)
+	_, err = hideFields(d, nil)
+	require.ErrorIs(t, err, errClassesShort)
+}
+
+// TestHideFieldsRefusesAStoreKeyTheAnswerHas: a group, hidden count, flag
+// or display member the answer already writes, or two of the store's own
+// keys that meet, is an engine error, never a duplicate or shadowed key.
+func TestHideFieldsRefusesAStoreKeyTheAnswerHas(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		edit func(*agentstore.Detail)
+	}{
+		{"flag kind", func(d *agentstore.Detail) { d.Flags["kind"] = "x" }},
+		{"flag stats, written only after the fingerprint", func(d *agentstore.Detail) { d.Flags["stats"] = 1 }},
+		{"flag primaryKey, written only when there is one", func(d *agentstore.Detail) { d.Flags["primaryKey"] = []string{"ssn"} }},
+		{"group fields", func(d *agentstore.Detail) { d.Groups = append(d.Groups, "fields") }},
+		{"group keys counts into hiddenKeys", func(d *agentstore.Detail) { d.Features[0].Group = "keys" }},
+		{"flag is a group", func(d *agentstore.Detail) { d.Flags["links"] = true }},
+		{"flag is a hidden count", func(d *agentstore.Detail) { d.Flags["hiddenLinks"] = 0 }},
+		{"display member name", func(d *agentstore.Detail) { d.Fields[4].Display = map[string]any{"name": "other"} }},
+		{"masked member pii", func(d *agentstore.Detail) { d.Fields[3].Masked = map[string]any{"pii": nil} }},
+		{"display member twice", func(d *agentstore.Detail) {
+			d.Fields[4].Display = json.RawMessage(`{"computed":1,"computed":2}`)
+		}},
+	} {
+		d, classes := customersDoc()
+		tc.edit(&d)
+		_, err := hideFields(d, classes)
+		require.ErrorIs(t, err, errStoreKey, tc.name)
+	}
+}
+
+// TestReservedKeysAreTheAnswersKeys keeps resourceKeys and fieldKeys equal
+// to the keys the answer writes itself, every optional one set.
+func TestReservedKeysAreTheAnswersKeys(t *testing.T) {
+	t.Parallel()
+	p := writePolicy
+	r := Resource{
+		Form: FormResource, Resource: "app.t", Fingerprint: "f", Unchanged: true,
+		Detail: &ResourceDetail{Kind: "TABLE", Comment: "c", PrimaryKey: []string{"id"}, Stats: map[string]any{}, Policy: &p},
+	}
+	raw, err := json.Marshal(r)
+	require.NoError(t, err)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(raw, &m))
+	require.ElementsMatch(t, resourceKeys, keysOf(m))
+
+	raw, err = json.Marshal(Field{Name: "x", ExpressionHidden: true, Comment: "c"})
+	require.NoError(t, err)
+	m = nil
+	require.NoError(t, json.Unmarshal(raw, &m))
+	require.ElementsMatch(t, fieldKeys, keysOf(m))
+}
+
+func keysOf(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}

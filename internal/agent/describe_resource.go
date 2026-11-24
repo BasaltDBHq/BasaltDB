@@ -83,14 +83,22 @@ func (ds *Service) DescribeResource(ctx context.Context, resource, ifFingerprint
 // and columns): a field the agent cannot read or classed SECRET is not
 // listed, and every identity, feature and expression that touches one is
 // left out whole and counted, as is a feature that is not Visible. classes
-// are the fields' classes, in field order. The store's content (displays,
-// stats, flags) passes through as it is.
+// are the fields' classes, in field order: fewer than the fields is an
+// engine error, never a field taken as not SECRET. The store's content
+// (displays, stats, flags) passes through as it is; a key of it that is one
+// of the answer's own is an engine error (checkStoreKeys).
 func hideFields(d agentstore.Detail, classes []pii.Class) (ResourceDetail, error) {
+	if len(classes) < len(d.Fields) {
+		return ResourceDetail{}, fmt.Errorf("%w: %d classes for %d fields", errClassesShort, len(classes), len(d.Fields))
+	}
+	if err := checkStoreKeys(d); err != nil {
+		return ResourceDetail{}, err
+	}
 	hidden := map[agentstore.FieldRef]bool{}
 	names := map[agentstore.FieldRef]string{}
 	for i, f := range d.Fields {
 		names[f.Ref] = f.Name
-		if !f.Readable || (i < len(classes) && classes[i].Class == guardmodel.ClassSecret) {
+		if !f.Readable || classes[i].Class == guardmodel.ClassSecret {
 			hidden[f.Ref] = true
 		}
 	}
@@ -169,8 +177,13 @@ func featureOrder(d agentstore.Detail) []string {
 	return order
 }
 
+// errClassesShort: the classes do not cover every field, so a SECRET field
+// could be shown; describe fails closed.
+var errClassesShort = errors.New("describe: the pii classes do not cover every field")
+
+// classAt is the class of field i, Unclassified when it has none.
 func classAt(classes []pii.Class, i int) pii.Class {
-	if i < len(classes) && classes[i].Class != "" {
+	if classes[i].Class != "" {
 		return classes[i]
 	}
 	return pii.Unclassified

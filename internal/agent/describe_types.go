@@ -1,8 +1,11 @@
 package agent
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -296,6 +299,101 @@ func (d *ResourceDetail) members(o *jsonObject) {
 	}
 	o.add("actions", d.Actions)
 	o.add("policy", d.Policy)
+}
+
+// resourceKeys are the keys describe's resource answer writes itself
+// (Resource.MarshalJSON and members), whether or not it writes them this
+// time. A store's group, the count of its hidden features and a flag never
+// take one: an agent would read it as the answer's own.
+var resourceKeys = []string{
+	"form", "resource", "fingerprint", "unchanged", "kind", "comment", "fields", "hiddenFields",
+	"primaryKey", "hiddenKeys", "stats", "actions", "policy",
+}
+
+// fieldKeys are the keys Field.MarshalJSON writes itself; a member of a
+// store's Display or Masked never takes one.
+var fieldKeys = []string{"name", "type", "nullable", "expressionHidden", "comment", "pii"}
+
+var errStoreKey = errors.New("describe: a store key is already a key of the answer")
+
+// checkStoreKeys fails when a key the store names would take a key of the
+// answer: a group, its hidden count or a flag that is a key of resourceKeys
+// or another of them, or a member of a field's Display or Masked that is in
+// fieldKeys or named twice. The answer never has a key twice.
+func checkStoreKeys(d agentstore.Detail) error {
+	seen := map[string]bool{}
+	for _, k := range resourceKeys {
+		seen[k] = true
+	}
+	claim := func(key string) error {
+		if seen[key] {
+			return fmt.Errorf("%w: %q", errStoreKey, key)
+		}
+		seen[key] = true
+		return nil
+	}
+	keys := []string{}
+	for _, g := range featureOrder(d) {
+		if g == "" {
+			return errUnnamedGroup
+		}
+		keys = append(keys, g, hiddenKey(g))
+	}
+	keys = append(keys, slices.Sorted(maps.Keys(d.Flags))...)
+	for _, k := range keys {
+		if err := claim(k); err != nil {
+			return err
+		}
+	}
+	for _, f := range d.Fields {
+		for _, v := range []any{f.Display, f.Masked} {
+			if err := checkMemberKeys(v); err != nil {
+				return fmt.Errorf("field %q: %w", f.Name, err)
+			}
+		}
+	}
+	return nil
+}
+
+// checkMemberKeys fails when v, a store's display of a field, has a member
+// Field writes itself or one member twice. v encodes to a JSON object or
+// null; anything else is errDisplayNotObject. Only the keys are read: the
+// value is encoded again, as it is, when the answer is written.
+func checkMemberKeys(v any) error {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	if string(raw) == "null" {
+		return nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return errDisplayNotObject
+	}
+	seen := map[string]bool{}
+	for _, k := range fieldKeys {
+		seen[k] = true
+	}
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		key, ok := tok.(string)
+		if !ok {
+			return errDisplayNotObject
+		}
+		if seen[key] {
+			return fmt.Errorf("%w: %q", errStoreKey, key)
+		}
+		seen[key] = true
+		var skip json.RawMessage
+		if err := dec.Decode(&skip); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // hiddenKey is the key that counts a group's hidden features: indexes is

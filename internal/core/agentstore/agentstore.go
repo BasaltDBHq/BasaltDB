@@ -12,8 +12,8 @@ import "github.com/basaltdbhq/basaltdb/internal/core/action"
 // family has no tools yet.
 type Family string
 
-// FamilySQL is the stores that speak SQL (Postgres): the query and write
-// tools, with the sql argument.
+// FamilySQL is the stores that speak SQL (Postgres, MySQL): the query and
+// write tools, with the sql argument.
 const FamilySQL Family = "SQL"
 
 // Request is one request in the store's language: its text and its

@@ -94,7 +94,9 @@ type agentDeps struct {
 // agentStoreSet is the agent's store set: the ports of its store, the
 // family its kind belongs to, and the store's language. SQL is the only
 // language the engine has; a store of another family is served none of the
-// tools that send a request.
+// tools that send a request. wire builds the set once, when the service is
+// built (agentsvc.New keeps a copy): a later change to s.deps.Agent or the
+// core store does not reach the agent use cases.
 func (s *Service) agentStoreSet() agentsvc.StoreSet {
 	a := &s.deps.Agent
 	set := agentsvc.StoreSet{

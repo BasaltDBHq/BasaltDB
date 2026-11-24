@@ -21,7 +21,7 @@ Tags are semver with a leading `v`. Release tags **MUST** start with `v` (e.g. `
 
 A release candidate is not a version of its own: `v1.0.0-rc.1` is the candidate for `v1.0.0`, and `v0.1.0-alpha-rc.1` the candidate for `v0.1.0-alpha`. The release tag (alpha, beta or stable, "the release" below) and its candidates sit on the same commit.
 
-`go install …@latest` **ignores prereleases**. Once a release exists, pin its tag, for example `@v0.0.1-alpha`. `install.sh` with no argument (`latest`) includes prereleases but never a release candidate; GitHub `/releases/latest` includes neither.
+`go install …@latest` **ignores prereleases**. Once a release exists, pin its tag, for example `@v0.1.0-alpha`. `install.sh` with no argument (`latest`) includes prereleases but never a release candidate; GitHub `/releases/latest` includes neither.
 
 ## How to cut a release
 
@@ -154,7 +154,7 @@ CGO_ENABLED=0 go install ./cmd/basalt
 CGO_ENABLED=0 go install github.com/basaltdbhq/basaltdb/cmd/basalt@v0.0.1-alpha
 ```
 
-`@latest` will not pick an alpha tag. Pin the tag, for example `@v0.0.1-alpha`.
+`@latest` will not pick an alpha tag. Pin the tag, for example `@v0.1.0-alpha`.
 
 Release binaries embed the tag via `-ldflags`. `go install` uses the module version from build info when ldflags did not override it.
 

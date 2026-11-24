@@ -93,6 +93,17 @@ curl -sI "https://portal.basaltvault.app/connect" | grep -iE 'content-security-p
 # connect-src https://connect.basaltvault.app; Cache-Control: no-store
 ```
 
+## Keep Cloudflare Web Analytics off
+
+Leave Web Analytics off on the Pages project and on the `basaltvault.app` zone. When it is on, Cloudflare adds a `<script ... src='https://static.cloudflareinsights.com/beacon.min.js'>` tag before `</body>` of every HTML page it serves. The live pages then no longer match the bytes built from this repository, `make portal-verify` reports `DIFFERS` on each of them, and every engine's daily portal check reports `PORTAL_MISMATCH`.
+
+Check it after any change to the project or the zone:
+
+```sh
+curl -s https://portal.basaltvault.app/ | grep -c cloudflareinsights   # prints 0
+make portal-verify
+```
+
 ## Changing the portal
 
 A change goes in by pull request to `master` and deploys from there. Roll back by reverting the commit on `master` (or promoting an earlier deployment in the Cloudflare dashboard). If the account is ever in doubt, rotate the Cloudflare credentials, review the deployment history and the DNS records, and tell people to re-register their passkeys.

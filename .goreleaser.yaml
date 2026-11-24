@@ -102,15 +102,20 @@ signs:
       - "${artifact}"
     output: true
 
+# GoReleaser never writes notes from git. A stable tag passes the notes of its
+# CHANGELOG.md section with --release-notes (scripts/release-notes.sh), which
+# GoReleaser reads only while the changelog is on, so it is on only then.
+# Release candidates publish with a fixed body and no GoReleaser publish.
 changelog:
-  disable: true
+  disable: '{{ ne (envOrDefault "RELEASE_KIND" "") "tag" }}'
 
 # Snapshot archive names (CI Actions artifacts only). CI never tags
 # and never publishes these to GitHub Releases.
 snapshot:
   version_template: "0.0.0-nightly"
 
-# The formula is uploaded only on v* tags and only when PUBLISH_HOMEBREW is
+# The formula is uploaded only on stable v* tags (RELEASE_KIND "tag"; never
+# "rc" or "snapshot") and only when PUBLISH_HOMEBREW is
 # "true" (the release workflow sets it from the repository variable of the same
 # name, default off). Unset or anything else means no upload and no tap token
 # needed. Default tap is BasaltDBHq/homebrew-tap (install: brew install basaltdbhq/tap/basaltdb).
@@ -135,7 +140,8 @@ brews:
 
 release:
   name_template: "{{ .Tag }}"
-  # Semver prerelease suffix (-alpha / -beta / -rc) → GitHub prerelease.
+  # Semver prerelease suffix (-alpha / -beta) → GitHub prerelease. Release
+  # candidates (-rc.N) are published as prereleases by the release workflow.
   prerelease: auto
   mode: replace
   # The portal manifest the release's pages were built from, so anyone can

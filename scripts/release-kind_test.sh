@@ -43,6 +43,17 @@ check_kind push refs/tags/v0.0.1-alpha tag
 check_kind push refs/tags/v0.0.1-alpha.1 tag
 check_kind push refs/tags/v1.0.0 tag
 
+# a release candidate: v<semver>-rc.<N>, only digits after -rc.
+check_kind push refs/tags/v0.1.0-alpha-rc.1 rc
+check_kind push refs/tags/v0.1.0-alpha-rc.12 rc
+check_kind push refs/tags/v1.0.0-rc.1 rc
+check_kind push refs/tags/v0.1.0-alpha tag
+check_kind push refs/tags/v0.1.0-alpha-rc.1a tag
+check_kind push refs/tags/v0.1.0-alpha-rc. tag
+check_kind push refs/tags/x ignore
+check_kind push refs/tags/x-rc.1 ignore
+check_kind workflow_dispatch refs/tags/v0.1.0-alpha-rc.1 ignore
+
 # lookalike tags and nightly must not publish
 check_kind push refs/tags/nightly ignore
 check_kind push refs/tags/0.0.1-alpha ignore
@@ -51,6 +62,7 @@ check_kind push refs/tags/latest ignore
 check_tag_ok v0.0.1-alpha
 check_tag_ok v0.0.1-alpha.1
 check_tag_ok v1.0.0
+check_tag_ok v0.1.0-alpha-rc.1
 check_tag_no nightly
 check_tag_no latest
 check_tag_no 0.0.1-alpha

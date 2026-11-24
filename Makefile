@@ -102,7 +102,12 @@ install-sh-check: ## POSIX syntax, default repo, and archive names for install.s
 	@sh -n scripts/release-archive-smoke.sh
 	@sh -n scripts/release-kind.sh
 	@sh -n scripts/require-v-tag.sh
+	@sh -n scripts/release-notes.sh
+	@sh -n scripts/rc-gate.sh
 	@sh scripts/release-kind_test.sh
+	@sh scripts/release-notes_test.sh
+	@sh scripts/rc-gate_test.sh
+	@test "$$(grep -Fc 'GORELEASER_CURRENT_TAG: $${{ github.ref_name }}' .github/workflows/release.yml)" -eq 2
 	@grep -Fq 'tags: ["v*"]' .github/workflows/release.yml
 	@if grep -E '^[[:space:]]*(branches|workflow_dispatch):' .github/workflows/release.yml; then echo 'release.yml must not trigger on branches or workflow_dispatch' >&2; exit 1; fi
 	@grep -Fq "vars.PUBLISH_NPM == 'true'" .github/workflows/release.yml

@@ -110,17 +110,35 @@ function render(view) {
   $("home-changes").hidden = !view.changes;
 }
 
-async function main() {
-  let answer = null;
+// REFRESH_MS is how often a page that is not showing a running engine asks
+// again: right after the setup page finishes, the engine switches from its
+// setup-only server to the full one within a second, and the page that was
+// opened in between must not stay on "installed".
+export const REFRESH_MS = 2000;
+
+// stillChanging is true for an answer that is about to change by itself: no
+// config yet, starting, or none at all.
+export const stillChanging = (h) => h?.state !== "RUNNING";
+
+async function read() {
   try {
     const session = sameOriginSession();
     const res = await session.request("GET", "/api/v1/home");
     session.close();
-    if (res.status === 200) answer = JSON.parse(res.body);
+    if (res.status === 200) return JSON.parse(res.body);
   } catch {
     // the page says it could not read the state
   }
-  render(homeView(answer));
+  return null;
+}
+
+async function main() {
+  for (;;) {
+    const answer = await read();
+    render(homeView(answer));
+    if (!stillChanging(answer)) return;
+    await new Promise((resolve) => setTimeout(resolve, REFRESH_MS));
+  }
 }
 
 if (typeof document !== "undefined") main();

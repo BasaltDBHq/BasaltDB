@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkLabels, guardRow, homeView, passkeysRow } from "./home.js";
+import { checkLabels, guardRow, homeView, passkeysRow, stillChanging } from "./home.js";
 
 const running = { state: "RUNNING", version: "0.1.0-alpha", agents: 2, databases: 1, providers: ["SUPABASE"], guard: "CURRENT", passkeys: 1, checks: [{ provider: "SUPABASE", href: "http://localhost:8787/setup/#1.x" }] };
 
@@ -55,4 +55,11 @@ test("an engine with no setup shows no counts and no rows", () => {
 
 test("a missing answer says it could not read the state", () => {
   assert.match(text(homeView(null).sub), /could not read/);
+});
+
+test("a page that is not running asks again, a running one stops", () => {
+  assert.ok(stillChanging({ state: "NOT_SET_UP" }));
+  assert.ok(stillChanging({ state: "STARTING" }));
+  assert.ok(stillChanging(null));
+  assert.ok(!stillChanging(running));
 });

@@ -132,6 +132,8 @@ let mcpLine = "";
 let setupLink = "";
 
 async function install() {
+  // The administrator dialog is not available on a runner: run its fixed script under sudo.
+  run("sh", [path.join(DIR, "service.sh"), "install", BIN], { stdio: "inherit" });
   const init = basaltInit(["--agent", AGENT]);
   try {
     setupLink = await initLink(init);

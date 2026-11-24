@@ -30,8 +30,13 @@ trap 'sh "$here/service.sh" cleanup "$out" || true' EXIT
 
 # The service runs the binary as root, so init refuses one that anyone but
 # root could change or that sits under a folder anyone but root can write.
-# /usr/local/bin is Homebrew's on the Intel macOS runner: use a folder of our own.
-inst=/opt/basalt-e2e
+# /usr/local/bin is Homebrew's on the Intel macOS runner and /opt is open to
+# everyone on the Ubuntu one: use a folder of our own under a root-owned parent.
+if [ "$os" = Darwin ]; then
+	inst=/Library/BasaltE2E
+else
+	inst=/usr/local/lib/basalt-e2e
+fi
 sudo mkdir -p "$inst"
 sudo chown 0:0 "$inst"
 sudo chmod 755 "$inst"

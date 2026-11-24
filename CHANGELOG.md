@@ -10,7 +10,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The engine's systemd unit now escapes `%` and `$` in the binary and config paths, so a path containing them starts the engine instead of being expanded by systemd.
 - Commands the CLI prints now quote an argument that starts with `=`, so a zsh user can paste them: zsh expands `=cmd` to a path.
-- In service mode the engine also refuses a plugin socket directory, socket or plugin path that an ACL entry opens to other users, and says so by name. `basalt service install` removes any ACL from the directories it makes, so one inherited from a directory above (such as a default ACL on `/opt`) no longer stops the engine from reaching its own plugins.
 
 ## [0.1.0-alpha] - 2026-11-24
 

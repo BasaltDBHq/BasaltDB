@@ -282,11 +282,8 @@ func (c *Checker) save(k cache) error {
 // ErrNoDir is returned by CacheDir when no cache directory can be found.
 var ErrNoDir = errors.New("no cache directory")
 
-// CacheDir is override, or the user cache directory's basalt folder.
-func CacheDir(override string) (string, error) {
-	if override != "" {
-		return override, nil
-	}
+// CacheDir is the user cache directory's basalt folder.
+func CacheDir() (string, error) {
 	base, err := os.UserCacheDir()
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", ErrNoDir, err)

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"path/filepath"
 
@@ -75,14 +74,9 @@ func pluginRuns(cfg config.Config, stateDir string, euid int, log *slog.Logger) 
 	return &child.Runs{Dir: dir}
 }
 
-var pluginDebugWriter = plugin.DebugWriter
-
 // pluginOptions are how the engine reaches its plugins.
 type pluginOptions struct {
-	// Stderr receives local plugins' stderr (basalt engine --plugin-debug);
-	// nil discards it.
-	Stderr io.Writer
-	euid   int
+	euid int
 	// runs records each local plugin process the engine starts (pluginRuns).
 	runs     *child.Runs
 	stateDir string
@@ -91,7 +85,7 @@ type pluginOptions struct {
 }
 
 func (o pluginOptions) engine() plugin.Options {
-	return plugin.NewOptions(o.Stderr, o.euid, o.stateDir, o.kept, dial.Dialer{Runs: o.runs}, pluginPorts)
+	return plugin.NewOptions(nil, o.euid, o.stateDir, o.kept, dial.Dialer{Runs: o.runs}, pluginPorts)
 }
 
 func newEnginePlugins(cfg config.Config, configPath string, o pluginOptions, log *slog.Logger) *plugin.Plugins {

@@ -24,8 +24,8 @@ import (
 
 // Options are how the engine reaches its plugins.
 type Options struct {
-	// Stderr receives local plugins' stderr (basalt engine --plugin-debug);
-	// nil discards it. Never the engine's log.
+	// Stderr receives local plugins' stderr; nil discards it (the engine
+	// passes nil: a plugin's stderr may hold data). Never the engine's log.
 	Stderr io.Writer
 	// SocketBase is where socket plugins' socket directories are made; ""
 	// is the OS temporary directory (dial.Options.SocketBase).
@@ -548,20 +548,6 @@ func noticeCount(n int) string {
 		return "1 approval notice"
 	}
 	return fmt.Sprintf("%d approval notices", n)
-}
-
-// DebugWriter is where --plugin-debug sends local plugins' stderr: the
-// foreground engine's terminal. A service engine's stderr is its log file,
-// so there it is refused and plugin stderr stays discarded.
-func DebugWriter(cfg config.Config, w io.Writer, log *slog.Logger) io.Writer {
-	if w == nil {
-		return nil
-	}
-	if cfg.Service() {
-		log.Warn("--plugin-debug is ignored: this engine runs as a service, so its stderr is a log file, and plugin output never goes to a log")
-		return nil
-	}
-	return w
 }
 
 // whyKeptAgentInGroup: an agent's OS user is in the engine's group, which

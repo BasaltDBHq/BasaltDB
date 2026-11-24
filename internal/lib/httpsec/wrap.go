@@ -3,7 +3,6 @@ package httpsec
 import (
 	"net"
 	"net/http"
-	"os"
 	"strings"
 )
 
@@ -15,18 +14,11 @@ func Wrap(h http.Handler, allowedHosts []string, scheme string, ln net.Addr) htt
 	return h
 }
 
-// DefaultAllowedHosts returns loopback names, the bind host, and BASALTDB_ALLOWED_HOSTS entries.
+// DefaultAllowedHosts returns loopback names and the bind host.
 func DefaultAllowedHosts(bindHost string) []string {
 	hosts := []string{"127.0.0.1", "localhost", "::1", "[::1]"}
 	if h := strings.TrimSpace(bindHost); h != "" {
 		hosts = append(hosts, strings.ToLower(h))
-	}
-	if extra := strings.TrimSpace(os.Getenv("BASALTDB_ALLOWED_HOSTS")); extra != "" {
-		for _, part := range strings.Split(extra, ",") {
-			if h := strings.ToLower(strings.TrimSpace(part)); h != "" {
-				hosts = append(hosts, h)
-			}
-		}
 	}
 	return hosts
 }

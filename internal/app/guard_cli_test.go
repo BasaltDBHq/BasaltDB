@@ -23,14 +23,8 @@ type result struct {
 func cliOn(t *testing.T, h *fakeHost, env map[string]string, stdin string, args ...string) result {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	cache := t.TempDir()
 	c := newIO(context.Background(), cli.Stdio{In: strings.NewReader(stdin), Out: &stdout, Err: &stderr},
-		func(k string) string {
-			if v, ok := env[k]; ok || k != envCacheDir {
-				return v
-			}
-			return cache
-		})
+		func(k string) string { return env[k] })
 	c.Host = h
 	code := runGuard(c, args)
 	return result{code, stdout.String(), stderr.String()}

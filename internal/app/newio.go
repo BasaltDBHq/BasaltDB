@@ -16,11 +16,6 @@ import (
 )
 
 // Environment variables the CLI reads.
-const (
-	envAgentURL = "BASALT_DATABASE_URL"
-	envCacheDir = "BASALT_CACHE_DIR"
-)
-
 // newIO is the CLI shell over the real machine, for a command line on std.
 func newIO(ctx context.Context, std cli.Stdio, getenv func(string) string) *cli.IO {
 	sh := shell{}

@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
+	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
@@ -56,6 +57,18 @@ type fakeHost struct {
 	setupCodes []string
 	setupErrs  []error
 	setupCalls int
+	// build is the build the engine reports ("" is this binary's own);
+	// buildErr, when set, is the engine not answering.
+	build    string
+	buildErr error
+	// silent is an engine too old to report a build.
+	silent bool
+	// stuck is a restart that starts the same old build again.
+	stuck bool
+	// downAfterRestart is how many EngineBuild calls fail after the
+	// restart (-1: always) before the engine answers.
+	downAfterRestart int
+	restarted        bool
 	// runs are what ServiceRuns reads, one per call (the last one repeats),
 	// with lastExit; none is no service manager.
 	runs     []int
@@ -69,6 +82,25 @@ func newFakeHost() *fakeHost {
 func (h *fakeHost) Euid() int                           { return h.euid }
 func (h *fakeHost) ResolvedExecutable() (string, error) { return fakeBin, nil }
 func (h *fakeHost) DialogAvailable(string) error        { return h.noDialog }
+
+func (h *fakeHost) EngineBuild(context.Context, string) (string, error) {
+	if h.restarted && h.downAfterRestart != 0 {
+		if h.downAfterRestart > 0 {
+			h.downAfterRestart--
+		}
+		return "", errors.New("connection refused")
+	}
+	if h.buildErr != nil {
+		return "", h.buildErr
+	}
+	if h.silent {
+		return "", nil
+	}
+	if h.build == "" {
+		return buildinfo.Version, nil
+	}
+	return h.build, nil
+}
 
 func (h *fakeHost) ServiceRuns(context.Context, string) (int, int, error) {
 	if len(h.runs) == 0 {
@@ -101,6 +133,10 @@ func (h *fakeHost) SetupState(context.Context, string) (string, error) {
 func (h *fakeHost) AdminDialog(_ context.Context, _, prompt, script string, _ io.Writer) error {
 	h.prompts = append(h.prompts, prompt)
 	h.dialogs = append(h.dialogs, script)
+	h.restarted = true
+	if h.dialogErr == nil && !h.stuck {
+		h.build, h.silent = "", false // the restart runs this binary
+	}
 	return h.dialogErr
 }
 
@@ -127,10 +163,12 @@ type localHost struct{}
 func (localHost) OSInstallScript(goos, binary string) (string, error) {
 	return osservice.InstallScript(goos, binary)
 }
-func (localHost) OSRemoveScript(goos string) (string, error) { return osservice.RemoveScript(goos) }
-func (localHost) OSResetScript(goos string) (string, error)  { return osservice.ResetScript(goos) }
-func (localHost) OSDefaultUser(goos string) string           { return osservice.DefaultUser(goos) }
-func (localHost) OSUnitPath(goos string) string              { return osservice.UnitPath(goos) }
+
+func (localHost) OSRemoveScript(goos string) (string, error)  { return osservice.RemoveScript(goos) }
+func (localHost) OSResetScript(goos string) (string, error)   { return osservice.ResetScript(goos) }
+func (localHost) OSRestartScript(goos string) (string, error) { return osservice.RestartScript(goos) }
+func (localHost) OSDefaultUser(goos string) string            { return osservice.DefaultUser(goos) }
+func (localHost) OSUnitPath(goos string) string               { return osservice.UnitPath(goos) }
 
 // newIO is the CLI's I/O on the fake machine, without the shell.
 func newIO(ctx context.Context, in io.Reader, out, errw io.Writer, getenv func(string) string) *cli.IO {
@@ -160,7 +198,7 @@ func localInitWithin(t *testing.T, limit time.Duration, h *fakeHost, args ...str
 		switch k {
 		case "CLAUDECODE":
 			return "1"
-		case setup.EnvAdminURL:
+		case envAdminURL:
 			return "postgres://admin" + ":" + "pw@db.example/app"
 		}
 		return ""
@@ -212,7 +250,7 @@ func TestInitInstallsThroughTheDialogThenPrintsAndOpensTheLink(t *testing.T) {
 	require.Equal(t, localsetup.Job{Job: localsetup.JobInstall, Agent: "demo_bot", OSUser: me752(t), Demo: true}, linkJob(t, lines[0]))
 	require.Equal(t, []string{lines[0]}, h.opened, "init opens its own link")
 
-	require.NotContains(t, read, setup.EnvAdminURL, "init never reads the admin connection string")
+	require.NotContains(t, read, envAdminURL, "init never reads the admin connection string")
 	require.NotContains(t, r.stderr, "[Y/n]", "init asks nothing in the terminal")
 	require.NotContains(t, r.stderr, "Admin connection string")
 	require.NotContains(t, r.stdout+r.stderr, "pw@db.example")
@@ -231,7 +269,7 @@ func TestInitWithoutDemoOpensTheInstallOfARealDatabase(t *testing.T) {
 	require.Equal(t, localsetup.Job{Job: localsetup.JobInstall, Agent: "sales_bot", OSUser: me752(t), Demo: false}, linkJob(t, lines[0]))
 	require.Equal(t, "basalt mcp --agent sales_bot", lines[1])
 	require.Equal(t, []string{lines[0]}, h.opened)
-	require.NotContains(t, read, setup.EnvAdminURL)
+	require.NotContains(t, read, envAdminURL)
 }
 
 func TestInitWithTheServiceInstalledAsksNoPassword(t *testing.T) {
@@ -242,6 +280,119 @@ func TestInitWithTheServiceInstalledAsksNoPassword(t *testing.T) {
 	require.Equal(t, cli.ExitOK, r.code, r.stderr)
 	require.Empty(t, h.dialogs)
 	require.Equal(t, "sales_bot", linkJob(t, strings.SplitN(r.stdout, "\n", 2)[0]).Agent)
+}
+
+// An engine service that runs another build than init is restarted through
+// the dialog, with the fixed restart script and its prompt; an engine too
+// old to report a build counts as another one.
+func TestInitRestartsAnEngineThatRunsAnotherBuild(t *testing.T) {
+	t.Parallel()
+	for _, build := range []string{"0.0.1-old", ""} {
+		h := newFakeHost()
+		h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+		h.build, h.silent = build, build == ""
+		r, _ := localInit(t, h, "--demo")
+		require.Equal(t, cli.ExitOK, r.code, r.stderr)
+		want, err := osservice.RestartScript("linux")
+		require.NoError(t, err)
+		require.Equal(t, []string{want}, h.dialogs)
+		require.Equal(t, []string{servicespec.RestartPrompt}, h.prompts)
+		require.Contains(t, r.stderr, "different build")
+		require.Contains(t, h.opened[0], "#1.", "init goes on to the link")
+	}
+}
+
+// The same build, an engine that does not answer, and a first install
+// restart nothing.
+func TestInitRestartsNothingWhenTheBuildsMatch(t *testing.T) {
+	t.Parallel()
+	same := newFakeHost()
+	same.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+	down := newFakeHost()
+	down.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+	down.buildErr = errors.New("connection refused")
+	fresh := newFakeHost()
+	fresh.build = "0.0.1-old"
+	for _, h := range []*fakeHost{same, down, fresh} {
+		r, _ := localInit(t, h, "--demo")
+		require.Equal(t, cli.ExitOK, r.code, r.stderr)
+		for _, p := range h.prompts {
+			require.NotEqual(t, servicespec.RestartPrompt, p)
+		}
+	}
+}
+
+// With no dialog the restart stops init and names the command; a closed
+// dialog stops it too, and the link is not opened.
+func TestInitRestartStops(t *testing.T) {
+	t.Parallel()
+	noDialog := newFakeHost()
+	noDialog.noDialog = servicespec.ErrNoDialog
+	closed := newFakeHost()
+	closed.dialogErr = servicespec.ErrDialogCancelled
+	for name, h := range map[string]*fakeHost{"no dialog": noDialog, "closed": closed} {
+		h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+		h.build = "0.0.1-old"
+		r, _ := localInit(t, h, "--demo")
+		require.Equal(t, cli.ExitError, r.code, name)
+		require.Contains(t, r.stderr, "different build", name)
+		require.Empty(t, h.opened, name)
+		if name == "no dialog" {
+			require.Contains(t, r.stderr, "systemctl restart", "it names the command")
+		}
+	}
+}
+
+// A restart that leaves the service on another build stops init and names
+// the unit that starts the other binary; another dialog failure names the
+// root command too.
+// The engine is down while it restarts: init waits for /healthz before it
+// reads the build again, and goes on once it answers.
+func TestInitRestartWaitsForTheEngineToAnswer(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost()
+	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+	h.build = "0.0.1-old"
+	h.downAfterRestart = 3
+	r, _ := localInit(t, h, "--demo")
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
+	require.Zero(t, h.downAfterRestart, "it polled until the engine answered")
+	require.Contains(t, r.stderr, "restarted onto this build")
+}
+
+// An engine that never answers after the restart is not a success: init
+// stops, says so and names the root command.
+func TestInitRestartStopsWhenTheEngineNeverAnswers(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost()
+	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+	h.build = "0.0.1-old"
+	h.downAfterRestart = -1
+	r, _ := localInitWithin(t, 2*time.Second, h, "--demo")
+	require.Equal(t, cli.ExitError, r.code, r.stderr)
+	require.Contains(t, r.stderr, "did not answer")
+	require.Contains(t, r.stderr, "systemctl restart")
+	require.NotContains(t, r.stderr, "restarted onto this build")
+	require.Empty(t, h.opened)
+}
+
+func TestInitRestartThatChangesNothingOrFails(t *testing.T) {
+	t.Parallel()
+	stuck := newFakeHost()
+	stuck.stuck = true
+	failed := newFakeHost()
+	failed.dialogErr = errors.New("osascript exploded")
+	for name, h := range map[string]*fakeHost{"stuck": stuck, "failed": failed} {
+		h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+		h.build = "0.0.1-old"
+		r, _ := localInit(t, h, "--demo")
+		require.Equal(t, cli.ExitError, r.code, name)
+		require.Contains(t, r.stderr, "systemctl restart", name)
+		require.Empty(t, h.opened, name)
+		if name == "stuck" {
+			require.Contains(t, r.stderr, osservice.UnitPath("linux"))
+		}
+	}
 }
 
 func TestInitOnASetUpEngineOpensTheChangeLink(t *testing.T) {
@@ -263,7 +414,7 @@ func TestInitOnASetUpEngineOpensTheChangeLink(t *testing.T) {
 		require.Equal(t, localsetup.Job{Job: localsetup.JobChange, Agent: agent, OSUser: me752(t)}, linkJob(t, lines[0]), "%v", args)
 		require.Equal(t, []string{lines[0]}, h.opened, "init opens its own link")
 		require.Contains(t, r.stderr, "update the guard or remove BasaltDB")
-		require.NotContains(t, read, setup.EnvAdminURL)
+		require.NotContains(t, read, envAdminURL)
 	}
 }
 
@@ -292,7 +443,7 @@ func TestInitStopsBeforeTheDialog(t *testing.T) {
 		require.Empty(t, h.dialogs, v.name)
 		require.Empty(t, h.sudo, v.name)
 		require.Empty(t, r.stdout, v.name)
-		require.NotContains(t, read, setup.EnvAdminURL, v.name)
+		require.NotContains(t, read, envAdminURL, v.name)
 	}
 }
 
@@ -366,7 +517,7 @@ func TestInitOnARemovedEngineRemovesTheService(t *testing.T) {
 	require.Equal(t, []string{servicespec.RemovePrompt}, h.prompts, "the dialog names the removal")
 	require.Empty(t, h.sudo)
 	require.Contains(t, r.stderr, "the engine service is removed")
-	require.NotContains(t, read, setup.EnvAdminURL)
+	require.NotContains(t, read, envAdminURL)
 }
 
 func TestInitRemovalStops(t *testing.T) {
@@ -429,7 +580,7 @@ func TestInitResetsThroughTheDialogThenOpensTheInstallLink(t *testing.T) {
 	require.Equal(t, localsetup.Job{Job: localsetup.JobInstall, Agent: "demo_bot", OSUser: me752(t)}, linkJob(t, h.opened[1]))
 	require.Contains(t, r.stderr, "BasaltDB on this computer is reset")
 	require.Contains(t, r.stdout, "basalt mcp --agent demo_bot")
-	require.NotContains(t, read, setup.EnvAdminURL)
+	require.NotContains(t, read, envAdminURL)
 }
 
 // Without the dialog, or with it closed, nothing is reset and no install
@@ -473,6 +624,9 @@ func TestInitWaitsAsLongAsAnApprovalWait(t *testing.T) {
 	require.Equal(t, 90*time.Second, setup.RemovalWait)
 }
 
+// envAdminURL is the name an admin connection string was once set under.
+const envAdminURL = "BASALT_ADMIN_DATABASE_URL"
+
 // Plain basalt init never reads BASALT_ADMIN_DATABASE_URL, with or without
 // an agent marker and with or without a terminal: the admin connection
 // string is typed on the setup page only.
@@ -489,7 +643,7 @@ func TestPlainInitNeverReadsTheAdminEnv(t *testing.T) {
 		getenv := func(k string) string {
 			read = append(read, k)
 			switch {
-			case k == setup.EnvAdminURL:
+			case k == envAdminURL:
 				return "postgres://admin" + ":" + "pw@db.example/app"
 			case k == "CLAUDECODE" && tc.marker:
 				return "1"
@@ -501,7 +655,7 @@ func TestPlainInitNeverReadsTheAdminEnv(t *testing.T) {
 		code := setupcli.RunLocal(c, localHost{}, []string{"--demo"})
 		cancel()
 		require.Equal(t, cli.ExitOK, code, "%s: %s", tc.name, stderr.String())
-		require.NotContains(t, read, setup.EnvAdminURL, tc.name)
+		require.NotContains(t, read, envAdminURL, tc.name)
 		require.NotContains(t, stdout.String()+stderr.String(), "pw@db.example", tc.name)
 	}
 }

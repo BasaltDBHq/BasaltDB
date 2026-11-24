@@ -71,7 +71,7 @@ Four hooks in v1. A fifth, `wire.verdict`, is reserved. Hook names are the lower
 
 ### What a plugin never receives
 
-Whatever its hooks, a plugin never receives: a database credential, the engine's or an agent's credential file, `pii.key`, the vault, the dictionary, tokens, column classes, which values are stored, the Vault channel's keys, an approval or revert link (except, in an `approval.deliver` notice, the link the agent's own answer handed over), or the name or data of an agent its entry does not list. No log line, error, ledger row or plugin event carries a value a plugin saw or returned: errors name the entry (`name`, `instance`) and a failure class only. Two narrow exceptions: the ledger records the `model` name and version a plugin reports (short identifiers, [In the ledger](plugins-ledger.md#in-the-ledger)), and `--plugin-debug` shows a plugin's stderr on the foreground engine's terminal ([Failure](plugins-runtime.md#failure)).
+Whatever its hooks, a plugin never receives: a database credential, the engine's or an agent's credential file, `pii.key`, the vault, the dictionary, tokens, column classes, which values are stored, the Vault channel's keys, an approval or revert link (except, in an `approval.deliver` notice, the link the agent's own answer handed over), or the name or data of an agent its entry does not list. No log line, error, ledger row or plugin event carries a value a plugin saw or returned: errors name the entry (`name`, `instance`) and a failure class only. One narrow exception: the ledger records the `model` name and version a plugin reports (short identifiers, [In the ledger](plugins-ledger.md#in-the-ledger)).
 
 ### Manifest
 

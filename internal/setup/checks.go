@@ -7,16 +7,6 @@ import (
 	"strings"
 )
 
-// EnvAdminURL is the environment variable that would carry an admin
-// connection string; init never reads it.
-const EnvAdminURL = "BASALT_ADMIN_DATABASE_URL"
-
-// RemoteAdminEnvSet is basalt init --remote's warning when
-// BASALT_ADMIN_DATABASE_URL is set: it never uses it, and an agent on this
-// machine may read it.
-const RemoteAdminEnvSet = EnvAdminURL + " is set here; basalt init --remote never uses it. " +
-	"If an agent can read this environment, remove it and ask the person to change that database password now."
-
 // RefuseSecretInitArgs refuses --init-arg values that look like a
 // connection string or carry a password. None is saved or replayed.
 func RefuseSecretInitArgs(args []string) error {

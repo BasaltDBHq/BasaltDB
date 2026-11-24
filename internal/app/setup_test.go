@@ -16,6 +16,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
+	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
@@ -82,6 +83,10 @@ func (h *fakeHost) LookPath(string) (string, error) {
 func (h *fakeHost) ResolvedExecutable() (string, error) { return fakeBin, nil }
 
 func (h *fakeHost) DialogAvailable(string) error { return h.noDialog }
+
+func (h *fakeHost) EngineBuild(context.Context, string) (string, error) {
+	return buildinfo.Version, nil
+}
 
 func (h *fakeHost) ServiceRuns(context.Context, string) (int, int, error) {
 	if len(h.runs) == 0 {

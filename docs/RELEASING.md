@@ -41,7 +41,7 @@ git tag -a "$NEXT_TAG-rc.1" -m "..."
 git push origin "$NEXT_TAG-rc.1"
 ```
 
-4. Wait for its [Release](../.github/workflows/release.yml) run. It builds and signs the archives, runs the end-to-end test against them on `macos-15` (arm64), `macos-15-intel` and `ubuntu-latest` (jobs `e2e (<runner>)`), and when every leg passes publishes those same files as a GitHub prerelease named after the candidate, with the body "Release candidate for `<release>`. Not for general use." No release notes, Homebrew, npm, MCP registry or portal check. `install.sh` never picks a candidate.
+4. Wait for its [Release](../.github/workflows/release.yml) run. It builds and signs the archives, runs the end-to-end test against them on `macos-15` (arm64), `macos-15-intel` and `ubuntu-latest` (jobs `e2e (<runner>)`), and when every leg passes saves those same files as a **draft** GitHub release named after the candidate (only maintainers see drafts, so no user, update check or `install.sh` ever finds one), with the body "Release candidate for `<release>`. Not for general use." No release notes, Homebrew, npm, MCP registry or portal check. `install.sh` never picks a candidate.
    - **Red:** nothing is published. The failed job and step say what broke. Fix it on `master`, then push `-rc.2` (the next `N`) on the new commit and wait again. A flaky leg can be re-run from the Actions page; a re-run that passes counts.
 5. Push the release on the same commit:
 
@@ -116,7 +116,7 @@ The Release workflow has no `branches`, `pull_request`, or `workflow_dispatch` t
 
 ## Event / condition matrix
 
-`scripts/release-kind.sh` (and `make install-sh-check`) encodes the kinds. `rc` publishes only a GitHub prerelease, after the end-to-end test; `tag` publishes everything, after `scripts/rc-gate.sh` found a passing `rc` on the same commit.
+`scripts/release-kind.sh` (and `make install-sh-check`) encodes the kinds. `rc` saves only a draft GitHub release, after the end-to-end test; `tag` publishes everything, after `scripts/rc-gate.sh` found a passing `rc` on the same commit.
 
 | Event | Ref | Kind | CI snapshot artifacts | Registry / GitHub Release |
 |-------|-----|------|------------------------|---------------------------|
@@ -125,7 +125,7 @@ The Release workflow has no `branches`, `pull_request`, or `workflow_dispatch` t
 | `push` | other branch | snapshot | no (CI watches `master` + PRs) | no |
 | `pull_request` | `refs/pull/N/merge` | snapshot | yes (`ci.yml`) | no |
 | `workflow_dispatch` | any | ignore | no | no (not a workflow trigger) |
-| `push` | `refs/tags/v0.1.0-alpha-rc.1` | rc | n/a | GitHub prerelease only, after the e2e (`release.yml`) |
+| `push` | `refs/tags/v0.1.0-alpha-rc.1` | rc | n/a | draft GitHub release only, after the e2e (`release.yml`) |
 | `push` | `refs/tags/v0.1.0-alpha` | tag | n/a | **yes**, after the gate (`release.yml`) |
 | `push` | `refs/tags/nightly` | ignore | no | no (`v*` filter) |
 | `push` | `refs/tags/0.0.1-alpha` | ignore | no | no (must start with `v`) |

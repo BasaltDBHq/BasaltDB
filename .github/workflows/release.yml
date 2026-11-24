@@ -7,7 +7,8 @@ name: Release
 # Two kinds of tag (scripts/release-kind.sh):
 #   rc   v<semver>-rc.<N>, e.g. v0.1.0-alpha-rc.1: build, run the end-to-end
 #        test on macOS (arm64, Intel) and Ubuntu against the built archives,
-#        then publish those same files as a GitHub prerelease. No Homebrew,
+#        then save those same files as a draft GitHub release, seen only by
+#        maintainers. No Homebrew,
 #        npm, MCP registry or portal check.
 #   tag  every other v* tag, e.g. v0.1.0-alpha: refused unless a release
 #        candidate of it on the same commit passed (scripts/rc-gate.sh), then
@@ -57,7 +58,7 @@ jobs:
           STABLE: ${{ steps.kind.outputs.stable }}
         run: sh scripts/release-notes.sh "${STABLE}" > /dev/null
 
-  # ---- rc: build, end-to-end test, prerelease of the tested files ----
+  # ---- rc: build, end-to-end test, draft release of the tested files ----
 
   build:
     needs: kind
@@ -225,7 +226,10 @@ jobs:
 
       # The files every e2e leg ran, not a rebuild. A re-run after a partial
       # upload replaces what is there.
-      - name: Publish the prerelease
+      # A draft: only maintainers see it, so no update check, install.sh or
+      # user ever finds an rc. The stable gate reads the workflow run, not
+      # this release.
+      - name: Save the draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -240,7 +244,7 @@ jobs:
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release upload "$TAG" --clobber dist/*
           else
-            gh release create "$TAG" --verify-tag --prerelease --title "$TAG" \
+            gh release create "$TAG" --verify-tag --draft --prerelease --title "$TAG" \
               --notes "Release candidate for ${STABLE}. Not for general use." dist/*
           fi
 

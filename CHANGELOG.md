@@ -4,13 +4,6 @@ All notable changes to BasaltDB are recorded in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Fixed
-
-- The setup page's check-up now ends. Only what stops BasaltDB working (a certificate, a guard update, no passkey, an agent that cannot log in) counts as "needs you", and each of those has its own button. Columns without a label are a warning that never blocks; leaving them unlabeled is remembered and no longer sends you back to the same "Fix these". With nothing critical open the page says "Ready" and **Done** ends on an "All set" screen. The page-wide "Fix these" button is gone.
-- The passkey prompts now say "Your fingerprint, face or device password never leaves this device", since people without Touch ID approve with their computer password, PIN, phone or a security key.
-
 ## [0.1.0-alpha] - 2026-11-24
 
 The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup moves from the terminal to a page: the agent runs `basalt init` and the person finishes on the page it links. The CLI only starts things. Expect bugs and breaking changes between alpha releases, and read "Breaking for alpha installs" before you upgrade.
@@ -18,7 +11,8 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 ### Added
 
 - The local setup page (`/setup/` on `http://localhost:8787`). On your own computer `basalt init` installs the engine service through the system's administrator dialog, one password and nothing typed in the terminal, then prints and opens the setup link. On the page you type the admin connection string, which is used once and never written or logged, pick the tables the agent gets (read and change, or read only; a table without a primary key is read only), label the columns that hold personal data, create a passkey, read the SQL and run the install in one transaction. A service engine with no `engine.json` yet serves only this page and waits.
-- The Update check. `basalt init` on a computer already set up opens the page on a check of what needs you: a guard update, a new database certificate, a certificate that does not match the ledger, columns without a label, no passkey, an agent that cannot log in. It says "All good" or fixes each one with the admin connection string, asked once. The passkey list removes a lost device's passkey and adds one on this device.
+- The check-up. `basalt init` on a computer already set up opens the page on a check-up. Problems that stop BasaltDB working (a guard update, a new database certificate, a certificate that does not match the ledger, no passkey, an agent that cannot log in) each have their own fix button, which asks for the admin connection string or your passkey. Columns without a label are a warning that never blocks, and leaving them unlabeled is remembered. With nothing critical open the page says "Ready", and **Done** ends on an "All set" screen that says to go back to your agent. The passkey list removes a lost device's passkey and adds one on this device.
+- Passkeys work without Touch ID: the prompts accept a fingerprint, face, the computer's password or PIN, a phone or a security key.
 - Remove BasaltDB on the setup page. It shows what goes (the ledger, the guard, the agents by name; your tables stay) with the SQL, and runs once you type the database's name. On your own computer `basalt init` then removes the engine service through the administrator dialog. The service stays while the engine still serves an agent of another database.
 - The connect page (`https://portal.basaltvault.app/connect`), for an agent on a computer you cannot reach. `basalt init --remote` makes a connect-only setup code and prints its link. The code names no database, so you give the agent nothing about it. The page checks that the code matches the one in the chat, takes the passkey step, and asks for the admin connection string, which it sends to the hosted connect service for that one setup and keeps nowhere. It checks that the bot can reach the database, shows it by name with its tables, and lets you untick tables and label personal data.
 - The engine collects a connect-only setup's address itself and logs in with the agent's real password only after you confirm the database in the chat, through the new `confirm_database` tool.

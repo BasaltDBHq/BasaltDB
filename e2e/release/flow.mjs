@@ -177,7 +177,15 @@ async function setupPage() {
     } else {
       throw new Error(`unexpected setup screen ${id}`);
     }
-    await sleep(500);
+    // Wait for the page to leave the screen just handled before reading the
+    // next one; a slow runner otherwise gets the same screen and clicks its
+    // now-hidden button twice. The confirm screen can come twice in a row
+    // (trust, then facts), so it only waits a short while for a change.
+    if (id === "s-confirm") {
+      await until("the confirm screen to change", async () => (await screenId()) !== id, 5000).catch(() => {});
+    } else {
+      await until(`the page to leave ${id}`, async () => (await screenId()) !== id, 30000);
+    }
   }
   await page.locator("#approve").click();
   await until("the done state", async () => (await visible("#done")) || (await visible("#approve-status") && /fail|refus|cannot|error/i.test(await page.locator("#approve-status").innerText())));

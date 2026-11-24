@@ -10,8 +10,12 @@ import (
 // error.
 var initStep = regexp.MustCompile(`^init step (\d+): `)
 
-// sqlstateInsufficientPrivilege is Postgres's insufficient_privilege.
-const sqlstateInsufficientPrivilege = "42501"
+const (
+	// sqlstateInsufficientPrivilege is Postgres's insufficient_privilege.
+	sqlstateInsufficientPrivilege = "42501"
+	// sqlstateDeadlock is Postgres's deadlock_detected.
+	sqlstateDeadlock = "40P01"
+)
 
 // FailedStep is step, with the setup script's statement number when err is
 // the error of one of its statements.
@@ -43,6 +47,8 @@ func FailedMessage(step, sqlstate string) string {
 	switch {
 	case sqlstate == sqlstateInsufficientPrivilege:
 		return fmt.Sprintf("The admin role lacks a privilege the setup needs (Postgres error %s, %s); nothing changed.", sqlstate, step)
+	case sqlstate == sqlstateDeadlock:
+		return fmt.Sprintf("A database maintenance task (such as autovacuum) locked a table while the setup changed it, and Postgres stopped the setup to break the deadlock (Postgres error %s, %s). Run the setup again; nothing changed.", sqlstate, step)
 	case sqlstate != "":
 		return fmt.Sprintf("Reading the database or running the setup failed (Postgres error %s, %s); nothing changed.", sqlstate, step)
 	}

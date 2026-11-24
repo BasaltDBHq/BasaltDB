@@ -484,3 +484,34 @@ func writeCA(t *testing.T) string {
 	require.NoError(t, os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600))
 	return path
 }
+
+// A step Postgres stops to break a deadlock (autovacuum's ANALYZE on a
+// table being attached) is reported in plain words, keeps the SQLSTATE,
+// and leaves nothing behind: the transaction rolls back.
+func TestApplyScriptNamesADeadlock(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t)
+	ctx := context.Background()
+	s := guardmodel.Script{Statements: []guardmodel.Statement{
+		{SQL: `CREATE TABLE public.collided (id int PRIMARY KEY)`},
+		{SQL: `DO $$ BEGIN RAISE EXCEPTION USING ERRCODE = '40P01', MESSAGE = 'deadlock detected'; END $$`},
+	}}
+	err := pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) })
+	require.ErrorIs(t, err, guard.ErrSetupCollided)
+	require.ErrorContains(t, err, "init step 2: a database maintenance task")
+	require.Equal(t, "40P01", guardtest.SQLState(err))
+	var exists bool
+	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT to_regclass('public.collided') IS NOT NULL`).Scan(&exists))
+	require.False(t, exists, "nothing half-applied")
+}
+
+// Any other failing step keeps its own error.
+func TestApplyScriptKeepsOtherErrors(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t)
+	ctx := context.Background()
+	s := guardmodel.Script{Statements: []guardmodel.Statement{{SQL: `SELECT 1/0`}}}
+	err := pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) })
+	require.NotErrorIs(t, err, guard.ErrSetupCollided)
+	require.Equal(t, "22012", guardtest.SQLState(err))
+}

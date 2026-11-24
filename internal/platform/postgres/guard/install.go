@@ -35,14 +35,35 @@ const (
 	redacted      = "********"
 )
 
-// ApplyScript runs the script on tx. The caller commits.
+// ErrSetupCollided is a setup step Postgres stopped to break a deadlock
+// with another session, most often autovacuum's ANALYZE on a table the
+// setup attaches a trigger to. The transaction rolled back, so running the
+// setup again is safe.
+var ErrSetupCollided = errors.New("a database maintenance task (such as autovacuum) locked a table while the setup changed it, " +
+	"and Postgres stopped the setup to break the deadlock; run the setup again")
+
+// sqlstateDeadlock is Postgres's deadlock_detected.
+const sqlstateDeadlock = "40P01"
+
+// ApplyScript runs the script on tx. The caller commits. A step stopped by
+// a deadlock says so in plain words (ErrSetupCollided).
 func ApplyScript(ctx context.Context, tx pgx.Tx, s guardmodel.Script) error {
 	for i, st := range s.Statements {
-		if _, err := tx.Exec(ctx, st.SQL); err != nil {
-			return fmt.Errorf("init step %d: %w", i+1, err)
+		_, err := tx.Exec(ctx, st.SQL)
+		if err == nil {
+			continue
 		}
+		if isDeadlock(err) {
+			return fmt.Errorf("init step %d: %w: %w", i+1, ErrSetupCollided, err)
+		}
+		return fmt.Errorf("init step %d: %w", i+1, err)
 	}
 	return nil
+}
+
+func isDeadlock(err error) bool {
+	var pg *pgconn.PgError
+	return errors.As(err, &pg) && pg.Code == sqlstateDeadlock
 }
 
 // NewPassword returns a random password for an agent role. Hex only, so

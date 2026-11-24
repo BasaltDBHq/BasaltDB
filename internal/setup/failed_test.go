@@ -27,5 +27,7 @@ func TestFailedMessage(t *testing.T) {
 		setup.FailedMessage(setup.FailedStep("setup", err), setup.SQLStateOf(err)))
 	require.Equal(t, "The admin role lacks a privilege the setup needs (Postgres error 42501, install script); nothing changed.",
 		setup.FailedMessage("install script", "42501"))
+	require.Equal(t, "A database maintenance task (such as autovacuum) locked a table while the setup changed it, and Postgres stopped the setup to break the deadlock (Postgres error 40P01, install script). Run the setup again; nothing changed.",
+		setup.FailedMessage("install script", "40P01"))
 	require.Equal(t, "Reading the database or running the setup failed; nothing changed.", setup.FailedMessage("setup", ""))
 }

@@ -32,7 +32,7 @@ import (
 )
 
 // fakeCatalog is the Postgres catalog over fixed relations and details;
-// describe reads it through the agent's wiring (agentcatalog).
+// describe reads it through the Postgres catalog adapter (agentcatalog).
 type fakeCatalog struct {
 	visible    []pgcatalog.Relation
 	notGranted int

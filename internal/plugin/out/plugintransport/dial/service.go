@@ -23,8 +23,9 @@ var errNotSocket = errors.New("the plugin socket path is not a unix socket")
 // group, with no access for others by its mode or an ACL entry.
 var ErrSocketDir = errors.New("the plugin socket directory is not the plugin user's, in the engine's group and closed to others")
 
-// ErrSocketACL: the socket itself has an ACL entry that opens it to others.
-var ErrSocketACL = errors.New("the plugin socket has an ACL entry that opens it to others")
+// ErrSocketACL: the socket itself has an ACL entry that opens it to others,
+// or an ACL that cannot be read.
+var ErrSocketACL = errors.New("the plugin socket has an ACL entry that opens it to others, or an ACL that cannot be read")
 
 // Service reaches local entry k, verified as v, that its service unit runs
 // as uid and that listens on sock (CONTRACT.md, Plugins, Service units). It

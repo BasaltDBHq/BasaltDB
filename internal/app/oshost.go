@@ -20,6 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/browser"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
 )
 
@@ -114,6 +115,24 @@ func (osHost) SetupState(ctx context.Context, origin string) (string, error) {
 		return "", fmt.Errorf("engine answered %d", resp.StatusCode)
 	}
 	return out.Code, nil
+}
+
+func (osHost) EngineBuild(ctx context.Context, origin string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, pagesProbeTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin+"/healthz", nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("engine answered %d", resp.StatusCode)
+	}
+	return resp.Header.Get(pageserver.BuildHeader), nil
 }
 
 func (osHost) ServiceRuns(ctx context.Context, goos string) (int, int, error) {

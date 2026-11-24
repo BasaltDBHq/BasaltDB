@@ -14,6 +14,7 @@ import (
 	"mime"
 	"net/http"
 
+	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
 	"github.com/basaltdbhq/basaltdb/web"
@@ -66,6 +67,7 @@ func SetupOnlyHandler(origin string, jobs SetupJobs, log *slog.Logger) http.Hand
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set(pageserver.BuildHeader, buildinfo.Version)
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	files := http.FileServerFS(web.Files)

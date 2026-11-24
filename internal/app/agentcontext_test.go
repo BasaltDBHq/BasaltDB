@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
-	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // leakedAdmin is an admin connection string an agent was handed; no output
@@ -24,13 +23,16 @@ import (
 // a committed credential.
 var leakedAdmin = "postgres://postgres" + ":" + "hunter2-admin" + "@" + "db.example.com:5432/app"
 
-// TestInitRemoteWarnsAboutAnAdminEnv: init --remote never uses
-// BASALT_ADMIN_DATABASE_URL and says to change that password.
-func TestInitRemoteWarnsAboutAnAdminEnv(t *testing.T) {
+// envAdminURL is the name a person once set an admin connection string
+// under; basalt reads nothing under it any more.
+const envAdminURL = "BASALT_ADMIN_DATABASE_URL"
+
+// TestInitRemoteIgnoresAnAdminEnv: init --remote never uses an admin
+// connection string left in the environment and never echoes it.
+func TestInitRemoteIgnoresAnAdminEnv(t *testing.T) {
 	t.Parallel()
-	r := cliOn(t, newFakeHost(t), map[string]string{setup.EnvAdminURL: leakedAdmin}, "",
+	r := cliOn(t, newFakeHost(t), map[string]string{envAdminURL: leakedAdmin}, "",
 		"init", "--remote", "--agent", "bot", "--config", filepath.Join(t.TempDir(), "engine.json"))
-	require.Contains(t, r.stderr, setup.RemoteAdminEnvSet)
 	require.NotContains(t, r.stdout+r.stderr, "hunter2")
 }
 
@@ -66,7 +68,7 @@ func TestTopLevelHelpTellsAgents(t *testing.T) {
 // so a flag on the next line or after "with" is caught too.
 func manualInits(text string) []string {
 	var out []string
-	for _, bad := range []string{"--setup-code", "--database-url", setup.EnvAdminURL + "="} {
+	for _, bad := range []string{"--setup-code", "--database-url", envAdminURL + "="} {
 		if strings.Contains(text, bad) {
 			out = append(out, bad)
 		}
@@ -113,8 +115,7 @@ func TestAgentFacingTextIsAgentLed(t *testing.T) {
 	root := filepath.Join("..", "..")
 	requireAgentLed(t, "MCP instructions", Instructions)
 	for name, text := range map[string]string{
-		"agentsHelp":        cli.AgentsHelp,
-		"remoteAdminEnvSet": setup.RemoteAdminEnvSet,
+		"agentsHelp": cli.AgentsHelp,
 	} {
 		requireAgentLed(t, name, text)
 	}

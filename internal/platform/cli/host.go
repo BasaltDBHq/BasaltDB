@@ -39,6 +39,9 @@ type Machine interface {
 	// from an engine that has a config, another code from one waiting for
 	// it. An error when nothing answers.
 	SetupState(ctx context.Context, origin string) (string, error)
+	// EngineBuild asks the engine's GET /healthz at origin for its build:
+	// "" from an engine too old to say. An error when nothing answers.
+	EngineBuild(ctx context.Context, origin string) (string, error)
 	// LookPath finds a command on PATH.
 	LookPath(name string) (string, error)
 	// Run runs a command as the person.

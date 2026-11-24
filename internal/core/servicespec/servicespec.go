@@ -32,6 +32,7 @@ var (
 const (
 	InstallPrompt = "BasaltDB wants to INSTALL its engine service on this computer: it creates the engine's own system account and folders and starts the engine. Cancel unless you just asked to set up BasaltDB."
 	RemovePrompt  = "BasaltDB wants to REMOVE its engine service from this computer: it stops the engine and deletes its folders and system accounts. Cancel unless you just removed BasaltDB on the setup page."
+	RestartPrompt = "BasaltDB wants to RESTART its engine service on this computer: the engine runs an older build than the basalt you just ran. Cancel unless you just installed or upgraded BasaltDB."
 	ResetPrompt   = "BasaltDB wants to RESET this computer's setup: it deletes the engine's config and credentials. Cancel unless you just answered 'No, this isn't mine' on the setup page."
 )
 

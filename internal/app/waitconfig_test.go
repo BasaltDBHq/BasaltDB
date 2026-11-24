@@ -16,6 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 )
 
 // adminURL is an admin connection string with a password in it; no
@@ -54,7 +56,8 @@ func waitUp(t *testing.T, addr string) {
 			return false
 		}
 		_ = resp.Body.Close()
-		return resp.StatusCode == http.StatusOK
+		// The engine says its build, so basalt init can tell an older one.
+		return resp.StatusCode == http.StatusOK && resp.Header.Get(pageserver.BuildHeader) == buildinfo.Version
 	}, 5*time.Second, 20*time.Millisecond)
 }
 

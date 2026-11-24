@@ -79,11 +79,6 @@ func InitRemote(c *cli.IO, h Host, args []string) (setup.RemoteInitResult, error
 	if err != nil {
 		return setup.RemoteInitResult{}, err
 	}
-	if c.Getenv(setup.EnvAdminURL) != "" {
-		// Never used here, but whoever can read this environment holds
-		// the admin password (CONTRACT.md, Agents and the admin credential).
-		fmt.Fprintln(c.Stderr, "basalt: warning: "+setup.RemoteAdminEnvSet)
-	}
 	if err := setup.CheckBuildVersion(setup.BuildVersion()); err != nil {
 		return setup.RemoteInitResult{}, err
 	}
@@ -268,10 +263,8 @@ func (r *remoteInit) paths() error {
 	dir := filepath.Dir(r.f.ConfigPath)
 	r.settings = config.Settings{SocketDir: config.DefaultSocketDir(r.c.Goos), PagesURL: links.Portal}
 	if r.c.Host.Euid() != 0 && r.c.Paths.Config == "" {
-		if _, err := r.c.FindConfig(); err != nil {
-			return err
-		}
-		if err := r.c.RefuseSecondConfig(); err != nil {
+		found, err := r.c.FindConfig(r.f.Agent)
+		if err != nil {
 			return err
 		}
 		base, err := r.c.Host.UserConfigDir()
@@ -279,6 +272,13 @@ func (r *remoteInit) paths() error {
 			return err
 		}
 		dir = filepath.Join(base, config.UserDirName)
+		// With two configs and the agent in the user's own, this init goes
+		// on in that one: it writes no second config.
+		if found != config.UserPath(base) {
+			if err := r.c.RefuseSecondConfig(); err != nil {
+				return err
+			}
+		}
 		r.f.ConfigPath = filepath.Join(dir, "engine.json")
 		r.settings.SocketDir = filepath.Join(dir, "run")
 	}

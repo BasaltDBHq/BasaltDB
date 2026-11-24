@@ -10,7 +10,7 @@ Persona 1 (a person-operated engine). The engine serves the setup, approval, rev
 
 | Method and path | What |
 |---|---|
-| `GET /healthz` | `200 ok`; the probe |
+| `GET /healthz` | `200 ok`, with the engine's build in the `basalt-build` header; the probe, and how `basalt init` tells an engine that runs an older build |
 | `GET /approvals/{approvalId}`, `GET /reverts/{revertId}` | The approval or revert page. A fragment `#1.<request>` is the long link: the page reads the request from it and checks its id equals the path's. A fragment `#s=<secret>` is the short link: the page reads the request from the engine, sending the secret in the `basalt-link-secret` header |
 | `GET /setup/`, `POST /api/v1/setup/check`, `POST /api/v1/setup/run` | The [local setup page](setup-page.md#the-local-setup-page) and its two routes, the only ones that read the admin connection string. An engine with no config serves only these and `GET /healthz` |
 | `GET /passkeys/register` | The registration page. It posts nothing itself. The setup page creates its passkey itself and sends it with the admin connection string. `basalt init`'s own page server and its hand-back route `POST /api/v1/passkeys/register` are removed |

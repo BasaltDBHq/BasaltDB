@@ -107,6 +107,16 @@ func RestartArgs(goos string) []string {
 	return []string{"systemctl", "restart", servicespec.SystemdUnitName}
 }
 
+// RestartScript is the fixed script that restarts the installed engine
+// service on goos onto the binary now at its path: one command, built from
+// constants only.
+func RestartScript(goos string) (string, error) {
+	if goos != goosDarwin && goos != goosLinux {
+		return "", fmt.Errorf("no engine service to restart on %s", goos)
+	}
+	return strings.Join(RestartArgs(goos), " ") + "\n", nil
+}
+
 // specArgs is the command line s's unit runs.
 func specArgs(s servicespec.Spec) []string {
 	return []string{s.Binary, "engine", "--config", s.ConfigPath, "--supervise"}

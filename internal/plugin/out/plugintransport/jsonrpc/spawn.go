@@ -19,7 +19,7 @@ const exitGrace = 200 * time.Millisecond
 // stdout. The child runs in its own process group, in s.Dir, with an empty
 // environment: nothing of the engine's, and no credentials (s.Env is
 // ignored). Its stderr is discarded when s.Stderr is nil, and copied there
-// otherwise (the engine passes a writer only under --plugin-debug).
+// otherwise (the engine passes none).
 //
 // ctx covers the start only. The child runs until Close, which kills its
 // whole process group at once; a graceful stop is the shutdown call, made

@@ -17,8 +17,6 @@ import (
 // themselves: only basalt engine takes --config (CLI contract, Config
 // discovery).
 func TestOnlyEngineTakesTheConfigFlags(t *testing.T) {
-	t.Setenv("BASALT_DATABASE_URL", "")
-	t.Setenv("BASALT_ADMIN_DATABASE_URL", "")
 	cmds := [][]string{
 		{"init"},
 		{"init", "--remote"},

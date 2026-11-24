@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net"
 	"net/http"
 	"time"
@@ -21,11 +20,6 @@ type restartOptions struct {
 	// Handoff reaches the connect service and the collected database for
 	// a connect-only agent; the zero value is the contract's.
 	Handoff handoffOptions
-	// PluginStderr is where local plugins' stderr goes (basalt engine
-	// --plugin-debug), on a foreground engine only; nil discards it. It
-	// rides along with the restart options because both are how
-	// basalt engine runs this engine.
-	PluginStderr io.Writer
 	// PagesListener, when set, is the pages' listener already bound at the
 	// local pages address by an engine that waited for its config
 	// (WaitForConfig): the engine serves its pages on it, so the port is

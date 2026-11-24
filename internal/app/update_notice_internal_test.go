@@ -50,9 +50,9 @@ func TestNoticeOf(t *testing.T) {
 }
 
 func TestStartUpdateNoticeSkips(t *testing.T) {
-	// BASALT_CACHE_DIR points at an empty dir, so no notice could print
-	// even if a command did not skip; the point is that no refresh starts
-	// and nothing blocks. The off switch and skip list return at once.
+	// A test build has no release number, so no notice could print even if
+	// a command did not skip; the point is that no refresh starts and
+	// nothing blocks. The off switch and skip list return at once.
 	getenv := func(k string) string {
 		if k == updatecheck.EnvDisable {
 			return "off"

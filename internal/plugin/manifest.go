@@ -65,8 +65,9 @@ var (
 // prefix: major.minor.patch, optional pre-release, optional build metadata.
 // Shorthand such as "1.2" is refused.
 func validVersion(s string) bool {
-	core, _, _ := strings.Cut("v"+s, "+")
-	return !strings.HasPrefix(s, "v") && semver.IsValid(core) && semver.Canonical(core) == core
+	v := "v" + s
+	core, _, _ := strings.Cut(v, "+")
+	return !strings.HasPrefix(s, "v") && semver.IsValid(v) && semver.Canonical(v) == core
 }
 
 // hookContracts is the message contract each v1 hook declares. The

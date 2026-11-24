@@ -7,9 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
-
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 // SleepCtx waits d, or less when ctx ends: false when ctx ended first.

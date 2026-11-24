@@ -10,9 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 // The request file beside a hash link (CONTRACT.md, The request file and

@@ -14,9 +14,8 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 const (

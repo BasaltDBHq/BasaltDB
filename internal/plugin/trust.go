@@ -11,9 +11,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 // trustFileExt is a trusted key's file extension: <keyId>.pem.

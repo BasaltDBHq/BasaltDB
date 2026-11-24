@@ -13,12 +13,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
-
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 // Timing of the plugin watch (CONTRACT.md, Plugins, Plugin changes while

@@ -330,9 +330,6 @@ func WriteFile(path string, data []byte) error {
 	if err := os.MkdirAll(dir, dirMode); err != nil {
 		return err
 	}
-	if fi, err := os.Lstat(path); err == nil && !fi.Mode().IsRegular() {
-		return fmt.Errorf("%s is not a regular file (a symlink?); refusing to write it", path)
-	}
 	return atomicfile.Write(path, data, atomicfile.Options{Mode: FileMode, RefuseNonRegular: true})
 }
 

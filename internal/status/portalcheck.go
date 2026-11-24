@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
-
 	"github.com/basaltdbhq/basaltdb/internal/lib/httpsec"
 	"github.com/basaltdbhq/basaltdb/web"
 )

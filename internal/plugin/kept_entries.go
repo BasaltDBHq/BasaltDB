@@ -14,10 +14,9 @@ import (
 	"slices"
 	"syscall"
 
-	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
-
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 // EntriesPath is the entries file.

@@ -11,12 +11,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
-
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 const (

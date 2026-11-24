@@ -9,15 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
-
-	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
-
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
 
 // resultCase builds one result of the catalog: the person's message and the

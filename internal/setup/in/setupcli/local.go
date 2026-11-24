@@ -7,10 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os/user"
-	"strings"
 	"time"
-
-	"golang.org/x/mod/semver"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -164,7 +161,9 @@ func newerThanEngine(build string) (bool, error) {
 	if build == "" {
 		return true, nil
 	}
-	c, ok := compareBuilds(buildinfo.Version, build)
+	this, okThis := buildinfo.ParseVersion(buildinfo.Version)
+	engine, okEngine := buildinfo.ParseVersion(build)
+	c, ok := buildinfo.CompareVersions(this, engine), okThis && okEngine
 	switch {
 	case ok && c > 0:
 		return true, nil
@@ -174,33 +173,6 @@ func newerThanEngine(build string) (bool, error) {
 		return false, fmt.Errorf("the engine service runs basalt %s, newer than this basalt (%s), and basalt init never moves it to an older build. Update this basalt to %s or later first (brew upgrade basaltdbhq/tap/basaltdb, or the release page), then run basalt init again", build, buildinfo.Version, build)
 	}
 	return false, fmt.Errorf("the engine service runs basalt %s and this basalt is %s, and which is newer cannot be told, so basalt init leaves the service as it is. Run basalt init again from a released basalt build", build, buildinfo.Version)
-}
-
-// compareBuilds orders two build versions ("1.2.3", "v1.2.3" or
-// "1.2.3-alpha.2"; build metadata ignored) by semantic version precedence.
-// ok is false when either is not a full version, such as a bare commit.
-func compareBuilds(a, b string) (c int, ok bool) {
-	va, okA := fullVersion(a)
-	vb, okB := fullVersion(b)
-	if !okA || !okB {
-		return 0, false
-	}
-	return semver.Compare(va, vb), true
-}
-
-// fullVersion is s in the "v"-prefixed form x/mod/semver compares, and false
-// for anything but a full major.minor.patch version (shorthand such as "1.2"
-// is refused).
-func fullVersion(s string) (string, bool) {
-	s = strings.TrimSpace(s)
-	if !strings.HasPrefix(s, "v") {
-		s = "v" + s
-	}
-	s, _, _ = strings.Cut(s, "+")
-	if !semver.IsValid(s) || semver.Canonical(s) != s {
-		return "", false
-	}
-	return s, true
 }
 
 // restartAnswerWait bounds how long init waits for the engine to answer

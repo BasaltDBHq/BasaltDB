@@ -10,9 +10,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 // fileMode keeps the hashes to the engine's OS user.

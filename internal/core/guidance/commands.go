@@ -144,3 +144,12 @@ func ShellQuote(s string) string {
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
+
+// ShellJoin quotes each argument with ShellQuote and joins them for display.
+func ShellJoin(args []string) string {
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		out = append(out, ShellQuote(a))
+	}
+	return strings.Join(out, " ")
+}

@@ -20,27 +20,6 @@ import (
 // (CONTRACT.md, basalt_meta) on a refusal's reason: up to 2000 bytes.
 const maxReasonBytes = 2000
 
-// statementChecker checks a statement against the engine's SQL policy for
-// a tool, and returns it as the store will run it, or an
-// *action.RefusalError. The service never calls it: the wiring hands it to
-// the store's Language, whose Check wraps it, and to the approval use case.
-type statementChecker interface {
-	Check(sql string, tool action.Tool) (action.Statement, error)
-}
-
-// WriteStore is the part of the agent's store the query and write tools
-// run on. It is given a request's text and parameters as they came.
-type WriteStore interface {
-	statementChecker
-	// Read runs one read, with the versions of the rows of the statement's
-	// sources it can identify.
-	Read(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error)
-	// Write runs one write through the guard.
-	Write(ctx context.Context, in action.Intent, op action.Op, sql string, params []any) (action.WriteResult, error)
-	// WriteApproved is Write under the person's signed approval.
-	WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any) (action.WriteResult, error)
-}
-
 // WriteParams are one write call's validated arguments.
 type WriteParams struct {
 	Request agentstore.Request
@@ -78,12 +57,12 @@ func (wc *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, erro
 	}
 	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
 	start := wc.core.Now()
-	stmt, err := wc.core.Language.Check(p.Request, action.ToolWrite)
+	stmt, err := wc.store.Language.Check(p.Request, action.ToolWrite)
 	op := stmt.Op
 	if err != nil {
 		return WriteOutcome{}, wc.refused(ctx, in, op, p.Request, start, err)
 	}
-	res, err := wc.write.Store.Write(ctx, in, op, p.Request.Text, p.Request.Params)
+	res, err := wc.store.Data.Write(ctx, in, p.Request, stmt)
 	if errors.Is(err, action.ErrApprovalRequired) {
 		id, expires, err := wc.hold(ctx, in, p, stmt, start)
 		if id == uuid.Nil {
@@ -117,7 +96,7 @@ func (wc *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, erro
 // writeRun finds the named run, or starts a one-write run.
 func (wc *Service) writeRun(ctx context.Context, p WriteParams) (action.Run, error) {
 	if p.RunID != uuid.Nil {
-		return ledgersvc.FindRun(ctx, wc.core.Store, p.RunID)
+		return ledgersvc.FindRun(ctx, wc.store.Ledger, p.RunID)
 	}
 	info, err := wc.startRun(ctx, p.Intent, uuid.Nil)
 	if err != nil {

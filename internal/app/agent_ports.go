@@ -3,12 +3,15 @@ package app
 import (
 	"context"
 
+	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+	"github.com/basaltdbhq/basaltdb/internal/agent/out/sqllang"
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
@@ -59,3 +62,89 @@ type SQLStore interface {
 	// WriteApproved is Write under the person's signed approval.
 	WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any) (action.WriteResult, error)
 }
+
+// agentDeps are the agent use case's own ports on the agent's store, which
+// wire puts together with Core.Store into the agent's store set, and what
+// the use case adds around the store.
+type agentDeps struct {
+	// Data is the store the query and write tools run on.
+	Data SQLStore
+	// Limits are the read limits the agent's statements run within.
+	Limits action.Limits
+	// Catalog reads the store's structure for describe; optional, and
+	// describe answers INTERNAL when nil.
+	Catalog agentsvc.Catalog
+	// Classes are the agent's PII classes for describe; optional, and
+	// describe fails closed (INTERNAL) when nil: it cannot tell a SECRET
+	// column.
+	Classes agentsvc.ClassResolver
+	// Visibility says whether row-level security hides a table from the
+	// agent (the RLS_HIDES_ROWS warning); optional, nothing is hidden when
+	// nil.
+	Visibility agentsvc.Visibility
+	// PII sees every read's rows before they are returned and adds the
+	// values of IDENTIFIER columns to the dictionary (M5.1); optional,
+	// nothing is added when nil.
+	PII agentsvc.PIIObserver
+	// Record is the wire record of one change and its rows, as the ledger
+	// renders it (run_history).
+	Record func(ch action.Change, rows []action.RowChange) any
+}
+
+// agentStoreSet is the agent's store set: the ports of its store, the
+// family its kind belongs to, and the store's language. SQL is the only
+// language the engine has; a store of another family is served none of the
+// tools that send a request.
+func (s *Service) agentStoreSet() agentsvc.StoreSet {
+	a := &s.deps.Agent
+	set := agentsvc.StoreSet{
+		Language: sqllang.New(liveChecker{a}), Catalog: a.Catalog, Classes: a.Classes, Visibility: a.Visibility,
+	}
+	if st := s.deps.Core.Store; st != nil {
+		set.Kind, set.Capabilities, set.Ledger = st.Kind(), st.Capabilities(), st
+	}
+	set.Family = storeFamily(set.Kind)
+	if a.Data != nil {
+		set.Data = agentData{store: a.Data, limits: a.Limits}
+	}
+	return set
+}
+
+// storeFamily is the family of a store of kind: Postgres and MySQL speak
+// SQL; another kind has no family the engine serves yet.
+func storeFamily(kind action.StoreKind) agentstore.Family {
+	if kind == action.StorePostgres || kind == action.StoreMySQL {
+		return agentstore.FamilySQL
+	}
+	return ""
+}
+
+// liveChecker is the SQL store's statement check, read live from the
+// service.
+type liveChecker struct{ d *agentDeps }
+
+func (l liveChecker) Check(sql string, tool action.Tool) (action.Statement, error) {
+	return l.d.Data.Check(sql, tool)
+}
+
+// agentData is the SQL store as the agent's query and write use cases run
+// on it: a request is passed on as its text and parameters, a write with
+// the op its check read.
+type agentData struct {
+	store  SQLStore
+	limits action.Limits
+}
+
+func (d agentData) Read(ctx context.Context, req agentstore.Request, stmt action.Statement) (action.ReadResult, error) {
+	return d.store.Read(ctx, req.Text, req.Params, stmt)
+}
+
+func (d agentData) Write(ctx context.Context, in action.Intent, req agentstore.Request, stmt action.Statement) (action.WriteResult, error) {
+	return d.store.Write(ctx, in, stmt.Op, req.Text, req.Params)
+}
+
+func (d agentData) WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, req agentstore.Request, stmt action.Statement) (action.WriteResult, error) {
+	return d.store.WriteApproved(ctx, in, approvalID, stmt.Op, req.Text, req.Params)
+}
+
+func (d agentData) Limits() action.Limits { return d.limits }

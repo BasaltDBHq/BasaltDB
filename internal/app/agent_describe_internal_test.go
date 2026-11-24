@@ -18,6 +18,7 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
@@ -82,7 +83,6 @@ func (f *fakeCatalog) Search(_ context.Context, _ string, exclude []pgcatalog.Co
 func (f *fakeCatalog) Structure(context.Context) ([]string, error) { return f.lines, nil }
 func (f *fakeCatalog) Database() string                            { return "app" }
 func (f *fakeCatalog) Host() string                                { return "db.example.com" }
-func (f *fakeCatalog) Limits() action.Limits                       { return action.Limits(sqlguard.DefaultLimits()) }
 
 // fakeClasses is a ClassResolver over a fixed class map.
 type fakeClasses struct {
@@ -168,24 +168,28 @@ func describeService(t *testing.T, cat pgCatalog, classes fakeClasses, operatedB
 	require.NoError(t, err)
 	d.Core.Commands = cmds
 	d.Status.OperatedBy = operatedBy
-	d.Describe.Catalog = agentCatalog{pg: cat}
-	d.Describe.Classes = agentClasses{pg: classes}
+	d.Agent.Limits, d.Agent.Catalog, d.Agent.Classes = testLimits(), agentCatalog{pg: cat}, agentClasses{pg: classes}
 	return NewService(d)
 }
 
-// kindStore is a store of one kind: describe reads nothing else of it.
-type kindStore struct {
-	agentsvc.Store
-	kind action.StoreKind
-}
+// testLimits are the default limits, as describe's overview reports them.
+func testLimits() action.Limits { return action.Limits(sqlguard.DefaultLimits()) }
 
-func (k kindStore) Kind() action.StoreKind { return k.kind }
+// noChecker is a statement check describe never asks: it refuses every
+// statement.
+type noChecker struct{}
+
+func (noChecker) Check(string, action.Tool) (action.Statement, error) {
+	return action.Statement{}, errors.New("describe checks no statement")
+}
 
 // describeUseCase is the describe use case over cat, on the commands cmds.
 func describeUseCase(cmds guidance.Commands, cat pgCatalog) *agentsvc.Service {
-	describe := &agentsvc.DescribeDeps{Catalog: agentCatalog{pg: cat}, Classes: agentClasses{pg: fakeClasses{}}}
-	return agentsvc.New(agentsvc.Core{Store: kindStore{kind: action.StorePostgres}, Language: sqllang.New(nil), Commands: cmds}, describe, &agentsvc.WriteDeps{},
-		func() *guidance.UpdateInfo { return nil })
+	set := agentsvc.StoreSet{
+		Kind: action.StorePostgres, Family: agentstore.FamilySQL, Language: sqllang.New(noChecker{}),
+		Data: agentData{limits: testLimits()}, Catalog: agentCatalog{pg: cat}, Classes: agentClasses{pg: fakeClasses{}},
+	}
+	return agentsvc.New(agentsvc.Core{Commands: cmds}, set, nil, func() *guidance.UpdateInfo { return nil })
 }
 
 func ordersCatalog() (*fakeCatalog, fakeClasses) {
@@ -740,7 +744,7 @@ func TestDescribeWithoutClassesFailsClosed(t *testing.T) {
 	t.Parallel()
 	cat, _ := ordersCatalog()
 	d := deps()
-	d.Describe.Catalog = agentCatalog{pg: cat}
+	d.Agent.Limits, d.Agent.Catalog = testLimits(), agentCatalog{pg: cat}
 	s := NewService(d)
 	for _, args := range []map[string]any{{}, {"query": "orders"}, {"resource": "shop.orders"}} {
 		body, isError := callDescribe(t, s, args)

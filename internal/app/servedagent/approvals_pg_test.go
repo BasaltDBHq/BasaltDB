@@ -210,7 +210,7 @@ func agentHarnessWith(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *c
 		agenttest.UseStore(d, watchedReverts)
 		d.Delivery.Notifier = sent
 		d.Approval.Columns = store.NewColumnOrder(pool)
-		d.Core.Commands, d.Core.PagesOrigin, d.Delivery.Poll, d.Write.RLS, d.Delivery.Receipts = cmds, strings.Join(pagesOrigin, ""), testPoll, blind, receipts
+		d.Core.Commands, d.Core.PagesOrigin, d.Delivery.Poll, d.Agent.Visibility, d.Delivery.Receipts = cmds, strings.Join(pagesOrigin, ""), testPoll, blind, receipts
 		if edit != nil {
 			edit(d)
 		}

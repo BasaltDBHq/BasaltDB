@@ -182,7 +182,7 @@ linters:
               desc: only the test notifier and the systemd smoke probe import the plugin SDK
         # The agent service, its MCP tools and the agent service's code in
         # internal/app (agent_*.go) talk to the store only through the store
-        # ports (internal/agent: Store, WriteStore; app: Store, SQLStore): no
+        # ports (internal/agent: the StoreSet; app: Store, SQLStore): no
         # database driver, SQL policy or adapter in them. The rest of
         # internal/app, which wires the adapters, is outside it.
         agent-through-store-ports:

@@ -15,21 +15,21 @@ import (
 // resources) or its namespaces, and tells the person how to see what it
 // cannot.
 func (ds *Service) DescribeOverview(ctx context.Context) (Overview, error) {
-	visible, notGranted, err := ds.describe.Catalog.Resources(ctx)
+	visible, notGranted, err := ds.store.Catalog.Resources(ctx)
 	if err != nil {
 		return Overview{}, err
 	}
-	lines, err := ds.describe.Catalog.Structure(ctx)
+	lines, err := ds.store.Catalog.Structure(ctx)
 	if err != nil {
 		return Overview{}, err
 	}
-	pii, err := ds.describe.Classes.CatalogFingerprint(ctx)
+	pii, err := ds.store.Classes.CatalogFingerprint(ctx)
 	if err != nil {
 		return Overview{}, err
 	}
-	limits := ds.describe.Catalog.Limits()
+	limits := ds.store.Data.Limits()
 	o := Overview{
-		Store:       StoreInfo{Kind: string(ds.core.Store.Kind()), Database: ds.describe.Catalog.Database(), Host: ds.describe.Catalog.Host()},
+		Store:       StoreInfo{Kind: string(ds.store.Kind), Database: ds.store.Catalog.Database(), Host: ds.store.Catalog.Host()},
 		Fingerprint: catalogFingerprint(lines, notGranted, pii),
 		Counts:      Counts{Resources: len(visible), NotGranted: notGranted},
 		Update:      ds.update(),

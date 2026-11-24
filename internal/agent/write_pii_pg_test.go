@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
@@ -72,9 +73,30 @@ func piiWriteService(t *testing.T, returned postgres.ReturnedFunc) (*agent.Servi
 			return "", false
 		},
 	}
-	core := agent.Core{Name: "bot", Store: store, Language: sqllang.New(store), Log: slog.New(slog.DiscardHandler), Now: time.Now, Errors: errs}
-	return agent.New(core, &agent.DescribeDeps{}, &agent.WriteDeps{Store: store, PII: failingObserver{}}, func() *guidance.UpdateInfo { return nil }), d
+	core := agent.Core{Name: "bot", Log: slog.New(slog.DiscardHandler), Now: time.Now, Errors: errs}
+	set := agent.StoreSet{
+		Kind: store.Kind(), Family: agentstore.FamilySQL, Capabilities: store.Capabilities(),
+		Language: sqllang.New(store), Data: pgData{store}, Ledger: store,
+	}
+	return agent.New(core, set, failingObserver{}, func() *guidance.UpdateInfo { return nil }), d
 }
+
+// pgData is the Postgres store as the agent's writes run on it.
+type pgData struct{ *postgres.Store }
+
+func (p pgData) Read(ctx context.Context, req agentstore.Request, stmt action.Statement) (action.ReadResult, error) {
+	return p.Store.Read(ctx, req.Text, req.Params, stmt)
+}
+
+func (p pgData) Write(ctx context.Context, in action.Intent, req agentstore.Request, stmt action.Statement) (action.WriteResult, error) {
+	return p.Store.Write(ctx, in, stmt.Op, req.Text, req.Params)
+}
+
+func (p pgData) WriteApproved(ctx context.Context, in action.Intent, id uuid.UUID, req agentstore.Request, stmt action.Statement) (action.WriteResult, error) {
+	return p.Store.WriteApproved(ctx, in, id, stmt.Op, req.Text, req.Params)
+}
+
+func (pgData) Limits() action.Limits { return action.Limits(sqlguard.DefaultLimits()) }
 
 func TestWriteRollsBackWhenItsReturnedValuesCannotBeAdded(t *testing.T) {
 	t.Parallel()

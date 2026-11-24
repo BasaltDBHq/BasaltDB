@@ -1,8 +1,10 @@
 // Package sqllang is the agent's SQL language: what the agent service asks
 // of a store that speaks SQL (Postgres) about its requests, in place of
 // reading the SQL itself. It checks a request's parameters against its
-// placeholders, gives the revision each statement refusal asks for, writes
-// the request that reads one row, and parses and prints schema.table names.
+// placeholders, gives the revision each statement refusal and each limit
+// asks for, reads the table and key Postgres and the guard name in their
+// error messages, writes the request that reads one row, and parses and
+// prints schema.table names.
 package sqllang
 
 import (

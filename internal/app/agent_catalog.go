@@ -39,11 +39,14 @@ type pgCatalog interface {
 	Structure(ctx context.Context) ([]string, error)
 	Database() string
 	Host() string
-	Limits() action.Limits
 }
 
-// agentCatalog is the store's catalog as the agent reads it.
-type agentCatalog struct{ pg pgCatalog }
+// agentCatalog is the store's catalog as the agent reads it. lang prints the
+// names of the other tables of foreign keys; its zero value does.
+type agentCatalog struct {
+	pg   pgCatalog
+	lang sqllang.Language
+}
 
 func (c agentCatalog) Resources(ctx context.Context) ([]agentstore.Resource, int, error) {
 	rs, n, err := c.pg.Relations(ctx)
@@ -74,7 +77,7 @@ func (c agentCatalog) Describe(ctx context.Context, ref agentstore.ResourceRef) 
 	if err != nil {
 		return agentstore.Detail{}, err
 	}
-	return pgDetail(d), nil
+	return pgDetail(d, c.lang), nil
 }
 
 func (c agentCatalog) Guarded(ctx context.Context, ref agentstore.ResourceRef) (bool, error) {
@@ -114,8 +117,6 @@ func (c agentCatalog) Structure(ctx context.Context) ([]string, error) { return 
 func (c agentCatalog) Database() string { return c.pg.Database() }
 
 func (c agentCatalog) Host() string { return c.pg.Host() }
-
-func (c agentCatalog) Limits() action.Limits { return c.pg.Limits() }
 
 // pgResourceRef is a table's ref: its OID.
 func pgResourceRef(oid uint32) agentstore.ResourceRef {
@@ -221,7 +222,7 @@ type pgStatsDisplay struct {
 // pgDetail is one relation in the agent's types. Every column an index, key
 // or default names is in its Touches or ReadsFrom: the attribute numbers
 // pgcatalog reads for it.
-func pgDetail(d pgcatalog.Detail) agentstore.Detail {
+func pgDetail(d pgcatalog.Detail, lang sqllang.Language) agentstore.Detail {
 	out := agentstore.Detail{
 		Resource: pgResource(d.Relation),
 		Identity: pgFieldRefs(d.OID, d.PrimaryKey),
@@ -245,7 +246,7 @@ func pgDetail(d pgcatalog.Detail) agentstore.Detail {
 	for _, k := range d.Keys {
 		f := agentstore.Feature{Group: pgGroupForeignKeys, Touches: pgFieldRefs(d.OID, k.Attnums), Visible: k.OtherReadable}
 		if k.OtherReadable {
-			f.Display = pgForeignKey(k, names)
+			f.Display = pgForeignKey(k, names, lang)
 		}
 		out.Features = append(out.Features, f)
 	}
@@ -265,9 +266,9 @@ func pgField(oid uint32, c pgcatalog.Column) agentstore.Field {
 	}
 }
 
-func pgForeignKey(k pgcatalog.Key, names map[int16]string) pgForeignKeyDisplay {
+func pgForeignKey(k pgcatalog.Key, names map[int16]string, lang sqllang.Language) pgForeignKeyDisplay {
 	fk := pgForeignKeyDisplay{
-		Direction: "INCOMING", Columns: make([]string, 0, len(k.Attnums)), Table: sqllang.PrintName(k.OtherSchema, k.OtherTable),
+		Direction: "INCOMING", Columns: make([]string, 0, len(k.Attnums)), Table: lang.PrintName(k.OtherSchema, k.OtherTable),
 		OnDelete: pgFKAction(k.OnDelete), OnUpdate: pgFKAction(k.OnUpdate),
 	}
 	if k.Outgoing {

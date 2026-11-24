@@ -700,7 +700,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	deps.Core.Name, deps.Core.Log, deps.Core.Now = a.Name, log, time.Now
 	deps.Core.Store, deps.Core.Commands = store, cmds
 	deps.Core.PagesBase, deps.Core.PagesOrigin, deps.Core.LinkBudget = env.pagesBase, env.pagesOrigin, env.cfg.LinkBudgetOrDefault()
-	deps.Write.Store, deps.Write.RLS, deps.Write.PII = store, blind, observer.On(pgquerier.Neutralize(pool))
+	deps.Agent.Data, deps.Agent.Visibility, deps.Agent.PII = store, blind, observer.On(pgquerier.Neutralize(pool))
 	deps.Approval.Store, deps.Approval.Columns = store, postgres.NewColumnOrder(budgeted)
 	deps.Revert.Store = store
 	deps.Delivery.Deliverer, deps.Delivery.Links, deps.Delivery.Relay, deps.Delivery.Receipts = deliverer, secrets, relay, env.receipts
@@ -715,8 +715,9 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	deps.Status.Update, deps.Status.EngineRecord, deps.Status.Trust = agentUpdate(env.updateNotice()), readRecord, trustOf(pool)
 	deps.Status.Database = handoff.ConnectDatabaseName(cc.Host, cc.Port, cc.Database)
 	deps.Status.Finisher = finisher
-	deps.Describe.Catalog = NewAgentCatalog(postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host))
-	deps.Describe.Classes = agentClasses{pg: pii.StoreClasses{BoundMap: classes.On(pgquerier.Neutralize(pool)), Store: storeErrors{}}}
+	catalog := postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host)
+	deps.Agent.Limits, deps.Agent.Catalog = catalog.Limits(), NewAgentCatalog(catalog)
+	deps.Agent.Classes = agentClasses{pg: pii.StoreClasses{BoundMap: classes.On(pgquerier.Neutralize(pool)), Store: storeErrors{}}}
 	// The plugin approval routes read and relay on the agent's own
 	// credential, as the approval routes do.
 	deps.Plugin.Approvals, deps.Plugin.Requests = store, requests

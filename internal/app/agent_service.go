@@ -10,7 +10,6 @@ import (
 	pluginsvc "github.com/basaltdbhq/basaltdb/internal/plugin"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
-	"github.com/basaltdbhq/basaltdb/internal/agent/out/sqllang"
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
@@ -35,12 +34,11 @@ type changeHistory = action.History[action.Change, action.RowChange]
 // is required and NewService refuses a Deps without it.
 type Deps struct {
 	Core     coreDeps
-	Write    agentsvc.WriteDeps
+	Agent    agentDeps
 	Approval approvalsvc.Deps
 	Revert   revertsvc.Deps
 	Delivery linksvc.Deps
 	Status   statussvc.Deps
-	Describe agentsvc.DescribeDeps
 	Plugin   pluginsvc.Deps
 }
 
@@ -132,10 +130,10 @@ func NewService(d Deps) *Service {
 // reference to its own group of s.deps and to the shared core group.
 func (s *Service) wire() {
 	s.status = statussvc.NewService(s.statusCore(), &s.deps.Status)
-	s.agent = agentsvc.New(s.agentCore(), &s.deps.Describe, &s.deps.Write, s.status.UpdateInfo)
+	s.agent = agentsvc.New(s.agentCore(), s.agentStoreSet(), s.deps.Agent.PII, s.status.UpdateInfo)
 	// approval and delivery read each other: approval is built first and is
 	// given the delivery and revert use cases once they exist.
-	s.approval = approvalsvc.New(s.approvalCore(), &s.deps.Approval, liveWrites{&s.deps.Write}, runChecker{s.deps.Core.Store}, s)
+	s.approval = approvalsvc.New(s.approvalCore(), &s.deps.Approval, liveChecker{&s.deps.Agent}, runChecker{s.deps.Core.Store}, s)
 	s.delivery = linksvc.New(s.linksCore(), &s.deps.Delivery, s.approval, s.Failure)
 	s.revert = revertsvc.New(s.revertCore(), &s.deps.Revert, s.deps.Core.Store, s.delivery, s.agent, s)
 	s.approval.SetDelivery(s.delivery)
@@ -145,14 +143,10 @@ func (s *Service) wire() {
 	s.agent.SetPorts(s.delivery, agentApprovals{s.approval}, s.status, s, s)
 }
 
-// agentCore is the part of the shared settings the agent use cases read,
-// with the store's language: SQL, over the write store's statement check.
+// agentCore is the part of the shared settings the agent use cases read.
 func (s *Service) agentCore() agentsvc.Core {
 	c := s.deps.Core
-	return agentsvc.Core{
-		Name: c.Name, Store: c.Store, Language: sqllang.New(liveWrites{&s.deps.Write}), Log: c.Log, Now: c.Now,
-		Commands: c.Commands, Errors: c.Errors,
-	}
+	return agentsvc.Core{Name: c.Name, Log: c.Log, Now: c.Now, Commands: c.Commands, Errors: c.Errors}
 }
 
 // statusCore is the part of the shared settings the status use case reads.
@@ -209,8 +203,8 @@ func (d Deps) missing() []string {
 	need("Core.Errors.InvalidIntent", d.Core.Errors.InvalidIntent == nil)
 	need("Core.Errors.RowTooLarge", d.Core.Errors.RowTooLarge == nil)
 	need("Core.ServiceManager", d.Core.ServiceManager.StartCommand == nil || d.Core.ServiceManager.RestartArgs == nil)
-	need("Write.Store", d.Write.Store == nil)
-	need("Write.Record", d.Write.Record == nil)
+	need("Agent.Data", d.Agent.Data == nil)
+	need("Agent.Record", d.Agent.Record == nil)
 	need("Approval.Store", d.Approval.Store == nil)
 	need("Approval.ErrNotFound", d.Approval.ErrNotFound == nil)
 	need("Revert.Store", d.Revert.Store == nil)

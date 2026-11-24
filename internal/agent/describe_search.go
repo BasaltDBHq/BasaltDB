@@ -15,7 +15,7 @@ import (
 // searchTerm is the search for a resource not found: its table name.
 func (ds *Service) searchTerm(resource string) string {
 	term := resource
-	if _, name, err := ds.core.Language.ParseName(resource); err == nil {
+	if _, name, err := ds.store.Language.ParseName(resource); err == nil {
 		term = name
 	}
 	term = firstRunes(strings.TrimSpace(term), describeQueryMax)
@@ -36,11 +36,11 @@ func (ds *Service) DescribeSearch(ctx context.Context, p DescribeSearchParams) (
 		}
 		after = &c
 	}
-	secrets, err := ds.describe.Classes.Secrets(ctx)
+	secrets, err := ds.store.Classes.Secrets(ctx)
 	if err != nil {
 		return pagination.Page[SearchItem]{}, err
 	}
-	matches, err := ds.describe.Catalog.Search(ctx, p.Query, secrets, after, p.Limit+1)
+	matches, err := ds.store.Catalog.Search(ctx, p.Query, secrets, after, p.Limit+1)
 	if err != nil {
 		return pagination.Page[SearchItem]{}, err
 	}
@@ -63,7 +63,7 @@ func (ds *Service) searchItem(r agentstore.Resource, matched string) SearchItem 
 		access = []action.Op{}
 	}
 	return SearchItem{
-		Resource: ds.core.Language.PrintName(r.Namespace, r.Name), Kind: r.Kind, EstimatedRows: r.Estimate,
+		Resource: ds.store.Language.PrintName(r.Namespace, r.Name), Kind: r.Kind, EstimatedRows: r.Estimate,
 		Matched: matched, Access: access, Comment: trimComment(r.Comment, searchCommentMax),
 	}
 }

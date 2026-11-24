@@ -65,6 +65,7 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 - The person socket, and the `/passkeys/check` and `/passkeys/forget` pages.
 - The `remote-init-result` and `portal-verify-result` JSON schemas, and `docs/setup-from-laptop.md`.
 - The `DIRECT_NOT_SERVED` problem from `status`, and the last mentions of the direct transport in the tool schemas.
+- The environment variables `BASALT_DATABASE_URL`, `BASALT_ADMIN_DATABASE_URL`, `BASALT_CACHE_DIR` and `BASALTDB_ALLOWED_HOSTS`. The engine reads its connection from `engine.json` only, and the update notice keeps its cache in the user cache folder.
 
 ### Fixed
 

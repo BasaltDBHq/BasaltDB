@@ -23,9 +23,9 @@ against the archives it built.
 - `mcp.mjs`: a stdio JSON-RPC client for `basalt mcp`.
 - `service.sh`: the install and remove scripts that `basalt init` runs through
   the administrator dialog, run under `sudo` instead, and the cleanup that
-  collects the engine's logs. A job that calls `run.sh` should also run
-  `sh e2e/release/service.sh cleanup e2e/release/out` in a step with
-  `if: always()`, and upload `e2e/release/out` as an artifact.
+  collects the engine's logs. `run.sh`'s EXIT trap runs that cleanup, so a
+  job needs no separate cleanup step; it only uploads `e2e/release/out` as an
+  artifact.
 - `installscript/`: prints those scripts from the same code `init` uses.
 
 When a main path changes (install, the setup page, the agent's read and write,

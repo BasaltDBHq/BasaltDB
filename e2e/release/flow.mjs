@@ -203,6 +203,21 @@ async function setupPage() {
   ok("setup page");
 }
 
+// The root page: running, with the counts, and the check-up button's link
+// is the setup page's.
+async function homePage() {
+  await open(`${PAGES}/`);
+  await page.getByText("BasaltDB is running").waitFor({ state: "visible" });
+  const text = await page.locator("main").innerText();
+  assert.match(text, /1 agent on 1 database/, "the home page counts the agent and its database");
+  assert.ok(!text.includes(AGENT), "the home page never names the agent");
+  const button = page.locator("#home-checks a").first();
+  if ((await button.count()) === 0) throw new Error("the home page has no check-up button (#home-checks a)");
+  const href = await button.getAttribute("href");
+  assert.ok(href.startsWith(`${PAGES}/setup/#1.`), `the check-up button opens the setup page: ${href}`);
+  ok("home page");
+}
+
 let mcp;
 let runId;
 
@@ -336,6 +351,7 @@ function serviceListed() {
 const steps = [
   ["install", install],
   ["setup-page", setupPage],
+  ["home-page", homePage],
   ["mcp", mcpSession],
   ["approve", approve],
   ["revert", revert],

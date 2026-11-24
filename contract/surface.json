@@ -115,6 +115,7 @@
     {"kind": "page", "name": "/approve/"},
     {"kind": "page", "name": "/connect"},
     {"kind": "page", "name": "/connect/"},
+    {"kind": "page", "name": "/home/"},
     {"kind": "page", "name": "/passkeys/register"},
     {"kind": "page", "name": "/plugin/"},
     {"kind": "page", "name": "/plugins/*"},

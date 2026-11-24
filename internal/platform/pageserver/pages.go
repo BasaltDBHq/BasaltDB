@@ -101,6 +101,8 @@ type Server struct {
 	files  fs.FS
 	mu     sync.RWMutex
 	agents []Agent
+	// home is the home page's data (SetHome); nil until the agents serve.
+	home HomeSource
 	// The handlers app mounts on the API routes, one set per page
 	// (MountApprovals, MountReverts, MountPlugins). Handler and Dispatch
 	// need all three.
@@ -227,6 +229,8 @@ func (s *Server) Handler() http.Handler {
 	// The pages at their RESTful paths (links; owner decisions, Decided
 	// Nov 12), and only the files they load: no listings, no tests.
 	files := http.FileServerFS(s.files)
+	mux.HandleFunc("GET "+HomePath, HomePage)
+	mux.HandleFunc("GET "+HomeDataPath, HomeData(s))
 	mux.Handle("GET /lib/{file}", LibFile(files))
 	mux.Handle("GET /style.css", files)
 	mux.Handle("GET /fonts/{file}", FontFile(files))

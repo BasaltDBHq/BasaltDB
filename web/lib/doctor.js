@@ -52,7 +52,7 @@ export function certificateRow(database) {
 
 // FIX_JOBS are the fixes a row's action starts, in the order "Fix these"
 // walks them. UPDATE is the guard update, which opens its own job.
-export const FIX_ORDER = ["TRUST", "UPDATE", "LABELS", "PASSKEY_ADD", "REPAIR"];
+export const FIX_ORDER = ["TRUST", "UPDATE", "PASSKEY_ADD", "REPAIR"];
 
 // localPasskeys counts the passkeys of origin: the devices that approve on
 // this page's pages.
@@ -66,7 +66,9 @@ export function localPasskeys(passkeys, origin) {
 // need the person.
 export function checkView(d, origin) {
   const rows = [];
-  const unknown = d.labels?.state === "UNKNOWN" && d.passkeys?.state === "UNKNOWN";
+  // Column labels are not a row and never count toward "needs you" while
+  // PII protection is not shipped; only what stops BasaltDB working does.
+  const unknown = d.passkeys?.state === "UNKNOWN";
   const need = (job, title, text, action) => rows.push({ job, mark: "!", title, text, action });
   const cert = d.certificate?.state;
   if (cert === "CHANGED") {
@@ -76,10 +78,6 @@ export function checkView(d, origin) {
   if (cert === "MISMATCH") need("TRUST", "The certificate BasaltDB trusts doesn't match its records", "Check it before BasaltDB connects again.", "Check");
   if (d.guard?.state === "OUTDATED") {
     need("UPDATE", "BasaltDB needs an update in your database", `A newer BasaltDB is running than the one installed in ${d.database ?? "your database"}.`, "Update");
-  }
-  if (d.labels?.state === "UNLABELED") {
-    const r = unlabeledRow(Number(d.labels.count) || 0, (d.labels.columns ?? []).map(columnName));
-    need("LABELS", r.title, r.text, "Label");
   }
   if (d.passkeys?.state === "NONE") need("PASSKEY_ADD", NO_PASSKEY.title, NO_PASSKEY.text, "Add");
   if (d.login?.code === "CREDENTIAL_REJECTED") need("REPAIR", "Your agent can't log in", "Its database password was changed or removed.", "Fix");
@@ -92,11 +90,10 @@ export function checkView(d, origin) {
     return {
       title: ALL_GOOD.title,
       sub: ALL_GOOD.sub,
-      rows: [...ALL_GOOD.rows.map((title) => ({ job: null, mark: "✓", title, text: "", action: "" })), passkeysRow],
+      rows: [...ALL_GOOD.rows.slice(1).map((title) => ({ job: null, mark: "✓", title, text: "", action: "" })), passkeysRow],
       need: 0,
     };
   }
-  if (d.labels?.state === "UNKNOWN") rows.push(later("Column labels"));
   if (d.passkeys?.state === "UNKNOWN") rows.push(later("Passkeys"));
   if (d.passkeys?.state === "OK") rows.push(passkeysRow);
   return {

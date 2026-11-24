@@ -876,15 +876,10 @@ test("the Update check shows what needs the person, then Fix these walks the fix
   assert.equal(nodes["u-done-title"].textContent, "Security certificate trusted");
   assert.equal(nodes["u-done-text"].textContent, "Your agents reconnect.");
   nodes["u-done-next"].click();
-  // Doctor again: the labels now read, and Fix these goes on with them.
+  // Doctor again: the unlabeled columns it now reads are no row, so the walk ends.
   await settle();
   await settle();
-  assert.deepEqual(shown(nodes), ["s-labels"]);
-  assert.equal(e.bodies.filter((b) => b.body.job === "LABELS").at(-1).body.databaseUrl, ADMIN, "the string is kept for the fixes that follow");
-  await nodes["labels-next"].click();
-  await settle();
-  await settle();
-  assert.equal(e.bodies.filter((b) => b.path === RUN_PATH && b.body.job === "LABELS").length, 0, "leaving them unlabeled sends no run");
+  assert.equal(e.bodies.filter((b) => b.body.job === "LABELS").length, 0, "no labels fix is started");
   assert.deepEqual(shown(nodes), ["u-check"]);
   assert.equal(nodes["u-title"].textContent, "All good");
 });
@@ -926,7 +921,7 @@ test("Manage lists the passkeys, and removing the last one asks for a new one", 
   startUpdate(change, { fetchFn: e.fetchFn, origin: ORIGIN, makePasskey: async () => ({}), pkc, now: () => new Date("2026-11-22T12:00:00Z"), onPick: () => {} });
   await settle();
   assert.equal(nodes["u-title"].textContent, "All good");
-  assert.match(nodes["u-rows"].textContent, /Every column has a label/);
+  assert.match(nodes["u-rows"].textContent, /Database certificate checked/);
   assert.match(nodes["u-rows"].textContent, /Passkeys1 device can approveManage/);
   const manage = find(nodes["u-rows"], (n) => n.tagName === "BUTTON" && n.textContent === "Manage");
   manage.click();

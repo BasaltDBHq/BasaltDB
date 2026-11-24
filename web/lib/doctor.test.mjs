@@ -18,7 +18,6 @@ test("nothing wrong is All good, with the passkeys to manage", () => {
   assert.equal(v.title, "All good");
   assert.equal(v.sub, "BasaltDB is running and your agents can connect.");
   assert.deepEqual(v.rows.map((r) => `${r.mark} ${r.title} ${r.text} ${r.action}`.trim()), [
-    "✓ Every column has a label",
     "✓ Database certificate checked",
     "✓ Passkeys 2 devices can approve Manage",
   ]);
@@ -34,20 +33,25 @@ test("each finding is a row with its words and action, in the contract's order",
     passkeys: { state: "NONE", items: [] },
   };
   const v = checkView(d, ORIGIN);
-  assert.equal(v.title, "4 things need you");
+  assert.equal(v.title, "3 things need you");
   assert.equal(v.sub, "Everything else is working.");
   assert.deepEqual(v.rows.map((r) => [r.title, r.action]), [
     ["The certificate BasaltDB trusts doesn't match its records", "Check"],
     ["BasaltDB needs an update in your database", "Update"],
-    ["22 new columns have no label", "Label"],
     ["No passkey can approve", "Add"],
   ]);
   assert.equal(v.rows[1].text, "A newer BasaltDB is running than the one installed in shop_db.");
-  assert.match(v.rows[2].text, /^orders\.c0, orders\.c1, .*orders\.c19, …$/);
-  assert.deepEqual(fixQueue(d, ORIGIN), ["TRUST", "UPDATE", "LABELS", "PASSKEY_ADD"]);
-  const one = checkView({ ...good, labels: { state: "UNLABELED", count: 1, columns: ["s.t.c"] } }, ORIGIN);
+  assert.deepEqual(fixQueue(d, ORIGIN), ["TRUST", "UPDATE", "PASSKEY_ADD"]);
+});
+
+test("unlabeled columns are no row and never count toward what needs the person", () => {
+  const v = checkView({ ...good, labels: { state: "UNLABELED", count: 3, columns: ["public.orders.a"] } }, ORIGIN);
+  assert.equal(v.title, "All good");
+  assert.equal(v.need, 0);
+  assert.ok(v.rows.every((r) => !/label/i.test(r.title)));
+  assert.deepEqual(fixQueue({ ...good, labels: { state: "UNLABELED", count: 3, columns: [] } }, ORIGIN), []);
+  const one = checkView({ ...good, passkeys: { state: "NONE", items: [] }, labels: { state: "UNLABELED", count: 1, columns: ["s.t.c"] } }, ORIGIN);
   assert.equal(one.title, "1 thing needs you");
-  assert.equal(one.rows[0].title, "1 new column has no label");
 });
 
 test("a renewed certificate is one row naming the database, its fix the confirm step", () => {
@@ -67,7 +71,6 @@ test("an agent that cannot log in: REPAIR for a refused credential, the message 
   assert.equal(v.rows[0].action, "Fix");
   assert.equal(v.sub, "The rest is checked once BasaltDB can connect.");
   assert.deepEqual(v.rows.slice(1).map((r) => [r.title, r.text]), [
-    ["Column labels", "Checked once BasaltDB can connect."],
     ["Passkeys", "Checked once BasaltDB can connect."],
   ]);
   const other = checkView({ ...off, login: { code: "DATABASE_UNREACHABLE", message: "The database cannot be reached." } }, ORIGIN);
@@ -91,7 +94,7 @@ test("a passkey's line says when it was added, where it signs and when it was us
   assert.deepEqual(items.map((k) => k.label), ["a", "Passkey"], "an item without an id is not listed; a blank label reads Passkey");
   assert.equal(columnName("public.orders.phone"), "orders.phone");
   assert.equal(columnName("sales.orders.phone"), "sales.orders.phone");
-  assert.equal(checkView({ ...good, passkeys: { state: "OK", items: [local("a"), portal] } }, ORIGIN).rows[2].text, "1 device can approve", "only this origin's count");
+  assert.equal(checkView({ ...good, passkeys: { state: "OK", items: [local("a"), portal] } }, ORIGIN).rows[1].text, "1 device can approve", "only this origin's count");
 });
 
 test("the browser is told of a removed passkey only when it can be", async () => {

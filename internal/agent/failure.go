@@ -8,13 +8,14 @@ import (
 	"strings"
 
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
-	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
-	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
 // Failure maps err, raised by a call of tool with args, to the contract's

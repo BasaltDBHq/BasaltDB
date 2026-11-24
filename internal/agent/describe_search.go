@@ -13,9 +13,9 @@ import (
 )
 
 // searchTerm is the search for a resource not found: its table name.
-func searchTerm(resource string) string {
+func (ds *Service) searchTerm(resource string) string {
 	term := resource
-	if _, name, err := parseResource(resource); err == nil {
+	if _, name, err := ds.core.Language.ParseName(resource); err == nil {
 		term = name
 	}
 	term = firstRunes(strings.TrimSpace(term), describeQueryMax)
@@ -52,18 +52,18 @@ func (ds *Service) DescribeSearch(ctx context.Context, p DescribeSearchParams) (
 	}
 	page.Items = make([]SearchItem, 0, len(matches))
 	for _, m := range matches {
-		page.Items = append(page.Items, searchItem(m.Resource, m.Matched))
+		page.Items = append(page.Items, ds.searchItem(m.Resource, m.Matched))
 	}
 	return page, nil
 }
 
-func searchItem(r agentstore.Resource, matched string) SearchItem {
+func (ds *Service) searchItem(r agentstore.Resource, matched string) SearchItem {
 	access := r.Actions
 	if access == nil {
 		access = []action.Op{}
 	}
 	return SearchItem{
-		Resource: printedName(r.Namespace, r.Name), Kind: r.Kind, EstimatedRows: r.Estimate,
+		Resource: ds.core.Language.PrintName(r.Namespace, r.Name), Kind: r.Kind, EstimatedRows: r.Estimate,
 		Matched: matched, Access: access, Comment: trimComment(r.Comment, searchCommentMax),
 	}
 }

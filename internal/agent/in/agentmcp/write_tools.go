@@ -9,6 +9,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -71,7 +72,7 @@ func (h handlers) write(ctx context.Context, raw json.RawMessage) (any, error) {
 		return nil, &guidance.ArgumentError{Message: err.Error()}
 	}
 	out, err := h.svc.Write(ctx, agentsvc.WriteParams{
-		SQL: args.SQL, Params: params, Intent: args.Intent, RunID: uniqueid.Optional(args.RunID),
+		Request: agentstore.Request{Text: args.SQL, Params: params}, Intent: args.Intent, RunID: uniqueid.Optional(args.RunID),
 		ApprovalID: uniqueid.Optional(args.ApprovalID), Wait: args.wait(),
 	})
 	if err != nil {

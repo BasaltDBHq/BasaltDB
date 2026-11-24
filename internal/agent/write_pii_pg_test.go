@@ -11,7 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/agent"
+	"github.com/basaltdbhq/basaltdb/internal/agent/out/sqllang"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
@@ -70,7 +72,7 @@ func piiWriteService(t *testing.T, returned postgres.ReturnedFunc) (*agent.Servi
 			return "", false
 		},
 	}
-	core := agent.Core{Name: "bot", Store: store, Log: slog.New(slog.DiscardHandler), Now: time.Now, Errors: errs}
+	core := agent.Core{Name: "bot", Store: store, Language: sqllang.New(store), Log: slog.New(slog.DiscardHandler), Now: time.Now, Errors: errs}
 	return agent.New(core, &agent.DescribeDeps{}, &agent.WriteDeps{Store: store, PII: failingObserver{}}, func() *guidance.UpdateInfo { return nil }), d
 }
 
@@ -81,7 +83,7 @@ func TestWriteRollsBackWhenItsReturnedValuesCannotBeAdded(t *testing.T) {
 	}
 	svc, d := piiWriteService(t, refuse)
 	_, err := svc.Write(context.Background(), agent.WriteParams{
-		SQL: `UPDATE people SET city = 'Pärnu' WHERE id = 1 RETURNING email`, Intent: "move ann",
+		Request: agentstore.Request{Text: `UPDATE people SET city = 'Pärnu' WHERE id = 1 RETURNING email`}, Intent: "move ann",
 	})
 	require.ErrorIs(t, err, corepii.ErrDeltaFull)
 	var city string

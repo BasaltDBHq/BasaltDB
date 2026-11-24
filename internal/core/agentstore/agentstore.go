@@ -1,10 +1,19 @@
 // Package agentstore holds the types the agent's store ports are written in:
-// what describe reads of a store, in words that fit any store. The store's
+// the request the agent sends and what describe reads of a store, in words
+// that fit any store. The store's
 // adapter fills them; the agent service decides what is hidden and passes
 // the rest on. Types only.
 package agentstore
 
 import "github.com/basaltdbhq/basaltdb/internal/core/action"
+
+// Request is one request in the store's language: its text and its
+// parameters. The agent service passes it on and records it, and never reads
+// Text. Postgres: SQL text with $n parameters.
+type Request struct {
+	Text   string
+	Params []any
+}
 
 // ResourceRef names one resource (a table, a collection, a bucket) as its
 // store assigns it. It is opaque to the agent service: compared and used as

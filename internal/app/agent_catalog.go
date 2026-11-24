@@ -8,6 +8,7 @@ import (
 	"time"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+	"github.com/basaltdbhq/basaltdb/internal/agent/out/sqllang"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
@@ -266,7 +267,7 @@ func pgField(oid uint32, c pgcatalog.Column) agentstore.Field {
 
 func pgForeignKey(k pgcatalog.Key, names map[int16]string) pgForeignKeyDisplay {
 	fk := pgForeignKeyDisplay{
-		Direction: "INCOMING", Columns: make([]string, 0, len(k.Attnums)), Table: agentsvc.PrintedName(k.OtherSchema, k.OtherTable),
+		Direction: "INCOMING", Columns: make([]string, 0, len(k.Attnums)), Table: sqllang.PrintName(k.OtherSchema, k.OtherTable),
 		OnDelete: pgFKAction(k.OnDelete), OnUpdate: pgFKAction(k.OnUpdate),
 	}
 	if k.Outgoing {

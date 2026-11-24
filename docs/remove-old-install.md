@@ -49,6 +49,45 @@ SELECT rolname FROM pg_roles WHERE rolname LIKE 'basalt%';
 
 The sample data from a demo install, the `basalt_demo` schema, is yours to keep or drop (`DROP SCHEMA basalt_demo CASCADE`).
 
+## Upgrading from 0.0.1: clean up the computer
+
+An install from 0.0.1 also left an engine on the computer that ran it. 0.1 runs the engine as a system service with its config at `/Library/Application Support/Basalt/engine.json` (macOS) or `/etc/basalt/engine.json` (Linux). 0.0.1 kept its config in your own folder, `~/Library/Application Support/basalt/` (macOS) or `~/.config/basalt/` (Linux). When both hold the same agent, every `basalt` command stops with `agent "NAME" is in both engine configs`, and the agent cannot connect.
+
+Do this once, in a terminal, before you set up 0.1:
+
+1. Stop and remove the old engine service, if 0.0.1 installed one. On macOS:
+
+   ```sh
+   sudo launchctl bootout system/dev.basaltdb.engine
+   sudo rm -f /Library/LaunchDaemons/dev.basaltdb.engine.plist
+   ```
+
+   On Linux:
+
+   ```sh
+   sudo systemctl disable --now basalt-engine.service
+   sudo rm -f /etc/systemd/system/basalt-engine.service
+   sudo systemctl daemon-reload
+   ```
+
+2. Move the old config folder out of the way. It holds the old agent's credential file; delete it once 0.1 works.
+
+   ```sh
+   mv ~/Library/Application\ Support/basalt ~/Library/Application\ Support/basalt.old   # macOS
+   mv ~/.config/basalt ~/.config/basalt.old                                              # Linux
+   ```
+
+3. Update the binary: `brew upgrade basaltdb`, or install the new archive or package.
+
+4. Update the line your agent app runs to `basalt mcp --agent NAME`. 0.1 has no `--config` or `--socket-dir` on `basalt mcp`; a line that still has them fails to connect. In Claude Code:
+
+   ```sh
+   claude mcp remove NAME -s user
+   claude mcp add NAME -s user -- basalt mcp --agent NAME
+   ```
+
+5. Remove the old install from the database as above, then ask your agent to run `basalt init`.
+
 ## The engine still holds the old setup
 
 When the database is clean but the engine on your computer is still set up for it, run `basalt init`. It opens the page that asks `Is this your database?`. Answer **No, this isn't mine** and type your computer's administrator password in the dialog that opens: it deletes BasaltDB's setup on this computer and touches no database. `basalt init` then opens a new install link.

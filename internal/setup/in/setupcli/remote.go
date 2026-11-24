@@ -95,7 +95,7 @@ func InitRemote(c *cli.IO, h Host, args []string) (setup.RemoteInitResult, error
 // --agent only (CONTRACT.md, CLI). The role's prefix and its statement
 // timeout are fixed values.
 func parseInitRemote(c *cli.IO, args []string) (setup.RemoteFlags, error) {
-	f := setup.RemoteFlags{Prefix: cmp.Or(c.RolePrefix, guardmodel.DefaultPrefix), Timeout: guardmodel.DefaultStatementTimeout, OperatedBy: setup.OperatedByAgent}
+	f := setup.RemoteFlags{Prefix: cmp.Or(c.RolePrefix, guardmodel.DefaultPrefix), Timeout: guardmodel.DefaultRoleStatementTimeout, OperatedBy: setup.OperatedByAgent}
 	var remote bool
 	fs := c.Flags("init --remote")
 	fs.BoolVar(&remote, flagRemote, false, "set up an agent on a bot's machine: prints the connect link the person opens")
@@ -1048,7 +1048,7 @@ func PrintRemoteResult(c *cli.IO, res setup.RemoteInitResult) error {
 // printRemoteMCP prints the basalt mcp command the agent registers.
 func printRemoteMCP(c *cli.IO, res setup.RemoteInitResult) error {
 	_, err := fmt.Fprintf(c.Stdout, "then add this MCP server to the agent's client, running as OS user %s:\n  %s\n",
-		res.OSUser, cli.ShellJoin(res.MCPCommand))
+		res.OSUser, guidance.ShellJoin(res.MCPCommand))
 	return err
 }
 

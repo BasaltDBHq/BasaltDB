@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -89,11 +90,28 @@ func (f *keptFixture) runWith(euid int, inGroup error, set func(*Options)) *kept
 	return r
 }
 
+// runBinary is this test binary and its sha256, read and hashed once per
+// process: under -race it is large, and every kept-run test uploads it as
+// the plugin, so reading and hashing it again for each test was time the
+// tests spent under CI load before the engine did anything.
+var runBinary = sync.OnceValues(func() (binaryFile, error) {
+	exe, err := os.ReadFile(os.Args[0])
+	if err != nil {
+		return binaryFile{}, err
+	}
+	return binaryFile{data: exe, sum: fmt.Sprintf("%x", sha256.Sum256(exe))}, nil
+})
+
+type binaryFile struct {
+	data []byte
+	sum  string
+}
+
 // runSource is a local plugin acme-ner whose command is this test binary,
 // started as the test plugin that reports to report.
 func runSource(t *testing.T, report, hooks string) ([]UploadFile, []string) {
 	t.Helper()
-	exe, err := os.ReadFile(os.Args[0])
+	bin, err := runBinary()
 	require.NoError(t, err)
 	args, err := json.Marshal([]string{testPluginFlag, "report=" + report})
 	require.NoError(t, err)
@@ -102,11 +120,11 @@ func runSource(t *testing.T, report, hooks string) ([]UploadFile, []string) {
   "protocol": ["basalt-plugin/1"],
   "hooks": %s,
   "endpoint": { "local": { "transport": %q, "command": "bin/p", "args": %s } },
-  "files": { "bin/p": "sha256:%x" },
+  "files": { "bin/p": "sha256:%s" },
   "network": { "egress": [] }
 }
-`, hooks, dial.TransportStdio, args, sha256.Sum256(exe))
-	return []UploadFile{{Path: ManifestFile, Data: []byte(manifest)}, {Path: "bin/p", Data: exe}}, []string{"bin/p"}
+`, hooks, dial.TransportStdio, args, bin.sum)
+	return []UploadFile{{Path: ManifestFile, Data: []byte(manifest)}, {Path: "bin/p", Data: bin.data}}, []string{"bin/p"}
 }
 
 // add uploads the running source and opens it for agents.
@@ -134,10 +152,20 @@ var keptKey = pluginmodel.EntryKey{Name: "acme-ner", Instance: "default"}
 // approval, and PLUGIN_LIST says so.
 func (r *keptRun) requireServed(approval PluginOpenedApproval, agents ...string) {
 	r.t.Helper()
-	require.Eventually(r.t, func() bool {
+	begun := time.Now()
+	served := func() bool {
 		got := servedTo(r.ep, keptKey)
 		return len(got) == len(agents) && r.ep.host.State(keptKey) == StateReady
-	}, keptWait, 50*time.Millisecond, "served to %v", agents)
+	}
+	if !r.waitKept(served) {
+		// Name the step the engine is stuck in, so a load flake says where
+		// the time went: not served (the watch has not applied the signature),
+		// served but not READY (the plugin process has not answered), or
+		// not supervised (it never started).
+		r.t.Fatalf("not served to %v within %v: served to %v, state %v, supervised %v, problem %+v",
+			agents, keptWait, servedTo(r.ep, keptKey), r.ep.host.State(keptKey), r.ep.sup.Supervised(), r.problem())
+	}
+	r.t.Logf("served to %v after %v", agents, time.Since(begun).Round(time.Millisecond))
 	require.ElementsMatch(r.t, agents, servedTo(r.ep, keptKey))
 	list, err := r.f.client.PluginList(context.Background())
 	require.NoError(r.t, err)
@@ -148,6 +176,19 @@ func (r *keptRun) requireServed(approval PluginOpenedApproval, agents ...string)
 	for _, sv := range list.Plugins[0].Serving {
 		require.Equal(r.t, *approval.ApprovalID, *sv.ApprovalID)
 	}
+}
+
+// waitKept polls cond until it holds or keptWait passes, and says which.
+func (r *keptRun) waitKept(cond func() bool) bool {
+	r.t.Helper()
+	deadline := time.Now().Add(keptWait)
+	for !cond() {
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return true
 }
 
 // requireNotRunning: keptKey runs for no agent and is supervised by nobody.

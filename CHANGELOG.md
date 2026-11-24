@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - The engine's systemd unit now escapes `%` and `$` in the binary and config paths, so a path containing them starts the engine instead of being expanded by systemd.
+- Commands the CLI prints now quote an argument that starts with `=`, so a zsh user can paste them: zsh expands `=cmd` to a path.
 
 ## [0.1.0-alpha] - 2026-11-24
 

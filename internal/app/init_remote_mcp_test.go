@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
@@ -39,7 +40,7 @@ func TestInitRemoteMCPCommandDefaultConfig(t *testing.T) {
 	r := remoteWith(t, userRemote(h), "", "--agent", "bot")
 	want := []string{fakeBin, "mcp", "--agent", "bot"}
 	require.Equal(t, want, r.res.MCPCommand)
-	require.Contains(t, r.stdout, "  "+cli.ShellJoin(want)+"\n")
+	require.Contains(t, r.stdout, "  "+guidance.ShellJoin(want)+"\n")
 	require.NotContains(t, r.stdout, "--config")
 	require.FileExists(t, filepath.Join(h.configDir, config.UserDirName, "engine.json"))
 }
@@ -52,7 +53,7 @@ func TestInitRemoteMCPCommandWithConfig(t *testing.T) {
 	r := remoteWith(t, userRemote(h), cfg, "--agent", "lead_bot")
 	want := []string{fakeBin, "mcp", "--agent", "lead_bot"}
 	require.Equal(t, want, r.res.MCPCommand)
-	require.Contains(t, r.stdout, "  "+cli.ShellJoin(want)+"\n")
+	require.Contains(t, r.stdout, "  "+guidance.ShellJoin(want)+"\n")
 }
 
 // Root/service init --remote with a service config returns the command the

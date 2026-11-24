@@ -158,6 +158,16 @@ func TestSystemdUnit(t *testing.T) {
 	require.Contains(t, osservice.SystemdUnit(spaced), "ReadWritePaths=\"/etc/my basalt\"\n")
 }
 
+func TestSystemdUnitEscapesSpecifiersAndVariables(t *testing.T) {
+	t.Parallel()
+	s := linuxSpec()
+	s.Binary = "/opt/100%/basalt"
+	s.ConfigPath = "/etc/%h/$HOME/engine.json"
+	unit := osservice.SystemdUnit(s)
+	require.Contains(t, unit, `ExecStart="/opt/100%%/basalt" engine --config "/etc/%%h/$$HOME/engine.json" --supervise`)
+	require.Contains(t, unit, "ReadWritePaths=\"/etc/%%h/$HOME\"\n", "path lists expand specifiers, not variables")
+}
+
 func TestLaunchdDaemon(t *testing.T) {
 	t.Parallel()
 	plist := osservice.LaunchdDaemon(darwinSpec())

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- The engine's systemd unit now escapes `%` and `$` in the binary and config paths, so a path containing them starts the engine instead of being expanded by systemd.
+
 ## [0.1.0-alpha] - 2026-11-24
 
 The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup moves from the terminal to a page: the agent runs `basalt init` and the person finishes on the page it links. The CLI only starts things. Expect bugs and breaking changes between alpha releases, and read "Breaking for alpha installs" before you upgrade.

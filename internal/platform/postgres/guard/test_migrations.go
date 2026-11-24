@@ -5,7 +5,9 @@ import "fmt"
 // TestMigration is a version a test appends after this build's own. The
 // tests of the upgrade machinery (the setup page's update, the stale-version check, breaking and
 // non-breaking versions, setup codes that upgrade) add theirs through
-// AppendTestMigrations. No product code calls it.
+// AppendTestMigrations. No product code calls it, and an architecture test
+// (TestGuardMigrationHooksStayInTests) fails if any does; the linker drops
+// the unused hooks from the binary.
 type TestMigration struct {
 	Version     int
 	SQL         string

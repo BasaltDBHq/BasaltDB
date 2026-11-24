@@ -19,8 +19,8 @@
       },
       "operatedBy": {
         "type": "string",
-        "enum": ["PERSON", "AGENT"],
-        "description": "Who runs the engine's machine (engine.json operatedBy). PERSON (default, and when the shim cannot read the config): machine steps are the person's. AGENT: machine steps are the agent's (AGENT RUN_COMMAND); steps that need the admin stay the person's, on their own computer."
+        "enum": ["PERSON", "AGENT", "UNKNOWN"],
+        "description": "Who runs the engine's machine (engine.json operatedBy). UNKNOWN: the shim cannot load the config and it does not say. PERSON (default): machine steps are the person's. AGENT: machine steps are the agent's (AGENT RUN_COMMAND); steps that need the admin stay the person's, on their own computer."
       },
       "enforcement": {
         "type": "string",
@@ -364,6 +364,7 @@
                 "ENGINE_UNREACHABLE",
                 "ENGINE_START_FAILED",
                 "ENGINE_GAVE_UP",
+                "CONFIG_INVALID",
                 "DATABASE_UNREACHABLE",
                 "TOO_MANY_CONNECTIONS",
                 "CREDENTIAL_REJECTED",

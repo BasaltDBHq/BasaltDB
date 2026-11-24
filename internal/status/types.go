@@ -18,6 +18,7 @@ import (
 // Problem codes of the status tool (api/mcp/errors/next-steps.json, problems).
 const (
 	problemEngineUnreachable   = guidance.ReasonEngineUnreachable
+	problemConfigInvalid       = guidance.ReasonConfigInvalid
 	problemDatabaseUnreachable = guidance.ReasonDatabaseUnreachable
 	problemTooManyConnections  = guidance.ReasonTooManyConnections
 	problemCredentialRejected  = guidance.ReasonCredentialRejected

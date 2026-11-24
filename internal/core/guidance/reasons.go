@@ -38,6 +38,7 @@ const (
 	ReasonGuardMissing        = action.ReasonGuardMissing
 	ReasonGuardOutdated       = "GUARD_OUTDATED"
 	ReasonEngineUnreachable   = "ENGINE_UNREACHABLE"
+	ReasonConfigInvalid       = "CONFIG_INVALID"
 	ReasonPagesOff            = "PAGES_OFF"
 	ReasonSetupPending        = "SETUP_PENDING"
 	ReasonSetupExpired        = "SETUP_EXPIRED"

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `status` for an `engine.json` that does not load now reports `CONFIG_INVALID` with the load error and `operatedBy` as the file says (or `UNKNOWN`), instead of telling the person to start a service that is not there. The step is to fix `engine.json` as the error says, or, for a config of an older alpha, to follow `docs/remove-old-install.md` and run `basalt init --remote`. The other tools answer `ENGINE_UNREACHABLE` with the same error and steps.
+
 ## [0.1.0-alpha] - 2026-11-24
 
 The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup moves from the terminal to a page: the agent runs `basalt init` and the person finishes on the page it links. The CLI only starts things. Expect bugs and breaking changes between alpha releases, and read "Breaking for alpha installs" before you upgrade.

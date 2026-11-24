@@ -513,6 +513,27 @@ type OldCredentialFileError struct{ msg string }
 
 func (e *OldCredentialFileError) Error() string { return e.msg }
 
+// OperatedByUnknown is what SniffOperatedBy returns for a config that does
+// not say.
+const OperatedByUnknown = "UNKNOWN"
+
+// SniffOperatedBy reads only operatedBy from the file at path, for a config
+// that failed to load: PERSON or AGENT when the file says so, else
+// OperatedByUnknown. It never fails and reads nothing else.
+func SniffOperatedBy(path string) string {
+	raw, err := readSmall(path, os.Open)
+	if err != nil {
+		return OperatedByUnknown
+	}
+	var top struct {
+		OperatedBy string `json:"operatedBy"`
+	}
+	if json.Unmarshal(raw, &top) != nil || (top.OperatedBy != "PERSON" && top.OperatedBy != "AGENT") {
+		return OperatedByUnknown
+	}
+	return top.OperatedBy
+}
+
 // IsOldCredentialFile reports whether err (from Load) is that refusal, so a
 // caller that otherwise ignores a config it cannot read can still show it.
 func IsOldCredentialFile(err error) bool {

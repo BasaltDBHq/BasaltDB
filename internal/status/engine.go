@@ -2,6 +2,8 @@ package status
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"runtime"
 	"strings"
 	"time"
@@ -34,6 +36,17 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Comm
 		cmds = cmds.OperatedBy(cfg.OperatedBy)
 	}
 	ps := guidance.Problems{Cmds: cmds}
+	if ConfigUnloadable(cfg, cfgErr) {
+		r.OperatedBy = config.SniffOperatedBy(configPath)
+		ps.Add(problemConfigInvalid, "engine.json cannot be loaded: "+cfgErr.Error(),
+			func(b *guidance.Steps) string { return guidance.ConfigInvalidSteps(b, name) })
+		list, err := ps.Sorted()
+		if err != nil {
+			return guidance.StatusReport{}, err
+		}
+		r.Problems, r.Ready = list, Ready(list)
+		return r, nil
+	}
 	msg := "the engine does not answer, so no tool but status works"
 	if config.IsOldCredentialFile(cfgErr) {
 		// The engine cannot start on this config: say what to edit.
@@ -74,6 +87,13 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Comm
 // problem ENGINE_REVOKED. Without the engine's
 // key (the key file is refused) or a readable guard of version 33 or later,
 // the state is UNKNOWN and no problem is added.
+// ConfigUnloadable reports a config that exists and failed to load: the
+// engine cannot start from it, and its mode is not known. A missing file is
+// not one.
+func ConfigUnloadable(cfg *config.Config, cfgErr error) bool {
+	return cfg == nil && cfgErr != nil && !errors.Is(cfgErr, fs.ErrNotExist)
+}
+
 func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, guardReadable bool, ps *guidance.Problems) *guidance.EngineRecordStatus {
 	unknown := &guidance.EngineRecordStatus{State: engineUnknown}
 	if engineID == "" || !guardReadable || s.engineRecord == nil {

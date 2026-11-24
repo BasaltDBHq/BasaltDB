@@ -216,3 +216,83 @@ func TestEngineDownToolNamesHoldOff(t *testing.T) {
 	require.Contains(t, callErr.Error(), "the engine stopped and was not restarted: the engine crashed 5 times within 10s")
 	require.Contains(t, callErr.Error(), "The next try is at 2026-11-21T08:01:00Z")
 }
+
+// An engine.json that exists and does not load is reported as such, with the
+// load error and the file's own fix, never a service command, and operatedBy
+// is not invented as PERSON (a same-user bot install has no service).
+func TestEngineDownConfigThatDoesNotLoad(t *testing.T) {
+	t.Parallel()
+	cases := map[string]struct {
+		file       string
+		wantErr    string
+		operatedBy string
+	}{
+		"alpha.2 layout": {
+			file:       `{"mode": "SAME_USER", "agents": [{"name": "bot", "credentialFile": "/home/bot/.basalt/bot.url"}]}`,
+			wantErr:    "credentialFile",
+			operatedBy: config.OperatedByUnknown,
+		},
+		"unknown key": {
+			file:       `{"operatedBy": "AGENT", "bogusKey": 1}`,
+			wantErr:    "bogusKey",
+			operatedBy: mcpcontract.OperatedByAgent,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "engine.json")
+			require.NoError(t, os.WriteFile(path, []byte(tc.file), 0o600))
+			_, loadErr := config.Load(path)
+			require.ErrorContains(t, loadErr, tc.wantErr)
+			down := EngineDown{
+				Host: testEngineHost(), Name: "bot", Commands: newCommands(t, path), ConfigErr: loadErr, ConfigPath: path,
+				Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
+			}
+			srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, down.Tools()...)
+
+			body, isError := serveCall(t, srv, guidance.ToolStatus, map[string]any{})
+			require.False(t, isError, "%v", body)
+			require.Equal(t, tc.operatedBy, body["operatedBy"])
+			require.Equal(t, false, body["ready"])
+			problems := body["problems"].([]any)
+			require.Len(t, problems, 1)
+			p := problems[0].(map[string]any)
+			require.Equal(t, guidance.ReasonConfigInvalid, p["code"])
+			require.Contains(t, p["message"], tc.wantErr)
+			requireNoServiceCommand(t, p)
+			require.Contains(t, p["personMessage"], "docs/remove-old-install.md")
+			require.Contains(t, p["personMessage"], "basalt init --agent bot --remote")
+
+			body, isError = serveCall(t, srv, "query", map[string]any{})
+			require.True(t, isError)
+			require.Equal(t, guidance.ReasonEngineUnreachable, body["reason"])
+			require.Contains(t, body["message"], tc.wantErr)
+			requireNoServiceCommand(t, body)
+		})
+	}
+}
+
+func requireNoServiceCommand(t *testing.T, v map[string]any) {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	require.NoError(t, err)
+	for _, bad := range []string{"systemctl", "launchctl", "basalt-engine.service", "RUN_COMMAND"} {
+		require.NotContains(t, string(raw), bad)
+	}
+}
+
+// A config file that is missing is not a config that failed to load.
+func TestEngineDownMissingConfigKeepsTheStartStep(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "engine.json")
+	_, loadErr := config.Load(path)
+	require.Error(t, loadErr)
+	down := EngineDown{
+		Host: testEngineHost(), Name: "bot", Commands: newCommands(t, path), ConfigErr: loadErr, ConfigPath: path,
+		Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
+	}
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, down.Tools()...)
+	body, _ := serveCall(t, srv, guidance.ToolStatus, map[string]any{})
+	require.Equal(t, guidance.ReasonEngineUnreachable, body["problems"].([]any)[0].(map[string]any)["code"])
+}

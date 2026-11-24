@@ -101,6 +101,9 @@ func (d EngineDown) status(_ context.Context, raw json.RawMessage) (any, error) 
 
 func (d EngineDown) unreachable(tool string) func(context.Context, json.RawMessage) (any, error) {
 	return func(context.Context, json.RawMessage) (any, error) {
+		if status.ConfigUnloadable(d.Config, d.ConfigErr) {
+			return nil, d.configInvalid(tool)
+		}
 		message := "the basalt engine does not answer on this agent's socket, so " + tool + " cannot run; status still works"
 		if f := d.startFailure(); f != "" {
 			message += ". " + f
@@ -119,6 +122,25 @@ func (d EngineDown) unreachable(tool string) func(context.Context, json.RawMessa
 // logged under its error id.
 // retry is the tool an agent-operated engine's agent calls again once it
 // started the engine; "" calls status.
+// configInvalid is ENGINE_UNREACHABLE for an engine.json that does not load:
+// the load error, and steps that name no service or engine command.
+func (d EngineDown) configInvalid(tool string) error {
+	loadErr := d.ConfigErr.Error()
+	te := &toolresult.ToolError{
+		Code: guidance.CodeUnavailable, Reason: guidance.ReasonEngineUnreachable, ErrorID: uniqueid.New(),
+		Message: "the basalt engine cannot start, so " + tool + " cannot run: engine.json cannot be loaded: " + loadErr,
+	}
+	d.Log.Error("engine config does not load", "tool", tool, "error_id", te.ErrorID)
+	b := guidance.NewSteps()
+	te.PersonMessage = guidance.ConfigInvalidSteps(b, d.Name)
+	steps, err := b.Build()
+	if err != nil {
+		return err
+	}
+	te.NextSteps = steps
+	return te
+}
+
 func (d EngineDown) unreachableError(tool, retry, message string) (*toolresult.ToolError, error) {
 	te := &toolresult.ToolError{Code: guidance.CodeUnavailable, Reason: guidance.ReasonEngineUnreachable, ErrorID: uniqueid.New(), Message: message}
 	d.Log.Error("engine unreachable", "tool", tool, "error_id", te.ErrorID)

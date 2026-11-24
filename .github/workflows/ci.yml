@@ -337,7 +337,7 @@ jobs:
           cache: false
       - uses: actions/setup-node@v7
         with:
-          node-version: "24"
+          node-version: "20"
       - uses: actions/download-artifact@v8
         with:
           name: basaltdb-snapshot
@@ -355,16 +355,15 @@ jobs:
           tar -xzf "${{ matrix.archive }}" -C extract
           test -x extract/basalt
       - name: End-to-end test
-        run: sh e2e/release/run.sh dist/extract
-      # run.sh removes the service itself on exit; this covers a step that was
-      # killed by the timeout.
-      - name: Remove the engine service
-        if: always()
-        run: sh e2e/release/service.sh cleanup e2e/release/out
+        env:
+          E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
+        run: |
+          mkdir -p "$E2E_LOG_DIR"
+          sh e2e/release/run.sh "$PWD/dist/extract"
       - name: Keep the logs and failure evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: release-e2e-${{ matrix.runner }}
-          path: e2e/release/out
+          path: ${{ runner.temp }}/e2e-logs
           if-no-files-found: ignore

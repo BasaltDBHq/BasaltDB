@@ -22,7 +22,7 @@ bin_dir=$(CDPATH= cd -- "$1" && pwd)
 	echo "run.sh: need an executable basalt in $bin_dir" >&2
 	exit 1
 }
-out=${E2E_OUT:-$here/out}
+out=${E2E_LOG_DIR:-${E2E_OUT:-$here/out}}
 mkdir -p "$out"
 os=$(uname -s)
 
@@ -36,6 +36,9 @@ if [ "$os" = Darwin ]; then
 	inst=/Library/BasaltE2E
 else
 	inst=/usr/local/lib/basalt-e2e
+	# The engine refuses a plugin base whose parent is writable by others, and
+	# the hosted runner ships /opt that way. The runner is thrown away after.
+	sudo chmod go-w /opt
 fi
 sudo mkdir -p "$inst"
 sudo chown 0:0 "$inst"

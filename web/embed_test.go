@@ -79,7 +79,7 @@ func TestPortalBuildMatchesEmbed(t *testing.T) {
 // Signing is "sign with your passkey", never a brand's biometric name, and
 // every signing page says the biometrics stay on the device.
 func TestSigningPagesSayBiometricsStayOnTheDevice(t *testing.T) {
-	const line = "Your fingerprint or face never leaves this device; Basalt only receives a signature."
+	const line = "Your fingerprint, face or device password never leaves this device; Basalt only receives a signature."
 	require.NoError(t, fs.WalkDir(web.Files, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || (!strings.HasSuffix(p, ".html") && !strings.HasSuffix(p, ".js")) {
 			return err

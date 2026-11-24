@@ -2,15 +2,28 @@ package app
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
+	"fmt"
 	"log/slog"
+	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
+	"testing/fstest"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
@@ -18,7 +31,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/platform/httpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 const homeOrigin = "http://localhost:8787"
@@ -143,6 +159,40 @@ func TestHomeCheckLinkNeedsTheEngineToServeTheCheckUp(t *testing.T) {
 	require.True(t, strings.HasPrefix(link, homeOrigin+"/setup/#1."), link)
 }
 
+// labelledKeys are passkeys that carry a name of their own (the WebAuthn
+// user handle, where a label would travel).
+type labelledKeys struct {
+	approvalStore
+	label string
+}
+
+func (k labelledKeys) Passkeys(context.Context) ([]passkey.Credential, error) {
+	cs := testCredentials(1)
+	cs[0].UserHandle = []byte(k.label)
+	cs[0].Relying.RPID = k.label
+	return cs, nil
+}
+
+// operatorProfile makes an operator trust profile named name for host, and
+// has every connection use it until the test ends.
+func operatorProfile(t *testing.T, name, host string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: name}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	require.NoError(t, err)
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	sum := sha256.Sum256(pemBytes)
+	spec := fmt.Sprintf(`{"name":%q,"match":["=%s"],"roots":[{"file":"roots.pem","sha256":%q}]}`, name, host, hex.EncodeToString(sum[:]))
+	fsys := fstest.MapFS{"trust.d/" + name + ".json": {Data: []byte(spec)}, "trust.d/roots.pem": {Data: pemBytes}}
+	ops, err := trustprofile.LoadFS(fsys, "trust.d", trustprofile.Operator)
+	require.NoError(t, err)
+	set := trustprofile.NewSet(trustprofile.BuiltIns(), ops, nil)
+	pgdial.SetTrust(func() *trustprofile.Set { return set })
+	t.Cleanup(func() { pgdial.SetTrust(nil) })
+}
+
 // The distinctive names of a setup the home page must never show.
 var homeSecrets = []string{
 	"zebra_ledger_bot", "quokka_os_user", "db.kumquat-host.supabase.co", "kumquat-host", "walrus_database",
@@ -156,6 +206,7 @@ var hrefAttr = regexp.MustCompile(`href="(http://localhost:8787/setup/#1\.[^"]*)
 // assembly, with names that cannot occur by chance, the only place an agent
 // name may appear is the fragment of a check-up link.
 func TestHomeNeverNamesAnAgentOrADatabase(t *testing.T) {
+	operatorProfile(t, "ocelot-profile", "db.kumquat-host.supabase.co")
 	cc := homeConn("db.kumquat-host.supabase.co", "walrus_database")
 	cc.User = "basalt_agent_zebra"
 	env := agentEnv{setupOrigin: homeOrigin}
@@ -163,8 +214,9 @@ func TestHomeNeverNamesAnAgentOrADatabase(t *testing.T) {
 	d := deps()
 	d.Core.Name = a.Name
 	d.Status.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
-	setApprovals(&d, keys{n: 1})
+	setApprovals(&d, labelledKeys{label: "axolotl passkey"})
 	agents := []homeAgent{{svc: NewService(d), db: homeDBOf(cc), link: env.checkLink(a)}}
+	require.Equal(t, pageserver.ProviderPostgres, agents[0].db.provider, "the operator's profile never names a kind")
 
 	for _, path := range []string{"/", pageserver.HomeDataPath} {
 		code, body := homeGet(t, agents, path)
@@ -201,4 +253,27 @@ func checkFragmentHoldsOnlyTheLink(t *testing.T, href string) {
 	for _, secret := range []string{"kumquat", "walrus", "narwhal", "pangolin", "basalt_agent_zebra", "ocelot", "axolotl"} {
 		require.NotContains(t, string(raw), secret)
 	}
+}
+
+// TestHomeRefusesAForeignHost: through the wrapped handler the engine
+// serves, a request whose Host is not the listener's (DNS rebinding) is
+// refused, so another site's page cannot read the check-up links.
+func TestHomeRefusesAForeignHost(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+	srv := newPages(homeOrigin, slog.New(slog.DiscardHandler))
+	srv.SetHome(newHomeSource([]homeAgent{{db: homeDBOf(homeConn("pg.internal.example", "app")), link: "http://localhost:8787/setup/#1.x"}}, slog.New(slog.DiscardHandler)))
+	h := httpserver.Wrap(ln.Addr().String(), ln, srv.Handler())
+	get := func(host string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "http://"+host+pageserver.HomeDataPath, nil)
+		req.Host = host
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		return w
+	}
+	require.Equal(t, http.StatusOK, get(ln.Addr().String()).Code)
+	w := get("evil.example")
+	require.GreaterOrEqual(t, w.Code, 400, w.Body.String())
+	require.NotContains(t, w.Body.String(), "/setup/#1.")
 }

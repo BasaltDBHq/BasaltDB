@@ -201,7 +201,9 @@ async function homePage() {
   const text = await page.locator("main").innerText();
   assert.match(text, /1 agent on 1 database/, "the home page counts the agent and its database");
   assert.ok(!text.includes(AGENT), "the home page never names the agent");
-  const href = await page.locator("#home-checks a").first().getAttribute("href");
+  const button = page.locator("#home-checks a").first();
+  if ((await button.count()) === 0) throw new Error("the home page has no check-up button (#home-checks a)");
+  const href = await button.getAttribute("href");
   assert.ok(href.startsWith(`${PAGES}/setup/#1.`), `the check-up button opens the setup page: ${href}`);
   ok("home page");
 }

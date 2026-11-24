@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- The setup page's check-up now ends. Only what stops BasaltDB working (a certificate, a guard update, no passkey, an agent that cannot log in) counts as "needs you", and each of those has its own button. Columns without a label are a warning that never blocks; leaving them unlabeled is remembered and no longer sends you back to the same "Fix these". With nothing critical open the page says "Ready" and **Done** ends on an "All set" screen. The page-wide "Fix these" button is gone.
+- The passkey prompts now say "Your fingerprint, face or device password never leaves this device", since people without Touch ID approve with their computer password, PIN, phone or a security key.
+
 ## [0.1.0-alpha] - 2026-11-24
 
 The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup moves from the terminal to a page: the agent runs `basalt init` and the person finishes on the page it links. The CLI only starts things. Expect bugs and breaking changes between alpha releases, and read "Breaking for alpha installs" before you upgrade.

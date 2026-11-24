@@ -55,6 +55,18 @@ Test files and the test helper packages (`guardtest`, `mcptest`, `passkeytest`, 
 
 Every package under `internal/` sits in one of the layers above. A new domain, or any other new top-level directory under `internal/`, needs a row here and an entry in the test.
 
+## Code conventions
+
+These rules sit beside the layer table. The last two are review rules; the others are checked by the goldens, the contract tests or depguard.
+
+- **Services may depend on services, one way.** Today: `agent` → `approval`, `ledger`, `links`, `pii`, `revert`; `approval` → `links`, `revert`; `revert` → `links`; `plugin` → `links`, `status`; `status` → `handoff`. Go refuses a cycle. Before adding an edge, check whether what you need is shared wording for the agent, which belongs in `core/guidance`.
+- **The consumer declares the port.** The package that calls a port defines the interface, with one method per question it asks. Where `internal/app` implements a port, the method is a one-line forward.
+- **An inbound adapter only translates.** It decodes a request, calls one service and encodes the answer. A domain's MCP package exports `Tools(port, mount)`; `internal/app` composes every domain's tools in a fixed order and wraps each one once with the admin-credential refusal.
+- **Code lives with its callers and its data,** not with the topic in its name. A builder that only the status report uses stays in `internal/status`, even if it talks about setup.
+- **Type names that reach output never change.** The validator prints an argument struct's Go type name in MCP errors (`Key: 'confirmArgs.Database' …`), and the served goldens pin it. Never rename, export or alias an args or DTO struct, and look for `%T` and reflection before renaming any type.
+- **Export only what production code outside the package calls.** No test-only exports; a test that needs internals lives in the package.
+- **Tests set options before construction.** A test helper takes a `func(*Deps)` applied before the service is built; no test wires a service twice or swaps a dependency on a built service.
+
 ## Guards beyond the layer rules
 
 Three tests in `internal/app` scan the source rather than import graphs. Each one fails on a new violation and on a stale entry in its list.

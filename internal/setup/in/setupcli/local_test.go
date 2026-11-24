@@ -154,21 +154,39 @@ type fakeSys struct {
 	existing map[string]bool
 }
 
-func (s *fakeSys) Exists(path string) bool       { return s.existing[path] }
-func (s *fakeSys) CheckBinary(path string) error { return nil }
+func (s *fakeSys) Exists(path string) bool { return s.existing[path] }
+
+// CheckBinary passes only the service's own copy: the running basalt is a
+// Homebrew-like one the person's account owns, which init never asks root
+// to run.
+func (s *fakeSys) CheckBinary(path string) error {
+	if path != osservice.ServiceBinary("linux") {
+		return errors.New(path + " is owned by uid 501, not root")
+	}
+	return nil
+}
 
 // localHost is the engine service's fixed scripts, as the real host has them.
 type localHost struct{}
 
+// fakeSum stands in for the running basalt's SHA-256: the fake binary is
+// not on disk.
+var fakeSum = strings.Repeat("cd", 32)
+
 func (localHost) OSInstallScript(goos, binary string) (string, error) {
-	return osservice.InstallScript(goos, binary)
+	return osservice.InstallScript(goos, osservice.Source{Path: binary, SHA256: fakeSum})
 }
 
-func (localHost) OSRemoveScript(goos string) (string, error)  { return osservice.RemoveScript(goos) }
-func (localHost) OSResetScript(goos string) (string, error)   { return osservice.ResetScript(goos) }
-func (localHost) OSRestartScript(goos string) (string, error) { return osservice.RestartScript(goos) }
-func (localHost) OSDefaultUser(goos string) string            { return osservice.DefaultUser(goos) }
-func (localHost) OSUnitPath(goos string) string               { return osservice.UnitPath(goos) }
+func (localHost) OSRestartScript(goos, binary string) (string, error) {
+	return osservice.RestartScript(goos, osservice.Source{Path: binary, SHA256: fakeSum})
+}
+
+func (localHost) OSServiceBinary(goos string) string { return osservice.ServiceBinary(goos) }
+
+func (localHost) OSRemoveScript(goos string) (string, error) { return osservice.RemoveScript(goos) }
+func (localHost) OSResetScript(goos string) (string, error)  { return osservice.ResetScript(goos) }
+func (localHost) OSDefaultUser(goos string) string           { return osservice.DefaultUser(goos) }
+func (localHost) OSUnitPath(goos string) string              { return osservice.UnitPath(goos) }
 
 // newIO is the CLI's I/O on the fake machine, without the shell.
 func newIO(ctx context.Context, in io.Reader, out, errw io.Writer, getenv func(string) string) *cli.IO {
@@ -236,9 +254,12 @@ func TestInitInstallsThroughTheDialogThenPrintsAndOpensTheLink(t *testing.T) {
 	r, read := localInit(t, h, "--demo")
 	require.Equal(t, cli.ExitOK, r.code, r.stderr)
 
-	script, err := osservice.InstallScript("linux", fakeBin)
+	script, err := osservice.InstallScript("linux", osservice.Source{Path: fakeBin, SHA256: fakeSum})
 	require.NoError(t, err)
 	require.Equal(t, []string{script}, h.dialogs, "one password, in the administrator dialog")
+	require.Contains(t, r.stderr, "copy "+fakeBin+" to "+osservice.ServiceBinary("linux")+", root's,")
+	require.Contains(t, r.stderr, osservice.ServiceBinary("linux")+" engine --config ", "the service runs its own copy")
+	require.NotContains(t, r.stderr+r.stdout, "sudo", "nothing tells the person or the agent to run sudo")
 	require.Equal(t, []string{servicespec.InstallPrompt}, h.prompts, "the dialog names the install")
 	require.Empty(t, h.sudo, "no sudo")
 	require.Equal(t, 3, h.setupCalls, "init waited for the setup page")
@@ -293,8 +314,9 @@ func TestInitRestartsAnEngineThatRunsAnotherBuild(t *testing.T) {
 		h.build, h.silent = build, build == ""
 		r, _ := localInit(t, h, "--demo")
 		require.Equal(t, cli.ExitOK, r.code, r.stderr)
-		want, err := osservice.RestartScript("linux")
+		want, err := osservice.RestartScript("linux", osservice.Source{Path: fakeBin, SHA256: fakeSum})
 		require.NoError(t, err)
+		require.Contains(t, want, "copy_binary", "the upgraded basalt is copied to the service in the same dialog")
 		require.Equal(t, []string{want}, h.dialogs)
 		require.Equal(t, []string{servicespec.RestartPrompt}, h.prompts)
 		require.Contains(t, r.stderr, "different build")
@@ -322,8 +344,9 @@ func TestInitRestartsNothingWhenTheBuildsMatch(t *testing.T) {
 	}
 }
 
-// With no dialog the restart stops init and names the command; a closed
-// dialog stops it too, and the link is not opened.
+// With no dialog the restart stops init and says to run basalt init again
+// (never a root command: the agent has no terminal for a password); a
+// closed dialog stops it too, and the link is not opened.
 func TestInitRestartStops(t *testing.T) {
 	t.Parallel()
 	noDialog := newFakeHost()
@@ -337,15 +360,15 @@ func TestInitRestartStops(t *testing.T) {
 		require.Equal(t, cli.ExitError, r.code, name)
 		require.Contains(t, r.stderr, "different build", name)
 		require.Empty(t, h.opened, name)
-		if name == "no dialog" {
-			require.Contains(t, r.stderr, "systemctl restart", "it names the command")
-		}
+		require.Contains(t, r.stderr, "basalt init again", name)
+		require.NotContains(t, r.stderr, "sudo", name)
+		require.NotContains(t, r.stderr, "systemctl restart", "no root command for a person or an agent to type")
 	}
 }
 
 // A restart that leaves the service on another build stops init and names
-// the unit that starts the other binary; another dialog failure names the
-// root command too.
+// the unit that starts the other binary; another dialog failure says to run
+// basalt init again.
 // The engine is down while it restarts: init waits for /healthz before it
 // reads the build again, and goes on once it answers.
 func TestInitRestartWaitsForTheEngineToAnswer(t *testing.T) {
@@ -361,7 +384,7 @@ func TestInitRestartWaitsForTheEngineToAnswer(t *testing.T) {
 }
 
 // An engine that never answers after the restart is not a success: init
-// stops, says so and names the root command.
+// stops, says so and says to run basalt init again.
 func TestInitRestartStopsWhenTheEngineNeverAnswers(t *testing.T) {
 	t.Parallel()
 	h := newFakeHost()
@@ -371,7 +394,8 @@ func TestInitRestartStopsWhenTheEngineNeverAnswers(t *testing.T) {
 	r, _ := localInitWithin(t, 2*time.Second, h, "--demo")
 	require.Equal(t, cli.ExitError, r.code, r.stderr)
 	require.Contains(t, r.stderr, "did not answer")
-	require.Contains(t, r.stderr, "systemctl restart")
+	require.Contains(t, r.stderr, "run basalt init again")
+	require.NotContains(t, r.stderr, "systemctl restart")
 	require.NotContains(t, r.stderr, "restarted onto this build")
 	require.Empty(t, h.opened)
 }
@@ -387,7 +411,9 @@ func TestInitRestartThatChangesNothingOrFails(t *testing.T) {
 		h.build = "0.0.1-old"
 		r, _ := localInit(t, h, "--demo")
 		require.Equal(t, cli.ExitError, r.code, name)
-		require.Contains(t, r.stderr, "systemctl restart", name)
+		require.Contains(t, r.stderr, "basalt init again", name)
+		require.NotContains(t, r.stderr, "systemctl restart", name)
+		require.NotContains(t, r.stderr, "sudo", name)
 		require.Empty(t, h.opened, name)
 		if name == "stuck" {
 			require.Contains(t, r.stderr, osservice.UnitPath("linux"))

@@ -21,13 +21,33 @@ const rootScriptEnv = "BASALT_TEST_PLUGIN_ISOLATION"
 
 const rootBinary = "/usr/local/bin/basalt"
 
+// serviceBinary is the service's own copy the script makes.
+var serviceBinary = osservice.ServiceBinary("linux")
+
 // runInstall runs the Linux install script for binary as root.
 func runInstall(t *testing.T, binary string) (string, error) {
 	t.Helper()
-	script, err := osservice.InstallScript("linux", binary)
+	src, err := osservice.ReadSource(binary)
+	require.NoError(t, err)
+	return runInstallOf(t, src)
+}
+
+// runInstallOf runs the Linux install script for src as root.
+func runInstallOf(t *testing.T, src osservice.Source) (string, error) {
+	t.Helper()
+	script, err := osservice.InstallScript("linux", src)
 	require.NoError(t, err)
 	out, err := exec.Command("/bin/sh", "-c", script).CombinedOutput()
 	return string(out), err
+}
+
+// requireServiceCopy: the service's copy is a plain file, root:root 0755,
+// with want's content.
+func requireServiceCopy(t *testing.T, want string) {
+	t.Helper()
+	require.True(t, exists(`[ ! -L `+serviceBinary+` ] && [ "$(stat -c '%U:%G %a %F' `+serviceBinary+`)" = "root:root 755 regular file" ]`), "the copy is root's, 0755")
+	require.True(t, exists("cmp -s "+want+" "+serviceBinary), "the copy is the basalt that ran")
+	require.NoFileExists(t, serviceBinary+".basalt-new")
 }
 
 func sh(t *testing.T, cmd string) {
@@ -61,7 +81,8 @@ func TestInstallScriptAsRoot(t *testing.T) {
 	sh(t, "mkdir -p /etc/systemd/system /usr/local/bin && install -o root -g root -m 0755 /bin/true "+rootBinary)
 	clean := func() {
 		sh(t, "userdel basalt 2>/dev/null; groupdel basalt 2>/dev/null; rm -rf /etc/basalt /opt/basalt "+osservice.SystemdUnitPath+
-			"; chmod 0755 /etc/systemd/system /usr/local/bin; chown root:root "+rootBinary+"; chmod 0755 "+rootBinary+"; true")
+			" "+serviceBinary+" "+serviceBinary+".basalt-new /tmp/evil-basalt"+
+			"; mkdir -p /usr/libexec; chmod 0755 /etc/systemd/system /usr/local/bin /usr/libexec; chown root:root "+rootBinary+"; chmod 0755 "+rootBinary+"; true")
 	}
 	clean()
 	t.Cleanup(clean)
@@ -72,21 +93,60 @@ func TestInstallScriptAsRoot(t *testing.T) {
 		requireRefused(t, rootBinary, "/etc/systemd/system is writable by group or others")
 		require.NoDirExists(t, "/etc/basalt")
 	})
-	t.Run("a binary others can write", func(t *testing.T) {
+	t.Run("a basalt the person's account can change is copied, root's", func(t *testing.T) {
 		defer clean()
-		sh(t, "chmod 0777 "+rootBinary)
-		requireRefused(t, rootBinary, rootBinary+" is writable by group or others")
-	})
-	t.Run("a binary below a folder others can write", func(t *testing.T) {
-		defer clean()
+		// A Homebrew-like prefix: a folder others can write, a binary
+		// nobody (not root) owns, writable by others.
 		dir := t.TempDir()
-		sh(t, "chmod 0777 "+dir+" && install -o root -m 0755 /bin/true "+dir+"/basalt")
-		requireRefused(t, filepath.Join(dir, "basalt"), "is writable by group or others")
+		bin := filepath.Join(dir, "basalt")
+		sh(t, "chmod 0777 "+dir+" && install -o nobody -m 0777 /bin/true "+bin)
+		out, err := runInstall(t, bin)
+		require.NoError(t, err, out)
+		requireServiceCopy(t, bin)
+		unit, err := os.ReadFile(osservice.SystemdUnitPath)
+		require.NoError(t, err)
+		require.Contains(t, string(unit), "ExecStart="+serviceBinary+" engine --config /etc/basalt/engine.json --supervise\n")
+		require.NotContains(t, string(unit), bin)
 	})
-	t.Run("a binary root does not own", func(t *testing.T) {
+	t.Run("an older copy is replaced whole", func(t *testing.T) {
 		defer clean()
-		sh(t, "chown nobody "+rootBinary)
-		requireRefused(t, rootBinary, rootBinary+" is not owned by root")
+		sh(t, "install -o root -g root -m 0755 /bin/false "+serviceBinary)
+		before, err := os.Stat(serviceBinary)
+		require.NoError(t, err)
+		out, err := runInstall(t, rootBinary)
+		require.NoError(t, err, out)
+		requireServiceCopy(t, rootBinary)
+		after, err := os.Stat(serviceBinary)
+		require.NoError(t, err)
+		require.False(t, os.SameFile(before, after), "a new file renamed into place, not a write into the one the service runs")
+	})
+	t.Run("a symlinked copy: nothing is created", func(t *testing.T) {
+		defer clean()
+		sh(t, "printf keep >/tmp/evil-basalt && ln -s /tmp/evil-basalt "+serviceBinary)
+		requireRefused(t, rootBinary, serviceBinary+" is a symlink")
+		b, err := os.ReadFile("/tmp/evil-basalt")
+		require.NoError(t, err)
+		require.Equal(t, "keep", string(b), "the link's target is untouched")
+		require.NoDirExists(t, "/etc/basalt")
+	})
+	t.Run("a copy folder others can write: nothing is created", func(t *testing.T) {
+		defer clean()
+		sh(t, "chmod 0777 /usr/libexec")
+		requireRefused(t, rootBinary, "/usr/libexec is writable by group or others")
+		require.NoFileExists(t, serviceBinary)
+	})
+	t.Run("a basalt changed after init read it: nothing is created", func(t *testing.T) {
+		defer clean()
+		src, err := osservice.ReadSource("/bin/false")
+		require.NoError(t, err)
+		src.Path = rootBinary // /bin/true is there now, not what was read
+		out, err := runInstallOf(t, src)
+		require.Error(t, err, out)
+		require.Contains(t, out, rootBinary+" changed after basalt init read it")
+		require.NoFileExists(t, serviceBinary)
+		require.NoFileExists(t, serviceBinary+".basalt-new")
+		require.False(t, exists("getent passwd basalt"), "no OS user is left behind: %s", out)
+		require.NoFileExists(t, osservice.SystemdUnitPath)
 	})
 	t.Run("a config folder that is a symlink another user owns", func(t *testing.T) {
 		defer clean()
@@ -128,7 +188,8 @@ func TestInstallScriptAsRoot(t *testing.T) {
 		require.True(t, exists(`[ "$(stat -c '%U:%G %a' `+osservice.SystemdUnitPath+`)" = "root:root 644" ]`))
 		unit, err := os.ReadFile(osservice.SystemdUnitPath)
 		require.NoError(t, err)
-		require.Contains(t, string(unit), "ExecStart="+rootBinary+" engine --config /etc/basalt/engine.json --supervise\n")
+		require.Contains(t, string(unit), "ExecStart="+serviceBinary+" engine --config /etc/basalt/engine.json --supervise\n")
+		requireServiceCopy(t, rootBinary)
 		log, err := os.ReadFile("/tmp/systemctl.log")
 		require.NoError(t, err)
 		require.Equal(t, strings.Repeat("daemon-reload\nenable --now basalt-engine.service\n", 2), string(log))
@@ -152,7 +213,7 @@ func TestRemoveScriptAsRoot(t *testing.T) {
 	sh(t, "mkdir -p /etc/systemd/system /usr/local/bin && install -o root -g root -m 0755 /bin/true "+rootBinary)
 	clean := func() {
 		sh(t, "for u in basalt basalt-plugin-ner-default basalt-plugin-shell-default; do userdel $u 2>/dev/null; done; groupdel basalt 2>/dev/null; "+
-			"rm -rf /etc/basalt /var/lib/basalt /run/basalt /opt/basalt /etc/systemd/system/basalt-*.service /tmp/systemctl.log; true")
+			"rm -rf /etc/basalt /var/lib/basalt /run/basalt /opt/basalt /etc/systemd/system/basalt-*.service /tmp/systemctl.log "+serviceBinary+"; true")
 	}
 	clean()
 	t.Cleanup(clean)
@@ -195,6 +256,7 @@ func TestRemoveScriptAsRoot(t *testing.T) {
 		for _, d := range []string{"/etc/basalt", "/var/lib/basalt", "/opt/basalt"} {
 			require.NoDirExists(t, d)
 		}
+		require.NoFileExists(t, serviceBinary, "the service's copy of basalt is deleted")
 		require.False(t, exists("getent passwd basalt"), out)
 		require.False(t, exists("getent group basalt"), out)
 		require.False(t, exists("getent passwd basalt-plugin-ner-default"), out)

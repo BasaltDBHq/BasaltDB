@@ -82,14 +82,26 @@ func (setupHost) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
 func (setupHost) OSLookupUID(name string) int { return osservice.LookupUID(name) }
 
 func (setupHost) OSInstallScript(goos, binary string) (string, error) {
-	return osservice.InstallScript(goos, binary)
+	src, err := osservice.ReadSource(binary)
+	if err != nil {
+		return "", err
+	}
+	return osservice.InstallScript(goos, src)
 }
 
 func (setupHost) OSRemoveScript(goos string) (string, error) { return osservice.RemoveScript(goos) }
 
 func (setupHost) OSResetScript(goos string) (string, error) { return osservice.ResetScript(goos) }
 
-func (setupHost) OSRestartScript(goos string) (string, error) { return osservice.RestartScript(goos) }
+func (setupHost) OSRestartScript(goos, binary string) (string, error) {
+	src, err := osservice.ReadSource(binary)
+	if err != nil {
+		return "", err
+	}
+	return osservice.RestartScript(goos, src)
+}
+
+func (setupHost) OSServiceBinary(goos string) string { return osservice.ServiceBinary(goos) }
 
 func (setupHost) OSDefaultUser(goos string) string { return osservice.DefaultUser(goos) }
 

@@ -108,13 +108,23 @@ func RestartArgs(goos string) []string {
 }
 
 // RestartScript is the fixed script that restarts the installed engine
-// service on goos onto the binary now at its path: one command, built from
-// constants only.
-func RestartScript(goos string) (string, error) {
+// service on goos onto src, the basalt that runs it: built from constants
+// and src only. When src is the service's own copy it is one command;
+// otherwise it first copies src over that copy, root's, as the install does
+// (InstallScript), so an upgraded basalt (brew upgrade) reaches the service
+// in the same administrator dialog.
+func RestartScript(goos string, src Source) (string, error) {
 	if goos != goosDarwin && goos != goosLinux {
 		return "", fmt.Errorf("no engine service to restart on %s", goos)
 	}
-	return strings.Join(RestartArgs(goos), " ") + "\n", nil
+	restart := strings.Join(RestartArgs(goos), " ") + "\n"
+	if !src.copies(goos) {
+		return restart, nil
+	}
+	if err := src.validate(); err != nil {
+		return "", err
+	}
+	return scriptHelpers(goos) + ScriptHelpersEnd + sourceCheck(goos, src) + ScriptPreflightEnd + copyBinary(goos, src) + restart, nil
 }
 
 // specArgs is the command line s's unit runs.

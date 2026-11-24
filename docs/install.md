@@ -103,14 +103,14 @@ When an agent hits its cap, its `status` tool reports `TOO_MANY_CONNECTIONS` wit
 
 Ask your agent to set up BasaltDB with the sample data.
 
-1. Enter your administrator password when your system asks, once. It creates the engine's OS user (`_basalt` on macOS, `basalt` on Linux) and starts the engine as a service. `basalt` must sit in a folder only root can change, such as `/usr/local/bin`; a Homebrew install does.
+1. Enter your administrator password when your system asks, once. It copies `basalt` into a folder only root can change (`/usr/local/libexec/basalt` on macOS, `/usr/libexec/basalt` on Linux), creates the engine's OS user (`_basalt` on macOS, `basalt` on Linux) and starts the engine as a service from that copy. `basalt` itself can sit anywhere, a Homebrew prefix or a folder of your own included.
 2. A setup page opens at `http://localhost:8787/setup/`. Your agent shows you the same link if the browser did not open. Port 8787 must be free: `lsof -nP -iTCP:8787 -sTCP:LISTEN` shows what holds it.
 3. Check that the page names the OS user your agent runs as. Paste the admin connection string, press **Check**, read the SQL, and press **Set up**. If the database has no passkey for this page, the browser asks you to register one first.
 4. The page ends with `demo ready: leads 30, lead_notes 20`, the `basalt mcp` line for your agent, and your passkey's check code.
 
 You get the schema `basalt_demo` with `leads` (30 rows) and `lead_notes` (20 rows), the agent `demo_bot` with write access to those two tables and nothing else, the `basalt_meta` guard schema and the `basalt_*` roles. The SQL runs in one transaction. Running setup again keeps the demo rows and the agent's password.
 
-An agent that runs as your own OS user could show you a fake `localhost` page that asks for the admin string, or replace a `basalt` binary in a folder you can write to. Before you paste the admin string, check the address bar (`localhost:8787`) and the OS user the page names. Signing stays safe either way: Postgres checks the page's exact origin, port included.
+An agent that runs as your own OS user could show you a fake `localhost` page that asks for the admin string, or replace a `basalt` binary in a folder you can write to before the password dialog copies it. Before you paste the admin string, check the address bar (`localhost:8787`) and the OS user the page names. Signing stays safe either way: Postgres checks the page's exact origin, port included.
 
 Check the engine:
 
@@ -175,9 +175,9 @@ A write of 11 to 50 rows, or any `DELETE`, is held. The agent shows you `Held fo
 
 When a newer release is out, your agent tells you. The engine checks the public release list of BasaltDBHq/BasaltDB once a day and sends nothing else. To turn the check off, set `BASALT_UPDATE_CHECK=off` or `"updateCheck": "OFF"` in `engine.json`.
 
-Upgrade the binary the way you installed it: `brew upgrade basaltdbhq/tap/basaltdb`, or install the new release over the old one at the same path (for the service, the root-owned copy it runs, for example `sudo install -o root -m 0755 basalt /usr/local/libexec/basalt`).
+Upgrade the binary the way you installed it: `brew upgrade basaltdbhq/tap/basaltdb`, or install the new release over the old one at the same path. Then ask your agent to run `basalt init`: the engine service runs its own copy of `basalt`, so `init` sees the engine runs another build and asks for your password once, to copy the new `basalt` over the service's copy and restart the engine onto it.
 
-The engine restarts onto the new binary by itself, with or without the service, and in a container:
+Without the service (a bot machine, a container), and with the service when its own copy changes, the engine restarts onto the new binary by itself:
 
 - It looks at the path it was started from every 5 seconds. Once the new file has stopped changing, it runs `basalt version` on it, and when it started from a root-owned binary it checks the new one is root-owned too.
 - It waits for a moment when no agent call is running (up to 2 minutes), stops taking calls, closes its sockets and runs the new binary in the same process: same process id, same OS user, same files. Its log says `a new basalt binary is installed` and then `restarting onto the upgraded binary`.
@@ -205,7 +205,7 @@ A container usually has no service manager: PID 1 is your process or a small ini
 - `/mcp` shows the server failed, or the connection closes at once: the engine admits only the OS user the setup page named. Start the client as that user. The engine log is `/Library/Logs/Basalt/engine.log` on macOS and `journalctl -u basalt-engine` on Linux.
 - Your agent says the guard is outdated: update it as in "Update" above.
 - Your agent reads zero rows from a table that has rows: row-level security is on with no policy for the agent. Ask your agent for a new setup link and answer the row-level security question for that table on the page.
-- Setup says the binary is not owned by root: the service runs only a copy that root owns and that group and others cannot change. Put `basalt` in a root-owned directory and run that copy.
+- Setup says the service's copy of `basalt` is not owned by root, or could not be copied: the service runs only a copy that root owns and that group and others cannot change, which the password dialog makes. Ask your agent to run `basalt init` again.
 - Setup says there is no administrator dialog: it needs a desktop session.
 - The page says `JOB_UNAVAILABLE`: the engine is run by a bot, or it is already set up and the page was an install. Ask your agent for a new link.
 - The page says `GUARD_UNUSABLE`: the database has an older BasaltDB install this version cannot use. Remove it as [Remove an older install](remove-old-install.md) says, then set up again.
@@ -222,6 +222,7 @@ If you remove within 90 seconds of the page opening, your computer then asks for
 | Removed | Linux | macOS |
 |---|---|---|
 | The service unit | `/etc/systemd/system/basalt-engine.service` | `/Library/LaunchDaemons/dev.basaltdb.engine.plist` |
+| The service's copy of `basalt` | `/usr/libexec/basalt` | `/usr/local/libexec/basalt` |
 | Config directory: `engine.json` and the agents' credentials | `/etc/basalt` | `/Library/Application Support/Basalt` |
 | State directory: the engine's keys, PII dictionary, ledger chain heads and link secrets | `/var/lib/basalt` | `/Library/Application Support/Basalt/state` |
 | Socket directory | `/run/basalt` | `/Library/Application Support/Basalt/run` |
@@ -238,6 +239,7 @@ sudo systemctl disable --now basalt-engine.service
 sudo rm -f /etc/systemd/system/basalt-engine.service /etc/systemd/system/basalt-plugin-*.service
 sudo systemctl daemon-reload
 sudo rm -rf /etc/basalt /var/lib/basalt /opt/basalt
+sudo rm -f /usr/libexec/basalt
 sudo userdel basalt
 ```
 
@@ -247,6 +249,7 @@ On macOS:
 sudo launchctl bootout system/dev.basaltdb.engine
 sudo rm -f /Library/LaunchDaemons/dev.basaltdb.engine.plist /Library/LaunchDaemons/dev.basaltdb.plugin-*.plist /etc/newsyslog.d/basalt-plugin-*.conf
 sudo rm -rf "/Library/Application Support/Basalt" /Library/Logs/Basalt /Library/Logs/Basalt.old-* /Library/Basalt
+sudo rm -f /usr/local/libexec/basalt
 sudo dscl . -delete /Users/_basalt
 sudo dscl . -delete /Groups/_basalt
 ```

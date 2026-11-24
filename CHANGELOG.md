@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `basalt init` installs the engine service from a Homebrew `basalt`, or one unpacked in a folder of your own, with no manual step. The one password dialog now copies `basalt` into a folder only root can change (`/usr/local/libexec/basalt` on macOS, `/usr/libexec/basalt` on Linux), checked against what `init` read, and the service runs that copy. Before, `init` refused a binary in a folder your account owns and handed the agent two `sudo` commands, which an agent session cannot run. After `brew upgrade`, `basalt init` copies the new `basalt` over the service's copy and restarts the engine in the same single dialog. Removing BasaltDB deletes the copy. No message tells you or the agent to run `sudo`.
+
 ## [0.1.0-alpha] - 2026-11-24
 
 The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup moves from the terminal to a page: the agent runs `basalt init` and the person finishes on the page it links. The CLI only starts things. Expect bugs and breaking changes between alpha releases, and read "Breaking for alpha installs" before you upgrade.

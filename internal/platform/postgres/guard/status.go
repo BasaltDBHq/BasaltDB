@@ -55,9 +55,13 @@ func StatusAt(installed int, migs []guardmodel.Migration) guardmodel.Status {
 	if installed == 0 {
 		return guardmodel.Status{Build: buildVersion(migs), State: guardmodel.GuardMissing}
 	}
-	have := make([]int, installed)
-	for i := range have {
-		have[i] = i + 1
+	// Built from migs, not 1..installed: installed comes from a database and
+	// may be negative or huge.
+	have := []int{installed}
+	for _, m := range migs {
+		if m.Version <= installed {
+			have = append(have, m.Version)
+		}
 	}
 	return judge(have, migs)
 }

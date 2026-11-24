@@ -32,6 +32,8 @@ func TestStatusAt(t *testing.T) {
 		{"one behind, non-breaking", 3, guardmodel.GuardUpgradeAvailable, nil, []int{4}, 3},
 		{"current", 4, guardmodel.GuardOK, nil, nil, 4},
 		{"newer", 5, guardmodel.GuardNewer, nil, nil, 5},
+		{"huge", 1 << 30, guardmodel.GuardNewer, nil, nil, 1 << 30},
+		{"negative", -3, guardmodel.GuardOutdated, []int{1, 3}, []int{2, 4}, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

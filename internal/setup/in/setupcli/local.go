@@ -122,12 +122,40 @@ func restartOlderEngine(c *cli.IO, h LocalHost) error {
 		}
 		return fmt.Errorf("the engine service was not restarted: %w. Restart it as root: %s", err, command)
 	}
-	// The restart may have started the same old binary: read the build again.
-	if again, err := c.Host.EngineBuild(c.Ctx, links.DefaultLocal); err == nil && again != buildinfo.Version {
+	// The engine is down while it restarts: wait for /healthz to answer
+	// before the build is read again, or a not-yet-answering engine would
+	// count as a restart that worked.
+	again, err := waitForEngineBuild(c)
+	if err != nil {
+		return fmt.Errorf("the engine service did not answer on %s within %s after the restart (%w). See %s for why, and restart it as root: %s", links.DefaultLocal, restartAnswerWait, err, engine.LogHint(c.Goos), command)
+	}
+	if again != buildinfo.Version {
 		return fmt.Errorf("the engine service was restarted but still runs a different build of basalt than this one: the service starts the binary its unit file names (%s), which is not this basalt. Install this basalt there, or point the unit at it, and restart the service as root: %s", h.OSUnitPath(c.Goos), command)
 	}
 	fmt.Fprintln(c.Stderr, "basalt: the engine service is restarted onto this build.")
 	return nil
+}
+
+// restartAnswerWait bounds how long init waits for the engine to answer
+// /healthz after the restart.
+const restartAnswerWait = 15 * time.Second
+
+// waitForEngineBuild polls the engine's /healthz until it answers, and
+// returns the build it reports.
+func waitForEngineBuild(c *cli.IO) (string, error) {
+	ctx, cancel := context.WithTimeout(c.Ctx, restartAnswerWait)
+	defer cancel()
+	for {
+		build, err := c.Host.EngineBuild(ctx, links.DefaultLocal)
+		if err == nil {
+			return build, nil
+		}
+		select {
+		case <-ctx.Done():
+			return "", err
+		case <-time.After(setup.SetupWaitStep):
+		}
+	}
 }
 
 // changeLink is basalt init on an engine that is already set up: it prints

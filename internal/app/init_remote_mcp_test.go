@@ -102,6 +102,16 @@ func TestInitRemoteGoesOnInTheUserConfigWhenTheAgentIsOnlyThere(t *testing.T) {
 	c := newIO(context.Background(), cli.Stdio{In: strings.NewReader(""), Out: &stdout, Err: &stderr},
 		func(string) string { return "" })
 	c.Host, c.AgentLogin, c.Probe, c.SystemConfigPath = h, refusedLogin, noNetworkProbe, system
-	_, err := setupcli.InitRemote(c, setupHost{}, []string{"--remote", "--agent", "bot"})
+	systemBefore, err := os.ReadFile(system)
+	require.NoError(t, err)
+	userBefore, err := os.ReadFile(user)
+	require.NoError(t, err)
+	_, err = setupcli.InitRemote(c, setupHost{}, []string{"--remote", "--agent", "bot"})
 	require.NoError(t, err, stderr.String())
+	systemAfter, err := os.ReadFile(system)
+	require.NoError(t, err)
+	require.Equal(t, string(systemBefore), string(systemAfter), "the system config is unchanged")
+	userAfter, err := os.ReadFile(user)
+	require.NoError(t, err)
+	require.NotEqual(t, string(userBefore), string(userAfter), "the user config is the one written")
 }

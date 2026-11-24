@@ -65,6 +65,10 @@ type fakeHost struct {
 	silent bool
 	// stuck is a restart that starts the same old build again.
 	stuck bool
+	// downAfterRestart is how many EngineBuild calls fail after the
+	// restart (-1: always) before the engine answers.
+	downAfterRestart int
+	restarted        bool
 	// runs are what ServiceRuns reads, one per call (the last one repeats),
 	// with lastExit; none is no service manager.
 	runs     []int
@@ -80,6 +84,12 @@ func (h *fakeHost) ResolvedExecutable() (string, error) { return fakeBin, nil }
 func (h *fakeHost) DialogAvailable(string) error        { return h.noDialog }
 
 func (h *fakeHost) EngineBuild(context.Context, string) (string, error) {
+	if h.restarted && h.downAfterRestart != 0 {
+		if h.downAfterRestart > 0 {
+			h.downAfterRestart--
+		}
+		return "", errors.New("connection refused")
+	}
 	if h.buildErr != nil {
 		return "", h.buildErr
 	}
@@ -123,6 +133,7 @@ func (h *fakeHost) SetupState(context.Context, string) (string, error) {
 func (h *fakeHost) AdminDialog(_ context.Context, _, prompt, script string, _ io.Writer) error {
 	h.prompts = append(h.prompts, prompt)
 	h.dialogs = append(h.dialogs, script)
+	h.restarted = true
 	if h.dialogErr == nil && !h.stuck {
 		h.build, h.silent = "", false // the restart runs this binary
 	}
@@ -335,6 +346,36 @@ func TestInitRestartStops(t *testing.T) {
 // A restart that leaves the service on another build stops init and names
 // the unit that starts the other binary; another dialog failure names the
 // root command too.
+// The engine is down while it restarts: init waits for /healthz before it
+// reads the build again, and goes on once it answers.
+func TestInitRestartWaitsForTheEngineToAnswer(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost()
+	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+	h.build = "0.0.1-old"
+	h.downAfterRestart = 3
+	r, _ := localInit(t, h, "--demo")
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
+	require.Zero(t, h.downAfterRestart, "it polled until the engine answered")
+	require.Contains(t, r.stderr, "restarted onto this build")
+}
+
+// An engine that never answers after the restart is not a success: init
+// stops, says so and names the root command.
+func TestInitRestartStopsWhenTheEngineNeverAnswers(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost()
+	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+	h.build = "0.0.1-old"
+	h.downAfterRestart = -1
+	r, _ := localInitWithin(t, 2*time.Second, h, "--demo")
+	require.Equal(t, cli.ExitError, r.code, r.stderr)
+	require.Contains(t, r.stderr, "did not answer")
+	require.Contains(t, r.stderr, "systemctl restart")
+	require.NotContains(t, r.stderr, "restarted onto this build")
+	require.Empty(t, h.opened)
+}
+
 func TestInitRestartThatChangesNothingOrFails(t *testing.T) {
 	t.Parallel()
 	stuck := newFakeHost()

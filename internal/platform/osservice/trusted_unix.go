@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/fileacl"
 )
 
 const (
@@ -182,7 +184,8 @@ func checkDir(fd int, path string, owner int) (rootOnly bool, err error) {
 	}
 	perm := statMode(st.Mode) & permBits
 	writable := perm&groupOtherWrite != 0
-	if writable && dirPolicy.stickyOK && perm&unix.S_ISVTX != 0 && dirPolicy.rootUID(st.Uid) {
+	stickyRoot := dirPolicy.stickyOK && perm&unix.S_ISVTX != 0 && dirPolicy.rootUID(st.Uid)
+	if writable && stickyRoot {
 		writable = false
 	}
 	switch {
@@ -192,6 +195,14 @@ func checkDir(fd int, path string, owner int) (rootOnly bool, err error) {
 	case !dirPolicy.rootUID(st.Uid) && int(st.Uid) != owner:
 		return false, fmt.Errorf("%s is owned by uid %d, not root, so that user could redirect what root writes below it; "+
 			"choose a --config under directories only root can change (or sudo chown root %s)", path, st.Uid, path)
+	}
+	// An ACL entry opens a directory to other users without changing its
+	// mode. The sticky exception above holds for it as for the mode.
+	if !stickyRoot {
+		if opens, err := fileacl.Opens(path, fileacl.Write); err != nil || opens {
+			return false, fmt.Errorf("%s has an ACL entry that lets another user write it, or an ACL that cannot be read, so another user could redirect what root writes below it; "+
+				"remove it (sudo chmod -N %s on macOS, sudo setfacl -b %s on Linux) or choose a --config under directories only root can change", path, path, path)
+		}
 	}
 	return st.Uid == 0 && perm&groupOtherWrite == 0, nil
 }

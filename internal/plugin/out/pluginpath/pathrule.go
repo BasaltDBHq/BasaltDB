@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/fileacl"
 )
 
 // maxSymlinkHops bounds how many root-owned symlinks above a root are
@@ -192,9 +193,9 @@ func checkAboveDir(p string, owner uint32, pol abovePolicy) error {
 }
 
 // checkAboveInfo: a directory above a root is owned by root or owner and
-// writable by no one else. A directory group or others can write fails,
-// a sticky /tmp included, unless pol.stickyRoot is set and it is root's
-// with the sticky bit.
+// writable by no one else, by its mode or an ACL entry (checkACL). A
+// directory group or others can write fails, a sticky /tmp included, unless
+// pol.stickyRoot is set and it is root's with the sticky bit.
 func checkAboveInfo(p string, fi fs.FileInfo, owner uint32, pol abovePolicy) error {
 	if !fi.IsDir() {
 		return pluginmodel.PathRefusal(p, "is not a directory")
@@ -206,14 +207,16 @@ func checkAboveInfo(p string, fi fs.FileInfo, owner uint32, pol abovePolicy) err
 	if uid != pluginmodel.RootUID && uid != owner {
 		return RuleRefusal(p, "is owned by a user other than root and the required owner", pluginmodel.PathOwner, fi, pluginmodel.RootUID, owner)
 	}
-	if fi.Mode().Perm()&groupOtherWrite == 0 {
+	if pol.stickyRoot && uid == pluginmodel.RootUID && fi.Mode()&fs.ModeSticky != 0 {
+		// The sticky bit keeps others from replacing what they do not own,
+		// whether the mode or an ACL lets them write the directory.
 		return nil
+	}
+	if fi.Mode().Perm()&groupOtherWrite == 0 {
+		return checkACL(p, fi, pluginmodel.RootUID, owner)
 	}
 	if !pol.stickyRoot {
 		return RuleRefusal(p, pluginmodel.WhyGroupWritable, pluginmodel.PathWritable, fi, pluginmodel.RootUID, owner)
-	}
-	if uid == pluginmodel.RootUID && fi.Mode()&fs.ModeSticky != 0 {
-		return nil
 	}
 	return RuleRefusal(p, pluginmodel.WhyNotStickyRoot, pluginmodel.PathWritable, fi, pluginmodel.RootUID, owner)
 }
@@ -241,6 +244,22 @@ func CheckStrictInfo(p string, fi fs.FileInfo, owner uint32) error {
 	}
 	if fi.Mode().Perm()&groupOtherWrite != 0 {
 		return RuleRefusal(p, pluginmodel.WhyGroupWritable, pluginmodel.PathWritable, fi, owner)
+	}
+	return checkACL(p, fi, owner)
+}
+
+// checkACL refuses p, whose mode lets no one but its owner write it, when
+// an allow entry in its ACL lets someone write it: an ACL opens a file to
+// other users without changing its mode. The entry's user is not resolved
+// (fileacl), so an entry for the owner counts too; deny entries, as macOS
+// puts on a home directory, never do.
+func checkACL(p string, fi fs.FileInfo, owners ...uint32) error {
+	opens, err := fileacl.Opens(p, fileacl.Write)
+	if err != nil {
+		return pluginmodel.PathRefusal(p, "has an ACL that cannot be read")
+	}
+	if opens {
+		return RuleRefusal(p, pluginmodel.WhyACLWritable, pluginmodel.PathWritable, fi, owners...)
 	}
 	return nil
 }

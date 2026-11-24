@@ -20,15 +20,19 @@ var errNotSocket = errors.New("the plugin socket path is not a unix socket")
 
 // ErrSocketDir: the socket directory is not the one the install made: a
 // directory (not a link) owned by the entry's OS user, in the engine's
-// group, with no access for others.
+// group, with no access for others by its mode or an ACL entry.
 var ErrSocketDir = errors.New("the plugin socket directory is not the plugin user's, in the engine's group and closed to others")
+
+// ErrSocketACL: the socket itself has an ACL entry that opens it to others.
+var ErrSocketACL = errors.New("the plugin socket has an ACL entry that opens it to others")
 
 // Service reaches local entry k, verified as v, that its service unit runs
 // as uid and that listens on sock (CONTRACT.md, Plugins, Service units). It
 // starts no process. Every connection, the first and each one the transport
 // opens later, is checked before a byte is sent, by ConnCheck: the unit
 // (recheck, which may be nil), sock's directory (owned by uid, in group gid,
-// the engine's, closed to others), and the process listening on sock, which
+// the engine's, closed to others), sock (no ACL entry opens it), and the
+// process listening on sock, which
 // must run as uid; sock itself must be a socket, not a link to one. Nothing
 // at sock is ErrNoSocket. A jsonrpc-stdio entry is reached over its socket
 // too: in service mode every local plugin listens on one.
@@ -43,7 +47,7 @@ func Service(ctx context.Context, k pluginmodel.EntryKey, v pluginmodel.Verified
 	if _, err := os.Lstat(sock); errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("plugin %s: %w", k, ErrNoSocket)
 	}
-	check := ConnCheck(filepath.Dir(sock), uid, gid, recheck)
+	check := ConnCheck(sock, uid, gid, recheck)
 	switch l.Transport {
 	case TransportStdio, TransportUnix:
 		nc, err := dialChecked(ctx, sock, check)
@@ -58,10 +62,12 @@ func Service(ctx context.Context, k pluginmodel.EntryKey, v pluginmodel.Verified
 }
 
 // ConnCheck is the check Service runs on every connection to a service
-// entry's socket in dir: recheck (when not nil) passes, dir is still owned
-// by uid, in group gid and closed to others, and the peer runs as uid.
-func ConnCheck(dir string, uid, gid uint32, recheck func() error) func(net.Conn) error {
+// entry's socket sock: recheck (when not nil) passes, sock's directory is
+// still owned by uid, in group gid and closed to others, no ACL entry opens
+// sock, and the peer runs as uid.
+func ConnCheck(sock string, uid, gid uint32, recheck func() error) func(net.Conn) error {
 	peer := PeerIs(uid)
+	dir := filepath.Dir(sock)
 	return func(c net.Conn) error {
 		if recheck != nil {
 			if err := recheck(); err != nil {
@@ -70,6 +76,9 @@ func ConnCheck(dir string, uid, gid uint32, recheck func() error) func(net.Conn)
 		}
 		if !SocketDirIs(dir, uid, gid) {
 			return ErrSocketDir
+		}
+		if openedByACL(sock) {
+			return ErrSocketACL
 		}
 		return peer(c)
 	}

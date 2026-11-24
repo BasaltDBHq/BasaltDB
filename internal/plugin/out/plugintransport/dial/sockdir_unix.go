@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/basaltdbhq/basaltdb/internal/lib/fileacl"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginpath"
 
 	"golang.org/x/sys/unix"
@@ -23,7 +24,16 @@ func SocketDirIs(dir string, uid, gid uint32) bool {
 		return false
 	}
 	st, ok := fi.Sys().(*syscall.Stat_t)
-	return ok && st.Uid == uid && st.Gid == gid && fi.Mode().Perm()&0o007 == 0
+	return ok && st.Uid == uid && st.Gid == gid && fi.Mode().Perm()&0o007 == 0 && !openedByACL(dir)
+}
+
+// openedByACL reports whether path, not followed, has an ACL entry that
+// allows any access: an ACL opens a file to other users without changing
+// its mode, so a mode closed to others does not show it. An ACL that
+// cannot be read counts as one.
+func openedByACL(path string) bool {
+	opens, err := fileacl.Opens(path, fileacl.Any)
+	return err != nil || opens
 }
 
 // makeSocketDir makes the socket directory name in base, which has no
@@ -101,6 +111,11 @@ func checkMadeSocketDir(bfd int, name, path string) error {
 		return errSocketDirNotPrivate
 	}
 	if st.Mode&unix.S_IFMT != unix.S_IFDIR || int(st.Uid) != os.Geteuid() || st.Mode&0o7777 != socketDirMode {
+		return errSocketDirNotPrivate
+	}
+	// An ACL entry the base passes on to new directories (macOS) opens it
+	// as much as a mode would.
+	if openedByACL(path) {
 		return errSocketDirNotPrivate
 	}
 	if _, err := f.Readdirnames(1); !errors.Is(err, io.EOF) {

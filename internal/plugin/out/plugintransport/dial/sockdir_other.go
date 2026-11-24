@@ -11,3 +11,6 @@ func SocketDirIs(string, uint32, uint32) bool { return false }
 func makeSocketDir(string, string) error {
 	return errors.New("plugin socket directories need a Unix system")
 }
+
+// openedByACL: without Unix sockets no socket passes.
+func openedByACL(string) bool { return true }

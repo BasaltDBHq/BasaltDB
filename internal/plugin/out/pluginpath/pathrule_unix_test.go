@@ -42,6 +42,8 @@ func TestSocketBaseStickyRootException(t *testing.T) {
 		t.Skip("the cases need an owner that is not root")
 	}
 	sticky := abovePolicy{stickyRoot: true}
+	// A real directory with no ACL: the status is injected, the ACL is read.
+	base := t.TempDir()
 	for _, tc := range []struct {
 		name string
 		fi   fakeDir
@@ -55,7 +57,7 @@ func TestSocketBaseStickyRootException(t *testing.T) {
 		{"another user, sticky, 1777", fakeDir{fs.ModeDir | fs.ModeSticky | 0o777, me + 1, 0}, false, "is owned by a user other than root"},
 		{"root, 0755", fakeDir{fs.ModeDir | 0o755, pluginmodel.RootUID, 0}, true, ""},
 	} {
-		err := checkAboveInfo("/base", tc.fi, me, sticky)
+		err := checkAboveInfo(base, tc.fi, me, sticky)
 		if tc.ok {
 			require.NoError(t, err, tc.name)
 		} else {
@@ -66,7 +68,7 @@ func TestSocketBaseStickyRootException(t *testing.T) {
 		}
 		// The plugin root and the trust store take no exception.
 		if tc.fi.mode.Perm()&groupOtherWrite != 0 {
-			require.Error(t, checkAboveInfo("/base", tc.fi, me, abovePolicy{}), tc.name)
+			require.Error(t, checkAboveInfo(base, tc.fi, me, abovePolicy{}), tc.name)
 		}
 	}
 }

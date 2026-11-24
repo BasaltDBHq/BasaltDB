@@ -22,6 +22,11 @@ const RootUID = 0
 // its group or others can write.
 const WhyGroupWritable = "can be written by group or others"
 
+// WhyACLWritable is the path rule's refusal of a directory or file whose
+// mode lets only its owner write it but whose ACL has an entry that allows
+// writing.
+const WhyACLWritable = "has an ACL entry that lets another user write it"
+
 // WhyNotStickyRoot refuses a socket base, or a directory above it, that
 // group or others can write and that is not root's with the sticky bit set.
 const WhyNotStickyRoot = WhyGroupWritable + ", and is not a directory root owns with the sticky bit set"

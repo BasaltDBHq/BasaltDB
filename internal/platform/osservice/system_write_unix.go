@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/lib/fileacl"
+
 	"golang.org/x/sys/unix"
 )
 
@@ -186,7 +188,9 @@ func (OSSystem) MoveAside(path, owner string) (string, error) {
 // The parent is reached by openTrusted, so no component of it is a symlink
 // the engine user planted. A directory that already exists is taken over
 // only when root or owner owns it. group, when set, is the directory's
-// group instead of owner's; a setgid mode keeps the bit.
+// group instead of owner's; a setgid mode keeps the bit. Any ACL on the
+// directory (access and default on Linux, extended on macOS) is removed,
+// so its mode alone says who reaches it.
 func (OSSystem) Mkdir(path string, mode os.FileMode, owner, group string) error {
 	ids, err := lookupOwner(owner)
 	if err != nil {
@@ -229,6 +233,13 @@ func (OSSystem) Mkdir(path string, mode os.FileMode, owner, group string) error 
 	// Owner first: a chown clears the setgid bit, so the mode is set after.
 	if err := unix.Fchown(dfd, ids.uid, ids.gid); err != nil {
 		return err
+	}
+	// An ACL, inherited from a default ACL above (Linux) or an inheritable
+	// entry (macOS), or left on a directory taken over, opens it without
+	// changing its mode; the engine refuses a plugin socket directory with
+	// one. Removing it leaves the mode the whole boundary.
+	if err := fileacl.Clear(dfd); err != nil {
+		return fmt.Errorf("the ACL on %s cannot be removed: %w", path, err)
 	}
 	return unix.Fchmod(dfd, modeBits(mode))
 }

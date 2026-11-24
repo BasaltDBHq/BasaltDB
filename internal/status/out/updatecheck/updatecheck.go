@@ -337,11 +337,16 @@ func (n Notice) AgentMessage(exePath string) string {
 		"Do not upgrade it yourself unless the person says yes.", prefix, n.Current, n.Latest, n.upgradeSentence(exePath))
 }
 
+// upgradeSentence ends at basalt init, the agent's step: an engine service
+// runs its own copy of basalt, which only init's administrator dialog
+// replaces (one password), so the agent never hands the person a root
+// command.
 func (n Notice) upgradeSentence(exePath string) string {
+	const then = ", then you run basalt init so the engine runs the new binary (with the engine service, it asks for their password once)"
 	if homebrew(exePath) {
-		return "They upgrade with: brew upgrade basaltdbhq/tap/basaltdb, then restart the engine so it runs the new binary"
+		return "They upgrade with: brew upgrade basaltdbhq/tap/basaltdb" + then
 	}
-	return "They get the new release at " + n.URL + " and then restart the engine so it runs the new binary"
+	return "They get the new release at " + n.URL + then
 }
 
 // homebrew reports whether the binary at exePath, symlinks resolved, sits in

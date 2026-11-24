@@ -58,11 +58,11 @@ func sh(t *testing.T, cmd string) {
 
 func exists(cmd string) bool { return exec.Command("/bin/sh", "-c", cmd).Run() == nil }
 
-// requireRefused: the script stopped with want, and left no basalt user,
-// no /etc/basalt and no unit behind.
-func requireRefused(t *testing.T, binary, want string) {
+// requireRefused: the script for rootBinary stopped with want, and left no
+// basalt user, no /etc/basalt and no unit behind.
+func requireRefused(t *testing.T, want string) {
 	t.Helper()
-	out, err := runInstall(t, binary)
+	out, err := runInstall(t, rootBinary)
 	require.Error(t, err, out)
 	var exitErr *exec.ExitError
 	require.ErrorAs(t, err, &exitErr)
@@ -90,7 +90,7 @@ func TestInstallScriptAsRoot(t *testing.T) {
 	t.Run("a unit folder others can write: nothing is created", func(t *testing.T) {
 		defer clean()
 		sh(t, "chmod 0777 /etc/systemd/system")
-		requireRefused(t, rootBinary, "/etc/systemd/system is writable by group or others")
+		requireRefused(t, "/etc/systemd/system is writable by group or others")
 		require.NoDirExists(t, "/etc/basalt")
 	})
 	t.Run("a basalt the person's account can change is copied, root's", func(t *testing.T) {
@@ -123,7 +123,7 @@ func TestInstallScriptAsRoot(t *testing.T) {
 	t.Run("a symlinked copy: nothing is created", func(t *testing.T) {
 		defer clean()
 		sh(t, "printf keep >/tmp/evil-basalt && ln -s /tmp/evil-basalt "+serviceBinary)
-		requireRefused(t, rootBinary, serviceBinary+" is a symlink")
+		requireRefused(t, serviceBinary+" is a symlink")
 		b, err := os.ReadFile("/tmp/evil-basalt")
 		require.NoError(t, err)
 		require.Equal(t, "keep", string(b), "the link's target is untouched")
@@ -132,7 +132,7 @@ func TestInstallScriptAsRoot(t *testing.T) {
 	t.Run("a copy folder others can write: nothing is created", func(t *testing.T) {
 		defer clean()
 		sh(t, "chmod 0777 /usr/libexec")
-		requireRefused(t, rootBinary, "/usr/libexec is writable by group or others")
+		requireRefused(t, "/usr/libexec is writable by group or others")
 		require.NoFileExists(t, serviceBinary)
 	})
 	t.Run("a basalt changed after init read it: nothing is created", func(t *testing.T) {
@@ -151,7 +151,7 @@ func TestInstallScriptAsRoot(t *testing.T) {
 	t.Run("a config folder that is a symlink another user owns", func(t *testing.T) {
 		defer clean()
 		sh(t, "mkdir -p /srv/evil && ln -s /srv/evil /etc/basalt && chown -h nobody /etc/basalt")
-		requireRefused(t, rootBinary, "/etc/basalt is a symlink root does not own")
+		requireRefused(t, "/etc/basalt is a symlink root does not own")
 		sh(t, "rm /etc/basalt")
 	})
 	t.Run("an existing account with a person's uid", func(t *testing.T) {
@@ -173,7 +173,7 @@ func TestInstallScriptAsRoot(t *testing.T) {
 	t.Run("a group without the user", func(t *testing.T) {
 		defer clean()
 		sh(t, "groupadd --system basalt")
-		requireRefused(t, rootBinary, "the group basalt exists without the OS user basalt")
+		requireRefused(t, "the group basalt exists without the OS user basalt")
 	})
 	t.Run("installs, and again", func(t *testing.T) {
 		defer clean()

@@ -141,7 +141,7 @@ func restartOlderEngine(c *cli.IO, h LocalHost) error {
 		return fmt.Errorf("the engine service did not answer on %s within %s after the restart (%w). See %s for why, then run basalt init again", links.DefaultLocal, restartAnswerWait, err, engine.LogHint(c.Goos))
 	}
 	if again != buildinfo.Version {
-		return fmt.Errorf("the engine service was restarted but still runs a different build of basalt than this one: its unit file (%s) starts another binary than %s, the copy basalt init makes. Remove BasaltDB on the setup page, then run basalt init again to install the service onto this basalt", h.OSUnitPath(c.Goos), service)
+		return fmt.Errorf("the engine service was restarted but still runs a different build of basalt than this one: its unit file (%s) starts another binary than %s, the copy basalt init makes, as an install from before that copy did. Ask the person: removing BasaltDB on the setup page (which deletes the ledger for good) and then running basalt init again installs the service onto this basalt", h.OSUnitPath(c.Goos), service)
 	}
 	fmt.Fprintln(c.Stderr, "basalt: the engine service is restarted onto this build.")
 	return nil

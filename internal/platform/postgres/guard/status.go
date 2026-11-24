@@ -42,6 +42,30 @@ func AgentStatus(ctx context.Context, q Querier, migs []guardmodel.Migration) (g
 	if err != nil {
 		return guardmodel.Status{}, err
 	}
+	return judge(installed, migs), nil
+}
+
+// StatusAt is the status of a guard whose newest installed version is
+// installed (0: none), against migs. An install applies every version up to
+// the newest one, so it counts versions 1 to installed as present: every
+// version of migs after installed is missing. It judges a version read
+// elsewhere (another build's engine) by this build's migrations, with the
+// same rules as AgentStatus (judge).
+func StatusAt(installed int, migs []guardmodel.Migration) guardmodel.Status {
+	if installed == 0 {
+		return guardmodel.Status{Build: buildVersion(migs), State: guardmodel.GuardMissing}
+	}
+	have := make([]int, installed)
+	for i := range have {
+		have[i] = i + 1
+	}
+	return judge(have, migs)
+}
+
+// judge is the one place a guard's recorded versions are compared with a
+// build's migrations: AgentStatus and StatusAt both end here.
+func judge(installed []int, migs []guardmodel.Migration) guardmodel.Status {
+	st := guardmodel.Status{Build: buildVersion(migs)}
 	for _, v := range installed {
 		st.Installed = max(st.Installed, v)
 	}
@@ -54,29 +78,6 @@ func AgentStatus(ctx context.Context, q Querier, migs []guardmodel.Migration) (g
 			continue
 		}
 		st.MissingNonBreaking = append(st.MissingNonBreaking, m.Version)
-	}
-	st.State = stateOf(st)
-	return st, nil
-}
-
-// StatusAt is the status of a guard whose newest installed version is
-// installed (0: none), against migs: every version of migs after installed
-// is missing. It judges a version read elsewhere (another build's engine)
-// by this build's migrations.
-func StatusAt(installed int, migs []guardmodel.Migration) guardmodel.Status {
-	st := guardmodel.Status{Installed: installed, Build: buildVersion(migs)}
-	if installed == 0 {
-		st.State = guardmodel.GuardMissing
-		return st
-	}
-	for _, m := range migs {
-		switch {
-		case m.Version <= installed:
-		case m.Breaking:
-			st.MissingBreaking = append(st.MissingBreaking, m.Version)
-		default:
-			st.MissingNonBreaking = append(st.MissingNonBreaking, m.Version)
-		}
 	}
 	st.State = stateOf(st)
 	return st

@@ -156,6 +156,12 @@ func TestSystemdUnit(t *testing.T) {
 	spaced.ConfigPath = `/etc/my basalt/engine "x".json`
 	require.Contains(t, osservice.SystemdUnit(spaced), `ExecStart=/usr/local/bin/basalt engine --config "/etc/my basalt/engine \"x\".json" --supervise`)
 	require.Contains(t, osservice.SystemdUnit(spaced), "ReadWritePaths=\"/etc/my basalt\"\n")
+	special := linuxSpec()
+	special.Binary = "/opt/%h/basalt"
+	special.ConfigPath = "/etc/$HOME/%h/engine.json"
+	unit = osservice.SystemdUnit(special)
+	require.Contains(t, unit, `ExecStart="/opt/%%h/basalt" engine --config "/etc/$$HOME/%%h/engine.json" --supervise`)
+	require.Contains(t, unit, "ReadWritePaths=\"/etc/$HOME/%%h\"\n")
 }
 
 func TestLaunchdDaemon(t *testing.T) {

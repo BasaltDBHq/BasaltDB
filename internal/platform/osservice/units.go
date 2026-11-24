@@ -166,17 +166,17 @@ LockPersonality=yes
 
 [Install]
 WantedBy=multi-user.target
-`, s.User, strings.Join(quoted, " "), runtimeDirMode, high, hard, stateDirMode, systemdQuote(filepath.Dir(s.ConfigPath)))
+`, s.User, strings.Join(quoted, " "), runtimeDirMode, high, hard, stateDirMode, systemdPath("", filepath.Dir(s.ConfigPath)))
 }
 
-// systemdQuote quotes an ExecStart word when it has spaces, quotes or
-// backslashes.
+// systemdQuote writes an ExecStart word as it is when it holds nothing
+// systemd reads specially, else quoted by systemdExecWord, so a '%' or '$'
+// reaches the engine as written instead of being expanded.
 func systemdQuote(s string) string {
-	if !strings.ContainsAny(s, " \t\"'\\") {
+	if !strings.ContainsAny(s, " \t\"'\\%$") {
 		return s
 	}
-	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
-	return `"` + r.Replace(s) + `"`
+	return systemdExecWord(s)
 }
 
 // LaunchdDaemon renders the macOS launch daemon.

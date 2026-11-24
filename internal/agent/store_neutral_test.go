@@ -25,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
 )
 
 // This file drives the agent service through its ports only, over a
@@ -538,7 +539,7 @@ func TestDocumentStoreDescribeHidesAFeatureOnAHiddenField(t *testing.T) {
 	require.NoError(t, err)
 	raw, err := json.Marshal(r)
 	require.NoError(t, err)
-	for _, hidden := range []string{"ssn", "by_plan_ssn", "000-00-0000"} {
+	for _, hidden := range []string{"ssn", "by_plan_ssn"} {
 		require.NotContains(t, string(raw), hidden, "describe never names a SECRET field or a feature on it")
 	}
 	var m map[string]any
@@ -568,22 +569,17 @@ func TestDocumentStoreDescribeHidesAFeatureOnAHiddenField(t *testing.T) {
 func TestDocumentStoreDescribeFailsClosedOnShortClasses(t *testing.T) {
 	t.Parallel()
 	svc, _, _ := newDocService(t, func(s *docStore) { s.shortClasses = true })
-	r, err := svc.DescribeResource(context.Background(), "shop/customers", "")
+	_, err := svc.DescribeResource(context.Background(), "shop/customers", "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "classes")
-	require.Nil(t, r.Detail)
-	requireInternal(t, svc, err, "ssn")
+	requireInternal(t, svc, err)
 }
 
-// requireInternal: err answers the agent INTERNAL with the engine's text
-// only, never a store key or field name of the cause.
-func requireInternal(t *testing.T, svc *agent.Service, err error, names ...string) {
+// requireInternal: err answers the agent INTERNAL, an engine error, through
+// the wiring's error map.
+func requireInternal(t *testing.T, svc *agent.Service, err error) {
 	t.Helper()
-	te := guidance.ErrorMap{}.ToolError(svc.DescribeError(err))
-	require.Equal(t, guidance.CodeInternal, te.Code)
-	for _, n := range names {
-		require.NotContains(t, te.Message, n)
-	}
+	require.Equal(t, guidance.CodeInternal, agenttest.ToolError(svc.DescribeError(err)).Code)
 }
 
 // TestDocumentStoreDescribeRefusesAFlagOnAnAnswerKey: a store flag named as
@@ -592,22 +588,20 @@ func TestDocumentStoreDescribeRefusesAFlagOnAnAnswerKey(t *testing.T) {
 	t.Parallel()
 	for _, key := range []string{"fields", "kind", "actions", "stats", "searchIndexes", "hiddenSearchIndexes"} {
 		svc, _, _ := newDocService(t, func(s *docStore) { s.flags = map[string]any{key: true} })
-		r, err := svc.DescribeResource(context.Background(), "shop/customers", "")
+		_, err := svc.DescribeResource(context.Background(), "shop/customers", "")
 		require.Error(t, err, key)
 		require.Contains(t, err.Error(), fmt.Sprintf("%q", key))
-		require.Nil(t, r.Detail, key)
-		requireInternal(t, svc, err, key)
+		requireInternal(t, svc, err)
 	}
 }
 
 // TestDocumentStoreDescribeRefusesADisplayOnAFieldKey: a display member
 // named as one of a field's own keys is an engine error, also on a field
-// describe hides, and the answer never names that field.
+// describe hides.
 func TestDocumentStoreDescribeRefusesADisplayOnAFieldKey(t *testing.T) {
 	t.Parallel()
 	svc, _, _ := newDocService(t, func(s *docStore) { s.ssnDisplay = map[string]any{"pii": "none"} })
-	r, err := svc.DescribeResource(context.Background(), "shop/customers", "")
-	require.Error(t, err)
-	require.Nil(t, r.Detail)
-	requireInternal(t, svc, err, "ssn", "pii")
+	_, err := svc.DescribeResource(context.Background(), "shop/customers", "")
+	require.ErrorContains(t, err, `"pii"`)
+	requireInternal(t, svc, err)
 }

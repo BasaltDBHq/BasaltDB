@@ -26,6 +26,12 @@ func TestSetupFailedCarriesNoDatabaseWords(t *testing.T) {
 	require.NotContains(t, e.Message, "secret_words")
 	require.ErrorIs(t, err, pg)
 
+	deadlock := asError(fmt.Errorf("init step 15: %w", &pgconn.PgError{Code: "40P01", Message: "deadlock detected"}))
+	require.True(t, errors.As(deadlock, &e))
+	require.Equal(t, CodeSetupFailed, e.Code)
+	require.Equal(t, "A database maintenance task (such as autovacuum) locked a table while the setup changed it, and Postgres stopped the setup to break the deadlock (Postgres error 40P01, setup, statement 15). Run the setup again; nothing changed.", e.Message)
+	require.NotContains(t, e.Message, "deadlock detected")
+
 	plain := asError(errors.New("read tcp: connection reset by peer"))
 	require.Equal(t, "Reading the database or running the setup failed; nothing changed.", plain.Error())
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
@@ -36,7 +37,7 @@ func EnsureService(c *cli.IO, h InstallHost) error {
 		return err
 	}
 	fmt.Fprintf(c.Stderr, "basalt: asking for your password in the system's administrator dialog to install the engine service as %s; it runs:\n  %s\n",
-		h.OSDefaultUser(c.Goos), cli.ShellJoin(engine.DialogEngineArgs(c.Goos, bin)))
+		h.OSDefaultUser(c.Goos), guidance.ShellJoin(engine.DialogEngineArgs(c.Goos, bin)))
 	if err := c.Host.AdminDialog(c.Ctx, c.Goos, servicespec.InstallPrompt, script, c.Stderr); err != nil {
 		if errors.Is(err, servicespec.ErrNoDialog) {
 			return noDialog(err)

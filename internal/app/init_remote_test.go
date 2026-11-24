@@ -398,7 +398,7 @@ func TestInitRemoteMakesATargetCode(t *testing.T) {
 	require.Contains(t, r.stdout, "\n\n"+r.res.Code+"\n\n")
 	require.Contains(t, r.stdout, "Setup fingerprint: "+r.res.Fingerprint+"\n")
 	require.Contains(t, r.stdout, "\n\n"+r.res.ConnectURL+"\n\n")
-	require.Contains(t, r.stdout, "  "+cli.ShellJoin(r.res.MCPCommand)+"\n")
+	require.Contains(t, r.stdout, "  "+guidance.ShellJoin(r.res.MCPCommand)+"\n")
 }
 
 // requireConnectGuidance checks a result that carries the connect link: the

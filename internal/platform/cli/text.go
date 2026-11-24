@@ -77,21 +77,3 @@ func hiddenRune(r rune) bool {
 	return unicode.In(r, unicode.Cc, unicode.Cf, unicode.Zl, unicode.Zp, unicode.Zs,
 		unicode.Other_Default_Ignorable_Code_Point, unicode.Variation_Selector, mongolianSelectors)
 }
-
-// ShellQuote quotes s for a POSIX shell when it has anything but plain
-// path characters.
-func ShellQuote(s string) string {
-	if s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-./:=@") == "" {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
-// ShellJoin quotes each argument for display.
-func ShellJoin(args []string) string {
-	out := make([]string, 0, len(args))
-	for _, a := range args {
-		out = append(out, ShellQuote(a))
-	}
-	return strings.Join(out, " ")
-}

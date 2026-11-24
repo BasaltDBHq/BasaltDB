@@ -1048,7 +1048,7 @@ func PrintRemoteResult(c *cli.IO, res setup.RemoteInitResult) error {
 // printRemoteMCP prints the basalt mcp command the agent registers.
 func printRemoteMCP(c *cli.IO, res setup.RemoteInitResult) error {
 	_, err := fmt.Fprintf(c.Stdout, "then add this MCP server to the agent's client, running as OS user %s:\n  %s\n",
-		res.OSUser, cli.ShellJoin(res.MCPCommand))
+		res.OSUser, guidance.ShellJoin(res.MCPCommand))
 	return err
 }
 

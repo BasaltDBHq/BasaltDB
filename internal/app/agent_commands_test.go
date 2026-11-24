@@ -59,6 +59,10 @@ func TestShellQuoteALeadingEquals(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "'=ls'", guidance.ShellQuote("=ls"), "zsh expands =cmd")
 	require.Equal(t, "plain/path", guidance.ShellQuote("plain/path"))
+	require.Equal(t, "'it'\\''s'", guidance.ShellQuote("it's"))
+	require.Equal(t, "''", guidance.ShellQuote(""))
+	require.Equal(t, "a=b", guidance.ShellQuote("a=b"))
+	require.Equal(t, "'=foo' /x", guidance.ShellJoin([]string{"=foo", "/x"}))
 }
 
 func mustCommands(t *testing.T, path, goos string) guidance.Commands {

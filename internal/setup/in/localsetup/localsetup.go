@@ -563,8 +563,19 @@ func setupFailed(step string, err error) *RefusalError {
 
 // Check reads what an install would do. It changes nothing.
 func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
+	given := req.DatabaseURL
+	req.DatabaseURL = s.verifyByDefault(given)
 	a, err := s.check(ctx, req)
-	return a, scrub(err, req.DatabaseURL)
+	return a, scrub(scrub(err, given), req.DatabaseURL)
+}
+
+// verifyByDefault is the admin string the check and the run use: with
+// sslmode=verify-full when it names no sslmode and a built-in trust profile
+// covers its host (trustprofile.VerifyFullByDefault), so the admin login,
+// the confirm step and the agent's connection string all verify the
+// certificate; else as given.
+func (s *Service) verifyByDefault(dsn string) string {
+	return trustprofile.VerifyFullByDefault(dsn, s.opts.Profiles())
 }
 
 func (s *Service) check(ctx context.Context, req Request) (CheckAnswer, error) {

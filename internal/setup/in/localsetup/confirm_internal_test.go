@@ -51,4 +51,23 @@ func TestCertificateKindIsWhatTheEngineDialsWith(t *testing.T) {
 		require.Equal(t, tc.kind, kind, tc.dsn)
 		require.Equal(t, tc.provider, provider, tc.dsn)
 	}
+
+	// A string with no sslmode, as the check reads it: a built-in
+	// profile's host is verified by its provider; an operator's pin, a host
+	// no profile covers and an explicit mode are as given.
+	for _, tc := range []struct {
+		dsn      string
+		kind     setup.CertificateKind
+		provider string
+	}{
+		{"postgres://u@db.abcdefghijklmnopqrst.supabase.co:5432/postgres", setup.CertificateProvider, "supabase"},
+		{"postgres://u@x.rds.amazonaws.com:5432/app", setup.CertificateProvider, "aws-rds"},
+		{"postgres://u@db.abcdefghijklmnopqrst.supabase.co:5432/postgres?sslmode=require", setup.CertificateNotVerified, ""},
+		{"postgres://u@db.example:5432/app", setup.CertificateNotVerified, ""},
+		{"postgres://u@public.example:5432/app", setup.CertificateNotVerified, ""},
+	} {
+		kind, provider := s.certificateKind(s.verifyByDefault(tc.dsn))
+		require.Equal(t, tc.kind, kind, tc.dsn)
+		require.Equal(t, tc.provider, provider, tc.dsn)
+	}
 }

@@ -202,6 +202,7 @@ func TestPagesServeTheEmbeddedFiles(t *testing.T) {
 	id := uuid.Must(uuid.NewV7()).String()
 	for path, want := range map[string]string{
 		"/healthz":               "ok",
+		"/":                      "../lib/home.js",
 		"/approvals/" + id:       "../lib/approve.js",
 		"/reverts/" + id:         "../lib/revert.js",
 		"/plugins/" + id:         "../lib/plugin.js",
@@ -227,7 +228,7 @@ func TestPagesServeTheEmbeddedFiles(t *testing.T) {
 	}
 	// The old paths and anything else under web/ are not served.
 	for _, path := range []string{
-		"/", "/lib/", "/lib/codec.test.mjs", "/embed.go", "/approve/", "/approve/" + id,
+		"/home/", "/home/index.html", "/lib/", "/lib/codec.test.mjs", "/embed.go", "/approve/", "/approve/" + id,
 		"/revert/" + id, "/register/", "/approvals/", "/approve/index.html",
 		"/fonts/", "/fonts/missing.woff2", "/fonts/Geist-400.ttf",
 	} {

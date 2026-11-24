@@ -277,6 +277,9 @@ func runWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if len(agents) == 0 {
 		return errNoAgent
 	}
+	if site != nil {
+		site.pages.SetHome(newHomeSource(srv.homes, log.With("component", "home")))
+	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
@@ -361,6 +364,8 @@ type startedAgents struct {
 	closers []func()
 	// runs are the agents' own loops (a connect-only agent's collector).
 	runs []func(context.Context)
+	// homes are the agents as the home page counts them.
+	homes []homeAgent
 }
 
 // startAgents builds each agent's runtime. An agent whose guard is missing
@@ -378,6 +383,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			return out, fmt.Errorf("agent %s: %w", a.Name, err)
 		}
 		out.closers = append(out.closers, rt.close)
+		out.homes = append(out.homes, homeAgent{svc: rt.svc, db: rt.home, link: env.checkLink(a)})
 		if rt.run != nil {
 			out.runs = append(out.runs, rt.run)
 		}
@@ -505,6 +511,8 @@ type agentRuntime struct {
 	// nil then), and run is its collect loop.
 	tools []mcpserver.Tool
 	run   func(context.Context)
+	// home is the database the agent uses, for the home page.
+	home homeDB
 }
 
 // agentEnv is what every agent's runtime shares.
@@ -570,14 +578,28 @@ func (env agentEnv) commands(a config.Agent) (guidance.Commands, error) {
 	if !env.cfg.Service() {
 		cmds = cmds.Foreground()
 	}
+	if link := env.checkLink(a); link != "" {
+		cmds = cmds.UpdateLink(link)
+	}
 	if env.setupOrigin != "" {
-		if link, err := localsetup.Link(env.setupOrigin, localsetup.Job{Job: localsetup.JobUpdate, Agent: a.Name, OSUser: a.OSUser}); err == nil {
-			cmds = cmds.UpdateLink(link)
-		}
 		// The setup page's REMOVE deletes engine.json with the last agent.
 		cmds = cmds.Removed(setup.ConfigGone(env.configPath))
 	}
 	return cmds, nil
+}
+
+// checkLink is the setup page's UPDATE link for a, the check-up; empty when
+// the engine does not serve the setup jobs (setupOrigin). The link is not a
+// secret (CONTRACT.md, The local setup page, The link).
+func (env agentEnv) checkLink(a config.Agent) string {
+	if env.setupOrigin == "" {
+		return ""
+	}
+	link, err := localsetup.Link(env.setupOrigin, localsetup.Job{Job: localsetup.JobUpdate, Agent: a.Name, OSUser: a.OSUser})
+	if err != nil {
+		return ""
+	}
+	return link
 }
 
 func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {
@@ -701,8 +723,9 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	svc := NewService(deps)
 	repin := newRepin(env, a, pool.Config().ConnConfig, log)
 	return agentRuntime{
-		svc: svc,
-		run: repin,
+		svc:  svc,
+		run:  repin,
+		home: homeDBOf(cc),
 		upkeep: ledger.New(a.Name, buildinfo.Version, postgres.NewUpkeep(pool), log, time.Now).WithPins(env.pins).WithRLSCache(blind).
 			WithOperatedBy(env.cfg.OperatedBy).WithGate(svc.AdmitTick).
 			WithPII(pii.NewWatch(a.Name, classes, pgquerier.Neutralize(pool), log.With("component", "pii"))),

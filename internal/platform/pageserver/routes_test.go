@@ -117,7 +117,7 @@ var setupProbes = []string{
 // fileProbes are the pages, their files and what is not served.
 var fileProbes = []string{
 	"/healthz", "/setup/", "/setup/x", "/style.css", "/lib/codec.js", "/lib/x.css", "/fonts/OFL.txt", "/fonts/x.ttf",
-	"/", "/index.html", "/approve/index.html", "/api/v1/", "/approvals/x",
+	"/", "/index.html", "/home/index.html", "/approve/index.html", "/api/v1/", "/api/v1/home", "/approvals/x",
 }
 
 // probe is one request and what it got, as one golden line.
@@ -198,7 +198,7 @@ func probeSession(t *testing.T, srv *pageserver.Server) []string {
 		paths = append(paths, fmt.Sprintf(p.path, probeID))
 	}
 	paths = append(paths, setupProbes...)
-	paths = append(paths, "/healthz", "/approvals/"+probeID.String())
+	paths = append(paths, "/healthz", "/", pageserver.HomeDataPath, "/approvals/"+probeID.String())
 	out := make([]string, 0, 2*len(paths))
 	for _, path := range paths {
 		for _, method := range []string{http.MethodGet, http.MethodPost} {

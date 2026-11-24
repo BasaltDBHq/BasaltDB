@@ -183,6 +183,12 @@ func TestSetupOnlyHandlerServesThePageAndNothingElse(t *testing.T) {
 	require.Equal(t, http.StatusOK, get("/lib/setup.js").Code)
 	require.Equal(t, http.StatusOK, get("/style.css").Code)
 	require.Equal(t, http.StatusOK, get("/healthz").Code)
+	// The root is the home page of an engine with no config.
+	require.Equal(t, http.StatusOK, get("/").Code)
+	home := get(pageserver.HomeDataPath)
+	require.Equal(t, http.StatusOK, home.Code)
+	require.Contains(t, home.Body.String(), `"state":"NOT_SET_UP"`)
+	require.Contains(t, home.Body.String(), `"agents":0`)
 	for _, path := range []string{"/approvals/" + uuid.NewString(), "/register/", "/lib/setup.test.mjs", "/setup/index.html.bak"} {
 		require.Equal(t, http.StatusNotFound, get(path).Code, path)
 	}

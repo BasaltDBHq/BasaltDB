@@ -29,6 +29,7 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 - The `status` tool lists the tables the agent can read and write and names each passkey with a check code. `describe` names the agent's database and host.
 - The CLI's help and the MCP instructions say that one engine serves many agents, each on one database, and that another database needs another agent.
 - The portal has a home page and a not-found page.
+- `http://localhost:8787/` shows that BasaltDB is running instead of an empty 404: how many agents and databases (the kind only: Supabase, Amazon RDS or Postgres), whether the engine, the guard and the passkeys are fine, and a button per database that opens its check-up. It has no login, so it never shows an agent's name, a database's host or name, a table or any record of what an agent did.
 
 ### Changed
 

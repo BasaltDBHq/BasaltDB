@@ -8,7 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- Columns without a label no longer show as something that needs you on the setup page's check-up, so leaving them unlabeled no longer sends you back to the same "Fix these".
+- The setup page's check-up now ends. Only what stops BasaltDB working (a certificate, a guard update, no passkey, an agent that cannot log in) counts as "needs you", and each of those has its own button. Columns without a label are a warning that never blocks; leaving them unlabeled is remembered and no longer sends you back to the same "Fix these". With nothing critical open the page says "Ready" and **Done** ends on an "All set" screen. The page-wide "Fix these" button is gone.
+- The passkey prompts now say "Your fingerprint, face or device password never leaves this device", since people without Touch ID approve with their computer password, PIN, phone or a security key.
 
 ## [0.1.0-alpha] - 2026-11-24
 

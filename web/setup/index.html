@@ -14,7 +14,7 @@
   <link rel="modulepreload" href="../lib/compact.js" integrity="sha384-fuduyHELZPN04P63QueohM1bUIUVXRfvWGzR9uHrfZbGZbiB5EEmKmZRwailqr0p">
   <link rel="modulepreload" href="../lib/confirm.js" integrity="sha384-7X+7BIAxAlSBTMikcjyLK2s8jPZNc0Qr+4D85wHnEgTwoI5sGeWidOIhXOJ6k7M5">
   <link rel="modulepreload" href="../lib/deflate.js" integrity="sha384-jYvkCzNHlr7rnXMbluHr7+f08Oo3djFPnbjD4hlC5cKer+nCf+uLf2CZYslw19rU">
-  <link rel="modulepreload" href="../lib/doctor.js" integrity="sha384-enV3QxBSNqfBs3CEmCxVp8XnSd2zV11iuu8CEOCc91ws/FIYRwvrreF53lKQ11EH">
+  <link rel="modulepreload" href="../lib/doctor.js" integrity="sha384-4FC+R+lAA1CJyCW6eKte0jaS9bqvdW1/NxdtFblPj8IPeswn2j8D3WGeeojsSHxs">
   <link rel="modulepreload" href="../lib/local.js" integrity="sha384-hdqElFsnaTlCN9HGy5Qnv7DsFnQ++ZQUS8JN2hK06TrvY0UXn9snJ6QiExIIAU4j">
   <link rel="modulepreload" href="../lib/page.js" integrity="sha384-E/H4T4P2W+oxfTMlNHl3QIE2Ai4hDnUpqkAylUF5IdAc1D5/MVj6jQM76WPfTKzO">
   <link rel="modulepreload" href="../lib/picks.js" integrity="sha384-Lr3kak9YvctWHYkskK/VnVjXzLrCqxE5t70AaJoCNULfOQnRfYwDLG86owrkBa+j">
@@ -24,7 +24,7 @@
   <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-EnkYGm9Ai69Q58X/Exq7GM242BywacFmsG4+nrCuDTuhcTC5dSTTg6sRcYrOkv8l">
   <link rel="modulepreload" href="../lib/transport.js" integrity="sha384-fmaF1B7m6aioKcEJxQqfEJUIzbf/1AkZfuiiV/jhdK47t9PoulK6uwbz6ho2AYws">
-  <script type="module" src="../lib/setup.js" integrity="sha384-fONSXUBa3Qjpg8ZJ22/AusYyzAoazVDGpZOqK19UhYRn3I6DM6Q2xqwvF6sV8C8k"></script>
+  <script type="module" src="../lib/setup.js" integrity="sha384-/IiEgIQ7nzBavIL5a71oWlA1LaWvKzJUoOoJ+BFgOMflPfTsPMKnnHTdWti9KN6H"></script>
   <!-- sri:end -->
 </head>
 <body>
@@ -77,7 +77,7 @@
         <input id="confirm-remove" class="text" type="text" autocomplete="off" autocapitalize="off" spellcheck="false">
       </div>
       <div class="buttons"><button id="run" type="button">Set up</button></div>
-      <p class="muted">Your fingerprint or face never leaves this device; Basalt only receives a signature.</p>
+      <p class="muted">Your fingerprint, face or device password never leaves this device; Basalt only receives a signature.</p>
     </section>
 
     <p id="status" class="muted" role="status"></p>
@@ -183,15 +183,18 @@
       </details>
       <button id="approve" type="button">Set up with passkey</button>
       <p id="approve-status" class="muted" role="status"></p>
-      <p class="muted">Your fingerprint or face never leaves this device; Basalt only receives a signature.</p>
+      <p class="muted">Your fingerprint, face or device password never leaves this device; Basalt only receives a signature.</p>
     </section>
 
     <section id="u-check" class="screen" hidden>
       <h1 id="u-title"></h1>
       <p id="u-sub" class="muted"></p>
       <ul id="u-rows" class="rows"></ul>
+      <button id="u-more-toggle" type="button" class="link" aria-expanded="false" aria-controls="u-more" hidden></button>
+      <ul id="u-more" class="rows" hidden></ul>
       <p id="u-error" class="strip bad" role="alert" hidden></p>
-      <button id="u-fix" type="button" hidden>Fix these</button>
+      <button id="u-end" type="button" aria-describedby="u-end-why">Done</button>
+      <p id="u-end-why" class="muted" hidden></p>
       <button id="u-pick" type="button" class="secondary">Update or remove BasaltDB</button>
     </section>
 
@@ -228,6 +231,14 @@
       <p id="u-confirm-error" class="strip bad" role="alert" hidden></p>
       <button id="u-confirm-go" type="button"></button>
       <button id="u-confirm-cancel" type="button" class="secondary">Cancel</button>
+    </section>
+
+    <section id="u-allset" class="screen" hidden>
+      <p class="allset-mark" aria-hidden="true">✓</p>
+      <h1 id="u-allset-title"></h1>
+      <p id="u-allset-text"></p>
+      <ul id="u-allset-lines" class="rows"></ul>
+      <p id="u-allset-later" class="muted" hidden></p>
     </section>
 
     <section id="u-done" class="screen" hidden>

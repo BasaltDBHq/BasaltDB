@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { checkView, columnName, fixQueue, passkeyItems, passkeyLine, signalRemoved, usedText } from "./doctor.js";
+import { checkView, columnName, fixQueue, laterText, passkeyItems, passkeyLine, signalRemoved, usedText } from "./doctor.js";
 
 const ORIGIN = "http://localhost:8787";
 const local = (label, extra = {}) => ({ credentialId: label, label, rpId: "localhost", origin: ORIGIN, createdAt: "2026-11-03T12:00:00Z", ...extra });
@@ -13,18 +13,21 @@ const good = {
   labels: { state: "OK", count: 0, columns: [] }, passkeys: { state: "OK", items: [local("a"), local("b")] },
 };
 
-test("nothing wrong is All good, with the passkeys to manage", () => {
+test("nothing critical is Ready, with Done enabled and the passkeys to manage", () => {
   const v = checkView(good, ORIGIN);
-  assert.equal(v.title, "All good");
+  assert.equal(v.title, "Ready");
   assert.equal(v.sub, "BasaltDB is running and your agents can connect.");
+  assert.deepEqual(v.done, { enabled: true, why: "" });
   assert.deepEqual(v.rows.map((r) => `${r.mark} ${r.title} ${r.text} ${r.action}`.trim()), [
+    "✓ Every column has a label",
     "✓ Database certificate checked",
     "✓ Passkeys 2 devices can approve Manage",
   ]);
+  assert.deepEqual(v.allSet, { lines: ["Every column has a label", "Database certificate checked", "Passkeys: 2 devices can approve"], later: [] });
   assert.deepEqual(fixQueue(good, ORIGIN), []);
 });
 
-test("each finding is a row with its words and action, in the contract's order", () => {
+test("critical rows carry their own fix and block Done, in the contract's order", () => {
   const d = {
     ...good,
     certificate: { state: "MISMATCH" },
@@ -34,30 +37,50 @@ test("each finding is a row with its words and action, in the contract's order",
   };
   const v = checkView(d, ORIGIN);
   assert.equal(v.title, "3 things need you");
-  assert.equal(v.sub, "Everything else is working.");
-  assert.deepEqual(v.rows.map((r) => [r.title, r.action]), [
-    ["The certificate BasaltDB trusts doesn't match its records", "Check"],
-    ["BasaltDB needs an update in your database", "Update"],
-    ["No passkey can approve", "Add"],
+  assert.equal(v.sub, "Fix it to finish setup.");
+  assert.deepEqual(v.rows.filter((r) => r.tone !== "good").map((r) => [r.tone, r.title, r.action]), [
+    ["critical", "The certificate BasaltDB trusts doesn't match its records", "Check"],
+    ["critical", "BasaltDB needs an update in your database", "Update"],
+    ["critical", "No passkey can approve", "Add a passkey"],
+    ["warning", "22 columns have no label", "Label"],
   ]);
   assert.equal(v.rows[1].text, "A newer BasaltDB is running than the one installed in shop_db.");
+  assert.equal(v.need, 3, "the warning is not counted");
+  assert.equal(v.done.enabled, false);
+  assert.equal(v.done.why, "Check the certificate to finish. Until then, BasaltDB may not connect.");
   assert.deepEqual(fixQueue(d, ORIGIN), ["TRUST", "UPDATE", "PASSKEY_ADD"]);
+  const key = checkView({ ...good, passkeys: { state: "NONE", items: [] } }, ORIGIN);
+  assert.equal(key.done.why, "Add a passkey to finish. Until then, writes over 10 rows wait.");
+  assert.equal(key.title, "1 thing needs you");
 });
 
-test("unlabeled columns are no row and never count toward what needs the person", () => {
-  const v = checkView({ ...good, labels: { state: "UNLABELED", count: 3, columns: ["public.orders.a"] } }, ORIGIN);
-  assert.equal(v.title, "All good");
+test("unlabeled columns are a warning that never blocks; a saved choice is said", () => {
+  const labels = { state: "UNLABELED", count: 2, columns: ["public.orders.a", "public.orders.b"] };
+  const v = checkView({ ...good, labels }, ORIGIN);
+  assert.equal(v.title, "Ready", "no warning count in the title");
   assert.equal(v.need, 0);
-  assert.ok(v.rows.every((r) => !/label/i.test(r.title)));
-  assert.deepEqual(fixQueue({ ...good, labels: { state: "UNLABELED", count: 3, columns: [] } }, ORIGIN), []);
-  const one = checkView({ ...good, passkeys: { state: "NONE", items: [] }, labels: { state: "UNLABELED", count: 1, columns: ["s.t.c"] } }, ORIGIN);
-  assert.equal(one.title, "1 thing needs you");
+  assert.equal(v.done.enabled, true);
+  assert.deepEqual([v.rows[0].tone, v.rows[0].mark, v.rows[0].title, v.rows[0].text, v.rows[0].action], ["warning", "!", "2 columns have no label", "orders.a, orders.b", "Label"]);
+  assert.deepEqual(v.allSet.later, ["2 columns have no label"]);
+  assert.equal(laterText(v.allSet.later), "Left for later: 2 columns have no label. Run `basalt init` to change it.");
+  assert.equal(laterText([]), "");
+  const chosen = checkView({ ...good, labels }, ORIGIN, ["public.orders.a", "public.orders.b"]);
+  assert.equal(chosen.rows[0].text, "orders.a, orders.b · you chose to leave them for now");
+  const partly = checkView({ ...good, labels }, ORIGIN, ["public.orders.a"]);
+  assert.equal(partly.rows[0].text, "orders.a, orders.b", "a column the person did not choose is new");
+  assert.equal(checkView({ ...good, labels: { ...labels, count: 1, columns: ["s.t.c"] } }, ORIGIN).rows[0].title, "1 column has no label");
+  assert.deepEqual(fixQueue({ ...good, labels }, ORIGIN), [], "Fix these never walks the labels");
+});
+
+test("more than 3 warnings fold the rest", () => {
+  const v = checkView(good, ORIGIN);
+  assert.deepEqual(v.more, []);
 });
 
 test("a renewed certificate is one row naming the database, its fix the confirm step", () => {
   const d = { ...good, database: undefined, certificate: { state: "CHANGED", database: "shop_db" }, labels: { state: "UNKNOWN" }, passkeys: { state: "UNKNOWN" } };
   const v = checkView(d, ORIGIN);
-  assert.deepEqual([v.rows[0].mark, v.rows[0].title, v.rows[0].text, v.rows[0].action], ["!", "shop_db renewed its security certificate", "Your agents are paused until you confirm.", "Check"]);
+  assert.deepEqual([v.rows[0].mark, v.rows[0].title, v.rows[0].text, v.rows[0].action], ["✕", "shop_db renewed its security certificate", "Your agents are paused until you confirm.", "Check"]);
   assert.equal(v.title, "1 thing needs you");
   assert.deepEqual(fixQueue(d, ORIGIN), ["TRUST"]);
   assert.equal(checkView({ ...d, certificate: { state: "CHANGED" } }, ORIGIN).rows[0].title, "Your database renewed its security certificate");
@@ -94,7 +117,7 @@ test("a passkey's line says when it was added, where it signs and when it was us
   assert.deepEqual(items.map((k) => k.label), ["a", "Passkey"], "an item without an id is not listed; a blank label reads Passkey");
   assert.equal(columnName("public.orders.phone"), "orders.phone");
   assert.equal(columnName("sales.orders.phone"), "sales.orders.phone");
-  assert.equal(checkView({ ...good, passkeys: { state: "OK", items: [local("a"), portal] } }, ORIGIN).rows[1].text, "1 device can approve", "only this origin's count");
+  assert.equal(checkView({ ...good, passkeys: { state: "OK", items: [local("a"), portal] } }, ORIGIN).rows.find((r) => r.title === "Passkeys").text, "1 device can approve", "only this origin's count");
 });
 
 test("the browser is told of a removed passkey only when it can be", async () => {

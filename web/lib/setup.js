@@ -8,7 +8,7 @@ import { $, el, webauthnError } from "./page.js";
 import { answersFor, ENTITY_WORDS, fingerprintText, Labels, MAX_LABELS, restNote, tableName, trustRootFrom } from "./picks.js";
 import { labelRow } from "./pickviews.js";
 import { confirmView, factsDiffer, paintConfirm, stringFacts } from "./confirm.js";
-import { checkView, fixQueue, passkeyItems, PASSKEYS_NOTE, RESET, signalRemoved, targetView } from "./doctor.js";
+import { ALL_SET, checkView, laterText, passkeyItems, PASSKEYS_NOTE, RESET, signalRemoved, targetView } from "./doctor.js";
 import { browserFetch } from "./transport.js";
 
 export const CHECK_PATH = "/api/v1/setup/check";
@@ -1231,7 +1231,7 @@ export function labelRest(labels, more) {
   return { rest, suggested, restPublic };
 }
 
-const UPDATE_SCREENS = ["u-check", "u-passkeys", "s-confirm", "u-mismatch", "u-confirm", "u-done", "s-paste", "s-labels", "s-checking"];
+const UPDATE_SCREENS = ["u-check", "u-passkeys", "s-confirm", "u-mismatch", "u-confirm", "u-done", "u-allset", "s-paste", "s-labels", "s-checking"];
 
 // startUpdate runs the Update check for a CHANGE link. env has fetchFn,
 // origin (this page's), makePasskey (a challenge to a registration), pkc
@@ -1241,12 +1241,12 @@ const UPDATE_SCREENS = ["u-check", "u-passkeys", "s-confirm", "u-mismatch", "u-c
 export function startUpdate(link, env) {
   const fix = new UpdateCheck(env.fetchFn, link);
   let screen = "s-checking";
-  let queue = null; // the fixes "Fix these" has left, or null
   let pending = null; // the fix that waits for the admin string
   let labels = null;
   let columnsMore = false;
   let confirmGo = null;
   let doneNext = null;
+  let view = null; // the check-up on screen
   // target is the engine's answer while "Is this your database?" is open.
   let target = null;
 
@@ -1313,30 +1313,37 @@ export function startUpdate(link, env) {
   const showCheck = (d) => {
     const crumb = document.querySelector?.(".crumb-page");
     if (crumb) crumb.textContent = d.database ? `Setup · ${d.database}` : "Setup";
-    const v = checkView(d, env.origin);
+    const v = checkView(d, env.origin, savedLeft());
+    view = v;
     setText("u-title", v.title);
     setText("u-sub", v.sub);
     const list = $("u-rows");
     list.replaceChildren(...v.rows.map(checkRow));
-    show("u-fix", fixQueue(d, env.origin).length > 0);
+    const fold = $("u-more");
+    fold.replaceChildren(...v.more.map(checkRow));
+    show("u-more", false);
+    show("u-more-toggle", v.more.length > 0);
+    setText("u-more-toggle", `Show ${v.more.length} more`);
+    $("u-more-toggle").setAttribute("aria-expanded", "false");
+    // Done is aria-disabled, not disabled, while something critical is
+    // open: the reason under it is what the button's description names.
+    $("u-end").setAttribute("aria-disabled", v.done.enabled ? "false" : "true");
+    setText("u-end-why", v.done.why);
+    show("u-end-why", !v.done.enabled);
     problem("u-error", "");
     go("u-check");
   };
   const checkRow = (r) => {
-    const tone = r.mark === "!" ? "need" : r.mark === "✓" ? "good" : "later";
-    const li = el("li", `check-row ${tone}`);
+    const li = el("li", `check-row ${r.tone}`);
     li.appendChild(el("span", "mark", r.mark));
     const words = el("div", "words");
     words.appendChild(el("strong", "", r.title));
     if (r.text) words.appendChild(el("span", "", r.text));
     li.appendChild(words);
     if (r.action) {
-      const b = el("button", "", r.action);
+      const b = el("button", r.tone === "critical" ? "fix" : "", r.action);
       b.type = "button";
-      b.addEventListener("click", () => {
-        queue = null;
-        act(r.job);
-      });
+      b.addEventListener("click", () => act(r.job));
       li.appendChild(b);
     }
     return li;
@@ -1351,32 +1358,48 @@ export function startUpdate(link, env) {
     show("flow", false);
     env.onPick(job);
   };
-  let walked = new Set(); // the fixes "Fix these" started
-  $("u-fix").addEventListener("click", () => {
-    walked = new Set();
-    queue = fixQueue(fix.answer, env.origin);
-    next();
-  });
   $("u-pick").addEventListener("click", () => pick(""));
-  // next starts the next fix of "Fix these". Once the list is walked,
-  // doctor is sent again: a row it could not read before (the labels and
-  // passkeys behind a new certificate) joins the walk.
-  const next = async () => {
-    if (queue && queue.length === 0) {
-      await refresh();
-      const more = fix.answer ? fixQueue(fix.answer, env.origin).filter((j) => !walked.has(j)) : [];
-      queue = more.length > 0 && screen === "u-check" ? more : null;
+  $("u-more-toggle").addEventListener("click", () => {
+    const open = $("u-more").hidden;
+    show("u-more", open);
+    $("u-more-toggle").setAttribute("aria-expanded", open ? "true" : "false");
+    setText("u-more-toggle", open ? "Show fewer" : `Show ${view.more.length} more`);
+  });
+  // Done: with something critical open it does nothing (the reason is
+  // under it); otherwise the All set screen. A page cannot close a tab it
+  // did not open, so the screen says to.
+  $("u-end").addEventListener("click", () => {
+    if (!view?.done.enabled) return;
+    fix.forget();
+    setText("u-allset-title", ALL_SET.title);
+    setText("u-allset-text", ALL_SET.text);
+    $("u-allset-lines").replaceChildren(...view.allSet.lines.map((t) => el("li", "row", `✓ ${t}`)));
+    setText("u-allset-later", laterText(view.allSet.later));
+    show("u-allset-later", view.allSet.later.length > 0);
+    go("u-allset");
+  });
+  // The person's choice to leave columns unlabeled is saved in this
+  // browser, per agent, so the row reads as chosen and not as new.
+  const leftKey = `basalt.leftUnlabeled.${link.agent}`;
+  const savedLeft = () => {
+    try {
+      const v = JSON.parse(globalThis.localStorage?.getItem(leftKey) ?? "[]");
+      return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+    } catch {
+      return [];
     }
-    if (!queue) return;
-    const job = queue.shift();
-    walked.add(job);
-    act(job);
   };
-  // afterFix sends doctor again and goes on with "Fix these", if walking.
-  const afterFix = () => (queue ? next() : refresh());
+  const saveLeft = (names) => {
+    try {
+      globalThis.localStorage?.setItem(leftKey, JSON.stringify(names));
+    } catch {
+      // the row then reads as new again; nothing else depends on it
+    }
+  };
+  // afterFix sends doctor again; every fix ends back on the check.
+  const afterFix = () => refresh();
   const cancel = () => {
     fix.forget();
-    queue = null;
     refresh();
   };
 
@@ -1588,10 +1611,15 @@ export function startUpdate(link, env) {
     const stop = labels.problem(tables);
     if (stop) return problem("labels-error", stop);
     const fields = labelFields(labels, columnsMore, !$("rest-choice").hidden && $("rest-mark").checked);
-    if (!fields.columnClasses && !fields.restPublic) return afterFix(); // left unlabeled for now: no run
+    const leave = () => saveLeft(labels.unlabeled(tables).map((c) => `${c.table}.${c.column}`));
+    if (!fields.columnClasses && !fields.restPublic) {
+      leave();
+      return afterFix(); // left unlabeled for now: no run
+    }
     $("labels-next").disabled = true;
     try {
       await fix.run("LABELS", fields);
+      if (!fields.restPublic) leave();
       afterFix();
     } catch (err) {
       if (err instanceof SetupError && err.code === "CLASSES_CHANGED") return FIXES.LABELS();

@@ -54,63 +54,81 @@ export function certificateRow(database) {
 // walks them. UPDATE is the guard update, which opens its own job.
 export const FIX_ORDER = ["TRUST", "UPDATE", "PASSKEY_ADD", "REPAIR"];
 
-// localPasskeys counts the passkeys of origin: the devices that approve on
-// this page's pages.
+export const MAX_WARNINGS = 3;
+export const READY_SUB = "BasaltDB is running and your agents can connect.";
+export const ALL_SET = { title: "All set", text: "Close this tab and go back to your agent. It can work now.", later: "Run `basalt init` to change it." };
+export const LEFT_NOTE = "you chose to leave them for now";
+
 export function localPasskeys(passkeys, origin) {
   return (passkeys?.items ?? []).filter((k) => k?.origin === origin).length;
 }
 
-// checkView is the check screen for a doctor answer: its title, the line
-// under it, and one row per finding, each { job, mark, title, text,
-// action } (job null for a row without a fix). need counts the rows that
-// need the person.
-export function checkView(d, origin) {
-  const rows = [];
-  // Column labels are not a row and never count toward "needs you" while
-  // PII protection is not shipped; only what stops BasaltDB working does.
+// leftUnlabeled: every unlabeled column was one the person chose to leave.
+const allLeft = (columns, left) => columns.length > 0 && columns.every((c) => left.includes(c));
+
+// checkView is the check-up. Critical rows stop BasaltDB working and each
+// carries its own fix; warning rows do not block and carry a link; OK rows
+// have a check. left lists the unlabeled columns the person chose to leave
+// (saved by the page). done is the Done button: enabled only with nothing
+// critical open, else it says what unlocks it.
+export function checkView(d, origin, left = []) {
+  const crit = [];
+  const warn = [];
   const unknown = d.passkeys?.state === "UNKNOWN";
-  const need = (job, title, text, action) => rows.push({ job, mark: "!", title, text, action });
+  const critical = (job, title, text, action, why) => crit.push({ job, mark: "✕", tone: "critical", title, text, action, why });
   const cert = d.certificate?.state;
   if (cert === "CHANGED") {
     const r = certificateRow(d.certificate.database || d.database);
-    need("TRUST", r.title, r.text, "Check");
+    critical("TRUST", r.title, r.text, "Check", "Confirm the certificate to finish. Until then, your agents are paused.");
   }
-  if (cert === "MISMATCH") need("TRUST", "The certificate BasaltDB trusts doesn't match its records", "Check it before BasaltDB connects again.", "Check");
+  if (cert === "MISMATCH") critical("TRUST", "The certificate BasaltDB trusts doesn't match its records", "Check it before BasaltDB connects again.", "Check", "Check the certificate to finish. Until then, BasaltDB may not connect.");
   if (d.guard?.state === "OUTDATED") {
-    need("UPDATE", "BasaltDB needs an update in your database", `A newer BasaltDB is running than the one installed in ${d.database ?? "your database"}.`, "Update");
+    critical("UPDATE", "BasaltDB needs an update in your database", `A newer BasaltDB is running than the one installed in ${d.database ?? "your database"}.`, "Update", "Update BasaltDB in your database to finish.");
   }
-  if (d.passkeys?.state === "NONE") need("PASSKEY_ADD", NO_PASSKEY.title, NO_PASSKEY.text, "Add");
-  if (d.login?.code === "CREDENTIAL_REJECTED") need("REPAIR", "Your agent can't log in", "Its database password was changed or removed.", "Fix");
-  else if (d.login) need(null, "Your agent can't connect", String(d.login.message ?? ""), "");
-  const count = rows.length;
+  if (d.passkeys?.state === "NONE") critical("PASSKEY_ADD", NO_PASSKEY.title, NO_PASSKEY.text, "Add a passkey", "Add a passkey to finish. Until then, writes over 10 rows wait.");
+  if (d.login?.code === "CREDENTIAL_REJECTED") critical("REPAIR", "Your agent can't log in", "Its database password was changed or removed.", "Fix", "Fix your agent's login to finish. Until then, it can't connect.");
+  else if (d.login) critical(null, "Your agent can't connect", String(d.login.message ?? ""), "", "Your agent has to connect before setup is done.");
+  const labelCols = d.labels?.state === "UNLABELED" ? (d.labels.columns ?? []) : [];
+  let leftNote = false;
+  if (d.labels?.state === "UNLABELED") {
+    const r = unlabeledRow(Number(d.labels.count) || 0, labelCols.map(columnName));
+    leftNote = allLeft(labelCols, left);
+    warn.push({ job: "LABELS", mark: "!", tone: "warning", title: r.title.replace(" new ", " "), text: leftNote ? `${r.text} · ${LEFT_NOTE}` : r.text, action: "Label", later: r.title.replace(" new ", " ") });
+  }
   const devices = localPasskeys(d.passkeys, origin);
-  const passkeysRow = { job: "MANAGE", mark: "✓", title: "Passkeys", text: devicesText(devices), action: "Manage" };
-  const later = (title) => ({ job: null, mark: "·", title, text: "Checked once BasaltDB can connect.", action: "" });
-  if (count === 0) {
-    return {
-      title: ALL_GOOD.title,
-      sub: ALL_GOOD.sub,
-      rows: [...ALL_GOOD.rows.slice(1).map((title) => ({ job: null, mark: "✓", title, text: "", action: "" })), passkeysRow],
-      need: 0,
-    };
+  const ok = [];
+  if (!unknown && !d.login && cert === "OK") {
+    if (d.labels?.state === "OK") ok.push({ job: null, mark: "✓", tone: "good", title: ALL_GOOD.rows[0], text: "", action: "" });
+    ok.push({ job: null, mark: "✓", tone: "good", title: ALL_GOOD.rows[1], text: "", action: "" });
   }
-  if (d.passkeys?.state === "UNKNOWN") rows.push(later("Passkeys"));
-  if (d.passkeys?.state === "OK") rows.push(passkeysRow);
+  if (d.passkeys?.state === "OK") ok.push({ job: "MANAGE", mark: "✓", tone: "good", title: "Passkeys", text: devicesText(devices), action: "Manage" });
+  const later = (title) => ({ job: null, mark: "·", tone: "later", title, text: "Checked once BasaltDB can connect.", action: "" });
+  if (d.passkeys?.state === "UNKNOWN") ok.push(later("Passkeys"));
+  const shown = [...crit, ...warn.slice(0, MAX_WARNINGS), ...ok];
+  const more = warn.slice(MAX_WARNINGS);
+  const ready = crit.length === 0;
   return {
-    title: needTitle(count),
-    sub: unknown ? "The rest is checked once BasaltDB can connect." : "Everything else is working.",
-    rows,
-    need: count,
+    title: ready ? "Ready" : needTitle(crit.length),
+    sub: ready ? READY_SUB : unknown ? "The rest is checked once BasaltDB can connect." : "Fix it to finish setup.",
+    rows: shown,
+    more,
+    need: crit.length,
+    warnings: warn.length,
+    done: { enabled: ready, why: ready ? "" : crit[0].why },
+    allSet: { lines: ok.filter((r) => r.tone === "good").map((r) => (r.job === "MANAGE" ? `${r.title}: ${r.text}` : r.title)), later: warn.map((w) => w.later) },
   };
 }
 
-// fixQueue is the fixes "Fix these" walks for a doctor answer, in order.
+// laterText is the "Left for later" line of the All set screen.
+export function laterText(later) {
+  return later.length === 0 ? "" : `Left for later: ${later.join(", ")}. ${ALL_SET.later}`;
+}
+
 export function fixQueue(d, origin) {
-  const jobs = checkView(d, origin).rows.map((r) => r.job).filter((j) => FIX_ORDER.includes(j));
+  const jobs = checkView(d, origin).rows.filter((r) => r.tone === "critical").map((r) => r.job).filter((j) => FIX_ORDER.includes(j));
   return FIX_ORDER.filter((j) => jobs.includes(j));
 }
 
-// dayMonth is a date as the list shows it: "3 Nov".
 export function dayMonth(t) {
   const d = new Date(t);
   return `${d.getDate()} ${MONTHS[d.getMonth()]}`;

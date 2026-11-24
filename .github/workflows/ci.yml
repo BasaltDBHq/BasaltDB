@@ -305,3 +305,65 @@ jobs:
         env:
           EXPECT_UNAME: ${{ matrix.expect_uname }}
         run: sh scripts/release-archive-smoke.sh dist/extract
+
+  # The end-to-end test of the release binaries (setup page, the agent's MCP
+  # session, a held write's approval, revert, remove) on the snapshot archive of
+  # each OS. Manual only: run it with `gh workflow run ci.yml --ref <branch>`.
+  # It installs Postgres and the engine as a system service on the runner, so it
+  # never runs on a pull request. e2e/release/run.sh is also what the release
+  # workflow's end-to-end job runs on a tag.
+  release-e2e:
+    needs: darwin-archives
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            archive: basaltdb_0.0.0-nightly_darwin_arm64.tar.gz
+          - runner: macos-15-intel
+            archive: basaltdb_0.0.0-nightly_darwin_amd64.tar.gz
+          - runner: ubuntu-latest
+            archive: basaltdb_0.0.0-nightly_linux_amd64.tar.gz
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - uses: actions/download-artifact@v8
+        with:
+          name: basaltdb-snapshot
+          path: dist
+      - name: Extract the archive
+        run: |
+          set -euo pipefail
+          cd dist
+          if command -v sha256sum >/dev/null 2>&1; then
+            grep " ${{ matrix.archive }}$" SHA256SUMS | sha256sum -c -
+          else
+            grep " ${{ matrix.archive }}$" SHA256SUMS | shasum -a 256 -c -
+          fi
+          mkdir extract
+          tar -xzf "${{ matrix.archive }}" -C extract
+          test -x extract/basalt
+      - name: End-to-end test
+        env:
+          E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
+        run: |
+          mkdir -p "$E2E_LOG_DIR"
+          sh e2e/release/run.sh "$PWD/dist/extract"
+      - name: Keep the logs and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-e2e-${{ matrix.runner }}
+          path: ${{ runner.temp }}/e2e-logs
+          if-no-files-found: ignore

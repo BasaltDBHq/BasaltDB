@@ -51,7 +51,7 @@ func noticeOf(n *updatecheck.Notice, exe string) *status.UpdateNotice {
 	return &status.UpdateNotice{Line: n.Line(exe), Security: n.Security}
 }
 
-func updateChecker(getenv func(string) string) (*updatecheck.Checker, error) {
+func updateChecker() (*updatecheck.Checker, error) {
 	if buildinfo.Version == updatecheck.DevVersion {
 		return nil, errDevBuild
 	}
@@ -77,7 +77,7 @@ func startUpdateNotice(ctx context.Context, args []string, std cli.Stdio, getenv
 	if status.UpdateOff(getenv, appUpdateHost{osHost{}}, appUpdateHost{osHost{}}) {
 		return nothing
 	}
-	ck, err := updateChecker(getenv)
+	ck, err := updateChecker()
 	if err != nil {
 		return nothing
 	}

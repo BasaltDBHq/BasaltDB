@@ -99,7 +99,12 @@ func RunLocal(c *cli.IO, h LocalHost, args []string) int {
 // how. An engine that does not answer is left to waitForSetupPage.
 func restartOlderEngine(c *cli.IO, h LocalHost) error {
 	build, err := c.Host.EngineBuild(c.Ctx, links.DefaultLocal)
-	if err != nil || build == buildinfo.Version {
+	if err != nil {
+		// Nothing answers: the engine is starting or down, and the wait
+		// for its page says which.
+		return nil //nolint:nilerr // an engine that does not answer is not an older one
+	}
+	if build == buildinfo.Version {
 		return nil
 	}
 	script, err := h.OSRestartScript(c.Goos)

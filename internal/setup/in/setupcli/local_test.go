@@ -147,6 +147,7 @@ type localHost struct{}
 func (localHost) OSInstallScript(goos, binary string) (string, error) {
 	return osservice.InstallScript(goos, binary)
 }
+
 func (localHost) OSRemoveScript(goos string) (string, error)  { return osservice.RemoveScript(goos) }
 func (localHost) OSResetScript(goos string) (string, error)   { return osservice.ResetScript(goos) }
 func (localHost) OSRestartScript(goos string) (string, error) { return osservice.RestartScript(goos) }

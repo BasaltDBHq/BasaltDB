@@ -212,32 +212,98 @@ func TestReinstallAfterAResetRevokesTheGrantsOfTablesNotPickedNow(t *testing.T) 
 	require.False(t, can(t, f, role, "public.t2", "SELECT"))
 }
 
-// A grant from an earlier run on a table another role owns now cannot be
-// revoked by this admin: the finish is refused GRANTS_NOT_REVOKED, naming
-// the role and the table, and nothing changes.
+// giveT2To makes owner, a new role, the owner of t2 (and its sequence);
+// the agent's grants on them stay. member makes this admin a member of
+// owner that inherits; without it, only a superuser can do this.
+func giveT2To(t *testing.T, f *fixture, owner string, member bool) {
+	t.Helper()
+	sql := `CREATE ROLE ` + owner + ` NOLOGIN;
+GRANT CREATE ON SCHEMA public TO ` + owner + `;
+`
+	if member {
+		sql += `GRANT ` + owner + ` TO CURRENT_USER;
+`
+	}
+	f.db.Exec(t, sql+`ALTER TABLE public.t2 OWNER TO `+owner)
+}
+
+// superuser reports whether the test server's admin is a superuser.
+func superuser(t *testing.T, f *fixture) bool {
+	t.Helper()
+	var super bool
+	require.NoError(t, f.db.Admin.QueryRow(context.Background(),
+		`SELECT r.rolsuper FROM pg_catalog.pg_roles r WHERE r.rolname = current_user`).Scan(&super))
+	return super
+}
+
+// An admin that is a member of the role that now owns a table (inheriting
+// its privileges) revokes that owner's grants from the earlier run: the
+// finish succeeds with exactly the picked tables.
+func TestFinishedInstallRevokesGrantsOfAnOwnerTheAdminActsFor(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	role := f.db.Names.Prefix + "_agent_bot"
+	f.db.Exec(t, exactTables)
+	interruptedInstall(t, f, f.realReq(nil, picks(readPick("public.t1"), writeT2)))
+	giveT2To(t, f, f.db.Names.Prefix+"_owner", true)
+	require.True(t, can(t, f, role, "public.t2", "SELECT"))
+
+	_, err := finishInstall(t, f, f.realReq(nil, picks(readPick("public.t1"))))
+	require.NoError(t, err)
+	require.Equal(t, []string{"public.t1:SELECT"}, directGrants(t, f, role))
+}
+
+// A superuser admin acts for every owner: it revokes the grants of an owner
+// it is not a member of, and the finish succeeds.
+func TestFinishedInstallBySuperuserRevokesAnyOwnersGrants(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	if !superuser(t, f) {
+		t.Skip("the test server's admin is not a superuser")
+	}
+	role := f.db.Names.Prefix + "_agent_bot"
+	f.db.Exec(t, exactTables)
+	interruptedInstall(t, f, f.realReq(nil, picks(readPick("public.t1"), writeT2)))
+	giveT2To(t, f, f.db.Names.Prefix+"_owner", false)
+	require.True(t, can(t, f, role, "public.t2", "SELECT"))
+
+	_, err := finishInstall(t, f, f.realReq(nil, picks(readPick("public.t1"))))
+	require.NoError(t, err)
+	require.Equal(t, []string{"public.t1:SELECT"}, directGrants(t, f, role))
+}
+
+// A grant on an unpicked table made by a third role (one with the grant
+// option) is not the owner's, so no admin's REVOKE as the owner removes
+// it, a superuser's included: the finish is refused GRANTS_NOT_REVOKED,
+// naming the role and the table, and nothing changes.
 func TestFinishedInstallRefusesGrantsItCannotRevoke(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	ctx := context.Background()
 	role := f.db.Names.Prefix + "_agent_bot"
-	owner := f.db.Names.Prefix + "_owner"
+	grantor := f.db.Names.Prefix + "_grantor"
 	f.db.Exec(t, exactTables)
 	interruptedInstall(t, f, f.realReq(nil, picks(readPick("public.t1"), writeT2)))
-	// Another role owns t2 now; its grants to the agent stay.
-	f.db.Exec(t, `CREATE ROLE `+owner+` NOLOGIN;
-GRANT `+owner+` TO CURRENT_USER;
-GRANT CREATE ON SCHEMA public TO `+owner+`;
-ALTER TABLE public.t2 OWNER TO `+owner)
+	f.db.Exec(t, `CREATE ROLE `+grantor+` NOLOGIN;
+GRANT `+grantor+` TO CURRENT_USER;
+GRANT SELECT ON public.t2 TO `+grantor+` WITH GRANT OPTION;
+SET ROLE `+grantor+`;
+GRANT SELECT ON public.t2 TO `+role+`;
+RESET ROLE`)
+	var grantors int
+	require.NoError(t, f.db.Admin.QueryRow(ctx, `SELECT count(DISTINCT a.grantor) FROM pg_catalog.aclexplode(
+		(SELECT c.relacl FROM pg_catalog.pg_class c WHERE c.oid = 'public.t2'::pg_catalog.regclass)) a
+		JOIN pg_catalog.pg_roles r ON r.oid = a.grantee WHERE r.rolname = $1 AND a.privilege_type = 'SELECT'`, role).Scan(&grantors))
+	require.Equal(t, 2, grantors, "the owner and the third role both granted SELECT on t2")
 	before := directGrants(t, f, role)
-	require.Contains(t, before, "public.t2:SELECT")
 	var settings, after string
 	roleState := `SELECT r.rolcanlogin::text || r.rolconnlimit::text || coalesce(r.rolconfig::text, '') FROM pg_catalog.pg_roles r WHERE r.rolname = $1`
 	require.NoError(t, f.db.Admin.QueryRow(ctx, roleState, role).Scan(&settings))
 
 	_, err := finishInstall(t, f, f.realReq(nil, picks(readPick("public.t1"))))
 	refusal(t, err, localsetup.CodeGrantsNotRevoked)
-	require.Contains(t, err.Error(), "The agent role "+role+" still has access to tables that were not picked")
-	require.Contains(t, err.Error(), "public.t2")
+	require.Contains(t, err.Error(), "The agent role "+role+" still has access to tables or sequences that were not picked (public.t2)")
+	require.Contains(t, err.Error(), "another role made those grants")
 	require.Contains(t, err.Error(), "Nothing changed.")
 
 	require.Equal(t, before, directGrants(t, f, role), "the grants are as before")

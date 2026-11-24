@@ -28,7 +28,8 @@ func TestAgentExactStatementRendersThePicks(t *testing.T) {
 	require.Contains(t, st.SQL, `'REVOKE %s ON %s %s FROM %I'`)
 	require.NotContains(t, st.SQL, "%!", "every verb is rendered")
 	require.NotContains(t, st.SQL, "REVOKE ALL ON %", "it revokes only the setup's privilege kinds")
-	require.Equal(t, 1, strings.Count(st.SQL, "c.relowner ="), "only the revokes are narrowed to what this admin owns; the check reads every owner's tables")
+	require.Equal(t, 1, strings.Count(st.SQL, "pg_has_role(current_user, c.relowner, 'USAGE')"), "only the revokes are narrowed to owners this admin acts for; the check reads every owner's relations")
+	require.NotContains(t, st.SQL, "c.relowner =")
 
 	none, err := agentExactStatement("bt_agent_bot", guardmodel.AgentSpec{})
 	require.NoError(t, err)

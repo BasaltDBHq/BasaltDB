@@ -53,8 +53,8 @@ const (
 	CodePasskeyInvalid          = "PASSKEY_INVALID"
 	CodeSetupFailed             = "SETUP_FAILED"
 	// CodeGrantsNotRevoked: the agent role an earlier run left still has a
-	// setup grant on a table not picked now, which this admin cannot revoke
-	// (another role owns the table); nothing changed.
+	// setup grant on a table or sequence not picked now, which this admin
+	// cannot revoke (another role made it); nothing changed.
 	CodeGrantsNotRevoked = "GRANTS_NOT_REVOKED"
 	// CodeGuardUnusable: the database has a basalt_meta this build cannot
 	// install over or update (an older install, or a partial one).
@@ -547,13 +547,13 @@ func inTx(ctx context.Context, conn *pgx.Conn, fn func(pgx.Tx) error) error {
 	return &unknownOutcomeError{err: err}
 }
 
-// maxLeftTables bounds the list of tables a GRANTS_NOT_REVOKED names.
+// maxLeftTables bounds the list of tables and sequences a GRANTS_NOT_REVOKED names.
 const maxLeftTables = 300
 
 // grantsNotRevoked is GRANTS_NOT_REVOKED for the guard's refusal of an
 // install that finishes with a role an earlier run left: the role still has
-// a setup grant on a table not picked now that this admin cannot revoke
-// (guardmodel.UnpickedGrantsDetail, then the tables). nil for any other
+// a setup grant on a table or sequence not picked now that this admin
+// cannot revoke (guardmodel.UnpickedGrantsDetail, then the relations). nil for any other
 // error.
 func grantsNotRevoked(err error, role string) *RefusalError {
 	var pg *pgconn.PgError
@@ -568,6 +568,6 @@ func grantsNotRevoked(err error, role string) *RefusalError {
 	if len(tables) > maxLeftTables {
 		tables = strings.ToValidUTF8(tables[:maxLeftTables], "") + "…"
 	}
-	return refuse(CodeGrantsNotRevoked, fmt.Sprintf("The agent role %s still has access to tables that were not picked (%s), from an earlier setup run, and this admin cannot revoke it: another role owns those tables or granted that access. "+
-		"The owner of those tables, or a superuser, must revoke it (REVOKE ALL ON <table> FROM %s); then run the setup again on this page. Nothing changed.", role, tables, role))
+	return refuse(CodeGrantsNotRevoked, fmt.Sprintf("The agent role %s still has access to tables or sequences that were not picked (%s), from an earlier setup run, and this admin cannot revoke it: another role made those grants. "+
+		"That role, or the owner of the table or sequence, must revoke them (REVOKE ALL ON <table or sequence> FROM %s); then run the setup again on this page. Nothing changed.", role, tables, role))
 }

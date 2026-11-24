@@ -23,8 +23,8 @@ func TestGrantsNotRevokedIsAReadableRefusal(t *testing.T) {
 	r := grantsNotRevoked(fmt.Errorf("init step 9: %w", pg), "bt_agent_bot")
 	require.NotNil(t, r)
 	require.Equal(t, CodeGrantsNotRevoked, r.Code)
-	require.Contains(t, r.Message, "The agent role bt_agent_bot still has access to tables that were not picked (public.t2, sales.?notes)")
-	require.Contains(t, r.Message, "The owner of those tables, or a superuser, must revoke it (REVOKE ALL ON <table> FROM bt_agent_bot)")
+	require.Contains(t, r.Message, "The agent role bt_agent_bot still has access to tables or sequences that were not picked (public.t2, sales.?notes)")
+	require.Contains(t, r.Message, "That role, or the owner of the table or sequence, must revoke them (REVOKE ALL ON <table or sequence> FROM bt_agent_bot)")
 	require.Contains(t, r.Message, "Nothing changed.")
 
 	other := &pgconn.PgError{Code: sqlstateLedgerInputInvalid, Detail: "bt_agent_bot is not a plain agent role"}

@@ -237,8 +237,10 @@ func agentExactStatement(role string, spec guardmodel.AgentSpec) (guardmodel.Sta
 // to write. Only where the setup grants: ordinary and partitioned tables
 // with plain lowercase names outside the system schemas and basalt_meta,
 // and their serial sequences. Schema USAGE is left: it reaches no row by
-// itself. agentExactOwned narrows it to what this admin owns, so it can
-// revoke it.
+// itself. agentExactOwned narrows it to relations whose owner this admin
+// acts for (it is the owner, a member of it that inherits, or a
+// superuser): Postgres records its REVOKE as the owner's, so it removes
+// the owner's grants.
 const agentExactFrom = `
 SELECT c.oid AS rel, c.relkind = 'S' AS seq, a.privilege_type AS priv
   FROM pg_catalog.pg_class c
@@ -247,7 +249,7 @@ SELECT c.oid AS rel, c.relkind = 'S' AS seq, a.privilege_type AS priv
  WHERE a.grantee = v_role`
 
 const agentExactOwned = `
-   AND c.relowner = (SELECT r.oid FROM pg_catalog.pg_roles r WHERE r.rolname = current_user)`
+   AND pg_catalog.pg_has_role(current_user, c.relowner, 'USAGE')`
 
 const agentExactKinds = `
    AND n.nspname <> 'information_schema' AND n.nspname !~ '^pg_' AND n.nspname <> 'basalt_meta'
@@ -264,12 +266,13 @@ const agentExactKinds = `
 
 // agentExactSQL runs before the grants of a local install that finishes
 // with a role that already exists (AgentSpec.Exact). It revokes what the
-// query selects on relations this admin owns, so after the grants that
-// follow, in the same transaction, the role holds the setup's privileges
-// on exactly the picked tables. It then reads the query again on every
-// owner's relations: a privilege still left (on a table another role owns,
-// or granted by another role) is refused (BS008, its detail
-// guardmodel.UnpickedGrantsDetail and the tables), so the transaction
+// query selects on relations whose owner this admin acts for, so after the
+// grants that follow, in the same transaction, the role holds the setup's
+// privileges on exactly the picked tables. It then reads the query again
+// on every owner's relations: a privilege still left (on a relation whose
+// owner this admin cannot act for, or granted by another role with a
+// grant option) is refused (BS008, its detail
+// guardmodel.UnpickedGrantsDetail and the relations), so the transaction
 // rolls back rather than leave it in place. %[1]s is the validated role,
 // %[2]s and %[3]s the write and read tables as SQL literals of validated
 // identifiers.
@@ -298,7 +301,7 @@ BEGIN
     IF v_left IS NOT NULL THEN
         RAISE EXCEPTION USING ERRCODE = 'BS008', MESSAGE = 'LEDGER_INPUT_INVALID',
             DETAIL = '%[1]s ` + guardmodel.UnpickedGrantsDetail + `' || v_left,
-            HINT = 'The owner of those tables, or a superuser, must revoke it (REVOKE ALL ON <table> FROM %[1]s); then finish the setup again.';
+            HINT = 'Another role made those grants: that role, or the owner of the table or sequence, must revoke them (REVOKE ALL ON <table or sequence> FROM %[1]s); then finish the setup again.';
     END IF;
 END $$;`
 

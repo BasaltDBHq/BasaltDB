@@ -125,7 +125,7 @@ func (d EngineDown) unreachable(tool string) func(context.Context, json.RawMessa
 // configInvalid is ENGINE_UNREACHABLE for an engine.json that does not load:
 // the load error, and steps that name no service or engine command.
 func (d EngineDown) configInvalid(tool string) error {
-	loadErr := d.ConfigErr.Error()
+	loadErr := config.ScrubLoadError(d.ConfigErr)
 	te := &toolresult.ToolError{
 		Code: guidance.CodeUnavailable, Reason: guidance.ReasonEngineUnreachable, ErrorID: uniqueid.New(),
 		Message: "the basalt engine cannot start, so " + tool + " cannot run: engine.json cannot be loaded: " + loadErr,

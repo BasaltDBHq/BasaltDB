@@ -3,6 +3,7 @@ package statusmcp
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -261,7 +262,7 @@ func TestEngineDownConfigThatDoesNotLoad(t *testing.T) {
 			require.Equal(t, guidance.ReasonConfigInvalid, p["code"])
 			require.Contains(t, p["message"], tc.wantErr)
 			requireNoServiceCommand(t, p)
-			require.Contains(t, p["personMessage"], "docs/remove-old-install.md")
+			require.Contains(t, p["personMessage"], guidance.RemoveOldInstallDoc)
 			require.Contains(t, p["personMessage"], "basalt init --agent bot --remote")
 
 			body, isError = serveCall(t, srv, "query", map[string]any{})
@@ -295,4 +296,55 @@ func TestEngineDownMissingConfigKeepsTheStartStep(t *testing.T) {
 	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, down.Tools()...)
 	body, _ := serveCall(t, srv, guidance.ToolStatus, map[string]any{})
 	require.Equal(t, guidance.ReasonEngineUnreachable, body["problems"].([]any)[0].(map[string]any)["code"])
+}
+
+// A service install's engine.json is 0600 for the service user: the agent's
+// shim cannot read it, and that is a stopped engine, not a bad config.
+func TestEngineDownUnreadableConfigKeepsTheStartStep(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a mode 000 file")
+	}
+	path := filepath.Join(t.TempDir(), "engine.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"operatedBy": "PERSON"}`), 0o000))
+	_, loadErr := config.Load(path)
+	require.ErrorIs(t, loadErr, fs.ErrPermission)
+	down := EngineDown{
+		Host: testEngineHost(), Name: "bot", Commands: newCommands(t, path), ConfigErr: loadErr, ConfigPath: path,
+		Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
+	}
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, down.Tools()...)
+	body, _ := serveCall(t, srv, guidance.ToolStatus, map[string]any{})
+	p := body["problems"].([]any)[0].(map[string]any)
+	require.Equal(t, guidance.ReasonEngineUnreachable, p["code"])
+	raw, err := json.Marshal(p)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), "RUN_COMMAND", "the start step stays")
+
+	body, isError := serveCall(t, srv, "query", map[string]any{})
+	require.True(t, isError)
+	require.Equal(t, guidance.ReasonEngineUnreachable, body["reason"])
+	require.NotContains(t, body["message"], "cannot be loaded")
+}
+
+// A refused config's error quotes the value it refused: a credential in a
+// URL never reaches the agent.
+func TestEngineDownConfigErrorIsScrubbed(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "engine.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"operatedBy": "AGENT", "pagesUrl": "postgres://admin:hunter2@db:5432/app"}`), 0o600))
+	_, loadErr := config.Load(path)
+	require.Error(t, loadErr)
+	down := EngineDown{
+		Host: testEngineHost(), Name: "bot", Commands: newCommands(t, path), ConfigErr: loadErr, ConfigPath: path,
+		Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
+	}
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, down.Tools()...)
+	for _, tool := range []string{guidance.ToolStatus, "query"} {
+		body, _ := serveCall(t, srv, tool, map[string]any{})
+		raw, err := json.Marshal(body)
+		require.NoError(t, err)
+		require.NotContains(t, string(raw), "hunter2", tool)
+		require.Contains(t, string(raw), "cannot be loaded", tool)
+	}
 }

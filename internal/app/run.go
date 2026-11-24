@@ -64,7 +64,7 @@ const Instructions = "BasaltDB records every action you take on this database. "
 	"Every error and every result that needs action carries nextSteps: do them in order. Do the AGENT steps yourself; CALL_TOOL steps have their arguments filled in. " +
 	"Show the person personMessage verbatim, and every PERSON step's command and link unchanged. " +
 	"STOP means do not retry or work around it; END_TURN means end your turn and let the person act. " +
-	"When status says operatedBy PERSON, never start, stop, restart or upgrade anything yourself. " +
+	"When status says operatedBy PERSON or UNKNOWN, never start, stop, restart or upgrade anything yourself. " +
 	"Never split a write to avoid a hold, and never retry a refusal in a loop. " +
 	"A write of 11 to 50 rows, or any DELETE, is held for the person's passkey approval: show them approval.personMessage verbatim (it has the approval link), then, in the same turn, repeat the write once with approvalId: it waits for their approval and applies it. " +
 	"If that wait runs out (APPROVAL_REQUIRED again), do not wait again: end your turn and say you apply it once they tell you they approved. " +

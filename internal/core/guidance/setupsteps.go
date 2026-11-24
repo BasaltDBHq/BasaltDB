@@ -124,6 +124,10 @@ func EngineUnreachableSteps(b *Steps, cmds Commands, tool string) string {
 	return ""
 }
 
+// RemoveOldInstallDoc is the page that says how to remove an older install;
+// the guard package has the same URL for the database side.
+const RemoveOldInstallDoc = "https://github.com/BasaltDBHq/BasaltDB/blob/master/docs/remove-old-install.md"
+
 // ConfigInvalidSteps is for an engine.json that does not load (the load error is
 // the message): no service or engine command, because the config does not
 // say whether a service is installed. The person fixes the file as the error
@@ -133,7 +137,7 @@ func ConfigInvalidSteps(b *Steps, agent string) string {
 	b.AskPerson("Tell the person engine.json cannot be loaded and show them the message. Do not start, stop or restart anything.")
 	b.EndTurn("End your turn: the person fixes engine.json next.")
 	return "engine.json cannot be loaded. Fix it as the error says. " +
-		"If it is from an older alpha, follow docs/remove-old-install.md, then run: basalt init --agent " + agent + " --remote. Then tell the agent."
+		"If it is from an older alpha, follow " + RemoveOldInstallDoc + ", then run: basalt init --agent " + agent + " --remote. Then tell the agent."
 }
 
 func personFix(b *Steps, command, problem string) string {

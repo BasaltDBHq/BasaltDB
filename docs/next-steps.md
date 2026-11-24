@@ -22,7 +22,7 @@ The agent calls the `status` tool at the start of a session, after you say you f
 | Problem | Severity | What it means |
 |---|---|---|
 | `ENGINE_UNREACHABLE` | ERROR | The agent's MCP command cannot reach the engine. Start it. |
-| `CONFIG_INVALID` | ERROR | `engine.json` cannot be loaded, so the engine cannot start. The message is the load error. Fix the file as the error says; for a config of an older alpha, follow [Remove an older install](remove-old-install.md) and run `basalt init --remote`. No service command applies: the config does not say whether a service is installed. |
+| `CONFIG_INVALID` | ERROR | `engine.json` was read and refused, so the engine cannot start. The message is the load error. Fix the file as the error says; for a config of an older alpha, follow [Remove an older install](remove-old-install.md) and run `basalt init --remote`. No service command applies: the config does not say whether a service is installed. |
 | `DATABASE_UNREACHABLE` | ERROR | The engine cannot reach the database. |
 | `TOO_MANY_CONNECTIONS` | ERROR | The agent has used all 8 database connections Basalt allows it. Another engine for the same agent may be running, or a stopped engine left sessions open. Stop any second engine; stale sessions close on their own within a few minutes. See [Connections](install.md#connections). |
 | `CREDENTIAL_REJECTED` | ERROR | Postgres refuses the agent's login. |

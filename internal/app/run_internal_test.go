@@ -66,7 +66,7 @@ func TestInstructionsTeachNextSteps(t *testing.T) {
 		"Call status at the start of a session",
 		"carries nextSteps: do them in order",
 		"STOP means do not retry or work around it",
-		"When status says operatedBy PERSON, never start, stop, restart or upgrade anything yourself.",
+		"When status says operatedBy PERSON or UNKNOWN, never start, stop, restart or upgrade anything yourself.",
 		"Never split a write to avoid a hold",
 		"You can never approve a write or sign a revert.",
 	} {

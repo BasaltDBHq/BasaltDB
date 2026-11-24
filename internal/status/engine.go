@@ -38,7 +38,7 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Comm
 	ps := guidance.Problems{Cmds: cmds}
 	if ConfigUnloadable(cfg, cfgErr) {
 		r.OperatedBy = config.SniffOperatedBy(configPath)
-		ps.Add(problemConfigInvalid, "engine.json cannot be loaded: "+cfgErr.Error(),
+		ps.Add(problemConfigInvalid, "engine.json cannot be loaded: "+config.ScrubLoadError(cfgErr),
 			func(b *guidance.Steps) string { return guidance.ConfigInvalidSteps(b, name) })
 		list, err := ps.Sorted()
 		if err != nil {
@@ -48,10 +48,6 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Comm
 		return r, nil
 	}
 	msg := "the engine does not answer, so no tool but status works"
-	if config.IsOldCredentialFile(cfgErr) {
-		// The engine cannot start on this config: say what to edit.
-		msg += "; engine.json: " + cfgErr.Error()
-	}
 	if startFailure != "" {
 		ps.Add(problemEngineStartFailed, startFailure,
 			func(b *guidance.Steps) string { return guidance.EngineUnreachableSteps(b, cmds, guidance.ToolStatus) })
@@ -87,11 +83,17 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Comm
 // problem ENGINE_REVOKED. Without the engine's
 // key (the key file is refused) or a readable guard of version 33 or later,
 // the state is UNKNOWN and no problem is added.
-// ConfigUnloadable reports a config that exists and failed to load: the
-// engine cannot start from it, and its mode is not known. A missing file is
-// not one.
+// ConfigUnloadable reports whether the shim read engine.json and refused it
+// (it does not decode, breaks a rule, has the older credentialFile layout or
+// is parked). A file the shim could not open or read (missing, or a service
+// install's 0600 file the agent's user cannot read) is not: the engine is
+// down, not the config.
 func ConfigUnloadable(cfg *config.Config, cfgErr error) bool {
-	return cfg == nil && cfgErr != nil && !errors.Is(cfgErr, fs.ErrNotExist)
+	if cfg != nil || cfgErr == nil || errors.Is(cfgErr, fs.ErrNotExist) || errors.Is(cfgErr, fs.ErrPermission) {
+		return false
+	}
+	var pe *fs.PathError
+	return !errors.As(cfgErr, &pe)
 }
 
 func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, guardReadable bool, ps *guidance.Problems) *guidance.EngineRecordStatus {

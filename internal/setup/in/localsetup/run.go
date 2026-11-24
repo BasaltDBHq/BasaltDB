@@ -52,6 +52,10 @@ const (
 	CodeChallengeInvalid        = "CHALLENGE_INVALID"
 	CodePasskeyInvalid          = "PASSKEY_INVALID"
 	CodeSetupFailed             = "SETUP_FAILED"
+	// CodeGrantsNotRevoked: the agent role an earlier run left still has a
+	// setup grant on a table not picked now, which this admin cannot revoke
+	// (another role owns the table); nothing changed.
+	CodeGrantsNotRevoked = "GRANTS_NOT_REVOKED"
 	// CodeGuardUnusable: the database has a basalt_meta this build cannot
 	// install over or update (an older install, or a partial one).
 	CodeGuardUnusable = setup.SetuprunCodeGuardUnusable
@@ -338,6 +342,9 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 			return refuse(CodePasskeyRequired, "The database has no passkey for this computer yet: create one on this page first. Nothing changed.")
 		}
 		if err := setup.ApplyInitTx(ctx, s.be, pgquerier.Neutralize(tx), script); err != nil {
+			if r := grantsNotRevoked(err, j.role); r != nil {
+				return r
+			}
 			return setupFailed("install script", err)
 		}
 		if !req.Demo {
@@ -538,4 +545,29 @@ func inTx(ctx context.Context, conn *pgx.Conn, fn func(pgx.Tx) error) error {
 		return err // answered, rolled back, or never sent
 	}
 	return &unknownOutcomeError{err: err}
+}
+
+// maxLeftTables bounds the list of tables a GRANTS_NOT_REVOKED names.
+const maxLeftTables = 300
+
+// grantsNotRevoked is GRANTS_NOT_REVOKED for the guard's refusal of an
+// install that finishes with a role an earlier run left: the role still has
+// a setup grant on a table not picked now that this admin cannot revoke
+// (guardmodel.UnpickedGrantsDetail, then the tables). nil for any other
+// error.
+func grantsNotRevoked(err error, role string) *RefusalError {
+	var pg *pgconn.PgError
+	if !errors.As(err, &pg) || pg.Code != sqlstateLedgerInputInvalid {
+		return nil
+	}
+	_, tables, ok := strings.Cut(pg.Detail, guardmodel.UnpickedGrantsDetail)
+	if !ok {
+		return nil
+	}
+	tables = printable(tables)
+	if len(tables) > maxLeftTables {
+		tables = strings.ToValidUTF8(tables[:maxLeftTables], "") + "…"
+	}
+	return refuse(CodeGrantsNotRevoked, fmt.Sprintf("The agent role %s still has access to tables that were not picked (%s), from an earlier setup run, and this admin cannot revoke it: another role owns those tables or granted that access. "+
+		"The owner of those tables, or a superuser, must revoke it (REVOKE ALL ON <table> FROM %s); then run the setup again on this page. Nothing changed.", role, tables, role))
 }

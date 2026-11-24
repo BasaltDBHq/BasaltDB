@@ -229,38 +229,48 @@ func agentExactStatement(role string, spec guardmodel.AgentSpec) (guardmodel.Sta
 	return guardmodel.Statement{SQL: fmt.Sprintf(agentExactSQL, role, write, read)}, nil
 }
 
-// agentExactUnpicked selects, for agentExactSQL, each privilege the setup
-// grants (planGrants) that the role holds beyond its picked tables: SELECT,
-// INSERT, UPDATE or DELETE on a table that is not picked, INSERT, UPDATE or
-// DELETE on a table picked to read, and USAGE or SELECT on a serial
-// sequence of a table not picked to write. Only where the setup grants:
-// ordinary and partitioned tables with plain lowercase names, owned by
-// this admin, outside the system schemas and basalt_meta, and their serial
-// sequences. Schema USAGE is left: it reaches no row by itself.
-const agentExactUnpicked = `
+// agentExactFrom, agentExactOwned and agentExactKinds make the query of
+// agentExactSQL: each privilege the setup grants (planGrants) that the role
+// holds beyond its picked tables. That is SELECT, INSERT, UPDATE or DELETE
+// on a table that is not picked, INSERT, UPDATE or DELETE on a table picked
+// to read, and USAGE or SELECT on a serial sequence of a table not picked
+// to write. Only where the setup grants: ordinary and partitioned tables
+// with plain lowercase names outside the system schemas and basalt_meta,
+// and their serial sequences. Schema USAGE is left: it reaches no row by
+// itself. agentExactOwned narrows it to what this admin owns, so it can
+// revoke it.
+const agentExactFrom = `
 SELECT c.oid AS rel, c.relkind = 'S' AS seq, a.privilege_type AS priv
   FROM pg_catalog.pg_class c
   JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
   CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) a
- WHERE a.grantee = v_role
-   AND c.relowner = (SELECT r.oid FROM pg_catalog.pg_roles r WHERE r.rolname = current_user)
-   AND n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%%' AND n.nspname <> 'basalt_meta'
+ WHERE a.grantee = v_role`
+
+const agentExactOwned = `
+   AND c.relowner = (SELECT r.oid FROM pg_catalog.pg_roles r WHERE r.rolname = current_user)`
+
+const agentExactKinds = `
+   AND n.nspname <> 'information_schema' AND n.nspname !~ '^pg_' AND n.nspname <> 'basalt_meta'
    AND n.nspname ~ '^[a-z_][a-z0-9_]{0,62}$'
    AND ((c.relkind IN ('r', 'p') AND NOT c.relispartition AND c.relname ~ '^[a-z_][a-z0-9_]{0,62}$'
          AND a.privilege_type IN ('SELECT', 'INSERT', 'UPDATE', 'DELETE')
          AND NOT (c.oid = ANY (v_write) OR (c.oid = ANY (v_read) AND a.privilege_type = 'SELECT')))
      OR (c.relkind = 'S' AND a.privilege_type IN ('USAGE', 'SELECT')
          AND EXISTS (SELECT 1 FROM pg_catalog.pg_depend d JOIN pg_catalog.pg_class o ON o.oid = d.refobjid
-              WHERE d.objid = c.oid AND d.deptype = 'a' AND o.relkind IN ('r', 'p'))
+              WHERE d.objid = c.oid AND d.deptype = 'a' AND o.relkind IN ('r', 'p') AND NOT o.relispartition
+                AND o.relname ~ '^[a-z_][a-z0-9_]{0,62}$')
          AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d
               WHERE d.objid = c.oid AND d.deptype = 'a' AND d.refobjid = ANY (v_write))))`
 
 // agentExactSQL runs before the grants of a local install that finishes
-// with a role that already exists (AgentSpec.Exact): it revokes what
-// agentExactUnpicked selects, so after the grants that follow, in the same
-// transaction, the role holds the setup's privileges on exactly the picked
-// tables. A privilege it cannot revoke (granted by another role) is
-// refused (BS008) rather than left in place. %[1]s is the validated role,
+// with a role that already exists (AgentSpec.Exact). It revokes what the
+// query selects on relations this admin owns, so after the grants that
+// follow, in the same transaction, the role holds the setup's privileges
+// on exactly the picked tables. It then reads the query again on every
+// owner's relations: a privilege still left (on a table another role owns,
+// or granted by another role) is refused (BS008, its detail
+// guardmodel.UnpickedGrantsDetail and the tables), so the transaction
+// rolls back rather than leave it in place. %[1]s is the validated role,
 // %[2]s and %[3]s the write and read tables as SQL literals of validated
 // identifiers.
 const agentExactSQL = `
@@ -270,20 +280,23 @@ DECLARE
     v_write oid[] := ARRAY[%[2]s]::text[]::pg_catalog.regclass[]::oid[];
     v_read  oid[] := ARRAY[%[3]s]::text[]::pg_catalog.regclass[]::oid[];
     v_rec   record;
+    v_left  text;
 BEGIN
     IF v_role IS NULL THEN
         RETURN; -- a new role holds nothing
     END IF;
     FOR v_rec IN SELECT u.rel::pg_catalog.regclass AS rel, u.seq,
             pg_catalog.string_agg(DISTINCT u.priv, ', ') AS privs
-        FROM (` + agentExactUnpicked + `) u GROUP BY u.rel, u.seq LOOP
+        FROM (` + agentExactFrom + agentExactOwned + agentExactKinds + `) u GROUP BY u.rel, u.seq LOOP
         EXECUTE pg_catalog.format('REVOKE %%s ON %%s %%s FROM %%I', v_rec.privs,
             CASE WHEN v_rec.seq THEN 'SEQUENCE' ELSE 'TABLE' END, v_rec.rel, '%[1]s');
     END LOOP;
-    IF EXISTS (` + agentExactUnpicked + `) THEN
+    SELECT pg_catalog.string_agg(DISTINCT u.rel::pg_catalog.regclass::text, ', ') INTO v_left
+        FROM (` + agentExactFrom + agentExactKinds + `) u;
+    IF v_left IS NOT NULL THEN
         RAISE EXCEPTION USING ERRCODE = 'BS008', MESSAGE = 'LEDGER_INPUT_INVALID',
-            DETAIL = '%[1]s holds privileges on tables that are not picked, and this admin cannot revoke them',
-            HINT = 'Have the role that granted them revoke them, or use another agent name.';
+            DETAIL = '%[1]s ` + guardmodel.UnpickedGrantsDetail + `' || v_left,
+            HINT = 'The owner of those tables, or a superuser, must revoke it (REVOKE ALL ON <table> FROM %[1]s); then finish the setup again.';
     END IF;
 END $$;`
 

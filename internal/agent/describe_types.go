@@ -175,15 +175,15 @@ type OverviewLimits struct {
 
 // NamespaceCount is one namespace of a large overview.
 type NamespaceCount struct {
-	Namespace string `json:"schema"`
-	Resources int    `json:"tables"`
+	Namespace string `json:"namespace"`
+	Resources int    `json:"resources"`
 }
 
 // OtherNamespaces counts the namespaces a large overview leaves out, and the
 // visible resources in them.
 type OtherNamespaces struct {
-	Namespaces int `json:"schemas"`
-	Resources  int `json:"tables"`
+	Namespaces int `json:"namespaces"`
+	Resources  int `json:"resources"`
 }
 
 // Overview is describe's first form.

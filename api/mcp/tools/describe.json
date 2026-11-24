@@ -142,14 +142,14 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "schema",
-            "tables"
+            "namespace",
+            "resources"
           ],
           "properties": {
-            "schema": {
+            "namespace": {
               "type": "string"
             },
-            "tables": {
+            "resources": {
               "type": "integer",
               "minimum": 0
             }
@@ -161,15 +161,15 @@
         "additionalProperties": false,
         "description": "OVERVIEW with more than 50 visible schemas: the schemas not listed in namespaces, and the visible tables in them. Absent otherwise.",
         "required": [
-          "schemas",
-          "tables"
+          "namespaces",
+          "resources"
         ],
         "properties": {
-          "schemas": {
+          "namespaces": {
             "type": "integer",
             "minimum": 1
           },
-          "tables": {
+          "resources": {
             "type": "integer",
             "minimum": 1
           }

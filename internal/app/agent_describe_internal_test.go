@@ -380,8 +380,8 @@ func TestOverviewLargeListsSchemas(t *testing.T) {
 	m := decodeBody(t, body)
 	require.NotContains(t, m, "resources")
 	require.Equal(t, []any{
-		map[string]any{"schema": "app", "tables": 34.0},
-		map[string]any{"schema": "billing", "tables": 17.0},
+		map[string]any{"namespace": "app", "resources": 34.0},
+		map[string]any{"namespace": "billing", "resources": 17.0},
 	}, m["namespaces"])
 	require.Equal(t, []string{"AGENT CALL_TOOL"}, stepKinds(t, m))
 	step := m["nextSteps"].([]any)[0].(map[string]any)
@@ -778,11 +778,11 @@ func TestOverviewCapsTheSchemaList(t *testing.T) {
 	m := decodeBody(t, body)
 	schemas := m["namespaces"].([]any)
 	require.Len(t, schemas, 50)
-	require.Equal(t, map[string]any{"schema": "tenant_00007", "tables": 9.0}, schemas[0])
-	require.Equal(t, map[string]any{"schema": "tenant_04999", "tables": 5.0}, schemas[1])
-	require.Equal(t, map[string]any{"schema": "tenant_00000", "tables": 1.0}, schemas[2], "ties by schema name")
-	require.Equal(t, map[string]any{"schema": "tenant_00048", "tables": 1.0}, schemas[49])
-	require.Equal(t, map[string]any{"schemas": 4950.0, "tables": 4950.0}, m["otherNamespaces"])
+	require.Equal(t, map[string]any{"namespace": "tenant_00007", "resources": 9.0}, schemas[0])
+	require.Equal(t, map[string]any{"namespace": "tenant_04999", "resources": 5.0}, schemas[1])
+	require.Equal(t, map[string]any{"namespace": "tenant_00000", "resources": 1.0}, schemas[2], "ties by schema name")
+	require.Equal(t, map[string]any{"namespace": "tenant_00048", "resources": 1.0}, schemas[49])
+	require.Equal(t, map[string]any{"namespaces": 4950.0, "resources": 4950.0}, m["otherNamespaces"])
 	require.Equal(t, 5000.0, m["counts"].(map[string]any)["namespaces"], "the full count")
 	require.Equal(t, 5012.0, m["counts"].(map[string]any)["resources"])
 	step := m["nextSteps"].([]any)[0].(map[string]any)

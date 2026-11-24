@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- `describe`'s overview names what it counts in words that fit any store: `counts.schemas` is now `counts.namespaces`, `counts.tables` is `counts.resources`, the large overview's `schemas` list is `namespaces` and `otherSchemas` is `otherNamespaces`. The items inside keep their keys, and the resource and search forms do not change. An agent or tool that reads these keys needs the new names.
+- `describe`'s overview names what it counts in words that fit any store: `counts.schemas` is now `counts.namespaces`, `counts.tables` is `counts.resources`, the large overview's `schemas` list is `namespaces`, each item `{ namespace, resources }` (was `{ schema, tables }`), and `otherSchemas` is `otherNamespaces`, `{ namespaces, resources }` (was `{ schemas, tables }`). The resource and search forms do not change. An agent or tool that reads these keys needs the new names.
 
 ## [0.1.0-alpha] - 2026-11-24
 

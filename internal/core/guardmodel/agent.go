@@ -10,6 +10,13 @@ const (
 	DefaultStatementTimeout = 30 * time.Second
 )
 
+// UnpickedGrantsDetail is what the detail of the guard's BS008 refusal of
+// an Exact agent spec says after the role's name, followed by the tables
+// and sequences: the role still holds a privilege the setup grants on one
+// that is not picked, and this admin could not revoke it. It holds no quote and no
+// percent sign: it is written into the SQL as is.
+const UnpickedGrantsDetail = "still has access to tables or sequences that were not picked, and this admin cannot revoke it: "
+
 // ErrInvalidAgent is returned for an agent spec that cannot be installed.
 var ErrInvalidAgent = errors.New("invalid agent")
 
@@ -40,7 +47,17 @@ type AgentSpec struct {
 	// KeepGrants, with Change, keeps the role's table privileges: an AGENT
 	// setup code that names no tables. The role must still be an agent of
 	// the group; nothing is revoked and Read and Write are empty.
-	KeepGrants       bool
+	KeepGrants bool
+	// Exact is a local install that finishes with a role that already
+	// exists (an earlier run was interrupted after its commit): before the
+	// grants, the role loses the privileges the setup grants (SELECT,
+	// INSERT, UPDATE and DELETE on a table, USAGE and SELECT on its serial
+	// sequence) on every table outside Read and Write, so it ends with
+	// exactly them. Grants the setup never makes are left as they are. A
+	// setup grant on an unpicked table or sequence that this admin cannot
+	// revoke (another role made it, and this admin cannot act for that role)
+	// is refused (BS008, UnpickedGrantsDetail).
+	Exact            bool
 	Read             []string
 	Write            []string
 	StatementTimeout time.Duration

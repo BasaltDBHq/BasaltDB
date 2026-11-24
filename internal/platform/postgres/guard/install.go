@@ -215,8 +215,116 @@ func planAgent(ctx context.Context, q Querier, n guardmodel.Names, spec guardmod
 	case spec.Change:
 		out = append(out, guardmodel.Statement{SQL: renderSQL(n, fmt.Sprintf(agentChangeSQL, role))})
 	}
-	return append(append(out, st), grants...), nil
+	out = append(out, st)
+	if spec.Exact {
+		exact, err := agentExactStatement(role, spec)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, exact)
+	}
+	return append(out, grants...), nil
 }
+
+// agentExactStatement is agentExactSQL for role and spec's tables.
+func agentExactStatement(role string, spec guardmodel.AgentSpec) (guardmodel.Statement, error) {
+	literals := func(names []string) (string, error) {
+		out := make([]string, 0, len(names))
+		for _, name := range names {
+			t, err := parseTable(name)
+			if err != nil {
+				return "", err
+			}
+			out = append(out, quoteLiteral(t.ident()))
+		}
+		return strings.Join(out, ", "), nil
+	}
+	write, err := literals(spec.Write)
+	if err != nil {
+		return guardmodel.Statement{}, err
+	}
+	read, err := literals(spec.Read)
+	if err != nil {
+		return guardmodel.Statement{}, err
+	}
+	return guardmodel.Statement{SQL: fmt.Sprintf(agentExactSQL, role, write, read)}, nil
+}
+
+// agentExactFrom, agentExactOwned and agentExactKinds make the query of
+// agentExactSQL: each privilege the setup grants (planGrants) that the role
+// holds beyond its picked tables. That is SELECT, INSERT, UPDATE or DELETE
+// on a table that is not picked, INSERT, UPDATE or DELETE on a table picked
+// to read, and USAGE or SELECT on a serial sequence of a table not picked
+// to write. Only where the setup grants: ordinary and partitioned tables
+// with plain lowercase names outside the system schemas and basalt_meta,
+// and their serial sequences. Schema USAGE is left: it reaches no row by
+// itself. agentExactOwned narrows it to relations whose owner this admin
+// acts for (it is the owner, a member of it that inherits, or a
+// superuser): Postgres records its REVOKE as the owner's, so it removes
+// the owner's grants.
+const agentExactFrom = `
+SELECT c.oid AS rel, c.relkind = 'S' AS seq, a.privilege_type AS priv
+  FROM pg_catalog.pg_class c
+  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+  CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) a
+ WHERE a.grantee = v_role`
+
+const agentExactOwned = `
+   AND pg_catalog.pg_has_role(current_user, c.relowner, 'USAGE')`
+
+const agentExactKinds = `
+   AND n.nspname <> 'information_schema' AND n.nspname !~ '^pg_' AND n.nspname <> 'basalt_meta'
+   AND n.nspname ~ '^[a-z_][a-z0-9_]{0,62}$'
+   AND ((c.relkind IN ('r', 'p') AND NOT c.relispartition AND c.relname ~ '^[a-z_][a-z0-9_]{0,62}$'
+         AND a.privilege_type IN ('SELECT', 'INSERT', 'UPDATE', 'DELETE')
+         AND NOT (c.oid = ANY (v_write) OR (c.oid = ANY (v_read) AND a.privilege_type = 'SELECT')))
+     OR (c.relkind = 'S' AND a.privilege_type IN ('USAGE', 'SELECT')
+         AND EXISTS (SELECT 1 FROM pg_catalog.pg_depend d JOIN pg_catalog.pg_class o ON o.oid = d.refobjid
+              WHERE d.objid = c.oid AND d.deptype = 'a' AND o.relkind IN ('r', 'p') AND NOT o.relispartition
+                AND o.relname ~ '^[a-z_][a-z0-9_]{0,62}$')
+         AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d
+              WHERE d.objid = c.oid AND d.deptype = 'a' AND d.refobjid = ANY (v_write))))`
+
+// agentExactSQL runs before the grants of a local install that finishes
+// with a role that already exists (AgentSpec.Exact). It revokes what the
+// query selects on relations whose owner this admin acts for, so after the
+// grants that follow, in the same transaction, the role holds the setup's
+// privileges on exactly the picked tables. It then reads the query again
+// on every owner's relations: a privilege still left (on a relation whose
+// owner this admin cannot act for, or granted by another role with a
+// grant option) is refused (BS008, its detail
+// guardmodel.UnpickedGrantsDetail and the relations), so the transaction
+// rolls back rather than leave it in place. %[1]s is the validated role,
+// %[2]s and %[3]s the write and read tables as SQL literals of validated
+// identifiers.
+const agentExactSQL = `
+DO $$
+DECLARE
+    v_role  oid := (SELECT r.oid FROM pg_catalog.pg_roles r WHERE r.rolname = '%[1]s');
+    v_write oid[] := ARRAY[%[2]s]::text[]::pg_catalog.regclass[]::oid[];
+    v_read  oid[] := ARRAY[%[3]s]::text[]::pg_catalog.regclass[]::oid[];
+    v_rec   record;
+    v_left  text;
+BEGIN
+    IF v_role IS NULL THEN
+        RETURN; -- a new role holds nothing
+    END IF;
+    FOR v_rec IN SELECT u.rel::pg_catalog.regclass AS rel, u.seq,
+            pg_catalog.string_agg(DISTINCT u.priv, ', ') AS privs
+        FROM (` + agentExactFrom + agentExactOwned + agentExactKinds + `) u GROUP BY u.rel, u.seq LOOP
+        EXECUTE pg_catalog.format('REVOKE %%s ON %%s %%s FROM %%I', v_rec.privs,
+            CASE WHEN v_rec.seq THEN 'SEQUENCE' ELSE 'TABLE' END, v_rec.rel, '%[1]s');
+    END LOOP;
+    SELECT pg_catalog.string_agg(DISTINCT pg_catalog.format('%%I.%%I', ns.nspname, cl.relname), ', ') INTO v_left
+        FROM (` + agentExactFrom + agentExactKinds + `) u
+        JOIN pg_catalog.pg_class cl ON cl.oid = u.rel
+        JOIN pg_catalog.pg_namespace ns ON ns.oid = cl.relnamespace;
+    IF v_left IS NOT NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'BS008', MESSAGE = 'LEDGER_INPUT_INVALID',
+            DETAIL = '%[1]s ` + guardmodel.UnpickedGrantsDetail + `' || v_left,
+            HINT = 'Another role made those grants: that role, or the owner of the table or sequence, must revoke them (REVOKE ALL ON <table or sequence> FROM %[1]s); then finish the setup again.';
+    END IF;
+END $$;`
 
 // agentMemberSQL runs after agentAdoptSQL for an AGENT setup code that
 // keeps the role's grants: the role must be an agent of this install, and

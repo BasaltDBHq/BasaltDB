@@ -186,7 +186,7 @@ func TestRemoveScriptRemovesTheEngineFolders(t *testing.T) {
 // accounts and changes nothing.
 func accountBlock(t *testing.T, goos string) (helpers, block string) {
 	t.Helper()
-	script, err := osservice.InstallScript(goos, dialogBinary)
+	script, err := osservice.InstallScript(goos, dialogSource)
 	require.NoError(t, err)
 	helpers, rest, ok := strings.Cut(script, osservice.ScriptHelpersEnd)
 	require.True(t, ok)
@@ -272,7 +272,7 @@ getent() {
 		"darwin": "elif [ -n \"$make_group\" ]; then\n\tdscl . -create /Groups/_basalt\n\tdscl . -create /Groups/_basalt PrimaryGroupID \"$engine_gid\"\nfi\n",
 		"linux":  "elif [ -n \"$make_group\" ]; then\n\tgroupadd --system --gid \"$engine_gid\" basalt\nfi\n",
 	} {
-		script, err := osservice.InstallScript(goos, dialogBinary)
+		script, err := osservice.InstallScript(goos, dialogSource)
 		require.NoError(t, err)
 		_, body, ok := strings.Cut(script, osservice.ScriptPreflightEnd)
 		require.True(t, ok)

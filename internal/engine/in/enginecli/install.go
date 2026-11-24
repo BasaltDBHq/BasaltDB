@@ -14,8 +14,12 @@ import (
 // InstallHost is what installing the engine service reaches outside the
 // CLI: the service's fixed script, its unit's path and its default OS user.
 type InstallHost interface {
-	// OSInstallScript is the first install's fixed script for binary.
+	// OSInstallScript is the first install's fixed script for binary, which
+	// it copies to OSServiceBinary unless binary is that copy.
 	OSInstallScript(goos, binary string) (string, error)
+	// OSServiceBinary is the engine service's own copy of basalt, root's:
+	// the binary its unit runs.
+	OSServiceBinary(goos string) string
 	// OSDefaultUser is the OS user the engine service runs as.
 	OSDefaultUser(goos string) string
 	// OSUnitPath is the installed engine service unit's path.
@@ -36,27 +40,32 @@ func EnsureService(c *cli.IO, h InstallHost) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(c.Stderr, "basalt: asking for your password in the system's administrator dialog to install the engine service as %s; it runs:\n  %s\n",
-		h.OSDefaultUser(c.Goos), guidance.ShellJoin(engine.DialogEngineArgs(c.Goos, bin)))
+	service := h.OSServiceBinary(c.Goos)
+	copying := ""
+	if bin != service {
+		copying = fmt.Sprintf("copy %s to %s, root's, and ", bin, service)
+	}
+	fmt.Fprintf(c.Stderr, "basalt: asking for your password in the system's administrator dialog to %sinstall the engine service as %s; it runs:\n  %s\n",
+		copying, h.OSDefaultUser(c.Goos), guidance.ShellJoin(engine.DialogEngineArgs(c.Goos, service)))
 	if err := c.Host.AdminDialog(c.Ctx, c.Goos, servicespec.InstallPrompt, script, c.Stderr); err != nil {
 		if errors.Is(err, servicespec.ErrNoDialog) {
 			return noDialog(err)
 		}
 		return err
 	}
-	return nil
+	// The script checked the copy as root; check it again as the unit
+	// will run it.
+	return c.Host.System(c.Stderr, c.Stderr).CheckBinary(service)
 }
 
 // dialogScript is the first install's fixed script for the running
-// binary, with every link resolved and checked as root would run it. The
-// script comes from h.
+// binary, with every link resolved: the script copies it to the service's
+// own path, root's, so it may sit in a folder the person's account owns (a
+// Homebrew prefix). The script comes from h.
 func dialogScript(c *cli.IO, h InstallHost) (bin, script string, err error) {
 	bin, err = c.Host.ResolvedExecutable()
 	if err != nil {
-		return "", "", fmt.Errorf("the engine service runs this basalt binary by its own path, and its links do not resolve: %w", err)
-	}
-	if err := c.Host.System(c.Stderr, c.Stderr).CheckBinary(bin); err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("the engine service runs a copy of this basalt binary, and its links do not resolve: %w", err)
 	}
 	script, err = h.OSInstallScript(c.Goos, bin)
 	return bin, script, err

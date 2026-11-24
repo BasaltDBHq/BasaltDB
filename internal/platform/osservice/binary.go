@@ -6,9 +6,25 @@ import (
 	"path/filepath"
 )
 
-// protectedBinaryDir is where the fix message tells a person to install
-// basalt when its current place is not protected.
-const protectedBinaryDir = "/usr/local/libexec"
+// The engine service's own copy of basalt (CONTRACT.md, The administrator
+// dialog): the install and the restart copy the basalt that runs them here,
+// root's, so the service never runs a binary in a folder the person's
+// account can write (a Homebrew prefix, a download folder). macOS keeps
+// /usr/libexec for the system, so its copy is under /usr/local; Linux's is
+// under /usr, which some distributions keep apart from /usr/local's group.
+const (
+	darwinServiceBinary = "/usr/local/libexec/basalt"
+	linuxServiceBinary  = "/usr/libexec/basalt"
+)
+
+// ServiceBinary is the path of the engine service's copy of basalt on goos:
+// the binary its unit runs.
+func ServiceBinary(goos string) string {
+	if goos == goosDarwin {
+		return darwinServiceBinary
+	}
+	return linuxServiceBinary
+}
 
 // binaryWriteBits are the mode bits that let someone besides the owner
 // change a file or a directory's entries.
@@ -66,10 +82,12 @@ func binaryProblem(st FileStat, isBinary bool) string {
 	return ""
 }
 
+// unprotectedBinary is the check's error. The service's binary is the copy
+// basalt init makes, root's, in the administrator dialog: a check that
+// fails means that copy failed or was changed, and basalt init makes it
+// again.
 func unprotectedBinary(binary, path, problem string) error {
-	target := protectedBinaryDir + "/basalt"
 	return fmt.Errorf("%s %s: the engine service runs %s as the engine's OS user, so only root may be able to change it or any directory above it. "+
-		"Install basalt in a root-owned directory and run that copy: sudo install -d -o root -m 0755 %s && sudo install -o root -m 0755 %s %s, "+
-		"then run %s with the same arguments (see docs/install.md, step 1)",
-		path, problem, binary, protectedBinaryDir, binary, target, target)
+		"basalt init copies basalt there, root's, in the system's administrator dialog: run basalt init again",
+		path, problem, binary)
 }

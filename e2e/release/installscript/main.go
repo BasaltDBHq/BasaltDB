@@ -27,7 +27,11 @@ func main() {
 func build(args []string) (string, error) {
 	switch {
 	case len(args) == 2 && args[0] == "install":
-		return osservice.InstallScript(runtime.GOOS, args[1])
+		src, err := osservice.ReadSource(args[1])
+		if err != nil {
+			return "", err
+		}
+		return osservice.InstallScript(runtime.GOOS, src)
 	case len(args) == 1 && args[0] == "remove":
 		return osservice.RemoveScript(runtime.GOOS)
 	}

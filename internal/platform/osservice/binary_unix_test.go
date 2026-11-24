@@ -20,7 +20,8 @@ func TestOSSystemCheckBinaryRefusesUserOwnedBinary(t *testing.T) {
 
 	err := OSSystem{}.CheckBinary(bin)
 	require.ErrorContains(t, err, "not root")
-	require.ErrorContains(t, err, "sudo install -o root -m 0755 "+bin+" /usr/local/libexec/basalt")
+	require.ErrorContains(t, err, "run basalt init again")
+	require.NotContains(t, err.Error(), "sudo")
 }
 
 // A system binary is root's on every unix: it passes, through the /bin ->

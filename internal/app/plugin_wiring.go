@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
@@ -44,6 +45,13 @@ var pluginPorts = plugin.Ports{
 	NewUnitHost: func(host servicespec.PluginHost) plugin.UnitHost {
 		return osservice.NewPluginUnitHost(host)
 	},
+	ReadConfig: readEngineConfig,
+}
+
+// readEngineConfig is the plugin watch's read of engine.json: the engine
+// command's own (cli.LoadEngineConfigAs), so as root it is the hardened read.
+func readEngineConfig(euid int, path string) (config.Config, []byte, error) {
+	return cli.ReadEngineConfigAs(shell{}, euid, path)
 }
 
 // pluginRunsDirName is the directory under the engine's state directory

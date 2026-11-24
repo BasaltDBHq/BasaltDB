@@ -370,11 +370,33 @@ func LoadOpen(path string, open func(string) (*os.File, error)) (Config, error) 
 	return load(path, open)
 }
 
+// LoadOpenRaw is LoadOpen that also returns the bytes it read, so a caller
+// that watches the file for changes compares what it parsed and never reads
+// the file a second time. The bytes are nil when the file could not be
+// opened or read (open refused it, or it is over 1 MiB); a file that was
+// read and does not parse or breaks a rule returns its bytes with the error.
+func LoadOpenRaw(path string, open func(string) (*os.File, error)) (Config, []byte, error) {
+	raw, err := readSmall(path, open)
+	if err != nil {
+		return Config{}, nil, err
+	}
+	c, err := parse(path, raw)
+	if err != nil {
+		return Config{}, raw, err
+	}
+	return c, raw, nil
+}
+
 func load(path string, open func(string) (*os.File, error)) (Config, error) {
 	raw, err := readSmall(path, open)
 	if err != nil {
 		return Config{}, err
 	}
+	return parse(path, raw)
+}
+
+// parse validates raw, read from path, as load does.
+func parse(path string, raw []byte) (Config, error) {
 	if err := refuseParked(raw); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}

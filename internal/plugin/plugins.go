@@ -204,14 +204,14 @@ func NewFor(cfg config.Config, configPath string, o Options, log *slog.Logger) *
 		if o.kept != nil {
 			ep.kept = o.kept
 			ep.groupErr = ep.agentsInEngineGroup(cfg)
-			ep.startCfg = ep.reloadKept(cfg, configPath)
+			ep.startCfg = ep.reloadKept(cfg, nil)
 		}
 	} else if o.kept != nil {
 		// An agent-operated engine on the bot's computer: its engine-kept
 		// entries run as its own children, as every local plugin does in
 		// same-user mode, and its config entries change while it runs.
 		ep.kept = o.kept
-		ep.startCfg = ep.reloadKept(cfg, configPath)
+		ep.startCfg = ep.reloadKept(cfg, nil)
 	}
 	configured := configuredPlugins(ep.startCfg)
 	ep.configured = configured
@@ -600,12 +600,13 @@ func (ep *Plugins) agentsInEngineGroup(cfg config.Config) error {
 }
 
 // reloadKept reads the engine-kept entries and returns cfg with them added:
-// the enabled ones that list an agent and whose (name, instance) engine.json
-// does not hold (the start config's, or the file's now). A file that cannot
-// be used adds none, and status says why.
-func (ep *Plugins) reloadKept(cfg config.Config, configPath string) config.Config {
+// the enabled ones that list an agent and whose (name, instance) neither cfg
+// nor onDisk holds (onDisk: engine.json's entries as the engine last read
+// it, through Ports.ReadConfig; nil when cfg is that read). A file that
+// cannot be used adds none, and status says why.
+func (ep *Plugins) reloadKept(cfg config.Config, onDisk []config.Plugin) config.Config {
 	entries, err := ep.kept.Entries(cfg)
-	held := configKeys(cfg, configPath)
+	held := configKeys(cfg, onDisk)
 	out := cfg
 	out.Plugins = slices.Clone(cfg.Plugins)
 	keys := map[pluginmodel.EntryKey]bool{}
@@ -631,22 +632,40 @@ func (ep *Plugins) reloadKept(cfg config.Config, configPath string) config.Confi
 	return out
 }
 
-// configKeys are the (name, instance)s of cfg's entries and of those
-// engine.json holds on disk now, read leniently.
-func configKeys(cfg config.Config, configPath string) map[pluginmodel.EntryKey]bool {
+// configKeys are the (name, instance)s of cfg's entries and onDisk's. It
+// never reads engine.json: the caller hands over what the engine's read
+// gave (heldEntries).
+func configKeys(cfg config.Config, onDisk []config.Plugin) map[pluginmodel.EntryKey]bool {
 	out := map[pluginmodel.EntryKey]bool{}
 	for _, p := range cfg.Plugins {
 		out[p.Key()] = true
 	}
-	var now struct {
-		Plugins []config.Plugin `json:"plugins"`
-	}
-	if raw, err := os.ReadFile(configPath); err == nil && json.Unmarshal(raw, &now) == nil {
-		for _, p := range now.Plugins {
-			out[p.Key()] = true
-		}
+	for _, p := range onDisk {
+		out[p.Key()] = true
 	}
 	return out
+}
+
+// heldEntries are the entries engine.json's bytes name, as
+// Ports.ReadConfig returned them, read leniently: only the fields a clash
+// needs, so a file the engine refuses at load (it breaks a rule) still
+// names its (name, instance)s and agents.
+func heldEntries(raw []byte) ([]config.Plugin, error) {
+	var now struct {
+		Plugins []struct {
+			Name     string   `json:"name"`
+			Instance string   `json:"instance"`
+			Agents   []string `json:"agents"`
+		} `json:"plugins"`
+	}
+	if err := json.Unmarshal(raw, &now); err != nil {
+		return nil, err
+	}
+	out := make([]config.Plugin, 0, len(now.Plugins))
+	for _, n := range now.Plugins {
+		out = append(out, config.Plugin{Name: n.Name, Instance: n.Instance, Agents: n.Agents})
+	}
+	return out, nil
 }
 
 // applyNow asks the watch to apply the engine-kept entries as they are now

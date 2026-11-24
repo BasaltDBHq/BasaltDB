@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -120,31 +119,24 @@ func (s *KeptPlugins) UploadPart(_ context.Context, uid uint32, p PluginUploadPa
 }
 
 // configEntries are the config's entries: the start config's and those
-// engine.json holds on disk now, so a hand edit or a sudo add since the
-// start is seen. Only the plugins key is read from disk, leniently: a
-// file the engine would refuse at load still names its entries. A file
-// that cannot be read counts as the start's.
+// engine.json holds now, so a hand edit or a sudo add since the start is
+// seen. engine.json is read as the engine reads it (Ports.ReadConfig: as
+// root, the hardened read), and only its entries' names and agents are
+// taken from it, leniently (heldEntries): a file the engine would refuse at
+// load still names its entries. A file the read refuses or cannot read, or
+// that does not decode, counts as the start's.
 func (s *KeptPlugins) configEntries() []config.Plugin {
 	out := slices.Clone(s.cfg.Plugins)
-	raw, err := os.ReadFile(s.configPath)
-	// Only the fields a clash needs: an entry with any other field the
-	// engine would refuse still names its (name, instance) and agents.
-	var now struct {
-		Plugins []struct {
-			Name     string   `json:"name"`
-			Instance string   `json:"instance"`
-			Agents   []string `json:"agents"`
-		} `json:"plugins"`
+	_, raw, err := s.ports.ReadConfig(s.euid, s.configPath)
+	var now []config.Plugin
+	if raw != nil {
+		now, err = heldEntries(raw)
 	}
-	if err == nil {
-		err = json.Unmarshal(raw, &now)
-	}
-	if err != nil {
+	if raw == nil || err != nil {
 		s.log.Warn("engine.json cannot be read for the plugin entries it holds; using the ones it held at start", "err", err)
 		return out
 	}
-	for _, n := range now.Plugins {
-		p := config.Plugin{Name: n.Name, Instance: n.Instance, Agents: n.Agents}
+	for _, p := range now {
 		if !slices.ContainsFunc(out, func(q config.Plugin) bool { return q.Key() == p.Key() }) {
 			out = append(out, p)
 		}

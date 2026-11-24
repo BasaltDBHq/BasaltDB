@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"runtime"
 	"sync"
 	"testing"
@@ -23,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
@@ -129,6 +131,16 @@ var testPorts = Ports{
 	NewUnitHost: func(host servicespec.PluginHost) UnitHost {
 		return osservice.NewPluginUnitHost(host)
 	},
+	ReadConfig: func(euid int, path string) (config.Config, []byte, error) {
+		return cli.ReadEngineConfigAs(trustedOpener{}, euid, path)
+	},
+}
+
+// trustedOpener is the app shell's hardened open (osservice.OpenTrustedFile).
+type trustedOpener struct{}
+
+func (trustedOpener) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
+	return osservice.OpenTrustedFile(path, owner)
 }
 
 // testProbe is the store's probe as the agent reads it; these tests have no

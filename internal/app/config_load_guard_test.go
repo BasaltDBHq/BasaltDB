@@ -18,20 +18,21 @@ const configImport = "github.com/basaltdbhq/basaltdb/internal/config"
 
 // configLoaders are the config package's functions that read the engine
 // config from a path.
-var configLoaders = map[string]bool{"Load": true, "LoadOpen": true, "LoadNoFollow": true}
+var configLoaders = map[string]bool{"Load": true, "LoadOpen": true, "LoadOpenRaw": true, "LoadNoFollow": true}
 
 // plainConfigLoads are the only places in cmd/basalt and internal/
 // allowed to call a config loader directly. Every other read goes through
-// cli.LoadEngineConfig (or cli.LoadEngineConfigAs), the hardened read as
-// root. Each entry is file:function:loader, the file named from the
+// cli.LoadEngineConfig (or cli.LoadEngineConfigAs, or cli.ReadEngineConfigAs
+// for the plugin watch, through plugin.Ports.ReadConfig), the hardened read
+// as root. Each entry is file:function:loader, the file named from the
 // repository root, with the reason it is safe.
 var plainConfigLoads = map[string]string{
 	// The non-root branch: euid is not 0.
-	"internal/platform/cli/config.go:LoadEngineConfigAs:Load": "only when not root",
+	"internal/platform/cli/config.go:ReadEngineConfigAs:LoadOpenRaw": "only when not root",
 	// The hardened read itself: OpenTrustedFile and CheckConfigFile.
-	"internal/platform/cli/config_unix.go:loadConfigAsRoot:LoadOpen": "the hardened read",
+	"internal/platform/cli/config_unix.go:loadConfigAsRoot:LoadOpenRaw": "the hardened read",
 	// No root on that platform.
-	"internal/platform/cli/config_other.go:loadConfigAsRoot:Load": "platform without root",
+	"internal/platform/cli/config_other.go:loadConfigAsRoot:LoadOpenRaw": "platform without root",
 	// basalt mcp runs as the agent's OS user.
 	"internal/app/engine_commands.go:engineDown:Load": "basalt mcp, as the agent's user",
 	// service install, as root, reads only pii.maxMemoryMB for the unit's
@@ -56,11 +57,6 @@ var plainConfigLoads = map[string]string{
 	// The setup page's reset refuses an engine that runs as root before it
 	// reads the config.
 	"internal/setup/in/localsetup/reset.go:engineConfig:Load": "the setup page's reset, after refusing an engine that runs as root",
-	// Not safe: the plugin watch runs in an engine started as root on a
-	// non-service config too, and re-reads engine.json with the plain
-	// loader. The plain os.ReadFile(w.path) just before it in step has the
-	// same problem, and this guard cannot see it.
-	"internal/plugin/plugin_watch.go:step:Load": "KNOWN BUG: re-reads engine.json as root with the plain loader when the engine runs as root on a non-service config; fixed separately; delete this entry with the fix",
 }
 
 // configLoadsIn lists the config loaders f refers to, as
@@ -199,9 +195,9 @@ func b() { config.LoadOpen("p", nil) }
 func c() { f := config.LoadNoFollow; f("p") }
 var g = config.Load
 `)))
-	require.Equal(t, []string{"x.go:a:LoadNoFollow"}, configLoadsIn("x.go", parse(`package main
+	require.Equal(t, []string{"x.go:a:LoadNoFollow", "x.go:a:LoadOpenRaw"}, configLoadsIn("x.go", parse(`package main
 import cfg "`+configImport+`"
-func a() { cfg.LoadNoFollow("p") }
+func a() { cfg.LoadNoFollow("p"); cfg.LoadOpenRaw("p", nil) }
 `)))
 	require.Equal(t, []string{"x.go:a:LoadOpen", "x.go:b:Load"}, configLoadsIn("x.go", parse(`package main
 import . "`+configImport+`"

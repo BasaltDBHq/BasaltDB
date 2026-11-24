@@ -87,6 +87,11 @@ type pluginWatch struct {
 	// changes never wait on a hand edit.
 	base    *config.Config
 	keptRaw []byte
+	// onDisk are the entries engine.json held at its last read through
+	// Ports.ReadConfig that returned its bytes (the start's before any),
+	// read leniently (heldEntries): the engine-kept entries never take a
+	// (name, instance) they hold (reloadKept).
+	onDisk []config.Plugin
 }
 
 type cachedCheck struct {
@@ -115,6 +120,7 @@ func newPluginWatch(ep *Plugins, cfg config.Config, path string, ledgers map[str
 		ep: ep, start: cfg, path: path, ledgers: ledgers, log: ep.log, now: time.Now,
 		eff: cfg, checks: map[pluginmodel.EntryKey]cachedCheck{}, backoff: map[string]agentBackoff{},
 		running: map[pluginmodel.EntryKey]runningEntry{}, trust: trustedKeys(cfg, path, ep.log),
+		onDisk: cfg.Plugins,
 	}
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
@@ -150,7 +156,14 @@ func (w *pluginWatch) step(ctx context.Context) {
 		w.stepKept(ctx)
 		return
 	}
-	raw, readErr := os.ReadFile(w.path)
+	// One read, the engine's own (Ports.ReadConfig): as root, the hardened
+	// read, which refuses a link, a file another user owns or one group or
+	// others can write. Its bytes are the change check, and its entries the
+	// ones the engine-kept entries must not take (onDisk). The plugin
+	// package reads engine.json through Ports.ReadConfig only
+	// (TestPluginReadsEngineConfigOnlyThroughPort).
+	cfg, raw, readErr := w.ep.o.Ports.ReadConfig(w.ep.o.euid, w.path)
+	w.held(raw)
 	if readErr != nil {
 		raw = nil
 	}
@@ -164,13 +177,11 @@ func (w *pluginWatch) step(ctx context.Context) {
 	keptChanged := w.ep.kept != nil && (w.keptRaw == nil || !bytes.Equal(kept, w.keptRaw))
 	if w.raw == nil || !bytes.Equal(raw, w.raw) {
 		w.raw = raw
-		cfg, err := config.Load(w.path)
-		if readErr != nil || err != nil {
-			// Read again on every tick: the file may have changed between
-			// the read and the load.
+		if readErr != nil {
+			// Read again on every tick, until a read succeeds.
 			w.raw = nil
 			if !w.bad {
-				w.log.Error("engine.json changed and its plugins cannot be read; no plugin change is applied until it can", "err", err)
+				w.log.Error("engine.json changed and its plugins cannot be read; no plugin change is applied until it can", "err", readErr)
 			}
 			w.bad = true
 			w.ep.setConfigProblem(true)
@@ -186,7 +197,7 @@ func (w *pluginWatch) step(ctx context.Context) {
 		if w.ep.kept != nil {
 			base := w.eff
 			w.base, w.keptRaw = &base, kept
-			w.eff = w.ep.reloadKept(w.eff, w.path)
+			w.eff = w.ep.reloadKept(w.eff, w.onDisk)
 		}
 		w.pass(ctx, true)
 		return
@@ -197,6 +208,18 @@ func (w *pluginWatch) step(ctx context.Context) {
 	}
 	if !w.bad && !w.next.IsZero() && !w.now().Before(w.next) {
 		w.pass(ctx, false)
+	}
+}
+
+// held sets onDisk from engine.json's bytes as Ports.ReadConfig returned
+// them; nil bytes (the read refused the file) or bytes that do not decode
+// keep the last.
+func (w *pluginWatch) held(raw []byte) {
+	if raw == nil {
+		return
+	}
+	if entries, err := heldEntries(raw); err == nil {
+		w.onDisk = entries
 	}
 }
 
@@ -212,7 +235,7 @@ func (w *pluginWatch) applyKept(ctx context.Context, kept []byte, changed bool) 
 		base = *w.base
 	}
 	w.keptRaw = kept
-	w.eff = w.ep.reloadKept(base, w.path)
+	w.eff = w.ep.reloadKept(base, w.onDisk)
 	w.pass(ctx, true)
 }
 
@@ -232,12 +255,16 @@ func (w *pluginWatch) stepKept(ctx context.Context) {
 	if err != nil {
 		raw = []byte(err.Error())
 	}
-	if cfgRaw, err := os.ReadFile(w.path); err == nil {
+	// engine.json through the engine's own read (Ports.ReadConfig), for
+	// its change and the entries it holds; a file that read refused adds
+	// nothing and keeps the entries of the last read.
+	if _, cfgRaw, _ := w.ep.o.Ports.ReadConfig(w.ep.o.euid, w.path); cfgRaw != nil {
 		raw = append(append(raw, 0), cfgRaw...)
+		w.held(cfgRaw)
 	}
 	if w.raw == nil || !bytes.Equal(raw, w.raw) {
 		w.raw = raw
-		w.eff = w.ep.reloadKept(w.start, w.path)
+		w.eff = w.ep.reloadKept(w.start, w.onDisk)
 		w.pass(ctx, true)
 		return
 	}

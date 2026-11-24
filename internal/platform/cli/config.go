@@ -62,13 +62,30 @@ func LoadEngineConfig(c *IO, path string) (config.Config, error) {
 }
 
 // LoadEngineConfigAs reads the engine config at path for a process with
-// effective uid euid: config.Load, or as root the hardened read
+// effective uid euid: config.Load's read, or as root the hardened read
 // (loadConfigAsRoot, opening through sh). basalt engine started as root
 // reads its config here too.
-func LoadEngineConfigAs(sh Host, euid int, path string) (config.Config, error) {
-	if euid != 0 {
-		return config.Load(path)
-	}
-	cfg, _, err := loadConfigAsRoot(sh, path)
+func LoadEngineConfigAs(sh TrustedOpener, euid int, path string) (config.Config, error) {
+	cfg, _, err := ReadEngineConfigAs(sh, euid, path)
 	return cfg, err
+}
+
+// ReadEngineConfigAs is LoadEngineConfigAs that also returns the bytes it
+// read: the engine's plugin watch reads engine.json here on every change,
+// with the engine's euid, so as root it gets the same hardened read as the
+// engine's start, and compares the bytes that read returned. The bytes are
+// nil when the read refused or could not read the file, and set with the
+// error when the file was read and does not parse or breaks a rule
+// (config.LoadOpenRaw).
+func ReadEngineConfigAs(sh TrustedOpener, euid int, path string) (config.Config, []byte, error) {
+	if euid != 0 {
+		return config.LoadOpenRaw(path, os.Open)
+	}
+	return loadConfigAsRoot(sh, path)
+}
+
+// TrustedOpener opens a file for root without following a link
+// (Host.OSOpenTrustedFile): all the hardened config read needs of a Host.
+type TrustedOpener interface {
+	OSOpenTrustedFile(path string, owner int) (*os.File, error)
 }

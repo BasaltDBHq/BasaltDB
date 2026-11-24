@@ -28,6 +28,7 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 - The `status` tool lists the tables the agent can read and write and names each passkey with a check code. `describe` names the agent's database and host.
 - The CLI's help and the MCP instructions say that one engine serves many agents, each on one database, and that another database needs another agent.
 - The portal has a home page and a not-found page.
+- `http://localhost:8787/` shows that BasaltDB is running instead of an empty 404: how many agents and databases (the kind only: Supabase, Amazon RDS or Postgres), whether the engine, the guard and the passkeys are fine, and a button per database that opens its check-up. It has no login, so it never shows an agent's name, a database's host or name, a table or any record of what an agent did.
 
 ### Changed
 
@@ -59,11 +60,12 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 
 ### Fixed
 
+- `basalt init` installs the engine service from a Homebrew `basalt`, or one unpacked in a folder of your own, with no manual step. The one password dialog now copies `basalt` into a folder only root can change (`/usr/local/libexec/basalt` on macOS, `/usr/libexec/basalt` on Linux), checked against what `init` read, and the service runs that copy. Before, `init` refused a binary in a folder your account owns and handed the agent two `sudo` commands, which an agent session cannot run. After `brew upgrade`, `basalt init` copies the new `basalt` over the service's copy and restarts the engine in the same single dialog. Removing BasaltDB deletes the copy. No message tells you or the agent to run `sudo`.
 - A Vault session that a duplicated or otherwise refused frame ends now always closes with `FRAME_INVALID`. It could close with `PROTOCOL` instead and send the Vault a second `SESSION_CLOSE`.
 - The engine no longer reports "ledger chain broken" on a new ledger after the database was recreated the same way, for example after running the quickstart again on a fresh Postgres container. The guard now identifies each install by a random id instead of the schema's oid.
 - A program on your computer could finish the first setup with a database it controls and leave you unable to set up your own. Running `basalt init` again now asks "Is this your database?" first. After "No, this isn't mine", `basalt init` asks for your password in the system's administrator dialog and resets BasaltDB on this computer: it deletes the engine's config, credentials and certificate pins, restarts the engine and opens the first-install page. No database is touched. On macOS the dialog says what it asks for.
 - The engine opens its agents' sockets before it reads the database, so a slow database no longer makes the engine look down to the bot. The first guard read runs beside the serving and gives up after 15 seconds.
-- `basalt init` on a computer with the engine service installed restarts the service, through the administrator dialog, when it runs a different build than the `basalt` you ran, for example after installing a new binary. Before, the old engine kept answering and the fix was not in effect. With no dialog, init stops and names the command to run as root.
+- `basalt init` on a computer with the engine service installed moves the service to the `basalt` you ran, through the administrator dialog, when that build is newer than the engine's, for example after `brew upgrade`. Before, the old engine kept answering and the fix was not in effect. An older `basalt` never replaces a newer engine: `init` stops and says which one is newer.
 - `basalt mcp --agent NAME` and `basalt init --agent NAME` use the engine config that holds the agent when two exist, a service engine's and your own. Before, the MCP server never connected. They stop only when both hold the agent or neither does, and name the agent and both paths.
 - A setup that Postgres stops to break a deadlock (`40P01`, most often autovacuum on a table the setup changes) says that a database maintenance task locked a table and that running the setup again is safe. Before, it showed the raw Postgres error.
 - Supabase pooler hosts under `.pooler.supabase.co` are recognised as the pooler, like `.pooler.supabase.com`.

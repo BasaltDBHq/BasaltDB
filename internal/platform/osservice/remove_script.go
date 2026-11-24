@@ -95,6 +95,21 @@ func configGone(goos string) string {
 `, p, config.DefaultPath(goos))
 }
 
+// removeServiceBinary deletes the service's copy of basalt (ServiceBinary)
+// and a copy an install left half done, once the units are stopped. Its
+// folder is walked first; one anyone but root could change is left alone
+// with a line saying so, and never stops the rest of the removal.
+func removeServiceBinary(goos string) string {
+	dest := ServiceBinary(goos)
+	dir := filepath.Dir(dest)
+	return fmt.Sprintf(`if ( trusted %[1]s "" ) >/dev/null 2>&1; then
+	rm -f %[2]s %[2]s.basalt-new
+else
+	echo "basalt: %[1]s is not a folder only root can change, so %[2]s was left in place" >&2
+fi
+`, scriptWord(dir), scriptWord(dest))
+}
+
 // linuxRemovePreflight checks, before anything is removed, that the config
 // is gone, whether the engine's account is one the install would take
 // over, and every directory it removes in or under.
@@ -135,7 +150,7 @@ for unit in %[2]s%[3]s*.service; do
 done
 rm -f %[4]s
 systemctl daemon-reload >/dev/null 2>&1 || true
-remove_dir %[5]s
+`+removeServiceBinary(goosLinux)+`remove_dir %[5]s
 remove_dir %[6]s
 remove_dir %[7]s
 remove_dir %[8]s
@@ -202,7 +217,7 @@ for unit in %[2]s%[3]s*.plist; do
 done
 rm -f %[4]s
 rm -f %[5]s%[6]s*.conf
-remove_dir %[7]s
+`+removeServiceBinary(goosDarwin)+`remove_dir %[7]s
 remove_dir %[8]s
 for old in %[8]s.old-*; do
 	[ -e "$old" ] || continue

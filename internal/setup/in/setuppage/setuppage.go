@@ -74,6 +74,8 @@ func SetupOnlyHandler(origin string, jobs SetupJobs, log *slog.Logger) http.Hand
 	mux.Handle("GET /lib/{file}", pageserver.LibFile(files))
 	mux.Handle("GET /style.css", files)
 	mux.Handle("GET /fonts/{file}", pageserver.FontFile(files))
+	mux.HandleFunc("GET "+pageserver.HomePath, pageserver.HomePage)
+	mux.HandleFunc("GET "+pageserver.HomeDataPath, pageserver.HomeData(pageserver.NotSetUpHome{}))
 	mux.HandleFunc("GET "+pageserver.SetupPagePath+"{$}", serveSetupPage)
 	st := setupRoutes{origin: origin, jobs: jobs, log: log}
 	mux.HandleFunc("POST "+pageserver.SetupCheckPath, st.check)

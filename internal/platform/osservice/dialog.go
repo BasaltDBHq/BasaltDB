@@ -1,11 +1,16 @@
 package osservice
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
@@ -127,18 +132,119 @@ func SystemSpec(goos, binary string) servicespec.Spec {
 	return servicespec.Spec{GOOS: goos, Binary: binary, ConfigPath: config.DefaultPath(goos), User: DefaultUser(goos)}
 }
 
+// Source is the basalt binary the install or the restart copies to the
+// service's own path (ServiceBinary): the running binary's resolved path,
+// and the SHA-256 of what basalt read there before it asked for the
+// password, with its size in bytes: the script copies that many bytes and
+// no more.
+type Source struct {
+	Path   string
+	SHA256 string
+	Size   int64
+}
+
+// sha256Hex is a SHA-256 as lowercase hex.
+var sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// ReadSource is path as a Source: its content's SHA-256 and size, read now.
+func ReadSource(path string) (Source, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return Source{}, fmt.Errorf("read the basalt binary %s: %w", path, err)
+	}
+	defer f.Close()
+	h := sha256.New()
+	n, err := io.Copy(h, f)
+	if err != nil {
+		return Source{}, fmt.Errorf("read the basalt binary %s: %w", path, err)
+	}
+	return Source{Path: path, SHA256: hex.EncodeToString(h.Sum(nil)), Size: n}, nil
+}
+
+// copies reports whether src is copied to the service's path on goos: it
+// is not that path already.
+func (src Source) copies(goos string) bool { return src.Path != ServiceBinary(goos) }
+
+// validate refuses a source the script cannot name safely: a relative or
+// unclean path, a control character, a SHA-256 that is not lowercase hex,
+// or no size.
+func (src Source) validate() error {
+	if !filepath.IsAbs(src.Path) || filepath.Clean(src.Path) != src.Path || strings.ContainsFunc(src.Path, unicode.IsControl) {
+		return fmt.Errorf("the basalt binary's path %q has characters the service install does not take; run basalt from a plain path such as /usr/local/bin/basalt", src.Path)
+	}
+	if !sha256Hex.MatchString(src.SHA256) {
+		return fmt.Errorf("the basalt binary %s has no SHA-256 to check its copy against", src.Path)
+	}
+	if src.Size <= 0 {
+		return fmt.Errorf("the basalt binary %s has no size to copy", src.Path)
+	}
+	return nil
+}
+
+// sourceCheck checks, before anything is created, the folder of the
+// service's copy (when it exists) and that its path is no symlink, and that
+// the source is a file. A folder above the copy that is not root's alone
+// (an older Homebrew layout gives /usr/local to the person's account) stops
+// the script with the folder and its owner named (trusted's line) and why;
+// the dialog cannot take that folder from its owner, so the message does not
+// send the person round to basalt init again.
+func sourceCheck(goos string, src Source) string {
+	dest := ServiceBinary(goos)
+	return fmt.Sprintf(`src=%[1]s
+[ -f "$src" ] || fail "$src is not a file"
+( trusted %[2]s "" ) ||
+	fail "the engine service runs its own copy of basalt at %[3]s, and the folder named above is not one only root can change, so its owner could replace what the service runs. Nothing was changed. The service can be installed once that folder belongs to root and only root can write it; on a Mac whose older Homebrew gave /usr/local to your account, that is a change to your Homebrew setup to make yourself"
+no_link %[4]s
+`, shellQuote(src.Path), scriptWord(filepath.Dir(dest)), dest, scriptWord(dest))
+}
+
+// copyBinary makes the folders of the service's copy root's, copies the
+// source there (checked against its SHA-256) and checks the copy as the
+// unit will run it.
+func copyBinary(goos string, src Source) string {
+	dest := ServiceBinary(goos)
+	var b strings.Builder
+	for _, dir := range serviceBinaryDirs(goos) {
+		fmt.Fprintf(&b, "make_root_dir %s %04o\n", scriptWord(dir), openDirMode)
+	}
+	fmt.Fprintf(&b, "copy_binary \"$src\" %s %s %d\n", scriptWord(dest), src.SHA256, src.Size)
+	b.WriteString(binaryCheck(dest))
+	return b.String()
+}
+
+// serviceBinaryDirs are the folders above the service's copy the script
+// makes when they are missing, outermost first.
+func serviceBinaryDirs(goos string) []string {
+	dir := filepath.Dir(ServiceBinary(goos))
+	if goos == goosDarwin {
+		return []string{filepath.Dir(dir), dir}
+	}
+	return []string{dir}
+}
+
+// shellQuote is s as one single-quoted shell word.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // InstallScript is the script the administrator dialog runs on a first
-// install, built from constants and the resolved path of the running
-// binary only: no agent, flag, environment or working directory reaches it.
-// It creates the engine's OS user and its system directories, writes the
-// unit that runs `<binary> engine --config <system path> --supervise`, and
+// install, built from constants and the running binary only (its resolved
+// path and SHA-256): no agent, flag, environment or working directory
+// reaches it. It copies that binary to the service's own path
+// (ServiceBinary), root's, mode 0755, unless it runs from there, creates
+// the engine's OS user and its system directories, writes the unit that
+// runs `<service binary> engine --config <system path> --supervise`, and
 // starts it. Every directory it writes in is reached from / without
 // following a symlink anyone but root controls, and a directory on the way
 // owned by anyone but root or the engine's user, or writable by group or
 // others, stops it.
-func InstallScript(goos, binary string) (string, error) {
-	if !safeBinary.MatchString(binary) || filepath.Clean(binary) != binary {
-		return "", fmt.Errorf("the basalt binary's path %q has characters the service install does not take; install basalt at a plain path such as /usr/local/bin/basalt", binary)
+func InstallScript(goos string, src Source) (string, error) {
+	if err := src.validate(); err != nil {
+		return "", err
+	}
+	binary := ServiceBinary(goos)
+	if !safeBinary.MatchString(binary) {
+		return "", fmt.Errorf("the service's basalt path %q has characters the service install does not take", binary)
 	}
 	spec := SystemSpec(goos, binary)
 	if err := validateSpec(spec); err != nil {
@@ -149,15 +255,25 @@ func InstallScript(goos, binary string) (string, error) {
 	b.WriteString(ScriptHelpersEnd)
 	// Every check runs before anything is created: a refused folder never
 	// leaves a new OS user or folder behind.
-	b.WriteString(binaryCheck(binary))
+	if src.copies(goos) {
+		b.WriteString(sourceCheck(goos, src))
+	} else {
+		b.WriteString(binaryCheck(binary))
+	}
 	switch goos {
 	case goosLinux:
 		b.WriteString(linuxPreflight(spec))
-		b.WriteString(ScriptPreflightEnd)
-		b.WriteString(linuxScript(spec))
 	case goosDarwin:
 		b.WriteString(darwinPreflight(spec))
-		b.WriteString(ScriptPreflightEnd)
+	}
+	b.WriteString(ScriptPreflightEnd)
+	if src.copies(goos) {
+		b.WriteString(copyBinary(goos, src))
+	}
+	switch goos {
+	case goosLinux:
+		b.WriteString(linuxScript(spec))
+	case goosDarwin:
 		b.WriteString(darwinScript(spec))
 	}
 	unit := SystemdUnit(spec)
@@ -177,9 +293,9 @@ func InstallScript(goos, binary string) (string, error) {
 // reads a path's own owner and mode, never a link's target, on both
 // systems.
 func scriptHelpers(goos string) string {
-	uid, mode := "stat -c %u", "stat -c %a"
+	uid, mode, sum := "stat -c %u", "stat -c %a", "sha256sum"
 	if goos == goosDarwin {
-		uid, mode = "stat -f %u", "stat -f %Lp"
+		uid, mode, sum = "stat -f %u", "stat -f %Lp", "shasum -a 256"
 	}
 	return `set -eu
 # pkexec's own 126 and 127 mean a dismissed dialog and no dialog: the
@@ -272,6 +388,33 @@ put_file() {
 	(umask 077 && cat >"$t")
 	chmod 0644 "$t"
 	mv -f "$t" "$1"
+}
+sha256_of() { ` + sum + ` "$1" | awk '{ print $1 }'; }
+# copy_binary SRC DEST SUM SIZE: copy SRC to DEST, root's, mode 0755, in a
+# directory only root can change, replacing an older copy whole (a rename,
+# never a write into the file the service runs). DEST is never a symlink.
+# SRC must be a plain file, not a symlink, right before it is read, and at
+# most SIZE bytes are read (a device or a pipe swapped in never makes root
+# read on). The copy is first written root-only and must have SUM, the
+# SHA-256 of the basalt that asked for the password, or it is removed: a SRC
+# changed or swapped since then is never installed.
+copy_binary() {
+	trusted "${2%/*}" ""
+	no_link "$2"
+	t=$2.basalt-new
+	rm -f "$t"
+	[ -f "$1" ] && [ ! -L "$1" ] || fail "$1 is not a plain file, so it was not copied to $2; run basalt init again"
+	if ! (umask 077 && head -c "$4" <"$1" >"$t"); then
+		rm -f "$t"
+		fail "$1 could not be copied to $2, the engine service's own copy; run basalt init again"
+	fi
+	if [ "$(sha256_of "$t")" != "$3" ]; then
+		rm -f "$t"
+		fail "$1 changed after basalt init read it, so it was not copied to $2; run basalt init again"
+	fi
+	chown 0:0 "$t"
+	chmod 0755 "$t"
+	mv -f "$t" "$2"
 }
 `
 }

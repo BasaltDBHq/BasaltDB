@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/mod/semver"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
@@ -93,10 +95,14 @@ func RunLocal(c *cli.IO, h LocalHost, args []string) int {
 }
 
 // restartOlderEngine restarts the engine service when it runs a different
-// build than this basalt: a new binary installed at the service's path is
-// not the running engine until the service restarts. The restart is the
-// administrator dialog's fixed script; with no dialog init stops and says
-// how. An engine that does not answer is left to waitForSetupPage.
+// build than this basalt: an upgraded basalt (brew upgrade, a new release)
+// is not the running engine until the service's own copy is replaced and
+// the service restarts. The restart is the administrator dialog's fixed
+// script, which copies this basalt over the service's copy first unless
+// this basalt is that copy; with no dialog init stops and says how. An
+// engine that does not answer is left to waitForSetupPage. No message here
+// names a command to run as root: the agent has no terminal to type a
+// password in, so the next step is always basalt init again.
 func restartOlderEngine(c *cli.IO, h LocalHost) error {
 	build, err := c.Host.EngineBuild(c.Ctx, links.DefaultLocal)
 	if err != nil {
@@ -107,33 +113,94 @@ func restartOlderEngine(c *cli.IO, h LocalHost) error {
 	if build == buildinfo.Version {
 		return nil
 	}
-	script, err := h.OSRestartScript(c.Goos)
+	newer, err := newerThanEngine(build)
+	if err != nil || !newer {
+		return err
+	}
+	bin, err := c.Host.ResolvedExecutable()
+	if err != nil {
+		return fmt.Errorf("the engine service runs a different build of basalt than this one, and this basalt's links do not resolve, so it cannot be copied to the service: %w", err)
+	}
+	script, err := h.OSRestartScript(c.Goos, bin)
 	if err != nil {
 		return err
 	}
-	command := strings.TrimSpace(script)
-	if err := c.Host.DialogAvailable(c.Goos); err != nil {
-		return fmt.Errorf("the engine service runs a different build of basalt than this one, and restarting it needs the system's administrator dialog, which cannot be shown here (%w). Restart it as root: %s", err, command)
+	service := h.OSServiceBinary(c.Goos)
+	what := "restart it"
+	if bin != service {
+		what = fmt.Sprintf("copy %s to %s, root's, and restart it", bin, service)
 	}
-	fmt.Fprintln(c.Stderr, "basalt: the engine service runs a different build than this basalt. Asking for your password in the system's administrator dialog to restart it: it runs "+command)
+	if err := c.Host.DialogAvailable(c.Goos); err != nil {
+		return fmt.Errorf("the engine service runs a different build of basalt than this one, and updating it needs the system's administrator dialog, which cannot be shown here (%w). Run basalt init again in a desktop session on this machine", err)
+	}
+	fmt.Fprintf(c.Stderr, "basalt: the engine service runs a different build than this basalt. Asking for your password in the system's administrator dialog to %s.\n", what)
 	if err := c.Host.AdminDialog(c.Ctx, c.Goos, servicespec.RestartPrompt, script, c.Stderr); err != nil {
 		if errors.Is(err, servicespec.ErrDialogCancelled) {
-			return fmt.Errorf("the administrator dialog was closed, so the engine service was not restarted and still runs a different build. Restart it as root: %s, or run basalt init again", command)
+			return errors.New("the administrator dialog was closed, so the engine service was not updated and still runs a different build. Run basalt init again and answer the dialog")
 		}
-		return fmt.Errorf("the engine service was not restarted: %w. Restart it as root: %s", err, command)
+		return fmt.Errorf("the engine service was not updated: %w. Run basalt init again", err)
 	}
 	// The engine is down while it restarts: wait for /healthz to answer
 	// before the build is read again, or a not-yet-answering engine would
 	// count as a restart that worked.
 	again, err := waitForEngineBuild(c)
 	if err != nil {
-		return fmt.Errorf("the engine service did not answer on %s within %s after the restart (%w). See %s for why, and restart it as root: %s", links.DefaultLocal, restartAnswerWait, err, engine.LogHint(c.Goos), command)
+		return fmt.Errorf("the engine service did not answer on %s within %s after the restart (%w). See %s for why, then run basalt init again", links.DefaultLocal, restartAnswerWait, err, engine.LogHint(c.Goos))
 	}
 	if again != buildinfo.Version {
-		return fmt.Errorf("the engine service was restarted but still runs a different build of basalt than this one: the service starts the binary its unit file names (%s), which is not this basalt. Install this basalt there, or point the unit at it, and restart the service as root: %s", h.OSUnitPath(c.Goos), command)
+		return fmt.Errorf("the engine service was restarted but still runs a different build of basalt than this one: its unit file (%s) starts another binary than %s, the copy basalt init makes, as an install from before that copy did. Ask the person: removing BasaltDB on the setup page (which deletes the ledger for good) and then running basalt init again installs the service onto this basalt", h.OSUnitPath(c.Goos), service)
 	}
 	fmt.Fprintln(c.Stderr, "basalt: the engine service is restarted onto this build.")
 	return nil
+}
+
+// newerThanEngine reports whether this basalt is a newer build than the
+// engine's, the only case init copies it to the service: it never moves the
+// service to an older build. An engine that sends no build is older than
+// the rule that added it. The same version spelled apart is no change; an
+// older this basalt, or one whose order cannot be told, is an error that
+// names both builds and says to update this basalt first.
+func newerThanEngine(build string) (bool, error) {
+	if build == "" {
+		return true, nil
+	}
+	c, ok := compareBuilds(buildinfo.Version, build)
+	switch {
+	case ok && c > 0:
+		return true, nil
+	case ok && c == 0:
+		return false, nil
+	case ok:
+		return false, fmt.Errorf("the engine service runs basalt %s, newer than this basalt (%s), and basalt init never moves it to an older build. Update this basalt to %s or later first (brew upgrade basaltdbhq/tap/basaltdb, or the release page), then run basalt init again", build, buildinfo.Version, build)
+	}
+	return false, fmt.Errorf("the engine service runs basalt %s and this basalt is %s, and which is newer cannot be told, so basalt init leaves the service as it is. Run basalt init again from a released basalt build", build, buildinfo.Version)
+}
+
+// compareBuilds orders two build versions ("1.2.3", "v1.2.3" or
+// "1.2.3-alpha.2"; build metadata ignored) by semantic version precedence.
+// ok is false when either is not a full version, such as a bare commit.
+func compareBuilds(a, b string) (c int, ok bool) {
+	va, okA := fullVersion(a)
+	vb, okB := fullVersion(b)
+	if !okA || !okB {
+		return 0, false
+	}
+	return semver.Compare(va, vb), true
+}
+
+// fullVersion is s in the "v"-prefixed form x/mod/semver compares, and false
+// for anything but a full major.minor.patch version (shorthand such as "1.2"
+// is refused).
+func fullVersion(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "v") {
+		s = "v" + s
+	}
+	s, _, _ = strings.Cut(s, "+")
+	if !semver.IsValid(s) || semver.Canonical(s) != s {
+		return "", false
+	}
+	return s, true
 }
 
 // restartAnswerWait bounds how long init waits for the engine to answer
@@ -253,8 +320,10 @@ type LocalHost interface {
 	enginecli.InstallHost
 	// OSRemoveScript is the fixed script that removes the engine service.
 	OSRemoveScript(goos string) (string, error)
-	// OSRestartScript is the fixed script that restarts the engine service.
-	OSRestartScript(goos string) (string, error)
+	// OSRestartScript is the fixed script that restarts the engine service
+	// onto binary, copying it to OSServiceBinary first unless it is that
+	// copy.
+	OSRestartScript(goos, binary string) (string, error)
 	// OSResetScript is the fixed script that resets BasaltDB on this
 	// computer.
 	OSResetScript(goos string) (string, error)

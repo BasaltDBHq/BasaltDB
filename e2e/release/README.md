@@ -15,9 +15,12 @@ machine. Run it from the CI workflow's manual `release-e2e` job
 macOS (arm64 and Intel) and Ubuntu. The release workflow runs the same script
 against the archives it built.
 
-- `run.sh`: copies the binary to a root-owned folder, starts Postgres and
-  seeds `public.items` (20 rows), installs the Node dependencies and Chromium,
-  and runs `flow.mjs`. It removes the service on exit.
+- `run.sh`: leaves the binary where the archive was unpacked, a folder the
+  runner's own account owns, as a Homebrew prefix is a person's: the install
+  script copies it, root's, to the service's own path, and `flow.mjs` checks
+  that copy and its removal. It starts Postgres and seeds `public.items`
+  (20 rows), installs the Node dependencies and Chromium, and runs `flow.mjs`.
+  It removes the service on exit.
 - `flow.mjs`: the steps, each printing `e2e: <step> ok`. The browser is
   Chromium with a virtual authenticator, so the passkey needs no person.
 - `mcp.mjs`: a stdio JSON-RPC client for `basalt mcp`.

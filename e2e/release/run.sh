@@ -28,24 +28,22 @@ os=$(uname -s)
 
 trap 'sh "$here/service.sh" cleanup "$out" || true' EXIT
 
-# The service runs the binary as root, so init refuses one that anyone but
-# root could change or that sits under a folder anyone but root can write.
-# /usr/local/bin is Homebrew's on the Intel macOS runner and /opt is open to
-# everyone on the Ubuntu one: use a folder of our own under a root-owned parent.
+# Install the way a person does: basalt stays where the archive put it, in
+# the runner's workspace, a folder the runner's own account owns (as a
+# Homebrew prefix or a download folder is). The install's administrator
+# dialog copies it, root's, to the engine service's own path; nothing here
+# copies it first.
 if [ "$os" = Darwin ]; then
-	inst=/Library/BasaltE2E
+	service_bin=/usr/local/libexec/basalt
 else
-	inst=/usr/local/lib/basalt-e2e
+	service_bin=/usr/libexec/basalt
 	# The engine refuses a plugin base whose parent is writable by others, and
 	# the hosted runner ships /opt that way. The runner is thrown away after.
 	sudo chmod go-w /opt
 fi
-sudo mkdir -p "$inst"
-sudo chown 0:0 "$inst"
-sudo chmod 755 "$inst"
-sudo install -m 755 -o 0 -g 0 "$bin_dir/basalt" "$inst/basalt"
-ls -ld / /opt "$inst" "$inst/basalt"
-"$inst/basalt" version
+bin="$bin_dir/basalt"
+ls -ld / /usr /usr/local "$(dirname "$service_bin")" "$bin_dir" "$bin" 2>&1 || true
+"$bin" version
 
 # ---- Postgres ----
 pw=$(openssl rand -hex 16)
@@ -88,5 +86,5 @@ else
 	npx playwright install --with-deps chromium
 fi
 
-E2E_BIN="$inst/basalt" E2E_ADMIN_URL="$admin_url" E2E_OUT="$out" E2E_DIR="$here" node flow.mjs
+E2E_BIN="$bin" E2E_SERVICE_BIN="$service_bin" E2E_ADMIN_URL="$admin_url" E2E_OUT="$out" E2E_DIR="$here" node flow.mjs
 echo "e2e: all steps ok"

@@ -93,7 +93,8 @@ func TestCheckBinary(t *testing.T) {
 				return
 			}
 			require.ErrorContains(t, err, tc.want)
-			require.ErrorContains(t, err, "sudo install -o root -m 0755 /usr/local/libexec/basalt /usr/local/libexec/basalt")
+			require.ErrorContains(t, err, "run basalt init again")
+			require.NotContains(t, err.Error(), "sudo", "no message tells the person or the agent to run sudo")
 		})
 	}
 }

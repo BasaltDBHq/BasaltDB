@@ -2,7 +2,9 @@
 // install, the setup page, the agent's MCP session, a held write's approval,
 // a revert and the removal. run.sh sets the machine up and calls this.
 //
-// Environment: E2E_BIN (the installed basalt), E2E_ADMIN_URL (the database's
+// Environment: E2E_BIN (the basalt under test, in a folder the runner's
+// account owns, as a person's is), E2E_SERVICE_BIN (the engine service's own
+// copy the install makes), E2E_ADMIN_URL (the database's
 // admin connection string, typed on the setup page only), E2E_OUT (where
 // failure evidence goes), E2E_DIR (this folder).
 import { execFileSync, spawn } from "node:child_process";
@@ -13,6 +15,7 @@ import { chromium } from "playwright";
 import { find, McpClient } from "./mcp.mjs";
 
 const BIN = must("E2E_BIN");
+const SERVICE_BIN = must("E2E_SERVICE_BIN");
 const ADMIN_URL = must("E2E_ADMIN_URL");
 const OUT = must("E2E_OUT");
 const DIR = must("E2E_DIR");
@@ -134,6 +137,13 @@ let setupLink = "";
 async function install() {
   // The administrator dialog is not available on a runner: run its fixed script under sudo.
   run("sh", [path.join(DIR, "service.sh"), "install", BIN], { stdio: "inherit" });
+  // basalt is not root's where it was unpacked: the install copied it, root's.
+  assert.notEqual(fs.statSync(BIN).uid, 0, "the basalt under test is the runner's, as a person's is");
+  const copy = fs.lstatSync(SERVICE_BIN);
+  assert.ok(copy.isFile(), `${SERVICE_BIN} is a plain file`);
+  assert.equal(copy.uid, 0, `${SERVICE_BIN} is root's`);
+  assert.equal(copy.mode & 0o777, 0o755, `${SERVICE_BIN} is 0755`);
+  assert.ok(fs.readFileSync(SERVICE_BIN).equals(fs.readFileSync(BIN)), "the service runs a copy of the basalt under test");
   const init = basaltInit(["--agent", AGENT]);
   try {
     setupLink = await initLink(init);
@@ -191,6 +201,21 @@ async function setupPage() {
   await until("the done state", async () => (await visible("#done")) || (await visible("#approve-status") && /fail|refus|cannot|error/i.test(await page.locator("#approve-status").innerText())));
   assert.ok(await visible("#done"), `setup did not finish: ${await page.locator("#approve-status").innerText()}`);
   ok("setup page");
+}
+
+// The root page: running, with the counts, and the check-up button's link
+// is the setup page's.
+async function homePage() {
+  await open(`${PAGES}/`);
+  await page.getByText("BasaltDB is running").waitFor({ state: "visible" });
+  const text = await page.locator("main").innerText();
+  assert.match(text, /1 agent on 1 database/, "the home page counts the agent and its database");
+  assert.ok(!text.includes(AGENT), "the home page never names the agent");
+  const button = page.locator("#home-checks a").first();
+  if ((await button.count()) === 0) throw new Error("the home page has no check-up button (#home-checks a)");
+  const href = await button.getAttribute("href");
+  assert.ok(href.startsWith(`${PAGES}/setup/#1.`), `the check-up button opens the setup page: ${href}`);
+  ok("home page");
 }
 
 let mcp;
@@ -309,6 +334,7 @@ async function remove() {
   init.child.kill();
   run("sh", [path.join(DIR, "service.sh"), "remove"], { stdio: "inherit" });
   assert.ok(!serviceListed(), "the engine service is gone");
+  assert.ok(!fs.existsSync(SERVICE_BIN), `the service's copy ${SERVICE_BIN} is deleted`);
   ok("remove");
 }
 
@@ -325,6 +351,7 @@ function serviceListed() {
 const steps = [
   ["install", install],
   ["setup-page", setupPage],
+  ["home-page", homePage],
   ["mcp", mcpSession],
   ["approve", approve],
   ["revert", revert],

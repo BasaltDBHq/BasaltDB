@@ -289,10 +289,25 @@ func TestHomebrewFollowsSymlinks(t *testing.T) {
 	}
 }
 
-func TestAgentMessageSaysToRestartTheEngine(t *testing.T) {
+// After the upgrade the agent runs basalt init, which moves the engine
+// service onto the new binary; it never hands the person a root command.
+func TestAgentMessageSaysToRunBasaltInit(t *testing.T) {
 	n := Notice{Current: "0.0.1", Latest: "0.0.2", URL: "u"}
 	for _, exe := range []string{"/opt/homebrew/bin/basalt", "/usr/local/bin/basalt"} {
-		if got := n.AgentMessage(exe); !strings.Contains(got, "restart the engine") {
+		got := n.AgentMessage(exe)
+		if !strings.Contains(got, "you run basalt init so the engine runs the new binary") || strings.Contains(got, "sudo") {
+			t.Errorf("%s: %q", exe, got)
+		}
+	}
+}
+
+// The engine service runs its own copy, which does not say how basalt was
+// installed: its message names both ways, then basalt init.
+func TestAgentMessageFromTheServiceCopyNamesBothWays(t *testing.T) {
+	n := Notice{Current: "0.0.1", Latest: "0.0.2", URL: "u"}
+	for _, exe := range []string{"/usr/local/libexec/basalt", "/usr/libexec/basalt"} {
+		want := "They upgrade the way they installed it: brew upgrade basaltdbhq/tap/basaltdb if it came from Homebrew, otherwise the new release at u, then you run basalt init so the engine runs the new binary (with the engine service, it asks for their password once)."
+		if got := n.AgentMessage(exe); !strings.Contains(got, want) {
 			t.Errorf("%s: %q", exe, got)
 		}
 	}

@@ -13,16 +13,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
-	"github.com/basaltdbhq/basaltdb/internal/core/revert"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
 )
 
 // unsafeGuard is a guard this build does not serve: it misses a breaking
@@ -49,11 +48,10 @@ func (unsafeGuard) ReinstallNotice(context.Context, int) (string, bool, error) {
 // gatedService is a real agent service on an unsafe guard. Its stores are
 // empty interfaces: a call that got past Admit would panic, so a test that
 // passes relayed nothing.
-func gatedService(store *links.Secrets) *agent.Service {
-	return agent.NewService(agent.Deps{
-		Name: "demo_bot", Store: struct{ agent.SQLStore }{}, Log: quietLog(), Now: time.Now,
-		PagesBase: links.Portal, Links: store, Probe: unsafeGuard{},
-	})
+func gatedService(store *links.Secrets) *Service {
+	d := testAgentDeps("demo_bot", struct{ SQLStore }{})
+	d.Core.PagesBase, d.Delivery.Links, d.Status.Probe = links.Portal, store, unsafeGuard{}
+	return NewService(d)
 }
 
 // On a guard the engine calls unsafe, a session's reads and relays get the
@@ -67,7 +65,7 @@ func TestVaultSessionOnAnUnsafeGuardAnswersAsLoopback(t *testing.T) {
 	id := uuid.Must(uuid.NewV7())
 	s := serveOverVault(t, &wire{}, svc, store, id)
 
-	loopback := pages.New(links.Portal, quietLog())
+	loopback := newPages(links.Portal, quietLog())
 	loopback.Add(svc)
 	h := loopback.Handler()
 	viaLoopback := func(method, path string, headers map[string]string, body string) (int, string) {
@@ -85,9 +83,9 @@ func TestVaultSessionOnAnUnsafeGuardAnswersAsLoopback(t *testing.T) {
 	require.NoError(t, err)
 	as, err := person.Sign(approval.Challenge("{}"), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	approveBody, err := json.Marshal(approval.NewResponse(id, as))
+	approveBody, err := json.Marshal(approvaltest.NewResponse(id, as))
 	require.NoError(t, err)
-	applyBody, err := json.Marshal(revert.NewResponse(id, as))
+	applyBody, err := json.Marshal(reverttest.NewResponse(id, as))
 	require.NoError(t, err)
 
 	p := s.open(t)

@@ -78,7 +78,7 @@ func ParseLine(text string) (Line, error) {
 		return Line{}, err
 	}
 	if l.LargeValues != nil || l.MoreChangeIDs != 0 {
-		return Line{}, invalid("revert line with largeValues or moreChangeIds: not a signed line")
+		return Line{}, Invalid("revert line with largeValues or moreChangeIds: not a signed line")
 	}
 	return l, nil
 }
@@ -91,30 +91,30 @@ func ParseMarkedLine(text string) (Line, error) {
 	dec := json.NewDecoder(bytes.NewReader([]byte(text)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&l); err != nil {
-		return Line{}, invalid("revert line: %v", err)
+		return Line{}, Invalid("revert line: %v", err)
 	}
 	switch l.Op {
 	case approval.OpInsert, approval.OpUpdate, approval.OpDelete:
 	default:
-		return Line{}, invalid("revert line op %q", l.Op)
+		return Line{}, Invalid("revert line op %q", l.Op)
 	}
 	if l.Table == "" {
-		return Line{}, invalid("revert line without a table")
+		return Line{}, Invalid("revert line without a table")
 	}
 	if len(l.ChangeIDs) == 0 {
-		return Line{}, invalid("revert line names no change")
+		return Line{}, Invalid("revert line names no change")
 	}
 	switch l.Action {
 	case ActionRestore:
 		if l.Conflict != nil {
-			return Line{}, invalid("RESTORE line with conflict %q", *l.Conflict)
+			return Line{}, Invalid("RESTORE line with conflict %q", *l.Conflict)
 		}
 	case ActionSkip:
 		if l.Conflict == nil || !conflicts[*l.Conflict] {
-			return Line{}, invalid("SKIP line without a known conflict")
+			return Line{}, Invalid("SKIP line without a known conflict")
 		}
 	default:
-		return Line{}, invalid("revert line action %q", l.Action)
+		return Line{}, Invalid("revert line action %q", l.Action)
 	}
 	return l, nil
 }

@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -10,29 +9,22 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/handoff/in/handoffmcp"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/handoff"
 )
 
-// ErrReload is what Serve and Run return after they stopped to serve the
-// config again: an agent's connect-only setup changed (the person confirmed
-// its database, or basalt init --remote replaced the pending setup). The
-// caller reads the config again and runs the engine anew, in this process.
-var ErrReload = errors.New("the engine stopped to serve its config again")
-
-// HandoffOptions reach the connect service and the collected database for
+// handoffOptions reach the connect service and the collected database for
 // the agents of a connect-only setup code. The zero value is the
 // contract's: the connect service at handoff.ServiceURL, the system's
 // resolver, dialer and certificate roots, and the real clock. Tests give
 // their own, by construction only: nothing in the config or the
 // environment changes them.
-type HandoffOptions struct {
+type handoffOptions struct {
 	ServiceURL string
 	HTTP       *http.Client
 	Prober     handoff.Prober
@@ -40,46 +32,18 @@ type HandoffOptions struct {
 	Now func() time.Time
 }
 
-func (o HandoffOptions) serviceURL() string {
+func (o handoffOptions) serviceURL() string {
 	if o.ServiceURL == "" {
 		return handoff.ServiceURL
 	}
 	return o.ServiceURL
 }
 
-func (o HandoffOptions) now() func() time.Time {
+func (o handoffOptions) now() func() time.Time {
 	if o.Now != nil {
 		return o.Now
 	}
 	return time.Now
-}
-
-// errNoEngineKey is a collect while the engine key file is refused: the
-// request cannot be signed.
-var errNoEngineKey = errors.New("the engine key file is refused (vault.state KEY_ERROR): the address cannot be collected until it is fixed")
-
-// rootCollector is the collector of an engine started as root: root trusts nothing the agent's OS user could redirect, and the
-// YES would write that user's credential, so it never collects. The agent
-// is served degraded with the problem ENGINE_AS_ROOT; the engine's other
-// agents are served as usual.
-type rootCollector struct{}
-
-func (rootCollector) Collect(context.Context, string, string) (handoff.Collected, error) {
-	return handoff.Collected{}, handoff.ErrEngineAsRoot
-}
-
-func (rootCollector) Report(context.Context, string, string, handoff.Address, handoff.Reach) error {
-	return handoff.ErrEngineAsRoot
-}
-
-type noKeyCollector struct{}
-
-func (noKeyCollector) Collect(context.Context, string, string) (handoff.Collected, error) {
-	return handoff.Collected{}, errNoEngineKey
-}
-
-func (noKeyCollector) Report(context.Context, string, string, handoff.Address, handoff.Reach) error {
-	return errNoEngineKey
 }
 
 // connectOnlyAgent says whether a's pending setup is a connect-only one the
@@ -98,7 +62,7 @@ func connectOnlyAgent(env agentEnv, a config.Agent, log *slog.Logger) (bool, err
 		// the agent's OS user.
 		return true, nil
 	}
-	files := handoffFiles{configPath: env.configPath, agent: a.Name, credFile: a.Store.CredentialFile}
+	files := handoff.SetupFiles{ConfigPath: env.configPath, Agent: a.Name, CredFile: a.Store.CredentialFile, Pins: trustPins{}}
 	if _, err := os.Lstat(a.Store.CredentialFile); err != nil {
 		if errNotExist(err) {
 			return true, nil
@@ -124,17 +88,17 @@ func connectOnlyAgent(env agentEnv, a config.Agent, log *slog.Logger) (bool, err
 // no credential, no connection, status and confirm_database only, and the
 // collect loop. Its runtime closes nothing.
 func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {
-	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS)
+	cmds, err := newCommands(a.Name, env.configPath, runtime.GOOS, AgentServiceManager())
 	if err != nil {
 		return agentRuntime{}, err
 	}
 	if !env.cfg.Service() {
 		cmds = cmds.Foreground()
 	}
-	var collector handoff.Collector = noKeyCollector{}
+	var collector handoff.Collector = handoff.NoKeyCollector{}
 	switch {
 	case env.asRoot:
-		collector = rootCollector{}
+		collector = handoff.RootCollector{}
 		log.Warn("the agent waits for its database's address, which an engine started as root does not collect: start the engine as the agent's OS user")
 	case env.keys != nil:
 		collector = handoff.NewClient(env.handoff.HTTP, env.handoff.serviceURL(), env.keys, env.handoff.now())
@@ -150,20 +114,22 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 	}
 	pending, err := handoff.New(handoff.Options{
 		Agent: a.Name, Setup: *a.Setup, Collector: collector, Prober: env.handoff.Prober,
-		Files:   handoffFiles{configPath: env.configPath, agent: a.Name, credFile: a.Store.CredentialFile},
+		Files:   handoff.SetupFiles{ConfigPath: env.configPath, Agent: a.Name, CredFile: a.Store.CredentialFile, Pins: trustPins{}},
 		Changed: reload, Log: log.With("component", "connect"), Now: env.handoff.now(), Cache: cache,
 	})
 	if err != nil {
 		return agentRuntime{}, fmt.Errorf("agent %s: %w", a.Name, err)
 	}
-	co := agent.ConnectOnly{
+	co := handoffmcp.ConnectOnly{
 		Name: a.Name, Commands: cmds, OperatedBy: env.cfg.OperatedBy, SameUser: !env.cfg.Service(), StartedBy: env.startedBy,
 		PagesBase: env.pagesBase, PagesOrigin: env.pagesOrigin, ConnectBudget: env.cfg.ConnectLinkBudget(),
 		Vault: env.vault, Handoff: pending, Log: log, Now: env.handoff.now(),
+		Errors: AgentErrors(), LatestGuardVersion: agentEngineHost().LatestGuardVersion,
+		Guide: connectOnlyGuide,
 	}
 	log.Info("the agent waits for its database's address from the connect page; only status and confirm_database answer", "setupId", a.Setup.SetupID)
 	return agentRuntime{
-		tools: mcp.ToolsFrom(co.Tools(), nil),
+		tools: co.Tools(),
 		run:   pending.Run,
 		close: func() {},
 	}, nil
@@ -179,10 +145,10 @@ func newRepin(env agentEnv, a config.Agent, cc *pgx.ConnConfig, log *slog.Logger
 	}
 	t := setupcode.ConnTarget(cc.Host, int(cc.Port), cc.Database, cc.User)
 	r, err := handoff.NewRepin(handoff.RepinOptions{
-		Setup: *a.Setup, Credential: handoff.Address{Host: t.Host, Port: t.Port, Database: t.Database, SupabaseRef: t.SupabaseRef},
+		Setup: *a.Setup, Credential: setupcode.Address(t),
 		Collector: handoff.NewClient(env.handoff.HTTP, env.handoff.serviceURL(), env.keys, env.handoff.now()),
 		Prober:    env.handoff.Prober,
-		Files:     repinFiles{handoffFiles{configPath: env.configPath, agent: a.Name, credFile: a.Store.CredentialFile}},
+		Files:     handoff.RepinSetupFiles{SetupFiles: handoff.SetupFiles{ConfigPath: env.configPath, Agent: a.Name, CredFile: a.Store.CredentialFile, Pins: trustPins{}}},
 		Log:       log.With("component", "connect"), Now: env.handoff.now(),
 	})
 	if err != nil {

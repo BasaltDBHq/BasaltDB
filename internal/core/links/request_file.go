@@ -36,7 +36,6 @@ type RequestFile struct {
 // ApprovalFile, RevertFile and PluginFile name an item's request file.
 func ApprovalFile(id uuid.UUID) string { return "basalt-approval-" + id.String() + ".txt" }
 func RevertFile(id uuid.UUID) string   { return "basalt-revert-" + id.String() + ".txt" }
-func PluginFile(id uuid.UUID) string   { return "basalt-plugin-" + id.String() + ".txt" }
 
 // RequestHash is h: base64url, without padding, of the first 16 bytes of
 // sha256(text).

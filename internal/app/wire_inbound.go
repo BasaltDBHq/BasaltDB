@@ -2,21 +2,38 @@ package app
 
 import (
 	"context"
+	"log/slog"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
+	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalpage"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginpage"
+	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
+
+// newPages is the pages for origin with every page's handlers mounted: the
+// approval, revert and plugin approval routes, and the setup routes of an
+// engine with no setup jobs (listenPages mounts the jobs).
+func newPages(origin string, log *slog.Logger) *pageserver.Server {
+	srv := pageserver.New(origin, log)
+	srv.MountApprovals(approvalpage.NewApprovalHandlers(srv))
+	srv.MountReverts(revertpage.NewRevertHandlers(srv))
+	srv.MountPlugins(pluginpage.NewPluginHandlers(srv))
+	srv.MountSetup(setuppage.NewConfiguredSetupHandlers(origin))
+	return srv
+}
 
 // sessionDispatcher gives the pages to the Vault channel: it turns the
 // channel's link, request and response into the pages' own types and back.
-type sessionDispatcher struct{ pages *pages.Server }
+type sessionDispatcher struct{ pages *pageserver.Server }
 
 func (d sessionDispatcher) Dispatch(ctx context.Context, link vault.SessionLink, req vault.Request) vault.Response {
 	out := d.pages.Dispatch(ctx,
-		pages.SessionLink{Token: link.Token, Item: link.Item},
-		pages.SessionRequest{Method: req.Method, Path: req.Path, Headers: req.Headers, Body: req.Body})
+		pageserver.SessionLink{Token: link.Token, Item: link.Item},
+		pageserver.SessionRequest{Method: req.Method, Path: req.Path, Headers: req.Headers, Body: req.Body})
 	return vault.Response{Status: out.Status, ContentType: out.ContentType, Body: out.Body}
 }
 

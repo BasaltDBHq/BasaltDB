@@ -12,14 +12,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
 
 // These tests run the engine's agent runtime against a real Postgres
@@ -90,7 +91,7 @@ func verifierOf(t *testing.T, password string) string {
 	return v
 }
 
-func problemCodes(r agent.StatusReport) []string {
+func problemCodes(r guidance.StatusReport) []string {
 	out := make([]string, 0, len(r.Problems))
 	for _, p := range r.Problems {
 		out = append(out, p.Code)
@@ -111,9 +112,9 @@ func TestALaptopInstallIsFinishedByStatusWithoutARestart(t *testing.T) {
 	rt := r.start(t)
 
 	// Before the person's laptop: every tool but status is held.
-	var se *agent.SetupError
+	var se *guidance.SetupError
 	require.ErrorAs(t, rt.svc.Admit(ctx), &se)
-	st, err := rt.svc.Status(ctx)
+	st, err := rt.svc.status.Status(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "PENDING", st.Setup.State)
 	require.Equal(t, []string{"SETUP_NOT_RUN"}, problemCodes(st))
@@ -126,9 +127,9 @@ func TestALaptopInstallIsFinishedByStatusWithoutARestart(t *testing.T) {
 
 	// The laptop records the code in the install's transaction.
 	r.record(t, d, guardmodel.SetupInstall)
-	st, err = rt.svc.Status(ctx)
+	st, err = rt.svc.status.Status(ctx)
 	require.NoError(t, err)
-	require.Equal(t, agent.SetupStatus{State: "DONE", SetupID: r.setup.SetupID, Kind: guardmodel.SetupInstall}, st.Setup)
+	require.Equal(t, guidance.SetupStatus{State: "DONE", SetupID: r.setup.SetupID, Kind: guardmodel.SetupInstall}, st.Setup)
 	require.Equal(t, []string{"NO_PASSKEY"}, problemCodes(st), "no passkey yet: a usual problem, not an unfinished setup")
 	require.Equal(t, "AGENT", st.Problems[0].NextSteps[0].Actor, "the agent makes the code that registers one")
 	require.False(t, st.Ready, "not ready until a passkey can sign; the tools are still served")
@@ -136,7 +137,7 @@ func TestALaptopInstallIsFinishedByStatusWithoutARestart(t *testing.T) {
 
 	// Served, with no restart.
 	require.NoError(t, rt.svc.Admit(ctx))
-	_, err = rt.svc.StartRun(ctx, "check the leads", uuid.Nil)
+	_, err = rt.svc.agent.StartRun(ctx, "check the leads", uuid.Nil)
 	require.NoError(t, err)
 }
 
@@ -149,10 +150,10 @@ func TestARotatedCredentialIsPromotedWhenItsSetupIsRecorded(t *testing.T) {
 	pw2 := guard.NewPassword()
 	pending, err := guard.AgentConnString(d.URL, a.Role, pw2)
 	require.NoError(t, err)
-	require.NoError(t, config.WriteFile(r.credFile+pendingSuffix, []byte(pending+"\n")))
+	require.NoError(t, config.WriteFile(r.credFile+handoff.PendingSuffix, []byte(pending+"\n")))
 	rt := r.start(t)
 
-	st, err := rt.svc.Status(ctx)
+	st, err := rt.svc.status.Status(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "PENDING", st.Setup.State)
 	require.Contains(t, problemCodes(st), "SETUP_CHANGE_PENDING")
@@ -162,7 +163,7 @@ func TestARotatedCredentialIsPromotedWhenItsSetupIsRecorded(t *testing.T) {
 	d.Init(t, guardmodel.AgentSpec{Name: "bot", Verifier: verifierOf(t, pw2), Write: demoTables, Read: demoTables})
 	r.record(t, d, guardmodel.SetupAgent)
 
-	st, err = rt.svc.Status(ctx)
+	st, err = rt.svc.status.Status(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "DONE", st.Setup.State)
 	require.NotContains(t, problemCodes(st), "CREDENTIAL_REJECTED", "the pool logs in with the promoted password")
@@ -170,10 +171,10 @@ func TestARotatedCredentialIsPromotedWhenItsSetupIsRecorded(t *testing.T) {
 	got, err := os.ReadFile(r.credFile)
 	require.NoError(t, err)
 	require.Equal(t, pending+"\n", string(got))
-	_, err = os.Lstat(r.credFile + pendingSuffix)
+	_, err = os.Lstat(r.credFile + handoff.PendingSuffix)
 	require.True(t, os.IsNotExist(err), "moved over the credential file")
 	require.Nil(t, r.configSetup(t))
-	_, err = rt.svc.StartRun(ctx, "check the leads", uuid.Nil)
+	_, err = rt.svc.agent.StartRun(ctx, "check the leads", uuid.Nil)
 	require.NoError(t, err)
 }
 
@@ -191,9 +192,9 @@ func TestTheSetupIsNotClearedWhileInitHoldsTheLock(t *testing.T) {
 		guardmodel.Setup{ID: r.setupID, Kind: guardmodel.SetupUpgrade, GuardVersion: guard.LatestVersion(), ExpiresAt: r.expires})
 	require.NoError(t, err)
 
-	unlock, err := config.LockFile(r.credFile + lockSuffix)
+	unlock, err := config.LockFile(r.credFile + handoff.LockSuffix)
 	require.NoError(t, err)
-	_, err = rt.svc.Status(ctx)
+	_, err = rt.svc.status.Status(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, r.configSetup(t), "locked: nothing cleared")
 	unlock()

@@ -12,15 +12,14 @@ import (
 	"testing"
 	"time"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -28,7 +27,11 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
 )
 
 // lateRelay is the agent's link relay once the Vault client exists.
@@ -79,11 +82,13 @@ func TestVaultSessionWidensARevert(t *testing.T) {
 
 	secrets := links.NewSecrets(time.Now, rand.Reader)
 	relay := &lateRelay{}
-	svc := pg.service(func(d *agent.Deps) { d.PagesBase, d.Links, d.Relay = links.Portal, secrets, relay })
+	svc := pg.service(func(d *Deps) {
+		d.Core.PagesBase, d.Delivery.Links, d.Delivery.Relay = links.Portal, secrets, relay
+	})
 	s := serveOverVault(t, &wire{}, svc, secrets, id)
 	relay.c.Store(s.client)
 
-	loopback := pages.New(links.Portal, quietLog())
+	loopback := newPages(links.Portal, quietLog())
 	loopback.Add(svc)
 	viaLoopback := func(path string, headers map[string]string, body string) (int, string) {
 		t.Helper()
@@ -113,7 +118,7 @@ func TestVaultSessionWidensARevert(t *testing.T) {
 	}
 
 	// A refused widen reads the same in the session as on loopback.
-	wider, err := json.Marshal(agent.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: task}})
+	wider, err := json.Marshal(revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: task}})
 	require.NoError(t, err)
 	refused := do(p, http.MethodPost, scopePath, s.secret, string(wider))
 	status, body := viaLoopback(scopePath, pagetest.PostHeaders(s.secret), string(wider))
@@ -147,15 +152,15 @@ func TestVaultSessionWidensARevert(t *testing.T) {
 	var proposal revert.Request
 	require.NoError(t, json.Unmarshal([]byte(r0.Body), &proposal))
 	require.Len(t, proposal.RescopeNonce, 16)
-	as, err := person.Sign(revert.RescopeChallenge(id, proposal.RescopeNonce, key, norm), passkeytest.FlagsUPUV, nil)
+	as, err := person.Sign(reverttest.RescopeChallenge(id, proposal.RescopeNonce, key, norm), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	widen, err := json.Marshal(agent.ScopeRequest{Select: every, NewSecret: newSecret, Proof: &agent.ScopeProof{
+	widen, err := json.Marshal(revertsvc.ScopeRequest{Select: every, NewSecret: newSecret, Proof: &linksvc.ScopeProof{
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,
 	}})
 	require.NoError(t, err)
 	r := do(p, http.MethodPost, scopePath, s.secret, string(widen))
 	require.Equal(t, http.StatusOK, r.Status, r.Body)
-	var out agent.ScopeResponse
+	var out revertsvc.ScopeResponse
 	require.NoError(t, json.Unmarshal([]byte(r.Body), &out))
 	b, err := out.Request.Check()
 	require.NoError(t, err)

@@ -9,7 +9,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // The setup page reads an agent's credential as root, so the read and the
@@ -35,7 +35,7 @@ func TestReadCredentialRefusesAForeignString(t *testing.T) {
 			require.NoError(t, os.WriteFile(path, []byte(tc.dsn+"\n"), 0o600))
 			got, err := setupbackend.Backend{}.ReadCredential(path)
 			if tc.refused {
-				require.ErrorIs(t, err, setuprun.ErrForeignCredential)
+				require.ErrorIs(t, err, setup.ErrForeignCredential)
 				require.Empty(t, got)
 				return
 			}
@@ -58,6 +58,6 @@ func TestReadCredentialPassesAReadErrorThrough(t *testing.T) {
 		got, err := setupbackend.Backend{}.ReadCredential(path)
 		require.Empty(t, got)
 		require.Equal(t, want, err, path)
-		require.NotErrorIs(t, err, setuprun.ErrForeignCredential, path)
+		require.NotErrorIs(t, err, setup.ErrForeignCredential, path)
 	}
 }

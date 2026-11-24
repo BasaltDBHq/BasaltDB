@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/secretfile"
+	"github.com/basaltdbhq/basaltdb/internal/links/out/secretfile"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"

@@ -13,15 +13,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
 )
 
 // heldItem is a held write: its approval id and the secret of its portal
@@ -90,7 +91,7 @@ func (e *relayEnv) leadScore(t *testing.T, id int) int {
 // for a test whose Vault breaks every session.
 func (e *relayEnv) loopbackApproval(t *testing.T, item heldItem) approval.Request {
 	t.Helper()
-	site := pages.New(links.Portal, quietLog())
+	site := newPages(links.Portal, quietLog())
 	site.Add(e.svc)
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/approvals/"+item.id, nil)
 	for k, v := range pagetest.Headers(item.secret) {
@@ -110,7 +111,7 @@ func approveBody(t *testing.T, signer *passkeytest.Authenticator, id string, bin
 	t.Helper()
 	as, err := signer.Sign(approval.Challenge(binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	b, err := json.Marshal(approval.NewResponse(uuid.MustParse(id), as))
+	b, err := json.Marshal(approvaltest.NewResponse(uuid.MustParse(id), as))
 	require.NoError(t, err)
 	return string(b)
 }
@@ -143,7 +144,7 @@ func TestRelayChannelCannotSignWithoutThePerson(t *testing.T) {
 	// The person's signature for A, posted for B through B's session.
 	asA, err := e.person.Sign(approval.Challenge(reqA.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	forB, err := json.Marshal(approval.NewResponse(uuid.MustParse(b.id), asA))
+	forB, err := json.Marshal(approvaltest.NewResponse(uuid.MustParse(b.id), asA))
 	require.NoError(t, err)
 	r := post(pb, "/api/v1/approvals/"+b.id+"/approve", b.secret, string(forB))
 	require.Equal(t, http.StatusConflict, r.Status, r.Body)
@@ -170,7 +171,7 @@ func TestRelayChannelCannotSignWithoutThePerson(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(rr.Body), &rreq))
 	asR, err := forger.Sign(approval.Challenge(rreq.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	apply, err := json.Marshal(revert.NewResponse(uuid.MustParse(revertID), asR))
+	apply, err := json.Marshal(reverttest.NewResponse(uuid.MustParse(revertID), asR))
 	require.NoError(t, err)
 	r = post(pr, "/api/v1/reverts/"+revertID+"/apply", revertSecret, string(apply))
 	require.Equal(t, http.StatusConflict, r.Status, r.Body)

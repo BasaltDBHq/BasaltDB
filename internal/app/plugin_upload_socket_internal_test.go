@@ -19,13 +19,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
+	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
 // uploadPerson and uploadOther are two OS user ids other than the test's own:
@@ -57,7 +57,7 @@ func bigSource(t *testing.T, size int) (string, []byte) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "bin"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "share"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, pluginhost.ManifestFile), []byte(manifest), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, plugin.ManifestFile), []byte(manifest), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "bin", "acme-ner"), exe, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "share", "model.txt"), model, 0o644))
 	return dir, model
@@ -68,23 +68,25 @@ func TestUploadThroughTheEnginesAgentSocket(t *testing.T) {
 	dir, err := os.MkdirTemp("", "bu")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	store, err := pluginhost.New(filepath.Join(dir, "state"), time.Now)
+	store, err := plugin.NewPluginhost(filepath.Join(dir, "state"), time.Now)
 	require.NoError(t, err)
 	p := newPluginRequests(map[string]uint32{"bot": uploadPerson, "other": uploadOther}, []uint32{uploadPerson})
-	p.SetKept(engine.OpenKeptPlugins(config.Config{}, "", store, nil, nil, slog.New(slog.DiscardHandler), pluginPorts))
+	p.SetKept(plugin.OpenKeptPlugins(config.Config{}, "", store, nil, nil, slog.New(slog.DiscardHandler), pluginPorts))
 	served := func() error { return nil }
 	mine := uint32(os.Getuid())
-	bot := Agent{
+	bot := engine.Agent{
 		Name: "bot", UID: mine, SocketPath: filepath.Join(dir, "bot.sock"),
-		Server: mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}).WithMethods(p.uploadMethods("bot", served)),
+		Server: mcpServer{mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}).WithMethods(p.uploadMethods("bot", served))},
 	}
-	stranger := Agent{
+	stranger := engine.Agent{
 		Name: "other", UID: mine + 1, SocketPath: filepath.Join(dir, "other.sock"),
-		Server: mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}).WithMethods(p.uploadMethods("bot", served)),
+		Server: mcpServer{mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}).WithMethods(p.uploadMethods("bot", served))},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- New(slog.New(slog.DiscardHandler), []Agent{bot, stranger}).Serve(ctx) }()
+	go func() {
+		done <- engine.New(slog.New(slog.DiscardHandler), mcpLines{}, []engine.Agent{bot, stranger}).Serve(ctx)
+	}()
 	t.Cleanup(func() { cancel(); <-done })
 	require.Eventually(t, func() bool {
 		c, err := net.Dial("unix", bot.SocketPath)
@@ -97,7 +99,7 @@ func TestUploadThroughTheEnginesAgentSocket(t *testing.T) {
 	relay, err := net.Dial("unix", bot.SocketPath)
 	require.NoError(t, err)
 	defer relay.Close()
-	_, err = relay.Write(append(mcp.HelloLine("test"), '\n'))
+	_, err = relay.Write(append(mcpserver.HelloLine("test"), '\n'))
 	require.NoError(t, err)
 	hello, err := bufio.NewReader(relay).ReadBytes('\n')
 	require.NoError(t, err)
@@ -130,10 +132,10 @@ func TestUploadMethodsAnswerWithTheirCodes(t *testing.T) {
 	dir, err := os.MkdirTemp("", "bu")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	store, err := pluginhost.New(filepath.Join(dir, "state"), time.Now)
+	store, err := plugin.NewPluginhost(filepath.Join(dir, "state"), time.Now)
 	require.NoError(t, err)
 	p := newPluginRequests(map[string]uint32{"bot": uploadPerson, "other": uploadOther}, []uint32{uploadPerson})
-	p.SetKept(engine.OpenKeptPlugins(config.Config{}, "", store, nil, nil, slog.New(slog.DiscardHandler), pluginPorts))
+	p.SetKept(plugin.OpenKeptPlugins(config.Config{}, "", store, nil, nil, slog.New(slog.DiscardHandler), pluginPorts))
 	ok := func() error { return nil }
 	part := func(raw string) json.RawMessage { return json.RawMessage(raw) }
 	ctx := context.Background()
@@ -146,23 +148,23 @@ func TestUploadMethodsAnswerWithTheirCodes(t *testing.T) {
 		return te
 	}
 
-	te := call("bot", mcp.MethodPluginUploadBegin, func() error {
-		return &toolresult.ToolError{Code: "PLUGIN_REFUSED", Reason: agent.ReasonPluginAgentOperated, Message: "operated by an agent"}
+	te := call("bot", mcpserver.MethodPluginUploadBegin, func() error {
+		return &toolresult.ToolError{Code: "PLUGIN_REFUSED", Reason: plugin.ReasonPluginAgentOperated, Message: "operated by an agent"}
 	}, nil)
 	require.Equal(t, "PLUGIN_REFUSED", te.Code)
-	require.Equal(t, agent.ReasonPluginAgentOperated, te.Reason, "the tool's own refusal is passed on")
+	require.Equal(t, plugin.ReasonPluginAgentOperated, te.Reason, "the tool's own refusal is passed on")
 
-	te = call("other", mcp.MethodPluginUploadBegin, ok, nil)
+	te = call("other", mcpserver.MethodPluginUploadBegin, ok, nil)
 	require.Equal(t, "PLUGIN_REFUSED", te.Code)
-	require.Equal(t, agent.ReasonPluginAgentNotAllowed, te.Reason, "an OS user the engine does not let change plugins")
+	require.Equal(t, plugin.ReasonPluginAgentNotAllowed, te.Reason, "an OS user the engine does not let change plugins")
 
-	te = call("bot", mcp.MethodPluginUploadPart, ok, part(`{"uploadId":"x"}`))
+	te = call("bot", mcpserver.MethodPluginUploadPart, ok, part(`{"uploadId":"x"}`))
 	require.Equal(t, "INVALID_ARGUMENT", te.Code)
-	require.Equal(t, agent.CodeInvalidArgument, te.Code)
-	te = call("bot", mcp.MethodPluginUploadPart, ok, part(`{"uploadId":"`+uuid.NewString()+`","path":"a","offset":0,"data":"","extra":1}`))
+	require.Equal(t, guidance.CodeInvalidArgument, te.Code)
+	te = call("bot", mcpserver.MethodPluginUploadPart, ok, part(`{"uploadId":"`+uuid.NewString()+`","path":"a","offset":0,"data":"","extra":1}`))
 	require.Equal(t, "INVALID_ARGUMENT", te.Code, "an unknown field is refused")
 
-	te = call("bot", mcp.MethodPluginUploadPart, ok, part(`{"uploadId":"`+uuid.NewString()+`","path":"a","offset":0,"data":""}`))
+	te = call("bot", mcpserver.MethodPluginUploadPart, ok, part(`{"uploadId":"`+uuid.NewString()+`","path":"a","offset":0,"data":""}`))
 	require.Equal(t, "NOT_FOUND", te.Code)
-	require.Equal(t, agent.CodeNotFound, te.Code)
+	require.Equal(t, guidance.CodeNotFound, te.Code)
 }

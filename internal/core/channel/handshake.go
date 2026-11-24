@@ -313,7 +313,7 @@ func checkWelcome(pt, signed []byte) (Welcome, error) {
 	if err := strictJSON(pt, &p); err != nil {
 		return Welcome{}, err
 	}
-	spki, err := unb64(p.EngineKey)
+	spki, err := Unb64(p.EngineKey)
 	if err != nil {
 		return Welcome{}, err
 	}
@@ -321,7 +321,7 @@ func checkWelcome(pt, signed []byte) (Welcome, error) {
 	if err != nil {
 		return Welcome{}, err
 	}
-	sig, err := unb64(p.Sig)
+	sig, err := Unb64(p.Sig)
 	if err != nil {
 		return Welcome{}, err
 	}

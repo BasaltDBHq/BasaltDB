@@ -1,0 +1,2 @@
+portalcheck.go imports net/http (a service reaches the database and the network through a port)
+verify.go imports net/http (a service reaches the database and the network through a port)

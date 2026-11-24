@@ -51,7 +51,7 @@ const (
 	ScopeTask   Scope = "TASK"
 )
 
-func invalid(format string, args ...any) error {
+func Invalid(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", approval.ErrInvalid, fmt.Sprintf(format, args...))
 }
 
@@ -75,19 +75,19 @@ func (s Select) check(name string) error {
 	switch s.Scope {
 	case ScopeChange, ScopeRun, ScopeTask:
 	default:
-		return invalid("binding %s scope %q", name, s.Scope)
+		return Invalid("binding %s scope %q", name, s.Scope)
 	}
 	if s.ScopeID == uuid.Nil {
-		return invalid("binding %s names no scope id", name)
+		return Invalid("binding %s names no scope id", name)
 	}
 	if s.Agents != nil && len(s.Agents) == 0 {
-		return invalid("binding %s names no agents", name)
+		return Invalid("binding %s names no agents", name)
 	}
 	if s.Runs != nil && s.Scope != ScopeTask {
-		return invalid("binding %s lists runs for a %s scope", name, s.Scope)
+		return Invalid("binding %s lists runs for a %s scope", name, s.Scope)
 	}
 	if len(s.Runs) > MaxFilter || len(s.Tables) > MaxFilter {
-		return invalid("binding %s lists more than %d runs or tables", name, MaxFilter)
+		return Invalid("binding %s lists more than %d runs or tables", name, MaxFilter)
 	}
 	return nil
 }
@@ -142,10 +142,10 @@ func (b Binding) checkScope() error {
 		}
 	}
 	if b.Widened != b.Select.widenedFor(b.RequestedBy) {
-		return invalid("binding widened %t does not match its select and requestedBy", b.Widened)
+		return Invalid("binding widened %t does not match its select and requestedBy", b.Widened)
 	}
 	if b.Widened != (b.AgentRows != nil) {
-		return invalid("binding agentRows goes with widened, and only with it")
+		return Invalid("binding agentRows goes with widened, and only with it")
 	}
 	return nil
 }
@@ -161,31 +161,31 @@ func ParseBinding(text string) (Binding, error) {
 	dec := json.NewDecoder(strings.NewReader(text))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&b); err != nil {
-		return Binding{}, invalid("binding: %v", err)
+		return Binding{}, Invalid("binding: %v", err)
 	}
 	if b.Kind != KindRevert {
-		return Binding{}, invalid("binding kind %q", b.Kind)
+		return Binding{}, Invalid("binding kind %q", b.Kind)
 	}
 	if err := b.checkScope(); err != nil {
 		return Binding{}, err
 	}
 	if b.Skipped < 0 {
-		return Binding{}, invalid("binding skipped %d", b.Skipped)
+		return Binding{}, Invalid("binding skipped %d", b.Skipped)
 	}
 	if b.Rows < 1 && !b.Empty() {
-		return Binding{}, invalid("binding rows %d: a revert restores at least one row", b.Rows)
+		return Binding{}, Invalid("binding rows %d: a revert restores at least one row", b.Rows)
 	}
 	if !isDigest(b.RowsHash) {
-		return Binding{}, invalid("binding rowsHash is not a sha256 hex digest")
+		return Binding{}, Invalid("binding rowsHash is not a sha256 hex digest")
 	}
 	if b.Batched {
 		return b, b.checkBatched()
 	}
 	if b.SampleHash != "" {
-		return Binding{}, invalid("binding has a sampleHash but is not batched")
+		return Binding{}, Invalid("binding has a sampleHash but is not batched")
 	}
 	if b.Lines() > MaxLines {
-		return Binding{}, invalid("binding lines %d out of 1..%d; a larger plan is batched", b.Lines(), MaxLines)
+		return Binding{}, Invalid("binding lines %d out of 1..%d; a larger plan is batched", b.Lines(), MaxLines)
 	}
 	return b, nil
 }
@@ -194,10 +194,10 @@ func ParseBinding(text string) (Binding, error) {
 // takes, and a sample digest.
 func (b Binding) checkBatched() error {
 	if b.Lines() <= MaxLines {
-		return invalid("batched binding with %d lines: only a plan of more than %d lines is batched", b.Lines(), MaxLines)
+		return Invalid("batched binding with %d lines: only a plan of more than %d lines is batched", b.Lines(), MaxLines)
 	}
 	if !isDigest(b.SampleHash) {
-		return invalid("binding sampleHash is not a sha256 hex digest")
+		return Invalid("binding sampleHash is not a sha256 hex digest")
 	}
 	return nil
 }
@@ -220,28 +220,6 @@ func SampleCounts(skipped, rows int) (skips, restores int) {
 	skips = min(skipped, max(SampleShare, MaxLines-rows))
 	restores = min(rows, MaxLines-skips)
 	return skips, restores
-}
-
-// Sample returns the lines a revert link carries for a plan whose lines are
-// in signed order: the SKIP lines, then the RESTORE lines, each group in
-// signed order and cut to SampleCounts (decisions N12-4, RSS-1). Postgres
-// builds the same sample in prepare_revert.
-func Sample(lines []string) ([]string, error) {
-	skips := make([]string, 0, len(lines))
-	restores := make([]string, 0, len(lines))
-	for _, text := range lines {
-		l, err := ParseLine(text)
-		if err != nil {
-			return nil, err
-		}
-		if l.Action == ActionSkip {
-			skips = append(skips, text)
-			continue
-		}
-		restores = append(restores, text)
-	}
-	s, r := SampleCounts(len(skips), len(restores))
-	return slices.Concat(skips[:s], restores[:r]), nil
 }
 
 // Request is the revert request: what the engine's local pages serve, and
@@ -276,16 +254,16 @@ func (r Request) Check() (Binding, error) {
 		return Binding{}, err
 	}
 	if b.RevertID != r.RevertID {
-		return Binding{}, invalid("request is for revert %s, binding for %s", r.RevertID, b.RevertID)
+		return Binding{}, Invalid("request is for revert %s, binding for %s", r.RevertID, b.RevertID)
 	}
 	if b.Batched {
 		return b, r.checkSample(b)
 	}
 	if len(r.Lines) != b.Lines() {
-		return Binding{}, invalid("request has %d lines, binding %d", len(r.Lines), b.Lines())
+		return Binding{}, Invalid("request has %d lines, binding %d", len(r.Lines), b.Lines())
 	}
 	if approval.RowsHash(r.Lines) != b.RowsHash {
-		return Binding{}, invalid("revert lines do not match the binding's rowsHash")
+		return Binding{}, Invalid("revert lines do not match the binding's rowsHash")
 	}
 	restore := 0
 	for _, text := range r.Lines {
@@ -298,7 +276,7 @@ func (r Request) Check() (Binding, error) {
 		}
 	}
 	if restore != b.Rows {
-		return Binding{}, invalid("request has %d RESTORE lines, binding %d rows", restore, b.Rows)
+		return Binding{}, Invalid("request has %d RESTORE lines, binding %d rows", restore, b.Rows)
 	}
 	return b, nil
 }
@@ -309,10 +287,10 @@ func (r Request) Check() (Binding, error) {
 // RESTORE lines, since the sample has MaxLines lines).
 func (r Request) checkSample(b Binding) error {
 	if len(r.Lines) != MaxLines {
-		return invalid("request has %d lines, a batched plan's sample has %d", len(r.Lines), MaxLines)
+		return Invalid("request has %d lines, a batched plan's sample has %d", len(r.Lines), MaxLines)
 	}
 	if approval.RowsHash(r.Lines) != b.SampleHash {
-		return invalid("revert lines do not match the binding's sampleHash")
+		return Invalid("revert lines do not match the binding's sampleHash")
 	}
 	skips, restoring := 0, false
 	for _, text := range r.Lines {
@@ -325,12 +303,12 @@ func (r Request) checkSample(b Binding) error {
 			continue
 		}
 		if restoring {
-			return invalid("the sample must list SKIP lines before RESTORE lines")
+			return Invalid("the sample must list SKIP lines before RESTORE lines")
 		}
 		skips++
 	}
 	if want, _ := SampleCounts(b.Skipped, b.Rows); skips != want {
-		return invalid("request has %d SKIP lines, the binding's sample %d", skips, want)
+		return Invalid("request has %d SKIP lines, the binding's sample %d", skips, want)
 	}
 	return nil
 }
@@ -340,16 +318,6 @@ func (r Request) checkSample(b Binding) error {
 // database's credential ids, and no separate revert id.
 func (r Request) Fragment() (string, error) {
 	return linkcodec.EncodeRequest(r.Binding, r.Lines, r.CredentialIDs)
-}
-
-// fromCompact is the request a format 2 link carries, its id read from the
-// binding; Check refuses a binding that does not parse.
-func fromCompact(binding string, lines []string, ids []passkey.Bytes) Request {
-	r := Request{Binding: binding, Lines: lines, CredentialIDs: ids}
-	if b, err := ParseBinding(binding); err == nil {
-		r.RevertID = b.RevertID
-	}
-	return r
 }
 
 // URL returns the long revert link on the pages at base (links):
@@ -362,23 +330,6 @@ func (r Request) URL(base string) (string, error) {
 	return links.Revert(base, r.RevertID) + "#" + frag, nil
 }
 
-// ParseRequest decodes a revert link fragment of either format, with or
-// without '#', and checks it (Check).
-func ParseRequest(fragment string) (Request, Binding, error) {
-	r, err := linkcodec.DecodeRequest(fragment, MaxLines, fromCompact)
-	if err != nil {
-		return Request{}, Binding{}, invalid("revert request %v", err)
-	}
-	if r.RescopeNonce != nil || r.RevealNonce != nil || r.Columns != nil {
-		return Request{}, Binding{}, invalid("a link carries no rescopeNonce, revealNonce or columns: only the engine serves them")
-	}
-	b, err := r.Check()
-	if err != nil {
-		return Request{}, Binding{}, err
-	}
-	return r, b, nil
-}
-
 // Response is what the revert page outputs after the person signs.
 type Response struct {
 	RevertID          uuid.UUID     `json:"revertId"`
@@ -386,17 +337,6 @@ type Response struct {
 	AuthenticatorData passkey.Bytes `json:"authenticatorData"`
 	ClientDataJSON    passkey.Bytes `json:"clientDataJson"`
 	Signature         passkey.Bytes `json:"signature"`
-}
-
-// NewResponse wraps an assertion for revertID.
-func NewResponse(revertID uuid.UUID, a passkey.Assertion) Response {
-	return Response{
-		RevertID:          revertID,
-		CredentialID:      a.CredentialID,
-		AuthenticatorData: a.AuthenticatorData,
-		ClientDataJSON:    a.ClientDataJSON,
-		Signature:         a.Signature,
-	}
 }
 
 // Assertion returns the WebAuthn assertion the response carries.
@@ -414,29 +354,10 @@ func (r Response) Assertion() passkey.Assertion {
 func DecodeResponse(raw []byte) (Response, error) {
 	var r Response
 	if err := passkey.DecodeStrict(raw, &r); err != nil {
-		return Response{}, invalid("%v", err)
+		return Response{}, Invalid("%v", err)
 	}
 	if len(r.CredentialID) == 0 || len(r.AuthenticatorData) == 0 || len(r.ClientDataJSON) == 0 || len(r.Signature) == 0 {
-		return Response{}, invalid("revert response is missing a field")
+		return Response{}, Invalid("revert response is missing a field")
 	}
 	return r, nil
-}
-
-// Verify checks a response against the binding text it should sign and the
-// stored passkey, the way basalt_meta.apply_revert does (without the
-// revert's state and expiry, which only Postgres knows). It returns the new
-// signature counter.
-func Verify(bindingText string, cred passkey.Credential, r Response) (uint32, error) {
-	b, err := ParseBinding(bindingText)
-	if err != nil {
-		return 0, err
-	}
-	if b.RevertID != r.RevertID {
-		return 0, invalid("response is for revert %s, binding for %s", r.RevertID, b.RevertID)
-	}
-	count, err := passkey.VerifyAssertion(cred, approval.Challenge(bindingText), r.Assertion())
-	if err != nil {
-		return 0, fmt.Errorf("revert %s: %w", r.RevertID, err)
-	}
-	return count, nil
 }

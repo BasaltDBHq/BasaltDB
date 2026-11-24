@@ -14,9 +14,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 )
 
 // TestSlogNeverPrintsAKeyOrAToken logs every value that holds a link's psk

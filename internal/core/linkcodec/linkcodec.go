@@ -39,18 +39,8 @@ const (
 
 var errTrailing = errors.New("has data after its end")
 
-// Encode returns a fragment (without '#'): format, then the base64url of
-// the deflate-raw of v's JSON.
-func Encode(format string, v any) (string, error) {
-	raw, err := marshal(v)
-	if err != nil {
-		return "", fmt.Errorf("encode request: %w", err)
-	}
-	return deflate(format, raw)
-}
-
 // deflate returns format, then the base64url of the deflate-raw of raw.
-func deflate(format string, raw []byte) (string, error) {
+func Deflate(format string, raw []byte) (string, error) {
 	var buf bytes.Buffer
 	w, err := flate.NewWriter(&buf, flate.BestCompression)
 	if err != nil {
@@ -67,7 +57,7 @@ func deflate(format string, raw []byte) (string, error) {
 
 // marshal is json.Marshal without HTML escaping: the JSON only travels in a
 // fragment, and < is six bytes where < is one.
-func marshal(v any) ([]byte, error) {
+func Marshal(v any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
@@ -161,14 +151,14 @@ func EncodeRequest(binding string, lines []string, ids []passkey.Bytes) (string,
 	}
 	c := Compact(append([]string{binding}, lines...))
 	c.CredentialIDs = ids
-	raw, err := marshal(c)
+	raw, err := Marshal(c)
 	if err != nil {
 		return "", fmt.Errorf("encode request: %w", err)
 	}
 	if len(raw) > MaxInflatedBytes {
 		return "", fmt.Errorf("%w: its JSON is %d bytes, at most %d", ErrRequestTooLarge, len(raw), MaxInflatedBytes)
 	}
-	frag, err := deflate(Format2, raw)
+	frag, err := Deflate(Format2, raw)
 	if err != nil {
 		return "", err
 	}

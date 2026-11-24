@@ -12,17 +12,18 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
+	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
 // A reveal racing the approval's signature or apply, or the revert's
@@ -102,7 +103,7 @@ func (e raceEnv) proof(t *testing.T, kind string, id uuid.UUID, table, idCol str
 		`SELECT reveal_nonce, rows_hash FROM basalt_meta.`+table+` WHERE `+idCol+` = $1`, id).Scan(&nonce, &rowsHash))
 	key, err := approval.RevealKey(make([]byte, links.SecretBytes))
 	require.NoError(t, err)
-	ch, err := approval.RevealChallenge(kind, id, nonce, key, hexOf(rowsHash))
+	ch, err := approvaltest.RevealChallenge(kind, id, nonce, key, hexOf(rowsHash))
 	require.NoError(t, err)
 	as, err := e.person.Sign(ch, passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)

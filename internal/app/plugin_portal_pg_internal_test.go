@@ -22,30 +22,28 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/keyfile"
+	"github.com/basaltdbhq/basaltdb/internal/platform/keyfile"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/person"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost/engine"
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
 // portalPerson is the person's OS user id in these tests: any id but the
@@ -63,8 +61,8 @@ type portalFixture struct {
 	t     *testing.T
 	base  string
 	cfg   config.Config
-	s     *engine.KeptPlugins
-	store *pluginhost.Store
+	s     *plugin.KeptPlugins
+	store *plugin.Store
 	roles map[string]*guardtest.Agent
 	pk    *passkeytest.Authenticator
 }
@@ -89,7 +87,7 @@ func newPortalFixture(t *testing.T, name string, set func(*config.Config)) *port
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	cc := pool.Config().ConnConfig
-	agents := map[string]engine.KeptAgent{name: engine.NewKeptAgent(pool, cc.Host, cc.Port, cc.Database, cc.User)}
+	agents := map[string]plugin.KeptAgent{name: plugin.NewKeptAgent(pool, cc.Host, cc.Port, cc.Database, cc.User)}
 	f.cfg.Agents = append(f.cfg.Agents, config.Agent{Name: name, OSUser: me.Username})
 	raw, err := json.Marshal(f.cfg)
 	require.NoError(t, err)
@@ -97,9 +95,9 @@ func newPortalFixture(t *testing.T, name string, set func(*config.Config)) *port
 	if set != nil {
 		set(&f.cfg)
 	}
-	f.store, err = pluginhost.New(state, time.Now)
+	f.store, err = plugin.NewPluginhost(state, time.Now)
 	require.NoError(t, err)
-	f.s = engine.NewKeptPlugins(f.store, f.cfg, configPath, agents, slog.New(slog.DiscardHandler), pluginPorts)
+	f.s = plugin.NewKeptPlugins(f.store, f.cfg, configPath, agents, slog.New(slog.DiscardHandler), pluginPorts)
 	f.pk, err = passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, f.pk.Credential(), "app"))
@@ -115,7 +113,7 @@ func (f *portalFixture) entries() []config.Plugin {
 
 // upload sends files to the kept plugins in parts, as basalt mcp does over
 // the person's own socket, and returns the upload's id.
-func (f *portalFixture) upload(ctx context.Context, files []shim.PluginFile) (uuid.UUID, error) {
+func (f *portalFixture) upload(ctx context.Context, files []plugin.UploadFile) (uuid.UUID, error) {
 	begun, err := f.s.UploadBegin(ctx, portalPerson)
 	if err != nil {
 		return uuid.Nil, err
@@ -123,14 +121,14 @@ func (f *portalFixture) upload(ctx context.Context, files []shim.PluginFile) (uu
 	part := begun.MaxPartBytes
 	for _, file := range files {
 		if len(file.Data) == 0 {
-			if _, err := f.s.UploadPart(ctx, portalPerson, person.PluginUploadPartParams{UploadID: begun.UploadID, Path: file.Path}); err != nil {
+			if _, err := f.s.UploadPart(ctx, portalPerson, plugin.PluginUploadPartParams{UploadID: begun.UploadID, Path: file.Path}); err != nil {
 				return uuid.Nil, err
 			}
 			continue
 		}
 		for off := 0; off < len(file.Data); off += part {
 			chunk := file.Data[off:min(off+part, len(file.Data))]
-			if _, err := f.s.UploadPart(ctx, portalPerson, person.PluginUploadPartParams{
+			if _, err := f.s.UploadPart(ctx, portalPerson, plugin.PluginUploadPartParams{
 				UploadID: begun.UploadID, Path: file.Path, Offset: int64(off), Data: base64.RawURLEncoding.EncodeToString(chunk),
 			}); err != nil {
 				return uuid.Nil, err
@@ -141,7 +139,7 @@ func (f *portalFixture) upload(ctx context.Context, files []shim.PluginFile) (uu
 }
 
 // portalSource is a plugin's source files and its executables.
-func portalSource(version string) ([]shim.PluginFile, []string) {
+func portalSource(version string) ([]plugin.UploadFile, []string) {
 	exe := []byte("#!/bin/sh\nexit 0\n" + version)
 	manifest := fmt.Sprintf(`{
   "manifestVersion": 1, "name": "acme-ner", "version": %q, "publisher": "Acme",
@@ -152,8 +150,8 @@ func portalSource(version string) ([]shim.PluginFile, []string) {
   "network": { "egress": [] }
 }
 `, version, sha256.Sum256(exe), sha256.Sum256([]byte("model")))
-	return []shim.PluginFile{
-		{Path: pluginhost.ManifestFile, Data: []byte(manifest)},
+	return []plugin.UploadFile{
+		{Path: plugin.ManifestFile, Data: []byte(manifest)},
 		{Path: "bin/acme-ner", Data: exe},
 		{Path: "share/model.txt", Data: []byte("model")},
 	}, []string{"bin/acme-ner"}
@@ -164,7 +162,7 @@ func portalSource(version string) ([]shim.PluginFile, []string) {
 // path.
 func serveAgentSocket(t *testing.T, dir string, p *pluginRequests, caller string, served func() error) string {
 	t.Helper()
-	srv := mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}).WithMethods(p.uploadMethods(caller, served))
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}).WithMethods(p.uploadMethods(caller, served))
 	sock := filepath.Join(dir, caller+".sock")
 	ln, err := net.Listen("unix", sock)
 	require.NoError(t, err)
@@ -195,7 +193,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	ctx := context.Background()
 	// The bot's computer: the engine runs as the agent's own OS user.
 	f := newPortalFixture(t, "bot", func(c *config.Config) { c.Mode, c.OperatedBy = "", mcpcontract.OperatedByAgent })
-	p := newPluginRequests(map[string]uint32{"bot": portalPerson}, pluginCallers(f.cfg, portalPerson))
+	p := newPluginRequests(map[string]uint32{"bot": portalPerson}, plugin.Callers(f.cfg, portalPerson))
 	p.SetKept(f.s)
 
 	stateDir := t.TempDir()
@@ -204,19 +202,19 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	secrets := links.NewSecrets(time.Now, rand.Reader)
 	relay := &lateRelay{}
 	pg := newPGAgent(t, f.roles["bot"].URL, 4)
-	svc := pg.service(func(d *agent.Deps) {
-		d.PagesBase, d.Links, d.Relay, d.Receipts, d.Poll = links.Portal, secrets, relay, keys, relayPoll
-		d.Commands = d.Commands.OperatedBy(mcpcontract.OperatedByAgent)
-		d.OperatedBy, d.SameUser = mcpcontract.OperatedByAgent, true
-		d.PluginRequests, d.PluginApprovals = p, pg.store
+	svc := pg.service(func(d *Deps) {
+		d.Core.PagesBase, d.Delivery.Links, d.Delivery.Relay, d.Delivery.Receipts, d.Delivery.Poll = links.Portal, secrets, relay, keys, relayPoll
+		d.Core.Commands = d.Core.Commands.OperatedBy(mcpcontract.OperatedByAgent)
+		d.Status.OperatedBy, d.Status.SameUser = mcpcontract.OperatedByAgent, true
+		d.Plugin.Requests, d.Plugin.Approvals = p, pg.store
 	})
-	server := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)
+	server := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, AgentTools(svc)...)
 	files, executables := portalSource("1.0.0")
 	install := func() (map[string]any, bool) {
 		t.Helper()
 		id, err := f.upload(ctx, files)
 		require.NoError(t, err)
-		meta := map[string]any{mcp.MetaPluginUpload: map[string]any{"uploadId": id.String(), "name": "acme-ner", "executables": executables}}
+		meta := map[string]any{mcpserver.MetaPluginUpload: map[string]any{"uploadId": id.String(), "name": "acme-ner", "executables": executables}}
 		return callWithMeta(ctx, t, server, "request_plugin", map[string]any{"source": "/home/bot/acme-ner"}, meta)
 	}
 
@@ -224,7 +222,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	body, isError := install()
 	require.True(t, isError, "%v", body)
 	require.Equal(t, "PLUGIN_REFUSED", body["code"], "%v", body)
-	require.Equal(t, agent.ReasonPluginNoPortalLink, body["reason"])
+	require.Equal(t, plugin.ReasonPluginNoPortalLink, body["reason"])
 	require.Empty(t, f.entries(), "nothing written without a portal link")
 
 	// basalt mcp uploads on an agent-operated engine; the engine refuses the
@@ -244,30 +242,30 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	var te *toolresult.ToolError
 	require.ErrorAs(t, err, &te)
 	require.Equal(t, "PLUGIN_REFUSED", te.Code)
-	require.Equal(t, agent.ReasonPluginNoPortalLink, te.Reason)
+	require.Equal(t, plugin.ReasonPluginNoPortalLink, te.Reason)
 	require.Contains(t, te.PersonMessage, "the Vault is off")
 	require.Equal(t, []string{toolresult.ActionAskPerson, toolresult.ActionCallTool}, []string{te.NextSteps[0].Action, te.NextSteps[1].Action})
 
 	v := vaulttest.New(vaulttest.Options{})
 	t.Cleanup(v.Close)
-	live := newRelayLinks(quietLog())
-	site := pages.New(links.Portal, quietLog())
+	live := linksvc.NewRegistry(quietLog())
+	site := newPages(links.Portal, quietLog())
 	site.Add(svc)
 	ev := openVault(config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}, stateDir, time.Now, quietLog(), live, sessionDispatcher{site})
-	require.NotNil(t, ev.client)
-	live.add("bot", secrets, ev.client.Unregister)
+	require.NotNil(t, ev.Client)
+	live.Add("bot", secrets, ev.Client.Unregister)
 	runCtx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = ev.client.Run(runCtx)
+		_ = ev.Client.Run(runCtx)
 	}()
 	t.Cleanup(func() {
 		cancel()
 		<-done
 	})
-	require.Eventually(t, ev.client.Connected, 5*time.Second, 5*time.Millisecond)
-	relay.c.Store(ev.client)
+	require.Eventually(t, ev.Client.Connected, 5*time.Second, 5*time.Millisecond)
+	relay.c.Store(ev.Client)
 
 	// Once the Vault answers, basalt mcp's upload goes through.
 	up, err := uploader(ctx, dir)
@@ -276,14 +274,14 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 
 	body, isError = install()
 	require.False(t, isError, "%v", body)
-	require.Equal(t, agent.PluginStatePending, body["state"])
+	require.Equal(t, plugin.PluginStatePending, body["state"])
 	idText, secret := portalLink(t, body["approvalUrl"].(string), "plugins")
 	require.Equal(t, body["approvalId"], idText)
 	id := uuid.MustParse(idText)
 	require.Len(t, f.entries(), 1, "the entry is written and waits for the approval")
 	st, err := p.PluginApproval(ctx, "bot", id)
 	require.NoError(t, err)
-	require.Equal(t, agent.PluginStatePending, st.State, "nothing is served before the signature")
+	require.Equal(t, plugin.PluginStatePending, st.State, "nothing is served before the signature")
 
 	linkKeys, err := channel.DeriveLink(secret)
 	require.NoError(t, err)
@@ -325,7 +323,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	require.Equal(t, http.StatusConflict, refused.Status, refused.Body)
 	st, err = p.PluginApproval(ctx, "bot", id)
 	require.NoError(t, err)
-	require.Equal(t, agent.PluginStatePending, st.State)
+	require.Equal(t, plugin.PluginStatePending, st.State)
 
 	// The person's passkey: Postgres verifies it, and the answer carries no
 	// receipt (there is no receipt kind for a plugin approval). The portal's
@@ -355,7 +353,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 
 	body, isError = callWithMeta(ctx, t, server, "request_plugin", map[string]any{"approvalId": idText, "waitForApproval": 0}, nil)
 	require.False(t, isError, "%v", body)
-	require.Equal(t, agent.PluginStateApproved, body["state"], "signed in Postgres; the harness runs no plugin")
+	require.Equal(t, plugin.PluginStateApproved, body["state"], "signed in Postgres; the harness runs no plugin")
 }
 
 // pluginSigned is the approve body: signer's assertion over the binding the
@@ -364,14 +362,14 @@ func pluginSigned(t *testing.T, signer *passkeytest.Authenticator, req approval.
 	t.Helper()
 	as, err := signer.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	body, err := json.Marshal(approval.NewResponse(req.ApprovalID, as))
+	body, err := json.Marshal(approvaltest.NewResponse(req.ApprovalID, as))
 	require.NoError(t, err)
 	return string(body)
 }
 
 // callWithMeta runs one tools/call with the request's _meta, as basalt mcp
 // forwards a call with its upload.
-func callWithMeta(ctx context.Context, t *testing.T, server *mcp.Server, tool string, args, meta map[string]any) (map[string]any, bool) {
+func callWithMeta(ctx context.Context, t *testing.T, server *mcpserver.Server, tool string, args, meta map[string]any) (map[string]any, bool) {
 	t.Helper()
 	params := map[string]any{"name": tool, "arguments": args}
 	if meta != nil {

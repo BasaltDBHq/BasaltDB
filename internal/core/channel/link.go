@@ -44,7 +44,7 @@ func (LinkToken) MarshalJSON() ([]byte, error) { return redactedJSON, nil }
 
 // ParseLinkToken reads a token's 22-character base64url text.
 func ParseLinkToken(s string) (LinkToken, error) {
-	raw, err := unb64(s)
+	raw, err := Unb64(s)
 	if err != nil {
 		return LinkToken{}, fmt.Errorf("link token: %w", err)
 	}
@@ -95,7 +95,7 @@ func (LinkKeys) LogValue() slog.Value { return slog.StringValue(redacted) }
 // and the contract's info strings. Neither output reveals the secret or the
 // other output.
 func DeriveLink(secret string) (LinkKeys, error) {
-	s, err := unb64(secret)
+	s, err := Unb64(secret)
 	if err != nil {
 		return LinkKeys{}, errors.New("link secret: not base64url")
 	}

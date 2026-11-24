@@ -98,7 +98,7 @@ func TestEngineIDVectors(t *testing.T) {
 		Expect      string `json:"expect"`
 	}
 	for _, c := range loadVectors[engineIDCase](t, "engine-id.json", "ENGINE_ID") {
-		der, err := unb64(c.EngineKey)
+		der, err := Unb64(c.EngineKey)
 		require.NoError(t, err, c.Name)
 		_, err = ParseEngineKey(der)
 		require.Equal(t, c.Expect, outcome(err), c.Name)
@@ -252,7 +252,7 @@ func checkHandshakeCase(t *testing.T, c handshakeCase) {
 
 func mustUnb64(t *testing.T, s string) []byte {
 	t.Helper()
-	b, err := unb64(s)
+	b, err := Unb64(s)
 	require.NoError(t, err)
 	return b
 }
@@ -341,7 +341,7 @@ func verifyVectorSignature(context SigningContext, publicKey string, message []b
 	if !ok {
 		return ErrBadSignature
 	}
-	spki, err := unb64(publicKey)
+	spki, err := Unb64(publicKey)
 	if err != nil {
 		return err
 	}
@@ -349,7 +349,7 @@ func verifyVectorSignature(context SigningContext, publicKey string, message []b
 	if err != nil {
 		return err
 	}
-	raw, err := unb64(sig)
+	raw, err := Unb64(sig)
 	if err != nil {
 		return ErrBadSignature
 	}

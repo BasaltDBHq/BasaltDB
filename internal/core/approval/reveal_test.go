@@ -15,7 +15,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
+	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec/linkcodectest"
 )
 
 const revealFile = "testdata/reveal.json"
@@ -40,10 +42,10 @@ func TestRevealKeyAndChallenge(t *testing.T) {
 	require.Equal(t, "10ab07b083d16ab69eb9fdff08c23623b83a2c93f77d8d584c57ec2cdc66e1fd", hex.EncodeToString(key))
 
 	rowsHash := "abababababababababababababababababababababababababababababababab"
-	got, err := approval.RevealChallenge(approval.KindApprove, revealID, counting(100), key, rowsHash)
+	got, err := approvaltest.RevealChallenge(approval.KindApprove, revealID, counting(100), key, rowsHash)
 	require.NoError(t, err)
 	require.Equal(t, "b238a10109ab85bbff9f9bbe9084e6fb23fa77705366ea19bfb13319525998ec", hex.EncodeToString(got))
-	got, err = approval.RevealChallenge(approval.KindRevert, revealID, counting(100), key, rowsHash)
+	got, err = approvaltest.RevealChallenge(approval.KindRevert, revealID, counting(100), key, rowsHash)
 	require.NoError(t, err)
 	require.Equal(t, "6003a5c9d6c593716594dcaa011cf9a82e2b371ac8a737c2abdbf93731c44708", hex.EncodeToString(got))
 
@@ -59,23 +61,23 @@ func TestRevealChallengeRefusesBadInput(t *testing.T) {
 	hash := hex.EncodeToString(make([]byte, sha256.Size))
 	for name, call := range map[string]func() error{
 		"kind": func() error {
-			_, err := approval.RevealChallenge("APPLY", revealID, counting(100), key, hash)
+			_, err := approvaltest.RevealChallenge("APPLY", revealID, counting(100), key, hash)
 			return err
 		},
 		"short nonce": func() error {
-			_, err := approval.RevealChallenge(approval.KindApprove, revealID, counting(100)[:15], key, hash)
+			_, err := approvaltest.RevealChallenge(approval.KindApprove, revealID, counting(100)[:15], key, hash)
 			return err
 		},
 		"short key": func() error {
-			_, err := approval.RevealChallenge(approval.KindApprove, revealID, counting(100), key[:31], hash)
+			_, err := approvaltest.RevealChallenge(approval.KindApprove, revealID, counting(100), key[:31], hash)
 			return err
 		},
 		"upper hash": func() error {
-			_, err := approval.RevealChallenge(approval.KindApprove, revealID, counting(100), key, "AB"+hash[2:])
+			_, err := approvaltest.RevealChallenge(approval.KindApprove, revealID, counting(100), key, "AB"+hash[2:])
 			return err
 		},
 		"short hash": func() error {
-			_, err := approval.RevealChallenge(approval.KindApprove, revealID, counting(100), key, hash[2:])
+			_, err := approvaltest.RevealChallenge(approval.KindApprove, revealID, counting(100), key, hash[2:])
 			return err
 		},
 		"short secret": func() error { _, err := approval.RevealKey(counting(0)[:15]); return err },
@@ -144,7 +146,7 @@ func buildRevealVectors(t *testing.T) revealVectors {
 		key, err := approval.RevealKey(secret)
 		require.NoError(t, err)
 		id := uuid.MustParse(fmt.Sprintf("0193a3f0-0000-7000-8000-00000000000%d", i+1))
-		ch, err := approval.RevealChallenge(c.kind, id, nonce, key, c.rowsHash)
+		ch, err := approvaltest.RevealChallenge(c.kind, id, nonce, key, c.rowsHash)
 		require.NoError(t, err)
 		v.Challenges = append(v.Challenges, challengeVector{
 			Name: c.name, Kind: c.kind, ID: id.String(), Nonce: base64.RawURLEncoding.EncodeToString(nonce),
@@ -280,17 +282,17 @@ func TestParseRequestRefusesRevealNonce(t *testing.T) {
 	t.Parallel()
 	lines := previewLines()
 	req := approval.Request{ApprovalID: approvalID, Binding: bindingText(lines), Lines: lines}
-	frag, err := linkcodec.Encode(linkcodec.Format1, req)
+	frag, err := linkcodectest.Encode(linkcodec.Format1, req)
 	require.NoError(t, err)
-	_, _, err = approval.ParseRequest(frag)
+	_, _, err = approvaltest.ParseRequest(frag)
 	require.NoError(t, err)
 	for name, bad := range map[string]approval.Request{
 		"revealNonce": {ApprovalID: req.ApprovalID, Binding: req.Binding, Lines: lines, RevealNonce: counting(100)},
 		"columns":     {ApprovalID: req.ApprovalID, Binding: req.Binding, Lines: lines, Columns: approval.ColumnOrder{"public.leads": {"id"}}},
 	} {
-		frag, err = linkcodec.Encode(linkcodec.Format1, bad)
+		frag, err = linkcodectest.Encode(linkcodec.Format1, bad)
 		require.NoError(t, err)
-		_, _, err = approval.ParseRequest(frag)
+		_, _, err = approvaltest.ParseRequest(frag)
 		require.ErrorIs(t, err, approval.ErrInvalid, name)
 	}
 }
@@ -300,11 +302,11 @@ func TestParseRequestRefusesEmptyColumns(t *testing.T) {
 	t.Parallel()
 	lines := previewLines()
 	for _, columns := range []any{nil, map[string]any{}, []any{}} {
-		frag, err := linkcodec.Encode(linkcodec.Format1, map[string]any{
+		frag, err := linkcodectest.Encode(linkcodec.Format1, map[string]any{
 			"approvalId": approvalID, "binding": bindingText(lines), "lines": lines, "columns": columns,
 		})
 		require.NoError(t, err)
-		_, _, err = approval.ParseRequest(frag)
+		_, _, err = approvaltest.ParseRequest(frag)
 		require.ErrorIs(t, err, approval.ErrInvalid, "%v", columns)
 	}
 }

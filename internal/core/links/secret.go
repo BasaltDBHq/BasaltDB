@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
@@ -29,25 +28,12 @@ const (
 	// SecretHeader carries the secret from the page to the engine's API.
 	SecretHeader = "basalt-link-secret" //nolint:gosec // G101: a header name, not a credential
 	// secretFragment starts a short link's fragment.
-	secretFragment = "s="
+	SecretFragment = "s="
 )
 
 // WithSecret is the short link with its secret: <link>#s=<secret>.
 func WithSecret(link, secret string) string {
-	return link + "#" + secretFragment + secret
-}
-
-// SecretOf is the secret a short link carries, or "".
-func SecretOf(link string) string {
-	_, frag, ok := strings.Cut(link, "#")
-	if !ok {
-		return ""
-	}
-	secret, _ := strings.CutPrefix(frag, secretFragment)
-	if secret == frag {
-		return ""
-	}
-	return secret
+	return link + "#" + SecretFragment + secret
 }
 
 // Secrets holds the hash of each held item's one live link secret, and for
@@ -100,7 +86,7 @@ func NewSecrets(now func() time.Time, rand io.Reader) *Secrets {
 	return &Secrets{now: now, rand: rand, live: map[uuid.UUID]secretEntry{}, resets: map[uuid.UUID][]secretEntry{}}
 }
 
-// Persister keeps a store's encoded hashes (statefile/secretfile: the file
+// Persister keeps a store's encoded hashes (links/out/secretfile: the file
 // <stateDir>/<agent>.links.json; CONTRACT.md, Link secrets).
 type Persister interface {
 	// Save replaces what is kept with raw.

@@ -17,8 +17,7 @@ type TargetUnit string
 
 // The target units.
 const (
-	TargetRow    TargetUnit = "ROW"
-	TargetObject TargetUnit = "OBJECT"
+	TargetRow TargetUnit = "ROW"
 )
 
 // Capabilities are what the engine may rely on for a store (CONTRACT.md,

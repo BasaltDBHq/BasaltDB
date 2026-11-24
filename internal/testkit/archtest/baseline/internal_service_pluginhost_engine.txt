@@ -1,3 +1,0 @@
-plugin_events.go imports github.com/jackc/pgx/v5/pgconn (a service reaches the database and the network through a port)
-plugin_feed.go imports github.com/jackc/pgx/v5/pgconn (a service reaches the database and the network through a port)
-plugin_kept.go imports github.com/jackc/pgx/v5/pgconn (a service reaches the database and the network through a port)

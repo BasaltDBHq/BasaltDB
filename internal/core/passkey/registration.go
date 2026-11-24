@@ -64,7 +64,7 @@ func NewRegistrationRequest(rnd io.Reader, userName, displayName string) (Regist
 	if _, err := io.ReadFull(rnd, req.UserID); err != nil {
 		return RegistrationRequest{}, fmt.Errorf("registration user id: %w", err)
 	}
-	return req, req.validate()
+	return req, req.Validate()
 }
 
 // RegistrationRequestFor is the request of a challenge and user id drawn
@@ -75,10 +75,10 @@ func RegistrationRequestFor(challenge, userID []byte, userName, displayName stri
 		Challenge: append([]byte(nil), challenge...), UserID: append([]byte(nil), userID...),
 		UserName: userName, DisplayName: displayName,
 	}
-	return req, req.validate()
+	return req, req.Validate()
 }
 
-func (r RegistrationRequest) validate() error {
+func (r RegistrationRequest) Validate() error {
 	if len(r.Challenge) != challengeLen || len(r.UserID) != userIDLen {
 		return rejected("registration request needs a %d-byte challenge and a %d-byte user id", challengeLen, userIDLen)
 	}
@@ -96,16 +96,6 @@ func (r RegistrationRequest) validate() error {
 // Fragment returns the URL fragment (without '#') for the registration page.
 func (r RegistrationRequest) Fragment() (string, error) {
 	return EncodeCode(RegistrationRequestPrefix, r)
-}
-
-// ParseRegistrationRequest decodes a registration page fragment, with or
-// without the leading '#'.
-func ParseRegistrationRequest(fragment string) (RegistrationRequest, error) {
-	var r RegistrationRequest
-	if err := DecodeCode(RegistrationRequestPrefix, strings.TrimPrefix(fragment, "#"), &r); err != nil {
-		return RegistrationRequest{}, err
-	}
-	return r, r.validate()
 }
 
 // RegistrationResponse is what the registration page outputs.

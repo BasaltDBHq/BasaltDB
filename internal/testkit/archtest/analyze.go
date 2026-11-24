@@ -83,12 +83,42 @@ var pkgExtra = map[string][]string{
 // storeSQLGuard is the one named exception to "only services call decisions":
 // the Postgres store runs the SQL policy right before it runs SQL.
 const (
-	storePkg       = "internal/adapter/outbound/postgres/store"
 	sqlguardPkg    = "sqlguard"
 	storeCallsOnly = "Check CheckRepeatable WithRowVersions"
 )
 
+// storePkgs is the Postgres store.
+var storePkgs = []string{"internal/platform/postgres/store"}
+
+// domains are the domain folders of the new tree (DESIGN-RESULTS, option B).
+var domains = []string{"agent", "approval", "engine", "handoff", "ledger", "links", "pii", "plugin", "revert", "setup", "status"}
+
+// platformInbound are the platform packages that serve a transport; the rest
+// of internal/platform are shared outbound adapters.
+var platformInbound = []string{"httpserver", "mcpserver", "pageserver", "shim", "cli"}
+
+// newTree lists the layer prefixes of the new tree. They are tried before
+// layerOrder, and in/ and out/ come before the domain root: the first match
+// wins. The old prefixes stay in layerOrder while packages move.
+var newTree = func() []struct{ prefix, name string } {
+	type pl = struct{ prefix, name string }
+	l := make([]pl, 0, len(platformInbound)+1+3*len(domains))
+	for _, p := range platformInbound {
+		l = append(l, pl{"internal/platform/" + p, lInbound})
+	}
+	l = append(l, pl{"internal/platform", lOutbound})
+	for _, d := range domains {
+		l = append(l, pl{"internal/" + d + "/in", lInbound}, pl{"internal/" + d + "/out", lOutbound}, pl{"internal/" + d, lService})
+	}
+	return l
+}()
+
 func layerOf(rel string) string {
+	for _, l := range newTree {
+		if rel == l.prefix || strings.HasPrefix(rel, l.prefix+"/") {
+			return l.name
+		}
+	}
 	for _, l := range layerOrder {
 		if rel == l.prefix || strings.HasPrefix(rel, l.prefix+"/") {
 			return l.name
@@ -105,13 +135,22 @@ func layerOf(rel string) string {
 var testHelpers = []string{
 	"internal/testkit/archtest",
 	"internal/testkit/connecttest",
+	"internal/testkit/stepcatalogtest",
 	"internal/core/passkey/passkeytest",
-	"internal/adapter/inbound/mcp/mcptest",
-	"internal/adapter/outbound/plugintransport/adaptertest",
-	"internal/adapter/outbound/vault/vaulttest",
-	"internal/adapter/outbound/vault/pagetest",
-	"internal/adapter/outbound/postgres/guard/guardtest",
 	"pkg/trustprofile/trustprofiletest",
+	// the core test oracles (D-CORE-DEAD): signing and parsing clients
+	// other packages' tests use
+	"internal/core/approval/approvaltest",
+	"internal/core/channel/channeltest",
+	"internal/core/linkcodec/linkcodectest",
+	"internal/core/links/linkstest",
+	"internal/core/revert/reverttest",
+	// the same helpers in the new tree
+	"internal/platform/mcpserver/mcptest",
+	"internal/plugin/out/plugintransport/adaptertest",
+	"internal/platform/vault/vaulttest",
+	"internal/platform/vault/pagetest",
+	"internal/platform/postgres/guard/guardtest",
 }
 
 func isTestHelper(rel string) bool {
@@ -339,6 +378,10 @@ func checkLayer(v violations, rel, layer, target string) {
 	}
 	extra := pkgExtra[rel]
 	tl := layerOf(target)
+	if layer == lInbound && tl == lService && strings.HasPrefix(rel, "internal/platform/") {
+		v.add(rel, "imports "+target+" (an internal/platform package imports no domain service)")
+		return
+	}
 	if in(ok, tl) || in(extra, tl) {
 		return
 	}
@@ -374,8 +417,8 @@ func localNames(f *ast.File) map[string]string {
 	return m
 }
 
-// pluginhostPkg is the plugin host, whose path rule only the app installs.
-const pluginhostPkg = modulePath + "/internal/service/pluginhost"
+// pluginhostPkgs is the plugin host, whose path rule only the app installs.
+var pluginhostPkgs = []string{modulePath + "/internal/plugin"}
 
 // appPkg is the package that wires everything.
 const appPkg = "internal/app"
@@ -390,7 +433,7 @@ func checkPathRulesInstall(v violations, rel string, f *goFile) {
 		if !ok || sel.Sel.Name != "UsePathRules" {
 			return true
 		}
-		if id, ok := sel.X.(*ast.Ident); ok && names[id.Name] == pluginhostPkg {
+		if id, ok := sel.X.(*ast.Ident); ok && in(pluginhostPkgs, names[id.Name]) {
 			v.add(rel, fmt.Sprintf("%s calls pluginhost.UsePathRules (only internal/app installs the path rule)", f.name))
 		}
 		return true
@@ -417,7 +460,7 @@ func checkDecisionCalls(v violations, rel string, f *goFile, decisions map[strin
 		if !isDecision || !in(funcs, sel.Sel.Name) {
 			return true
 		}
-		if rel == storePkg && dec == sqlguardPkg && in(strings.Fields(storeCallsOnly), sel.Sel.Name) {
+		if in(storePkgs, rel) && dec == sqlguardPkg && in(strings.Fields(storeCallsOnly), sel.Sel.Name) {
 			return true
 		}
 		v.add(rel, fmt.Sprintf("%s calls %s.%s", f.name, dec, sel.Sel.Name))
@@ -425,7 +468,7 @@ func checkDecisionCalls(v violations, rel string, f *goFile, decisions map[strin
 	})
 }
 
-var bannedExact = []string{"os", "io/fs", "io/ioutil", "path/filepath", "net", "os/exec", "math/rand", "database/sql", "database/sql/driver", "syscall"}
+var bannedExact = []string{"os", "io/fs", "io/ioutil", "path/filepath", netPkg, "os/exec", "math/rand", "database/sql", "database/sql/driver", "syscall"}
 
 func bannedImport(p string) bool {
 	switch {
@@ -476,11 +519,39 @@ func checkPurity(v violations, reg *register, rel string, f *goFile) {
 		if !ok {
 			return true
 		}
-		if id, ok := sel.X.(*ast.Ident); ok && names[id.Name] == "time" && in([]string{"Now", "Since", "Until"}, sel.Sel.Name) {
+		id, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		ip := names[id.Name]
+		if ip == "time" && in([]string{"Now", "Since", "Until"}, sel.Sel.Name) {
 			v.add(rel, f.name+" calls time."+sel.Sel.Name+" (core must stay pure)")
+		}
+		if only, limited := extraOnly[ip]; limited && in(extras, ip) && !in(only, sel.Sel.Name) {
+			v.add(rel, fmt.Sprintf("%s uses %s.%s (the register grants %s for %s only)", f.name, ip, sel.Sel.Name, ip, strings.Join(only, ", ")))
 		}
 		return true
 	})
+}
+
+// extraOnly limits an extra import to the names listed: setupcode may
+// import net for net.JoinHostPort and nothing else of it.
+var extraOnly = map[string][]string{netPkg: {"JoinHostPort"}}
+
+// netPkg is the standard library's net package.
+const netPkg = "net"
+
+// extraAllowed reports whether the register may grant core package name the
+// extra import e: crypto/rand for key and salt generation in channel and
+// setupcode, net for setupcode's database address (net.JoinHostPort).
+func extraAllowed(name, e string) bool {
+	switch e {
+	case "crypto/rand":
+		return name == "channel" || name == "setupcode"
+	case netPkg:
+		return name == "setupcode"
+	}
+	return false
 }
 
 // checkRegister compares the register with the packages that exist.
@@ -508,8 +579,8 @@ func checkRegister(pkgs map[string]*goPkg, reg *register) []string {
 			problems = append(problems, fmt.Sprintf("register row %s: admitted-by %q must be 1, 2 or 3", name, row.row))
 		}
 		for _, e := range row.extras {
-			if e != "crypto/rand" || (name != "channel" && name != "setupcode") {
-				problems = append(problems, fmt.Sprintf("register row %s: extra import %q is not allowed (only crypto/rand, only for channel and setupcode)", name, e))
+			if !extraAllowed(name, e) {
+				problems = append(problems, fmt.Sprintf("register row %s: extra import %q is not allowed (only crypto/rand, only for channel and setupcode; net, only for setupcode)", name, e))
 			}
 		}
 		if len(row.codecs) > 0 && row.kind != kindDecision {

@@ -11,13 +11,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
 )
 
-// relayLinks registers every agent's live links again after READY, revokes
+// The links registry registers every agent's live links again after READY, revokes
 // the link of a LINK_CONFLICT, unregisters what rotation revokes, and prunes
 // expired links on a timer.
 func TestRelayLinksAcrossAgents(t *testing.T) {
@@ -25,11 +26,11 @@ func TestRelayLinksAcrossAgents(t *testing.T) {
 	const wait, tick = 5 * time.Second, 5 * time.Millisecond
 	v := vaulttest.New(vaulttest.Options{})
 	t.Cleanup(v.Close)
-	relay := newRelayLinks(quietLog())
+	relay := linksvc.NewRegistry(quietLog())
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
 	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, nil)
-	require.NotNil(t, ev.client)
-	engineID := ev.status().EngineID
+	require.NotNil(t, ev.Client)
+	engineID := ev.Status().EngineID
 	owner := func(tok channel.LinkToken) string {
 		id, _ := v.LinkOwner(tok.Wire())
 		return id
@@ -45,8 +46,8 @@ func TestRelayLinksAcrossAgents(t *testing.T) {
 		return now
 	}
 	bot, ops := links.NewSecrets(clock, rand.Reader), links.NewSecrets(clock, rand.Reader)
-	relay.add("bot", bot, ev.client.Unregister)
-	relay.add("ops", ops, ev.client.Unregister)
+	relay.Add("bot", bot, ev.Client.Unregister)
+	relay.Add("ops", ops, ev.Client.Unregister)
 	_, a, err := bot.IssueRelay(uuid.Must(uuid.NewV7()), now.Add(time.Hour))
 	require.NoError(t, err)
 	_, b, err := ops.IssueRelay(uuid.Must(uuid.NewV7()), now.Add(time.Minute))
@@ -62,8 +63,8 @@ func TestRelayLinksAcrossAgents(t *testing.T) {
 		cancel()
 		wg.Wait()
 	})
-	wg.Go(func() { _ = ev.client.Run(ctx) })
-	wg.Go(func() { relay.pruneEvery(ctx, tick) })
+	wg.Go(func() { _ = ev.Client.Run(ctx) })
+	wg.Go(func() { relay.PruneEvery(ctx, tick) })
 
 	// After READY both agents' links are registered, and the one another
 	// engine holds is revoked at this engine (VC-42).
@@ -100,12 +101,12 @@ func TestManyConflictsDoNotStallReads(t *testing.T) {
 	}})
 	t.Cleanup(v.Close)
 	t.Cleanup(func() { close(stall) })
-	relay := newRelayLinks(quietLog())
+	relay := linksvc.NewRegistry(quietLog())
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
 	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, nil)
-	require.NotNil(t, ev.client)
+	require.NotNil(t, ev.Client)
 	store := links.NewSecrets(time.Now, rand.Reader)
-	relay.add("bot", store, ev.client.Unregister)
+	relay.Add("bot", store, ev.Client.Unregister)
 	for range conflicts {
 		_, tok, err := store.IssueRelay(uuid.Must(uuid.NewV7()), time.Now().Add(time.Hour))
 		require.NoError(t, err)
@@ -116,7 +117,7 @@ func TestManyConflictsDoNotStallReads(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = ev.client.Run(ctx)
+		_ = ev.Client.Run(ctx)
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -129,7 +130,7 @@ func TestManyConflictsDoNotStallReads(t *testing.T) {
 	var fresh channel.LinkToken
 	_, err := rand.Read(fresh[:])
 	require.NoError(t, err)
-	require.NoError(t, ev.client.Register(context.Background(), fresh, time.Now().Add(time.Hour)))
+	require.NoError(t, ev.Client.Register(context.Background(), fresh, time.Now().Add(time.Hour)))
 	require.Less(t, time.Since(start), time.Second, "the socket is read promptly")
 	require.Zero(t, unregisters.Load(), "no UNREGISTER_LINK for a token another engine holds")
 }

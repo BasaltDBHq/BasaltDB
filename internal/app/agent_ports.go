@@ -95,8 +95,10 @@ type agentDeps struct {
 // family its kind belongs to, and the store's language. SQL is the only
 // language the engine has; a store of another family is served none of the
 // tools that send a request. wire builds the set once, when the service is
-// built (agentsvc.New keeps a copy): a later change to s.deps.Agent or the
-// core store does not reach the agent use cases.
+// built, and agentsvc.New keeps a copy: a later change to the ports in
+// s.deps.Agent or to the core store does not reach the agent use cases. The
+// statement check is the exception: liveChecker reads s.deps.Agent.Data on
+// each call.
 func (s *Service) agentStoreSet() agentsvc.StoreSet {
 	a := &s.deps.Agent
 	set := agentsvc.StoreSet{

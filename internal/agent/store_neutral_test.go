@@ -117,7 +117,12 @@ type docStore struct {
 	shortClasses bool
 	// flags are added to the detail's flags.
 	flags map[string]any
+	// ssnDisplay is the display of the SECRET field ssn.
+	ssnDisplay any
 }
+
+// docOption edits the document store before the service is built on it.
+type docOption func(*docStore)
 
 func newDocStore() *docStore {
 	s := &docStore{
@@ -228,11 +233,13 @@ func (s *docStore) Describe(_ context.Context, ref agentstore.ResourceRef) (agen
 		return agentstore.Field{Ref: agentstore.FieldRef("customers#" + name), Name: name, Type: "string", Readable: true}
 	}
 	f := func(name string) agentstore.FieldRef { return agentstore.FieldRef("customers#" + name) }
+	ssn := field("ssn")
+	ssn.Display = s.ssnDisplay
 	flags := map[string]any{"sharded": false}
 	maps.Copy(flags, s.flags)
 	return agentstore.Detail{
 		Resource: s.customers(),
-		Fields:   []agentstore.Field{field("_id"), field("email"), field("plan"), field("ssn")},
+		Fields:   []agentstore.Field{field("_id"), field("email"), field("plan"), ssn},
 		Identity: []agentstore.FieldRef{f("_id")},
 		Groups:   []string{"searchIndexes"},
 		Features: []agentstore.Feature{
@@ -431,9 +438,12 @@ func (a *docApprovals) UnavailableSteps(*guidance.Steps, *toolresult.ToolError, 
 
 // newDocService is the agent service over the document store, built with
 // its ports only.
-func newDocService(t *testing.T) (*agent.Service, *docStore, *docApprovals) {
+func newDocService(t *testing.T, opts ...docOption) (*agent.Service, *docStore, *docApprovals) {
 	t.Helper()
 	store := newDocStore()
+	for _, opt := range opts {
+		opt(store)
+	}
 	approvals := &docApprovals{approvals: map[uuid.UUID]action.Approval{}}
 	approvals.preview = func(req agentstore.Request) []string {
 		r, err := parseDoc(req)
@@ -557,13 +567,23 @@ func TestDocumentStoreDescribeHidesAFeatureOnAHiddenField(t *testing.T) {
 // cover every field are an engine error, never fields taken as not SECRET.
 func TestDocumentStoreDescribeFailsClosedOnShortClasses(t *testing.T) {
 	t.Parallel()
-	svc, store, _ := newDocService(t)
-	store.shortClasses = true
+	svc, _, _ := newDocService(t, func(s *docStore) { s.shortClasses = true })
 	r, err := svc.DescribeResource(context.Background(), "shop/customers", "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "classes")
 	require.Nil(t, r.Detail)
-	require.Equal(t, guidance.CodeInternal, guidance.ErrorMap{}.ToolError(svc.DescribeError(err)).Code)
+	requireInternal(t, svc, err, "ssn")
+}
+
+// requireInternal: err answers the agent INTERNAL with the engine's text
+// only, never a store key or field name of the cause.
+func requireInternal(t *testing.T, svc *agent.Service, err error, names ...string) {
+	t.Helper()
+	te := guidance.ErrorMap{}.ToolError(svc.DescribeError(err))
+	require.Equal(t, guidance.CodeInternal, te.Code)
+	for _, n := range names {
+		require.NotContains(t, te.Message, n)
+	}
 }
 
 // TestDocumentStoreDescribeRefusesAFlagOnAnAnswerKey: a store flag named as
@@ -571,12 +591,23 @@ func TestDocumentStoreDescribeFailsClosedOnShortClasses(t *testing.T) {
 func TestDocumentStoreDescribeRefusesAFlagOnAnAnswerKey(t *testing.T) {
 	t.Parallel()
 	for _, key := range []string{"fields", "kind", "actions", "stats", "searchIndexes", "hiddenSearchIndexes"} {
-		svc, store, _ := newDocService(t)
-		store.flags = map[string]any{key: true}
+		svc, _, _ := newDocService(t, func(s *docStore) { s.flags = map[string]any{key: true} })
 		r, err := svc.DescribeResource(context.Background(), "shop/customers", "")
 		require.Error(t, err, key)
 		require.Contains(t, err.Error(), fmt.Sprintf("%q", key))
 		require.Nil(t, r.Detail, key)
-		require.Equal(t, guidance.CodeInternal, guidance.ErrorMap{}.ToolError(svc.DescribeError(err)).Code, key)
+		requireInternal(t, svc, err, key)
 	}
+}
+
+// TestDocumentStoreDescribeRefusesADisplayOnAFieldKey: a display member
+// named as one of a field's own keys is an engine error, also on a field
+// describe hides, and the answer never names that field.
+func TestDocumentStoreDescribeRefusesADisplayOnAFieldKey(t *testing.T) {
+	t.Parallel()
+	svc, _, _ := newDocService(t, func(s *docStore) { s.ssnDisplay = map[string]any{"pii": "none"} })
+	r, err := svc.DescribeResource(context.Background(), "shop/customers", "")
+	require.Error(t, err)
+	require.Nil(t, r.Detail)
+	requireInternal(t, svc, err, "ssn", "pii")
 }

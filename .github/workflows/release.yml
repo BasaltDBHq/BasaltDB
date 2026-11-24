@@ -8,8 +8,7 @@ name: Release
 #   rc   v<semver>-rc.<N>, e.g. v0.1.0-alpha-rc.1: build, run the end-to-end
 #        test on macOS (arm64, Intel) and Ubuntu against the built archives,
 #        then save those same files as a draft GitHub release, seen only by
-#        maintainers. No Homebrew,
-#        npm, MCP registry or portal check.
+#        maintainers. No Homebrew, npm, MCP registry or portal check.
 #   tag  every other v* tag, e.g. v0.1.0-alpha: refused unless a release
 #        candidate of it on the same commit passed (scripts/rc-gate.sh), then
 #        built, signed and published with notes from CHANGELOG.md.
@@ -188,8 +187,8 @@ jobs:
 
       # e2e/release/run.sh is the full test (setup page, passkey, MCP, held
       # write, approval, revert, remove); it cleans up after itself, also on
-      # failure, and writes engine and browser logs to E2E_LOG_DIR. A commit
-      # without it runs the archive smoke only.
+      # failure, and writes engine and browser logs to E2E_LOG_DIR. The job
+      # fails if it is missing.
       - name: End-to-end test
         env:
           EXPECT_UNAME: ${{ matrix.expect_uname }}
@@ -197,12 +196,11 @@ jobs:
         run: |
           set -eu
           mkdir -p "$E2E_LOG_DIR"
-          if [ -f e2e/release/run.sh ]; then
-            sh e2e/release/run.sh "$PWD/dist/extract"
-          else
-            echo "e2e/release/run.sh is not in this commit: archive smoke only"
-            sh scripts/release-archive-smoke.sh dist/extract
+          if [ ! -f e2e/release/run.sh ]; then
+            echo "e2e/release/run.sh is missing from this commit; the release needs the end-to-end test" >&2
+            exit 1
           fi
+          sh e2e/release/run.sh "$PWD/dist/extract"
 
       - name: Upload e2e logs
         if: always()

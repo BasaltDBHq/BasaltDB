@@ -10,32 +10,39 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"golang.org/x/mod/semver"
 )
 
-func TestCompare(t *testing.T) {
-	order := []string{"0.0.1-alpha.1", "0.0.1-alpha.2", "0.0.1-alpha.10", "0.0.1-beta", "0.0.1", "0.0.2", "0.1.0", "1.0.0"}
-	for i := range order {
-		for j := range order {
-			a, _ := parseVersion(order[i])
-			b, _ := parseVersion(order[j])
-			want := 0
-			if i < j {
-				want = -1
-			} else if i > j {
-				want = 1
-			}
-			if got := a.compare(b); got != want {
-				t.Errorf("%s vs %s = %d, want %d", order[i], order[j], got, want)
-			}
+func TestParseVersion(t *testing.T) {
+	for in, want := range map[string]string{
+		"1.2.3": "v1.2.3", "v1.2.3": "v1.2.3", "1.2.3-alpha.2": "v1.2.3-alpha.2", "v1.2.3+build5": "v1.2.3",
+	} {
+		if got, ok := parseVersion(in); !ok || got != want {
+			t.Errorf("parseVersion(%q) = %q, %v; want %q", in, got, ok, want)
 		}
 	}
-	for _, bad := range []string{"", "1.2", "dev", "1.2.x", "1.2.3-", "v1.2.3.4"} {
+	for _, bad := range []string{"", "1", "v1", "1.2", "v1.2", "dev", "1.2.x", "1.2.3-", "v1.2.3.4"} {
 		if _, ok := parseVersion(bad); ok {
 			t.Errorf("parseVersion(%q) accepted", bad)
 		}
 	}
-	if v, ok := parseVersion("v1.2.3+build5"); !ok || v.core != [3]uint64{1, 2, 3} {
-		t.Errorf("v1.2.3+build5 = %v %v", v, ok)
+}
+
+func TestPrereleaseOrder(t *testing.T) {
+	order := []string{"0.0.1-alpha.1", "0.0.1-alpha.2", "0.0.1-alpha.10", "0.0.1-beta", "0.0.1-rc.1", "0.0.1", "0.0.2", "0.1.0", "1.0.0"}
+	for i := 1; i < len(order); i++ {
+		a, _ := parseVersion(order[i-1])
+		b, _ := parseVersion(order[i])
+		if semver.Compare(a, b) >= 0 {
+			t.Errorf("%s should be below %s", order[i-1], order[i])
+		}
+	}
+	if v, _ := parseVersion("0.0.1-alpha.1"); !prerelease(v) {
+		t.Error("alpha is a pre-release")
+	}
+	if v, _ := parseVersion("0.0.1"); prerelease(v) {
+		t.Error("0.0.1 is not a pre-release")
 	}
 }
 
@@ -247,7 +254,7 @@ func TestAFlaggedPreReleaseIsNotOfferedToAStableBuild(t *testing.T) {
 	}
 }
 
-func TestParseVersionRefusesOddPreReleaseIdentifiers(t *testing.T) {
+func TestParseVersionPreReleaseIdentifiers(t *testing.T) {
 	for _, s := range []string{"1.2.3-alpha.2", "1.2.3-rc-1", "v1.2.3-0.3.7"} {
 		if _, ok := parseVersion(s); !ok {
 			t.Errorf("%q refused", s)

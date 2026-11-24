@@ -2,7 +2,7 @@ package mcptest
 
 import (
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -19,6 +19,6 @@ func JSONFields(v any) []string {
 		}
 		out = append(out, strings.Split(f.Tag.Get("json"), ",")[0])
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }

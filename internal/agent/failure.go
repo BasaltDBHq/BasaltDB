@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
@@ -154,7 +154,7 @@ func staleReadQuery(message, runID string) (map[string]any, error) {
 	for c := range key {
 		cols = append(cols, c)
 	}
-	sort.Strings(cols)
+	slices.Sort(cols)
 	conds, params := make([]string, 0, len(cols)), make([]any, 0, len(cols))
 	for i, c := range cols {
 		conds = append(conds, fmt.Sprintf("%s = $%d", sanitizeIdent(c), i+1))

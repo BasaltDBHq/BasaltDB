@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 const (
@@ -331,23 +333,7 @@ func WriteFile(path string, data []byte) error {
 	if fi, err := os.Lstat(path); err == nil && !fi.Mode().IsRegular() {
 		return fmt.Errorf("%s is not a regular file (a symlink?); refusing to write it", path)
 	}
-	tmp, err := os.CreateTemp(dir, ".basalt-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(FileMode); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+	return atomicfile.Write(path, data, atomicfile.Options{Mode: FileMode, RefuseNonRegular: true})
 }
 
 // addUIDs is have with every uid of add it lacks, in order.

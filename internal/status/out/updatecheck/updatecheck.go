@@ -19,6 +19,10 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"golang.org/x/mod/semver"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 // Tunables, named so the rule stays readable.
@@ -143,7 +147,7 @@ func notice(current string, releases []Release) *Notice {
 		}
 	}
 	var best *Release
-	var bestV version
+	var bestV string
 	security := false
 	for i := range releases {
 		r := &releases[i]
@@ -151,11 +155,11 @@ func notice(current string, releases []Release) *Notice {
 			continue
 		}
 		v, ok := parseVersion(r.Tag)
-		if !ok || ((v.prerelease() || r.Prerelease) && !cur.prerelease()) || older(v.compare(floor), floorEq) {
+		if !ok || ((prerelease(v) || r.Prerelease) && !prerelease(cur)) || older(semver.Compare(v, floor), floorEq) {
 			continue
 		}
 		security = security || r.Security
-		if best == nil || v.compare(bestV) > 0 {
+		if best == nil || semver.Compare(v, bestV) > 0 {
 			best, bestV = r, v
 		}
 	}
@@ -285,23 +289,7 @@ func (c *Checker) save(k cache) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(c.Dir, cacheFile+".*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if err := tmp.Chmod(cacheFilePerm); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(raw); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), c.path())
+	return atomicfile.Write(c.path(), raw, atomicfile.Options{Mode: cacheFilePerm})
 }
 
 // ErrNoDir is returned by CacheDir when no cache directory can be found.

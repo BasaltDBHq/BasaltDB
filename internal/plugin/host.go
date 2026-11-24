@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -377,7 +377,7 @@ func hookNames(m pluginmodel.Manifest) []string {
 	for h := range m.Hooks {
 		out = append(out, h)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 

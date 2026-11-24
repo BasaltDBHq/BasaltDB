@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 // Runs is the directory where the engine records each local plugin process
@@ -90,18 +92,7 @@ func (r *Runs) write(rec record) (string, error) {
 		return "", err
 	}
 	path := filepath.Join(r.Dir, strconv.Itoa(rec.PID)+recordSuffix)
-	tmp, err := os.CreateTemp(r.Dir, ".run-*")
-	if err != nil {
-		return "", err
-	}
-	_, werr := tmp.Write(b)
-	cerr := tmp.Close()
-	if err := errors.Join(werr, cerr); err != nil {
-		_ = os.Remove(tmp.Name())
-		return "", err
-	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		_ = os.Remove(tmp.Name())
+	if err := atomicfile.Write(path, b, atomicfile.Options{Mode: recordFileMode}); err != nil {
 		return "", err
 	}
 	return path, nil
@@ -248,3 +239,6 @@ func removeSocketDir(dir string) error {
 	}
 	return os.Remove(dir)
 }
+
+// recordFileMode keeps a run record to the engine's own user.
+const recordFileMode = 0o600

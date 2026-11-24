@@ -4,7 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -119,7 +119,7 @@ func TestArchitecture(t *testing.T) {
 				stale = append(stale, l)
 			}
 		}
-		sort.Strings(stale)
+		slices.Sort(stale)
 		for _, l := range stale {
 			t.Errorf("%s: %s\n\tno longer violated; remove it from %s (or run -update)", pkg, l, filepath.Base(file))
 		}

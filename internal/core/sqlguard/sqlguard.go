@@ -10,7 +10,8 @@ package sqlguard
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	pganalyze "github.com/pganalyze/pg_query_go/v6"
@@ -151,7 +152,9 @@ func Classify(sql string) (Statement, error) {
 
 	w := &walker{tables: map[string]bool{}, funcs: map[string]bool{}, ctes: map[string]bool{}}
 	w.visit(node.ProtoReflect())
-	stmt := Statement{Tables: w.sortedTables(), Functions: sortedKeys(w.funcs), ParamCount: w.maxParam}
+	stmt := Statement{Tables: w.sortedTables(), Functions: slices.AppendSeq([]string{}, maps.Keys(w.funcs)), ParamCount: w.maxParam}
+
+	slices.Sort(stmt.Functions) // non-nil, so an empty list is [] and not null
 
 	var reason Reason
 	stmt.Kind, stmt.Op, reason = classifyNode(node)
@@ -286,7 +289,7 @@ func (w *walker) sortedTables() []string {
 		}
 		out = append(out, t)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
@@ -296,13 +299,4 @@ func nameOf(parts []*pganalyze.Node) string {
 		s = append(s, p.GetString_().GetSval())
 	}
 	return strings.Join(s, ".")
-}
-
-func sortedKeys(m map[string]bool) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }

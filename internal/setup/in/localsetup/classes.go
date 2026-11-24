@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -127,7 +126,7 @@ func classesKey(req Request) string {
 	for i, c := range req.ColumnClasses {
 		parts[i] = strings.Join([]string{c.Table, c.Column, c.Class, c.EntityType, c.PhoneRegion, c.Was.Class, c.Was.EntityType, c.Was.PhoneRegion}, "\x1f")
 	}
-	sort.Strings(parts)
+	slices.Sort(parts)
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%t\x1e%s", req.RestPublic, strings.Join(parts, "\x1e"))))
 	return hex.EncodeToString(sum[:])
 }

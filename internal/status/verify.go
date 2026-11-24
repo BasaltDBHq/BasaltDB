@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -208,7 +208,7 @@ func embedded(fsys fs.FS) ([]string, error) {
 		}
 		return err
 	})
-	sort.Strings(out)
+	slices.Sort(out)
 	return out, err
 }
 
@@ -465,7 +465,7 @@ func checkManifest(fsys fs.FS, paths []string, raw []byte) Manifest {
 			bad = append(bad, p+": in the manifest, not embedded")
 		}
 	}
-	sort.Strings(bad)
+	slices.Sort(bad)
 	if len(bad) > 0 {
 		return Manifest{Status: StatusDiffers, Mismatches: bad}
 	}

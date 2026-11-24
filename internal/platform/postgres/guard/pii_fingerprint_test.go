@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -43,7 +43,7 @@ func fingerprintOf(t *testing.T, q guard.Querier) []byte {
 			typ, oid, attnum), err
 	})
 	require.NoError(t, err)
-	sort.Strings(lines) // byte order, as COLLATE "C"
+	slices.Sort(lines) // byte order, as COLLATE "C"
 	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
 	return sum[:]
 }

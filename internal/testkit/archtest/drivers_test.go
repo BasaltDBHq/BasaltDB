@@ -3,7 +3,7 @@ package archtest
 import (
 	"os"
 	"os/exec"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -54,7 +54,7 @@ func driverChains(graph map[string][]string, root string) []string {
 			queue = append(queue, q)
 		}
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 

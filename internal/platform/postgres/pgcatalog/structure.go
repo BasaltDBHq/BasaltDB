@@ -2,7 +2,7 @@ package pgcatalog
 
 import (
 	"context"
-	"sort"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -46,6 +46,6 @@ func StructureLines(ctx context.Context, db Querier) ([]string, error) {
 		return nil, err
 	}
 	// Sorted in Go so the order does not depend on the database collation.
-	sort.Strings(lines)
+	slices.Sort(lines)
 	return lines, nil
 }

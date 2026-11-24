@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 )
 
@@ -196,24 +198,8 @@ func (f requestFiles) write(name, content string) (string, error) {
 	if err := f.ownDir(); err != nil {
 		return "", err
 	}
-	tmp, err := os.CreateTemp(f.dir, ".request-*")
-	if err != nil {
-		return "", fmt.Errorf("request file: %w", err)
-	}
-	defer os.Remove(tmp.Name()) // a no-op once renamed
-	if err := tmp.Chmod(requestFileMode); err != nil {
-		tmp.Close()
-		return "", fmt.Errorf("request file: %w", err)
-	}
-	if _, err := tmp.WriteString(content); err != nil {
-		tmp.Close()
-		return "", fmt.Errorf("request file: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return "", fmt.Errorf("request file: %w", err)
-	}
 	path := filepath.Join(f.dir, name)
-	if err := os.Rename(tmp.Name(), path); err != nil {
+	if err := atomicfile.Write(path, []byte(content), atomicfile.Options{Mode: requestFileMode}); err != nil {
 		return "", fmt.Errorf("request file: %w", err)
 	}
 	return path, nil

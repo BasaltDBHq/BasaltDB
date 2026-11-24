@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 )
 
@@ -67,7 +69,7 @@ func (f *Files) MapBase() ([]byte, func() error, bool, error) {
 
 // WriteBase replaces dictionary.bin (0600) atomically with what write writes.
 func (f *Files) WriteBase(write func(io.WriteSeeker) error) error {
-	return writeAtomic(f.BasePath(), dictionaryFileMode, func(file *os.File) error { return write(file) })
+	return atomicfile.WriteFunc(f.BasePath(), atomicfile.Options{Mode: dictionaryFileMode, SyncDir: true}, func(file *os.File) error { return write(file) })
 }
 
 // ReadStatus reads status.json back (readStatusFile).
@@ -162,51 +164,13 @@ func openBaseFile(path string) ([]byte, func() error, error) {
 	return data, unmap, nil
 }
 
-// writeAtomic writes a file through a temp file in the same directory, synced,
-// then renamed over path, and syncs the directory, so a reader sees the old
-// file or the new one, whole.
-func writeAtomic(path string, mode os.FileMode, write func(f *os.File) error) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name()) // gone after the rename; cleans up after a failure
-	if err := fillTemp(tmp, mode, write); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		return err
-	}
-	return syncDir(dir)
-}
-
-func fillTemp(tmp *os.File, mode os.FileMode, write func(f *os.File) error) error {
-	if err := tmp.Chmod(mode); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := write(tmp); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	return tmp.Close()
-}
-
 // writeStatusFile writes status.json (0644) atomically.
 func writeStatusFile(dir string, st pii.DictionaryStatus) error {
 	data, err := json.Marshal(st)
 	if err != nil {
 		return err
 	}
-	return writeAtomic(filepath.Join(dir, pii.StatusFileName), statusFileMode, func(f *os.File) error {
-		_, err := f.Write(data)
-		return err
-	})
+	return atomicfile.Write(filepath.Join(dir, pii.StatusFileName), data, atomicfile.Options{Mode: statusFileMode, SyncDir: true})
 }
 
 // ReadStatus reads <stateDir>/pii/status.json, as basalt log does. It

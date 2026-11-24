@@ -3,7 +3,7 @@ package revert
 import (
 	"context"
 	"encoding/json"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -191,7 +191,7 @@ func TestRevertCatalogCasesAreTheOnesTheAgentExpects(t *testing.T) {
 	for k := range catalogCases() {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	require.Equal(t, stepcatalogtest.RevertErrorKeys(), keys)
 	seen := map[string]bool{}
 	for _, e := range stepcatalogtest.CatalogOf(t).Errors {
@@ -430,7 +430,7 @@ func TestRevertResultCasesAreTheOnesTheAgentExpects(t *testing.T) {
 	for k := range resultCases() {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	require.Equal(t, stepcatalogtest.RevertResultKeys(), keys)
 	seen := map[string]bool{}
 	for _, e := range stepcatalogtest.CatalogOf(t).Results {

@@ -8,8 +8,9 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"time"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 )
@@ -45,21 +46,8 @@ func Open(path string, now func() time.Time, rand io.Reader) (*links.Secrets, er
 
 // Save writes raw atomically (write, then rename).
 func (f File) Save(raw []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(f.Path), filepath.Base(f.Path)+".*.tmp")
-	if err != nil {
+	if err := atomicfile.Write(f.Path, raw, atomicfile.Options{Mode: fileMode}); err != nil {
 		return fmt.Errorf("link secrets: %w", err)
 	}
-	defer os.Remove(tmp.Name()) // gone after the rename; best effort otherwise
-	if err := tmp.Chmod(fileMode); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("link secrets: %w", err)
-	}
-	if _, err := tmp.Write(raw); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("link secrets: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("link secrets: %w", err)
-	}
-	return os.Rename(tmp.Name(), f.Path)
+	return nil
 }

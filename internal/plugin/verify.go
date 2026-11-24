@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
@@ -129,7 +130,7 @@ func verifyCopy(root string, key pluginmodel.EntryKey, dirName, wantSHA string, 
 	if err := checkContents(dir, m, entries, o.requireApproval); err != nil {
 		return pluginmodel.Verified{}, err
 	}
-	for _, rel := range sortedKeys(m.Files) {
+	for _, rel := range slices.Sorted(maps.Keys(m.Files)) {
 		if err := checkFileHash(filepath.Join(dir, filepath.FromSlash(rel)), m.Files[rel]); err != nil {
 			return pluginmodel.Verified{}, err
 		}
@@ -280,13 +281,4 @@ func checkFileHash(p, want string) error {
 		return &pluginmodel.VerifyError{Reason: pluginmodel.RefusedNotTrusted, File: p, Why: "its SHA-256 is not the one the manifest states"}
 	}
 	return nil
-}
-
-func sortedKeys(m map[string]string) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }

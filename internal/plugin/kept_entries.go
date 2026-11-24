@@ -14,6 +14,8 @@ import (
 	"slices"
 	"syscall"
 
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
+
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
@@ -146,37 +148,7 @@ func (s *Store) Update(cfg config.Config, change func([]config.Plugin) ([]config
 // writeAtomic writes name in dir whole: a new temporary file, synced, then
 // renamed into place, mode 0600.
 func writeAtomic(dir, name string, raw []byte) error {
-	f, err := os.CreateTemp(dir, "."+name+".*")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	ok := false
-	defer func() {
-		if !ok {
-			_ = os.Remove(tmp)
-		}
-	}()
-	if err := f.Chmod(privateFile); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if _, err := f.Write(raw); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, filepath.Join(dir, name)); err != nil {
-		return err
-	}
-	ok = true
-	return nil
+	return atomicfile.Write(filepath.Join(dir, name), raw, atomicfile.Options{Mode: privateFile})
 }
 
 // Stage checks the taken upload as a copy of entry (name, instance): it

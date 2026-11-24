@@ -1,7 +1,7 @@
 package revertmcp
 
 import (
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -32,7 +32,7 @@ func TestArgsStructsMatchTheSchemas(t *testing.T) {
 			want = append(want, p)
 		}
 		want = append(want, refused[name]...)
-		sort.Strings(want)
+		slices.Sort(want)
 		require.Equal(t, want, mcptest.JSONFields(v), name)
 	}
 }

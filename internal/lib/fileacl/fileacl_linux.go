@@ -11,6 +11,7 @@ import (
 // (linux/posix_acl_xattr.h), little-endian.
 const (
 	aclXattr      = "system.posix_acl_access"
+	defaultXattr  = "system.posix_acl_default"
 	aclVersion    = 2
 	aclHeader     = 4
 	aclEntrySize  = 8 // tag u16, perm u16, id u32
@@ -73,4 +74,16 @@ func parseACL(v []byte, perm uint16) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// clearACL removes fd's access ACL and default ACL; a missing one, or a file
+// system without ACLs, is no error.
+func clearACL(fd int) error {
+	for _, name := range []string{aclXattr, defaultXattr} {
+		err := unix.Fremovexattr(fd, name)
+		if err != nil && !errors.Is(err, unix.ENODATA) && !errors.Is(err, unix.ENOTSUP) && !errors.Is(err, unix.EOPNOTSUPP) {
+			return err
+		}
+	}
+	return nil
 }

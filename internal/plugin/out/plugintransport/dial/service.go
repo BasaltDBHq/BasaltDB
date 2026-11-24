@@ -23,6 +23,26 @@ var errNotSocket = errors.New("the plugin socket path is not a unix socket")
 // group, with no access for others by its mode or an ACL entry.
 var ErrSocketDir = errors.New("the plugin socket directory is not the plugin user's, in the engine's group and closed to others")
 
+// socketDirACLError: the socket directory dir passes its owner, group and
+// mode, but has an ACL entry that allows access (err nil) or an ACL that
+// cannot be read (err). It is an ErrSocketDir, so status reads it as one.
+type socketDirACLError struct {
+	dir string
+	err error
+}
+
+func (e socketDirACLError) Error() string {
+	if e.err != nil {
+		return fmt.Sprintf("the plugin socket directory %s has an ACL that cannot be read (%v)", e.dir, e.err)
+	}
+	return fmt.Sprintf("the plugin socket directory %s has an ACL entry that opens it to others "+
+		"(remove it: sudo setfacl -b %s on Linux, sudo chmod -N %s on macOS)", e.dir, e.dir, e.dir)
+}
+
+func (socketDirACLError) Is(target error) bool { return target == ErrSocketDir }
+
+func (e socketDirACLError) Unwrap() error { return e.err }
+
 // ErrSocketACL: the socket itself has an ACL entry that opens it to others,
 // or an ACL that cannot be read.
 var ErrSocketACL = errors.New("the plugin socket has an ACL entry that opens it to others, or an ACL that cannot be read")
@@ -42,8 +62,8 @@ func Service(ctx context.Context, k pluginmodel.EntryKey, v pluginmodel.Verified
 	if l == nil {
 		return nil, fmt.Errorf("plugin %s: a remote entry has no service unit", k)
 	}
-	if !SocketDirIs(filepath.Dir(sock), uid, gid) {
-		return nil, fmt.Errorf("plugin %s: %w", k, ErrSocketDir)
+	if err := checkSocketDir(filepath.Dir(sock), uid, gid); err != nil {
+		return nil, fmt.Errorf("plugin %s: %w", k, err)
 	}
 	if _, err := os.Lstat(sock); errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("plugin %s: %w", k, ErrNoSocket)
@@ -75,8 +95,8 @@ func ConnCheck(sock string, uid, gid uint32, recheck func() error) func(net.Conn
 				return err
 			}
 		}
-		if !SocketDirIs(dir, uid, gid) {
-			return ErrSocketDir
+		if err := checkSocketDir(dir, uid, gid); err != nil {
+			return err
 		}
 		if openedByACL(sock) {
 			return ErrSocketACL

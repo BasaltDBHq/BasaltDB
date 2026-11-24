@@ -118,3 +118,27 @@ func parseFilesec(buf []byte, rights uint32) (bool, error) {
 	}
 	return false, nil
 }
+
+// clearACL sets fd's extended security to a kauth_filesec with no ACL, as
+// chmod -N does; the file's owner and group are left as they are.
+func clearACL(fd int) error {
+	al := unix.Attrlist{Bitmapcount: unix.ATTR_BIT_MAP_COUNT, Commonattr: unix.ATTR_CMN_EXTENDED_SECURITY}
+	const ref = 8 // one attrreference: offset, length
+	buf := make([]byte, ref+filesecHeader+aclHeader)
+	he := binary.NativeEndian
+	he.PutUint32(buf[0:], ref)
+	he.PutUint32(buf[4:], filesecHeader+aclHeader)
+	he.PutUint32(buf[ref:], filesecMagic)
+	he.PutUint32(buf[ref+filesecHeader:], filesecNoACL)
+	// x/sys/unix has no fsetattrlist wrapper; the call goes through libc.
+	//nolint:staticcheck // SA1019: no libSystem wrapper for fsetattrlist is exported
+	_, _, errno := unix.Syscall6(unix.SYS_FSETATTRLIST, uintptr(fd),
+		uintptr(unsafe.Pointer(&al)),                              //nolint:gosec // G103: kept alive below
+		uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), 0, 0) //nolint:gosec // G103: kept alive below
+	runtime.KeepAlive(&al)
+	runtime.KeepAlive(buf)
+	if errno != 0 && !errors.Is(errno, unix.ENOTSUP) {
+		return errno
+	}
+	return nil
+}

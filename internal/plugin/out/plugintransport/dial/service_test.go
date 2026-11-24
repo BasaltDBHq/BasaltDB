@@ -5,6 +5,7 @@ package dial
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -188,4 +189,17 @@ func TestServiceChecksEveryConnectionOfEveryTransport(t *testing.T) {
 	require.ErrorIs(t, ConnCheck(sock, me, gid, nil)(c), ErrSocketDir, "opened to others after the first connection")
 	require.NoError(t, os.Chmod(dir, 0o700))
 	require.ErrorIs(t, ConnCheck(sock, me, gid+1, nil)(c), ErrSocketDir)
+}
+
+// The ACL refusal names the ACL, and status still reads it as a socket
+// directory refusal.
+func TestSocketDirACLErrorNamesTheACL(t *testing.T) {
+	t.Parallel()
+	err := error(socketDirACLError{dir: "/opt/basalt/run/u"})
+	require.ErrorIs(t, err, ErrSocketDir)
+	require.Contains(t, err.Error(), "/opt/basalt/run/u has an ACL entry that opens it to others")
+	err = socketDirACLError{dir: "/opt/basalt/run/u", err: errors.New("operation not permitted")}
+	require.ErrorIs(t, err, ErrSocketDir)
+	require.Contains(t, err.Error(), "has an ACL that cannot be read (operation not permitted)")
+	require.True(t, Dialer{}.SocketDir(fmt.Errorf("plugin x: %w", err)))
 }

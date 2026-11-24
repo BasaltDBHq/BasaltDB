@@ -93,3 +93,26 @@ func TestOpensLinux(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, got)
 }
+
+// Clear removes the access ACL and the default ACL new entries inherit.
+func TestClearLinux(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "d")
+	require.NoError(t, os.Mkdir(dir, 0o750))
+	err := unix.Setxattr(dir, aclXattr, acl(aclEntry{tagUser, 5, 4242}, 5), 0)
+	if errors.Is(err, unix.ENOTSUP) || errors.Is(err, unix.EOPNOTSUPP) {
+		t.Skip("this file system takes no POSIX ACLs")
+	}
+	require.NoError(t, err)
+	require.NoError(t, unix.Setxattr(dir, defaultXattr, acl(aclEntry{tagUser, 5, 4242}, 5), 0))
+	f, err := os.Open(dir)
+	require.NoError(t, err)
+	defer f.Close()
+	require.NoError(t, Clear(int(f.Fd())))
+	got, err := Opens(dir, Any)
+	require.NoError(t, err)
+	require.False(t, got)
+	_, err = unix.Getxattr(dir, defaultXattr, make([]byte, 256))
+	require.ErrorIs(t, err, unix.ENODATA, "the default ACL is gone")
+	require.NoError(t, Clear(int(f.Fd())), "no ACL left to remove")
+}

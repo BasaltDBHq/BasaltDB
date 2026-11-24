@@ -3,8 +3,11 @@ package osservice
 import (
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"testing"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/fileacl"
 
 	"github.com/stretchr/testify/require"
 )
@@ -36,4 +39,30 @@ func TestOpenTrustedRefusesADirectoryAnACLOpens(t *testing.T) {
 	f, err = OpenTrustedFile(filepath.Join(sub, "f"), keepID)
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
+}
+
+// Mkdir leaves no ACL on the directory it makes or takes over: not one
+// inherited from its parent, not one already on it.
+func TestOSSystemMkdirRemovesACLs(t *testing.T) {
+	dir := realTempDir(t)
+	cur, err := user.Current()
+	require.NoError(t, err)
+	chmod := func(path string, args ...string) {
+		out, err := exec.Command("/bin/chmod", append(args, path)...).CombinedOutput()
+		require.NoError(t, err, string(out))
+	}
+	t.Cleanup(func() { _ = exec.Command("/bin/chmod", "-R", "-N", dir).Run() })
+	chmod(dir, "+a", "everyone allow list,search,file_inherit,directory_inherit")
+
+	made := filepath.Join(dir, "run")
+	require.NoError(t, OSSystem{}.Mkdir(made, 0o750, cur.Username, ""))
+	opens, err := fileacl.Opens(made, fileacl.Any)
+	require.NoError(t, err)
+	require.False(t, opens, "the inherited entry is removed")
+
+	chmod(made, "+a", "everyone allow add_file")
+	require.NoError(t, OSSystem{}.Mkdir(made, 0o750, cur.Username, ""))
+	opens, err = fileacl.Opens(made, fileacl.Any)
+	require.NoError(t, err)
+	require.False(t, opens, "the entry on a directory taken over is removed")
 }

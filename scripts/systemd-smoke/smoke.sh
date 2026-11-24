@@ -56,9 +56,23 @@ fedora_dropin=/usr/lib/systemd/system/service.d/10-timeout-abort.conf
 bad_dropin=/etc/systemd/system/$unit.d/50-smoke-network.conf
 work=$(mktemp -d)
 
+# acls prints the ACL of each directory on the way to the plugin sockets,
+# each one on its own (not -R: /opt on a hosted runner is large). An ACL
+# opens a directory without changing its mode, and the engine refuses a
+# socket directory with one.
+acls() {
+	for d in / /opt /opt/basalt /opt/basalt/run /opt/basalt/run/*; do
+		[ -e "$d" ] || continue
+		sudo stat -c '%U:%G %a %n' "$d" || true
+		sudo getfacl -p "$d" 2>&1 || true
+	done
+}
+
 dump() {
 	status=$?
 	if [ "$status" -ne 0 ]; then
+		echo "--- ACLs on the way to the plugin sockets" >&2
+		acls >&2
 		for u in "$engine_unit" "$unit"; do
 			echo "--- systemctl status $u" >&2
 			sudo systemctl status --no-pager "$u" >&2 || true
@@ -165,6 +179,8 @@ step "the runner"
 uname -r
 systemctl --version | head -1
 stat -c '%U:%G %a %n' / /opt /usr/local /usr/local/bin
+command -v getfacl >/dev/null || sudo apt-get install -y -qq acl >/dev/null 2>&1 || true
+getfacl -p / /opt 2>&1 || true
 for d in / /opt /usr /usr/local /usr/local/bin; do
 	[ "$(stat -c '%u' "$d")" = 0 ] && [ $((0$(stat -c '%a' "$d") & 022)) = 0 ] ||
 		fail "$d must be root's and writable by root alone, as on a stock distribution"
@@ -288,6 +304,9 @@ case "$user" in basalt-plugin-*) ;; *) fail "$unit runs as '$user'" ;; esac
 sock=/opt/basalt/run/$user/p.sock
 copy=$(systemctl show -p WorkingDirectory --value "$unit")
 case "$copy" in /opt/basalt/plugins/$name/default/*) ;; *) fail "$unit runs from '$copy'" ;; esac
+# On record either way: the install removes any ACL from the socket
+# directory, so it shows none even where /opt passes one on.
+acls
 
 step "inside the unit, the plugin finds its sandbox"
 log=$(run_log)

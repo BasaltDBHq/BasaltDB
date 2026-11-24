@@ -29,3 +29,11 @@ const (
 func Opens(path string, g Grant) (bool, error) {
 	return opens(path, g)
 }
+
+// Clear removes every ACL from the file or directory open at fd, so its mode
+// alone says who can reach it: on Linux the access ACL and a directory's
+// default ACL (which new entries inherit), on macOS the extended ACL
+// (chmod -N). A file system without ACLs has none to remove.
+func Clear(fd int) error {
+	return clearACL(fd)
+}

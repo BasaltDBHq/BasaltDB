@@ -84,3 +84,22 @@ func TestParseFilesecRefusesShortReply(t *testing.T) {
 	_, err = parseFilesec(buf, rightsAny)
 	require.Error(t, err)
 }
+
+// Clear removes an allow entry, an inherited one included, as chmod -N does.
+func TestClearDarwin(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "d")
+	require.NoError(t, os.Mkdir(dir, 0o750))
+	addACL(t, dir, "everyone allow list,search,add_file,file_inherit,directory_inherit")
+	f, err := os.Open(dir)
+	require.NoError(t, err)
+	defer f.Close()
+	require.NoError(t, Clear(int(f.Fd())))
+	got, err := Opens(dir, Any)
+	require.NoError(t, err)
+	require.False(t, got)
+	out, err := exec.Command("/bin/ls", "-lde", dir).CombinedOutput()
+	require.NoError(t, err)
+	require.NotContains(t, string(out), "allow")
+	require.NoError(t, Clear(int(f.Fd())), "no ACL left to remove")
+}

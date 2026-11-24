@@ -17,14 +17,28 @@ import (
 )
 
 // SocketDirIs reports whether dir, not followed if it is a link, is a
-// directory owned by uid, in group gid, with no permission bit for others.
+// directory owned by uid, in group gid, with no permission bit for others
+// and no ACL entry that allows any access.
 func SocketDirIs(dir string, uid, gid uint32) bool {
+	return checkSocketDir(dir, uid, gid) == nil
+}
+
+// checkSocketDir is SocketDirIs with the cause: ErrSocketDir for the owner,
+// group or mode, a socketDirACLError (also an ErrSocketDir) for the ACL.
+func checkSocketDir(dir string, uid, gid uint32) error {
 	fi, err := os.Lstat(dir)
 	if err != nil || !fi.IsDir() {
-		return false
+		return ErrSocketDir
 	}
 	st, ok := fi.Sys().(*syscall.Stat_t)
-	return ok && st.Uid == uid && st.Gid == gid && fi.Mode().Perm()&0o007 == 0 && !openedByACL(dir)
+	if !ok || st.Uid != uid || st.Gid != gid || fi.Mode().Perm()&0o007 != 0 {
+		return ErrSocketDir
+	}
+	opens, err := fileacl.Opens(dir, fileacl.Any)
+	if err != nil || opens {
+		return socketDirACLError{dir: dir, err: err}
+	}
+	return nil
 }
 
 // openedByACL reports whether path, not followed, has an ACL entry that

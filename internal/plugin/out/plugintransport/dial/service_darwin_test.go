@@ -52,7 +52,9 @@ func TestServiceRefusesASocketAnACLOpens(t *testing.T) {
 	fi, err := os.Lstat(dir)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o750), fi.Mode().Perm(), "the mode stays as it was")
-	require.ErrorIs(t, dialOnce(), ErrSocketDir, "an ACL opens the directory")
+	err = dialOnce()
+	require.ErrorIs(t, err, ErrSocketDir, "an ACL opens the directory")
+	require.ErrorContains(t, err, "the plugin socket directory "+dir+" has an ACL entry that opens it to others", "the refusal names the ACL")
 	stripACL(t, dir)
 
 	addACL(t, dir, "group:everyone deny delete")

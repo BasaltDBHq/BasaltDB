@@ -197,7 +197,9 @@ func checkDir(fd int, path string, owner int) (rootOnly bool, err error) {
 			"choose a --config under directories only root can change (or sudo chown root %s)", path, st.Uid, path)
 	}
 	// An ACL entry opens a directory to other users without changing its
-	// mode. The sticky exception above holds for it as for the mode.
+	// mode. A root-owned sticky directory's ACL is not read: on macOS an
+	// allow delete_child entry overrides the sticky bit, but only root can
+	// put one there.
 	if !stickyRoot {
 		if opens, err := fileacl.Opens(path, fileacl.Write); err != nil || opens {
 			return false, fmt.Errorf("%s has an ACL entry that lets another user write it, or an ACL that cannot be read, so another user could redirect what root writes below it; "+

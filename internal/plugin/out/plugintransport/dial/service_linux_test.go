@@ -38,4 +38,7 @@ func TestSocketDirIsRefusesAPOSIXACL(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o750), fi.Mode().Perm(), "the mode is closed to others")
 	require.False(t, SocketDirIs(dir, me, gid))
+	err = checkSocketDir(dir, me, gid)
+	require.ErrorIs(t, err, ErrSocketDir)
+	require.ErrorContains(t, err, "has an ACL entry that opens it to others", "the refusal names the ACL")
 }

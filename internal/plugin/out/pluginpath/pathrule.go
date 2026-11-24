@@ -208,8 +208,10 @@ func checkAboveInfo(p string, fi fs.FileInfo, owner uint32, pol abovePolicy) err
 		return RuleRefusal(p, "is owned by a user other than root and the required owner", pluginmodel.PathOwner, fi, pluginmodel.RootUID, owner)
 	}
 	if pol.stickyRoot && uid == pluginmodel.RootUID && fi.Mode()&fs.ModeSticky != 0 {
-		// The sticky bit keeps others from replacing what they do not own,
-		// whether the mode or an ACL lets them write the directory.
+		// The sticky bit keeps others from replacing what they do not own
+		// when the mode lets them write the directory. Its ACL is not read:
+		// on macOS an allow delete_child entry overrides the sticky bit, but
+		// only root can put one on a directory root owns.
 		return nil
 	}
 	if fi.Mode().Perm()&groupOtherWrite == 0 {

@@ -834,9 +834,12 @@ test("the labels fix sends what the install sends, for the unlabeled columns onl
   assert.deepEqual(labelFields(l, false, false), { columnClasses: [{ table: "public.orders", column: "phone", class: "SECRET", was: { class: "UNCLASSIFIED" } }] });
 });
 
-test("the Update check shows what needs the person, then Fix these walks the fixes", async () => {
+test("the Update check shows what needs the person, each critical row fixes itself, then Done ends on All set", async () => {
   const nodes = fakePage();
-  const e = updateEngine([needs, { ...allGood, labels: { state: "UNLABELED", count: 1, columns: ["public.orders.phone"] } }, allGood], {
+  const store = new Map();
+  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+  const unlabeled = { ...allGood, labels: { state: "UNLABELED", count: 1, columns: ["public.orders.phone"] } };
+  const e = updateEngine([needs, unlabeled, unlabeled, unlabeled], {
     TRUST: (path, body) => {
       if (!body.trustRoot) return { code: "CERTIFICATE_NOT_VERIFIED", message: "x", trustRoot: ROOT, pinned: FP };
       return path === RUN_PATH ? { agent: "bot", lines: ["done"] } : { database: "shop_db", lines: ["This replaces…"], sql: "SELECT …" };
@@ -850,10 +853,14 @@ test("the Update check shows what needs the person, then Fix these walks the fix
   assert.equal(nodes["u-sub"].textContent, "The rest is checked once BasaltDB can connect.");
   assert.match(nodes["u-rows"].textContent, /shop_db renewed its security certificate.*Your agents are paused until you confirm\.Check/);
   assert.match(nodes["u-rows"].textContent, /Checked once BasaltDB can connect\./);
-  assert.equal(nodes["u-fix"].hidden, false);
+  assert.equal(nodes["u-end"].getAttribute("aria-disabled"), "true", "Done waits while something critical is open");
+  assert.equal(nodes["u-end-why"].hidden, false);
+  assert.equal(nodes["u-end-why"].textContent, "Confirm the certificate to finish. Until then, your agents are paused.");
+  nodes["u-end"].click();
+  assert.deepEqual(shown(nodes), ["u-check"], "a disabled Done does nothing");
   assert.ok(e.bodies.every((b) => !("databaseUrl" in b.body)), "nothing asks for the string to show the check");
 
-  await nodes["u-fix"].click();
+  await find(nodes["u-rows"], (n) => n.tagName === "BUTTON" && n.textContent === "Check").click();
   assert.deepEqual(shown(nodes), ["s-paste"], "the string is asked at the first fix");
   nodes["paste-url"].value = ADMIN;
   nodes["paste-next"].click();
@@ -876,17 +883,35 @@ test("the Update check shows what needs the person, then Fix these walks the fix
   assert.equal(nodes["u-done-title"].textContent, "Security certificate trusted");
   assert.equal(nodes["u-done-text"].textContent, "Your agents reconnect.");
   nodes["u-done-next"].click();
-  // Doctor again: the labels now read, and Fix these goes on with them.
+  // Doctor again: the unlabeled columns it now reads are a warning; the walk does not go on to them.
   await settle();
+  await settle();
+  assert.equal(e.bodies.filter((b) => b.body.job === "LABELS").length, 0, "no labels fix is started on its own");
+  assert.deepEqual(shown(nodes), ["u-check"]);
+  assert.equal(nodes["u-title"].textContent, "Ready");
+  assert.match(nodes["u-rows"].textContent, /1 column has no label.*orders\.phone.*Label/);
+  assert.equal(nodes["u-end"].getAttribute("aria-disabled"), "false");
+
+  // Label opens the labels page; leaving them unlabeled is saved and returns to the check.
+  await find(nodes["u-rows"], (n) => n.tagName === "BUTTON" && n.textContent === "Label").click();
   await settle();
   assert.deepEqual(shown(nodes), ["s-labels"]);
-  assert.equal(e.bodies.filter((b) => b.body.job === "LABELS").at(-1).body.databaseUrl, ADMIN, "the string is kept for the fixes that follow");
   await nodes["labels-next"].click();
   await settle();
   await settle();
   assert.equal(e.bodies.filter((b) => b.path === RUN_PATH && b.body.job === "LABELS").length, 0, "leaving them unlabeled sends no run");
   assert.deepEqual(shown(nodes), ["u-check"]);
-  assert.equal(nodes["u-title"].textContent, "All good");
+  assert.equal(nodes["u-title"].textContent, "Ready");
+  assert.match(nodes["u-rows"].textContent, /orders\.phone · you chose to leave them for now/);
+  delete globalThis.localStorage;
+
+  // Done: the All set screen says what is left for later.
+  nodes["u-end"].click();
+  assert.deepEqual(shown(nodes), ["u-allset"]);
+  assert.equal(nodes["u-allset-title"].textContent, "All set");
+  assert.equal(nodes["u-allset-text"].textContent, "Close this tab and go back to your agent. It can work now.");
+  assert.match(nodes["u-allset-lines"].textContent, /✓ Passkeys: 1 device can approve/);
+  assert.equal(nodes["u-allset-later"].textContent, "Left for later: 1 column has no label. Run `basalt init` to change it.");
 });
 
 test("a certificate from a new issuer: the cautious words, Trust it anyway the weaker button, Stop here trusts nothing", async () => {
@@ -925,8 +950,8 @@ test("Manage lists the passkeys, and removing the last one asks for a new one", 
   });
   startUpdate(change, { fetchFn: e.fetchFn, origin: ORIGIN, makePasskey: async () => ({}), pkc, now: () => new Date("2026-11-22T12:00:00Z"), onPick: () => {} });
   await settle();
-  assert.equal(nodes["u-title"].textContent, "All good");
-  assert.match(nodes["u-rows"].textContent, /Every column has a label/);
+  assert.equal(nodes["u-title"].textContent, "Ready");
+  assert.match(nodes["u-rows"].textContent, /Database certificate checked/);
   assert.match(nodes["u-rows"].textContent, /Passkeys1 device can approveManage/);
   const manage = find(nodes["u-rows"], (n) => n.tagName === "BUTTON" && n.textContent === "Manage");
   manage.click();
@@ -986,7 +1011,7 @@ test("before the check the page asks whose database the engine serves; Yes shows
   await nodes["confirm-go"].click();
   await settle();
   assert.deepEqual(shown(nodes), ["u-check"]);
-  assert.equal(nodes["u-title"].textContent, "All good");
+  assert.equal(nodes["u-title"].textContent, "Ready");
   assert.deepEqual(e.bodies.map((b) => b.path), [ENGINE_PATH, DOCTOR_PATH]);
 });
 

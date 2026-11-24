@@ -5,7 +5,6 @@ import (
 	"os/user"
 	"path/filepath"
 	"slices"
-	"sort"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
@@ -104,7 +103,7 @@ func checkAgentUsers(gid string, agentOSUsers map[string]string, groups groupLoo
 	for a := range agentOSUsers {
 		agents = append(agents, a)
 	}
-	sort.Strings(agents)
+	slices.Sort(agents)
 	for _, a := range agents {
 		u := agentOSUsers[a]
 		if u == "" {

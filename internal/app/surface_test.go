@@ -6,10 +6,11 @@ import (
 	"encoding/json"
 	"flag"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -278,26 +279,17 @@ func buildSurface(t *testing.T) map[string]surfaceEntry {
 	return actual
 }
 
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 // surfaceDifferences lists what differs between the file's entries and the
 // real surface, in both directions.
 func surfaceDifferences(declared, actual map[string]surfaceEntry) []string {
 	var diffs []string
-	for _, k := range sortedKeys(actual) {
+	for _, k := range slices.Sorted(maps.Keys(actual)) {
 		if _, ok := declared[k]; !ok {
 			diffs = append(diffs, k+" is in the binary or the page tree but not in contract/surface.json: "+
 				"the surface has a budget, so a new entry needs a maintainer's sign-off")
 		}
 	}
-	for _, k := range sortedKeys(declared) {
+	for _, k := range slices.Sorted(maps.Keys(declared)) {
 		if _, ok := actual[k]; !ok {
 			diffs = append(diffs, k+" is in contract/surface.json but not in the binary or the page tree: delete the entry")
 		}

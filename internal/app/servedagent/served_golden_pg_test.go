@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
@@ -94,7 +94,7 @@ func declaredErrors(t *testing.T) []string {
 			out = append(out, tool.Name+" "+code)
 		}
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 

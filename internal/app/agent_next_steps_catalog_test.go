@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sort"
 	"testing"
 	"time"
 
@@ -293,7 +292,7 @@ func TestEveryCatalogErrorHasACase(t *testing.T) {
 			stale = append(stale, k)
 		}
 	}
-	sort.Strings(stale)
+	slices.Sort(stale)
 	require.Empty(t, stale, "cases without a catalog entry")
 }
 

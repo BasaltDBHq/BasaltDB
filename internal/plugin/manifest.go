@@ -13,6 +13,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"golang.org/x/mod/semver"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
@@ -50,7 +52,6 @@ const (
 // \s does not, so they are listed.
 var (
 	namePattern         = regexp.MustCompile(`^[a-z][a-z0-9-]{1,39}$`)
-	versionPattern      = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`)
 	protocolPattern     = regexp.MustCompile(`^basalt-plugin/[1-9][0-9]*$`)
 	contractPattern     = regexp.MustCompile(`^[a-z][a-z0-9-]*/[1-9][0-9]*$`)
 	namespacedPattern   = regexp.MustCompile(`^[a-z][a-z0-9-]{1,39}\.[A-Z][A-Z0-9_]{0,39}$`)
@@ -59,6 +60,15 @@ var (
 	hostPortPattern     = regexp.MustCompile(`^(([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*|\[[0-9a-f:.]+\]|[0-9]{1,3}(\.[0-9]{1,3}){3}):[0-9]{1,5}$`)
 	remoteURLPattern    = regexp.MustCompile(`^https://(([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*|\[[0-9a-f:.]+\]|[0-9]{1,3}(\.[0-9]{1,3}){3})(:[0-9]{1,5})?(/[^?#@\t\n\v\f\r \p{Z}\x{FEFF}]*)?$`)
 )
+
+// validVersion reports whether s is a full semantic version without a "v"
+// prefix: major.minor.patch, optional pre-release, optional build metadata.
+// Shorthand such as "1.2" is refused.
+func validVersion(s string) bool {
+	v := "v" + s
+	core, _, _ := strings.Cut(v, "+")
+	return !strings.HasPrefix(s, "v") && semver.IsValid(v) && semver.Canonical(v) == core
+}
 
 // hookContracts is the message contract each v1 hook declares. The
 // reserved wire.verdict has none: a manifest declaring it is refused.
@@ -147,7 +157,7 @@ func (p *manifestParser) header() error {
 	if p.m.Name, ok = stringOf(p.top["name"]); !ok || !namePattern.MatchString(p.m.Name) {
 		return badManifest("name must be lowercase letters, digits and dashes, 2 to 40 characters, starting with a letter")
 	}
-	if p.m.Version, ok = stringOf(p.top["version"]); !ok || !versionPattern.MatchString(p.m.Version) {
+	if p.m.Version, ok = stringOf(p.top["version"]); !ok || !validVersion(p.m.Version) {
 		return badManifest("version must be a semantic version")
 	}
 	if p.m.Publisher, ok = stringOf(p.top["publisher"]); !ok || p.m.Publisher == "" || utf8.RuneCountInString(p.m.Publisher) > maxPublisherRunes {

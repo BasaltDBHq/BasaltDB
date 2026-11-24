@@ -73,7 +73,7 @@ func planLines() []string {
 		lines = append(lines, fmt.Sprintf(`{"op": "UPDATE", "key": {"id": %d}, "now": {"id": %d, "v": "agent"}, "set": {"id": %d, "v": "before"}, "table": "public.items", "action": %s, "cascaded": false, "conflict": %s, "sqlState": null, "changeIds": [%q]}`,
 			i+1, i+1, i+1, action, conflict, change1))
 	}
-	sort.Strings(lines)
+	slices.Sort(lines)
 	return lines
 }
 

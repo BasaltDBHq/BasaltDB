@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -134,7 +134,7 @@ func (n *runNormalizer) walk(v any, key string) any {
 		for k := range x {
 			keys = append(keys, k)
 		}
-		sort.Strings(keys)
+		slices.Sort(keys)
 		out := make(map[string]any, len(x))
 		for _, k := range keys {
 			out[k] = n.walk(x[k], k)

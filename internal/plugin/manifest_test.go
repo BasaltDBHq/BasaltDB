@@ -169,3 +169,13 @@ func TestRemoteHostPort(t *testing.T) {
 		require.Equal(t, want, got, u)
 	}
 }
+
+func TestValidVersion(t *testing.T) {
+	t.Parallel()
+	for _, ok := range []string{"1.0.0", "0.1.0-alpha", "1.2.3-rc.1", "1.0.0+build.5", "1.0.0-beta.2+exp.sha.5114f85"} {
+		require.True(t, validVersion(ok), ok)
+	}
+	for _, bad := range []string{"", "1", "1.2", "v1.0.0", "1.0.0+", "1.0.0+a b", "1.0.0+a\u202eb", "1.0.0+a\x00", "1.0.0-", "1.0.0-a..b", "1.0.0-01"} {
+		require.False(t, validVersion(bad), bad)
+	}
+}

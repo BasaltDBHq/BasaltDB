@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 // trustFileExt is a trusted key's file extension: <keyId>.pem.
@@ -292,36 +293,9 @@ func chain(base, p string) []string {
 // a rename, with mode set explicitly.
 func pluginhostWriteFileAtomic(dir, name string, b []byte, mode os.FileMode) error {
 	path := filepath.Join(dir, name)
-	f, err := os.CreateTemp(dir, ".tmp-")
-	if err != nil {
+	if err := atomicfile.Write(path, b, atomicfile.Options{Mode: mode}); err != nil {
 		return pluginmodel.PathRefusal(path, "cannot be written")
 	}
-	tmp := f.Name()
-	ok := false
-	defer func() {
-		if !ok {
-			_ = os.Remove(tmp)
-		}
-	}()
-	if _, err := f.Write(b); err != nil {
-		_ = f.Close()
-		return pluginmodel.PathRefusal(path, "cannot be written")
-	}
-	if err := f.Chmod(mode); err != nil {
-		_ = f.Close()
-		return pluginmodel.PathRefusal(path, "cannot be written")
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return pluginmodel.PathRefusal(path, "cannot be written")
-	}
-	if err := f.Close(); err != nil {
-		return pluginmodel.PathRefusal(path, "cannot be written")
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return pluginmodel.PathRefusal(path, "cannot be written")
-	}
-	ok = true
 	return nil
 }
 

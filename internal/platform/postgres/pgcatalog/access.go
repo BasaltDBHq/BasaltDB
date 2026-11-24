@@ -2,7 +2,7 @@ package pgcatalog
 
 import (
 	"context"
-	"sort"
+	"slices"
 )
 
 // Access lists user-schema relations as schema.table, each part quoted
@@ -47,8 +47,8 @@ func ListAccess(ctx context.Context, db Querier) (Access, error) {
 		return Access{}, err
 	}
 	// Sorted in Go so the order does not depend on the database collation.
-	sort.Strings(acc.Read)
-	sort.Strings(acc.Write)
-	sort.Strings(acc.NotGranted)
+	slices.Sort(acc.Read)
+	slices.Sort(acc.Write)
+	slices.Sort(acc.NotGranted)
 	return acc, nil
 }

@@ -7,7 +7,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -130,7 +130,7 @@ func TestPluginReadsEngineConfigOnlyThroughPort(t *testing.T) {
 		found = append(found, fileReadsIn(name, f)...)
 	}
 	require.NotEmpty(t, found, "the package's sources are scanned")
-	sort.Strings(found)
+	slices.Sort(found)
 	var stray []string
 	for _, at := range found {
 		if _, ok := pluginFileReads[at]; !ok {

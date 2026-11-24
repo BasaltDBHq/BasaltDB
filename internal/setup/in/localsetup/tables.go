@@ -152,7 +152,7 @@ func answersKey(answers []Answer) string {
 	for i, a := range answers {
 		parts[i] = a.Table + ":" + a.Choice
 	}
-	sort.Strings(parts)
+	slices.Sort(parts)
 	return strings.Join(parts, ",")
 }
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 const (
@@ -117,21 +118,5 @@ func (f File) Save(name string, pin chainpin.Pin) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(f.Dir, name+".*.tmp")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name()) // a no-op after the rename
-	if _, err := tmp.Write(raw); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(fileMode); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+	return atomicfile.Write(path, raw, atomicfile.Options{Mode: fileMode})
 }

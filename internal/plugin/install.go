@@ -5,9 +5,11 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
@@ -154,7 +156,7 @@ func (s *Staged) fill(srcRoot *os.Root, src string, m pluginmodel.Manifest, mani
 	if m.Endpoint.Local != nil {
 		command = m.Endpoint.Local.Command
 	}
-	for _, rel := range sortedKeys(m.Files) {
+	for _, rel := range slices.Sorted(maps.Keys(m.Files)) {
 		if err := s.copyFile(srcRoot, src, rel, rel == command); err != nil {
 			return err
 		}

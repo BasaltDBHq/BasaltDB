@@ -16,7 +16,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
-	"github.com/basaltdbhq/basaltdb/internal/lib/semver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
@@ -162,7 +161,9 @@ func newerThanEngine(build string) (bool, error) {
 	if build == "" {
 		return true, nil
 	}
-	c, ok := semver.CompareStrings(buildinfo.Version, build)
+	this, okThis := buildinfo.ParseVersion(buildinfo.Version)
+	engine, okEngine := buildinfo.ParseVersion(build)
+	c, ok := buildinfo.CompareVersions(this, engine), okThis && okEngine
 	switch {
 	case ok && c > 0:
 		return true, nil

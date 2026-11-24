@@ -1,7 +1,7 @@
 package approvalmcp
 
 import (
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -26,7 +26,7 @@ func TestArgsStructsMatchTheSchemas(t *testing.T) {
 		for p := range props {
 			want = append(want, p)
 		}
-		sort.Strings(want)
+		slices.Sort(want)
 		require.Equal(t, want, mcptest.JSONFields(v), name)
 	}
 }

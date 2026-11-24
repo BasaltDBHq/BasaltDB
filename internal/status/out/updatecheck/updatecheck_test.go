@@ -10,34 +10,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-)
 
-func TestCompare(t *testing.T) {
-	order := []string{"0.0.1-alpha.1", "0.0.1-alpha.2", "0.0.1-alpha.10", "0.0.1-beta", "0.0.1", "0.0.2", "0.1.0", "1.0.0"}
-	for i := range order {
-		for j := range order {
-			a, _ := parseVersion(order[i])
-			b, _ := parseVersion(order[j])
-			want := 0
-			if i < j {
-				want = -1
-			} else if i > j {
-				want = 1
-			}
-			if got := a.Compare(b); got != want {
-				t.Errorf("%s vs %s = %d, want %d", order[i], order[j], got, want)
-			}
-		}
-	}
-	for _, bad := range []string{"", "1.2", "dev", "1.2.x", "1.2.3-", "v1.2.3.4"} {
-		if _, ok := parseVersion(bad); ok {
-			t.Errorf("parseVersion(%q) accepted", bad)
-		}
-	}
-	if v, ok := parseVersion("v1.2.3+build5"); !ok || v.Core != [3]uint64{1, 2, 3} {
-		t.Errorf("v1.2.3+build5 = %v %v", v, ok)
-	}
-}
+	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
+)
 
 func TestNotice(t *testing.T) {
 	rels := []Release{
@@ -247,14 +222,14 @@ func TestAFlaggedPreReleaseIsNotOfferedToAStableBuild(t *testing.T) {
 	}
 }
 
-func TestParseVersionRefusesOddPreReleaseIdentifiers(t *testing.T) {
+func TestParseVersionPreReleaseIdentifiers(t *testing.T) {
 	for _, s := range []string{"1.2.3-alpha.2", "1.2.3-rc-1", "v1.2.3-0.3.7"} {
-		if _, ok := parseVersion(s); !ok {
+		if _, ok := buildinfo.ParseVersion(s); !ok {
 			t.Errorf("%q refused", s)
 		}
 	}
 	for _, s := range []string{"1.2.3-al pha", "1.2.3-a_b", "1.2.3-é", "1.2.3-a..b", "1.2.3-a.", "1.2.3-"} {
-		if _, ok := parseVersion(s); ok {
+		if _, ok := buildinfo.ParseVersion(s); ok {
 			t.Errorf("%q accepted", s)
 		}
 	}

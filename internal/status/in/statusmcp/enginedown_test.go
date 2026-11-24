@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -99,7 +99,7 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 	for _, tool := range down.Tools() {
 		served = append(served, tool.Name)
 	}
-	sort.Strings(served)
+	slices.Sort(served)
 	require.NoError(t, mcpcontract.CheckServed(mcpcontract.MustLoad(), served), "the shim lists exactly the IMPLEMENTED contracts")
 
 	entry, ok := stepcatalogtest.CatalogOf(t).ErrorEntry(guidance.CodeUnavailable, guidance.ReasonEngineUnreachable, "query")

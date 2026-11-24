@@ -60,6 +60,7 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 
 ### Fixed
 
+- A release now counts as newer than its release candidates. The update notice offers `0.1.0-alpha` to someone running `0.1.0-alpha-rc.3`, and `basalt init` from the release no longer refuses an engine service that runs the candidate as "newer than this basalt".
 - `basalt init` installs the engine service from a Homebrew `basalt`, or one unpacked in a folder of your own, with no manual step. The one password dialog now copies `basalt` into a folder only root can change (`/usr/local/libexec/basalt` on macOS, `/usr/libexec/basalt` on Linux), checked against what `init` read, and the service runs that copy. Before, `init` refused a binary in a folder your account owns and handed the agent two `sudo` commands, which an agent session cannot run. After `brew upgrade`, `basalt init` copies the new `basalt` over the service's copy and restarts the engine in the same single dialog. Removing BasaltDB deletes the copy. No message tells you or the agent to run `sudo`.
 - A Vault session that a duplicated or otherwise refused frame ends now always closes with `FRAME_INVALID`. It could close with `PROTOCOL` instead and send the Vault a second `SESSION_CLOSE`.
 - The engine no longer reports "ledger chain broken" on a new ledger after the database was recreated the same way, for example after running the quickstart again on a fresh Postgres container. The guard now identifies each install by a random id instead of the schema's oid.

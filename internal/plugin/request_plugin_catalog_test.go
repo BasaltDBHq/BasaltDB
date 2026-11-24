@@ -1,7 +1,7 @@
 package plugin
 
 import (
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -102,7 +102,7 @@ func TestPluginCatalogCasesAreTheOnesTheAgentExpects(t *testing.T) {
 	for k := range pluginCatalogCases() {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	require.Equal(t, stepcatalogtest.PluginErrorKeys(), keys)
 	seen := map[string]bool{}
 	for _, e := range stepcatalogtest.CatalogOf(t).Errors {
@@ -185,7 +185,7 @@ func TestPluginResultCasesAreTheOnesTheAgentExpects(t *testing.T) {
 	for k := range pluginResultCases() {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	require.Equal(t, stepcatalogtest.PluginResultKeys(), keys)
 	seen := map[string]bool{}
 	for _, e := range stepcatalogtest.CatalogOf(t).Results {

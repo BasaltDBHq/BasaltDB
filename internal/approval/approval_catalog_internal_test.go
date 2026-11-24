@@ -2,7 +2,7 @@ package approval
 
 import (
 	"context"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -171,7 +171,7 @@ func TestApprovalCatalogCasesAreTheOnesTheAgentExpects(t *testing.T) {
 	for k := range catalogCases() {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	require.Equal(t, stepcatalogtest.ApprovalErrorKeys(), keys)
 	seen := map[string]bool{}
 	for _, e := range stepcatalogtest.CatalogOf(t).Errors {
@@ -265,7 +265,7 @@ func TestApprovalResultCasesAreTheOnesTheAgentExpects(t *testing.T) {
 	for k := range resultCases() {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	require.Equal(t, stepcatalogtest.ApprovalResultKeys(), keys)
 	seen := map[string]bool{}
 	for _, e := range stepcatalogtest.CatalogOf(t).Results {

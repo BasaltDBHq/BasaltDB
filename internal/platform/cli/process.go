@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 // SleepCtx waits d, or less when ctx ends: false when ctx ended first.
@@ -25,11 +26,7 @@ func SleepCtx(ctx context.Context, d time.Duration) bool {
 // WriteFileAtomic replaces path with data through a temporary file next
 // to it.
 func WriteFileAtomic(path string, data []byte) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, config.FileMode); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return atomicfile.Write(path, data, atomicfile.Options{Mode: config.FileMode})
 }
 
 // HeldAtEveryLook is true when held is true at every one of a few looks,

@@ -17,6 +17,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 // Timing of the plugin watch (CONTRACT.md, Plugins, Plugin changes while
@@ -806,21 +807,11 @@ func writeFileAtomic(dir, name string, raw []byte) error {
 	if err := os.MkdirAll(dir, stateDirMode); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(dir, name+".*")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	defer func() { _ = os.Remove(tmp) }()
-	if _, err := f.Write(raw); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp, filepath.Join(dir, name))
+	return atomicfile.Write(filepath.Join(dir, name), raw, atomicfile.Options{Mode: privateFileMode})
 }
 
 // stateDirMode keeps the engine's state to its own OS user.
 const stateDirMode = 0o700
+
+// privateFileMode keeps a state file to the engine's own OS user.
+const privateFileMode = 0o600

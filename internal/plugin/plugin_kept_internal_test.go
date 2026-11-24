@@ -16,7 +16,6 @@ import (
 	"os/user"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -406,7 +405,7 @@ func TestNameClashWithConfigRefused(t *testing.T) {
 	for _, p := range list.Plugins {
 		sources = append(sources, p.Instance+":"+p.Source+":"+p.Health)
 	}
-	sort.Strings(sources)
+	slices.Sort(sources)
 	require.Equal(t, []string{"default:CONFIG:READY", "other:ENGINE:UNAVAILABLE"}, sources)
 }
 

@@ -20,6 +20,10 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/mod/semver"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
+	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
@@ -131,33 +135,26 @@ func releaseCandidate(tag string) bool { return releaseCandidateRE.MatchString(t
 // pre-releases (a tag suffix or GitHub's flag) only when current is one, and
 // release candidates never.
 func notice(current string, releases []Release) *Notice {
-	cur, ok := parseVersion(current)
+	cur, ok := buildinfo.ParseVersion(current)
 	if !ok || current == DevVersion {
 		return nil
 	}
-	// A candidate build is older than the release it leads up to, but
-	// semantic version order puts v0.1.0-alpha-rc.1 above v0.1.0-alpha: judge
-	// it by its base, and count the release itself as newer.
-	floor, floorEq := cur, false
-	if releaseCandidate(current) {
-		if base, ok := parseVersion(releaseCandidateRE.ReplaceAllString(current, "")); ok {
-			floor, floorEq = base, true
-		}
-	}
 	var best *Release
-	var bestV version
+	var bestV string
 	security := false
 	for i := range releases {
 		r := &releases[i]
 		if releaseCandidate(r.Tag) {
 			continue
 		}
-		v, ok := parseVersion(r.Tag)
-		if !ok || ((v.Prerelease() || r.Prerelease) && !cur.Prerelease()) || older(v.Compare(floor), floorEq) {
+		v, ok := buildinfo.ParseVersion(r.Tag)
+		// A release candidate sorts below its release, so the release is
+		// newer than a candidate build.
+		if !ok || ((semver.Prerelease(v) != "" || r.Prerelease) && semver.Prerelease(cur) == "") || buildinfo.CompareVersions(v, cur) <= 0 {
 			continue
 		}
 		security = security || r.Security
-		if best == nil || v.Compare(bestV) > 0 {
+		if best == nil || buildinfo.CompareVersions(v, bestV) > 0 {
 			best, bestV = r, v
 		}
 	}
@@ -171,10 +168,6 @@ func notice(current string, releases []Release) *Notice {
 		URL:      releasePageBase + best.Tag,
 	}
 }
-
-// older reports whether a comparison against the floor rules a release out:
-// below it, or equal to it when the floor is a build's own number.
-func older(c int, floorEq bool) bool { return c < 0 || (c == 0 && !floorEq) }
 
 // Run refreshes the cache now and then whenever it falls due, until ctx is
 // done: for a long-running process (the engine). Errors go to onErr.
@@ -287,23 +280,7 @@ func (c *Checker) save(k cache) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(c.Dir, cacheFile+".*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if err := tmp.Chmod(cacheFilePerm); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(raw); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), c.path())
+	return atomicfile.Write(c.path(), raw, atomicfile.Options{Mode: cacheFilePerm})
 }
 
 // ErrNoDir is returned by CacheDir when no cache directory can be found.

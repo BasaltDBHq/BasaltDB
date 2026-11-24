@@ -3,17 +3,16 @@ package status
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 	"github.com/basaltdbhq/basaltdb/internal/lib/httpsec"
 	"github.com/basaltdbhq/basaltdb/web"
 )
@@ -196,20 +195,8 @@ func save(dir string, res Result) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(dir, fileName+".*")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	_, werr := f.Write(b)
-	cerr := f.Close()
-	if err := errors.Join(werr, cerr); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := os.Rename(tmp, filepath.Join(dir, fileName)); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
+	return atomicfile.Write(filepath.Join(dir, fileName), b, atomicfile.Options{Mode: resultFileMode})
 }
+
+// resultFileMode keeps the check result to its own user.
+const resultFileMode = 0o600

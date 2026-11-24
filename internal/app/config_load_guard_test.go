@@ -7,7 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -164,7 +164,7 @@ func TestNoRootPathUsesPlainConfigLoad(t *testing.T) {
 		return nil
 	}))
 	require.NotZero(t, walked, "internal/'s sources are scanned too")
-	sort.Strings(found)
+	slices.Sort(found)
 	var stray []string
 	for _, at := range found {
 		if _, ok := plainConfigLoads[at]; !ok {

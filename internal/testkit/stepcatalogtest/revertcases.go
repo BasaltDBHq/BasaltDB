@@ -1,6 +1,6 @@
 package stepcatalogtest
 
-import "sort"
+import "slices"
 
 // The catalog's revert cases run in the revert package's tests, on the
 // revert use case's own builders. These are their keys: the revert tests
@@ -58,6 +58,6 @@ func RevertResultKeys() []string {
 }
 
 func sorted(keys ...string) []string {
-	sort.Strings(keys)
+	slices.Sort(keys)
 	return keys
 }

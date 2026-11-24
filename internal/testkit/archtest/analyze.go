@@ -11,7 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -294,7 +294,7 @@ func (v violations) add(pkg, line string) { v[pkg] = append(v[pkg], line) }
 
 func (v violations) normalize() {
 	for k, lines := range v {
-		sort.Strings(lines)
+		slices.Sort(lines)
 		out := lines[:0]
 		for i, l := range lines {
 			if i == 0 || l != lines[i-1] {
@@ -596,6 +596,6 @@ func checkRegister(pkgs map[string]*goPkg, reg *register) []string {
 			problems = append(problems, fmt.Sprintf("register row %s: area is empty", name))
 		}
 	}
-	sort.Strings(problems)
+	slices.Sort(problems)
 	return problems
 }

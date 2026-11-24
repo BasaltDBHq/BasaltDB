@@ -8,7 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -264,7 +264,7 @@ func TestRootCredentialReadsAreChecked(t *testing.T) {
 			unchecked = append(unchecked, at)
 		}
 	}
-	sort.Strings(unchecked)
+	slices.Sort(unchecked)
 	require.Empty(t, unchecked, "a credential read without pgdial.CheckForeignDSN: as root, check a file another user owns, "+
 		"or list it in uncheckedCredentialReads with why root never connects with it")
 	for at := range uncheckedCredentialReads {

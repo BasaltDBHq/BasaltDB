@@ -5,7 +5,6 @@ import (
 	"errors"
 	"maps"
 	"slices"
-	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -96,7 +95,7 @@ func TestEveryCatalogResultHasACase(t *testing.T) {
 	for _, k := range slices.Concat(stepcatalogtest.RevertResultKeys(), stepcatalogtest.ApprovalResultKeys(), stepcatalogtest.PluginResultKeys()) {
 		require.NotContains(t, cases, k, "a revert, approval or plugin result case runs in its own package only")
 	}
-	sort.Strings(stale)
+	slices.Sort(stale)
 	require.Empty(t, stale, "result cases without a catalog entry")
 }
 

@@ -21,18 +21,18 @@ const (
 	DefaultScanPage          = 5000
 	DefaultScanRowsPerSecond = 20_000
 	bytesPerMB               = 1 << 20
-	// bytesPerAddBound is what a build holds in memory per value until it
+	// BytesPerAddBound is what a build holds in memory per value until it
 	// commits: two 8-byte keyed hashes. A cycle stops collecting past
-	// budget / bytesPerAddBound values, so the build itself stays within
+	// budget / BytesPerAddBound values, so the build itself stays within
 	// pii.maxMemoryMB.
-	bytesPerAddBound = 16
+	BytesPerAddBound = 16
 	// DefaultLoadTimeout bounds a catalog read (the map; the store's
 	// adapter takes it for a resource's key), so a pool with no free
 	// connection cannot hold the scan for good.
 	DefaultLoadTimeout = time.Minute
-	// failWarnAfter is how many cycles in a row may fail before the scan
+	// FailWarnAfter is how many cycles in a row may fail before the scan
 	// warns that the dictionary is not being rebuilt.
-	failWarnAfter = 3
+	FailWarnAfter = 3
 )
 
 // ErrScanOverBudget is a scan that collected more values than the memory
@@ -51,7 +51,9 @@ type Builder interface {
 type Fields interface {
 	// Read pages through t's fields, pageRows rows at a time. value gets
 	// each non-null value of t.Fields[field] as the read path hands it: a
-	// JSON value as json.RawMessage, any other as its text (string). page
+	// JSON value as json.RawMessage, any other as its text (string). A
+	// json.RawMessage's bytes are the adapter's and valid only during the
+	// call: value must copy what it keeps, never the bytes themselves. page
 	// gets each page's row count, after that page's read has let go of its
 	// connection, so the rate limit's sleep never holds one. An error of
 	// value or page is returned as is. A resource the scan should skip
@@ -187,7 +189,7 @@ func (s *Scanner) Cycle(ctx context.Context) (ScanResult, error) {
 		s.failures.Store(0)
 		return res, nil
 	}
-	if n := s.failures.Add(1); n >= failWarnAfter && ctx.Err() == nil {
+	if n := s.failures.Add(1); n >= FailWarnAfter && ctx.Err() == nil {
 		s.log.Warn(fmt.Sprintf("pii: the dictionary has not been rebuilt for %d scans in a row; once its delta is full, reads of IDENTIFIER columns fail", n),
 			"failedScans", n)
 	}
@@ -201,7 +203,7 @@ func (s *Scanner) cycle(ctx context.Context) (ScanResult, error) {
 		return ScanResult{}, err
 	}
 	run := &scanRun{
-		s: s, b: b, maxValues: s.opts.MaxMemoryBytes / bytesPerAddBound,
+		s: s, b: b, maxValues: s.opts.MaxMemoryBytes / BytesPerAddBound,
 		limit: limiter{rate: s.opts.RowsPerSecond, start: start, now: s.opts.Now, sleep: s.opts.Sleep},
 	}
 	for _, src := range s.sources {

@@ -99,9 +99,8 @@ func TestScanOverBudgetKeepsThePreviousDictionary(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, dict.Add(corepii.EntityEmail, "delta@corp.ee", ""))
 
-	// A budget for 3 values (16 bytes each): the cycle stops, the base and
-	// delta stay.
-	tiny := pii.NewScanner(dict, src, pii.ScanOptions{MaxMemoryBytes: 3 * 16}, slog.New(slog.DiscardHandler))
+	// A budget for 3 values: the cycle stops, the base and delta stay.
+	tiny := pii.NewScanner(dict, src, pii.ScanOptions{MaxMemoryBytes: 3 * pii.BytesPerAddBound}, slog.New(slog.DiscardHandler))
 	_, err = tiny.Cycle(ctx)
 	require.ErrorIs(t, err, pii.ErrScanOverBudget)
 	require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "order7@corp.ee", "")))
@@ -143,11 +142,10 @@ func TestScanWarnsWhenBuildsKeepFailing(t *testing.T) {
 	dict, _, _ := scanDict(t, nil)
 	log, out := newLog()
 	s := pii.NewScanner(dict, []pii.ScanSource{scanSource(pool, sqlguard.DefaultLimits())}, pii.ScanOptions{}, log)
-	const failWarnAfter = 3
-	for i := range failWarnAfter {
+	for i := range pii.FailWarnAfter {
 		_, err := s.Cycle(context.Background())
 		require.Error(t, err)
-		require.Equal(t, i == failWarnAfter-1, strings.Contains(out.String(), "has not been rebuilt"), "cycle %d", i)
+		require.Equal(t, i == pii.FailWarnAfter-1, strings.Contains(out.String(), "has not been rebuilt"), "cycle %d", i)
 	}
 }
 

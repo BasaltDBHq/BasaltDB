@@ -135,7 +135,7 @@ func revertLinePage(p action.RevertLineParams) (string, []any, error) {
 	default:
 		return "", nil, fmt.Errorf("%w: outcome %q", ErrInvalidParams, p.Outcome)
 	}
-	b, err := pagination.ApplySeqKeyset(b, "line_no", false, p.Cursor)
+	b, err := applySeqKeyset(b, "line_no", false, p.Cursor)
 	if err != nil {
 		return "", nil, fmt.Errorf("%w: %w", ErrInvalidParams, err)
 	}

@@ -11,9 +11,10 @@ import (
 
 // Bounds of what an agent's ledger records of an entry (CONTRACT.md,
 // Plugins, In the ledger): the guard refuses a version over 64 bytes and a
-// detail over 4096 bytes as Postgres prints it. A manifest whose record
-// could break either is refused here, so no plugin the person consents to
-// can fail to be recorded, and so never be served.
+// detail over 4096 bytes written by the text rules (CONTRACT.md, Stores,
+// Text rules), the layout every store's guard measures. A manifest whose
+// record could break either is refused here, so no plugin the person
+// consents to can fail to be recorded, and so never be served.
 const (
 	maxVersionBytes = 64
 	maxRecordBytes  = 4096
@@ -74,12 +75,13 @@ func recordBytes(m pluginmodel.Manifest) int {
 	if err != nil {
 		return maxRecordBytes + 1
 	}
-	return len(b) + jsonbSpaces(b)
+	return len(b) + textRuleSpaces(b)
 }
 
-// jsonbSpaces is how many bytes Postgres adds when it prints compact JSON b
-// as jsonb text: a space after each ':' and ',' outside strings.
-func jsonbSpaces(b []byte) int {
+// textRuleSpaces is how many bytes the text rules add to compact JSON b:
+// they join an entry's key and value with ": " and entries and values with
+// ", ", so a space after each ':' and ',' outside strings.
+func textRuleSpaces(b []byte) int {
 	n, inString, escaped := 0, false, false
 	for _, c := range b {
 		switch {

@@ -140,8 +140,32 @@ var actionStoreRule = storeRule{
 	allowedDeps: map[string]string{},
 }
 
+// pluginStoreRule holds internal/plugin, the plugin host, to its guard port:
+// it decides on the store's typed answers (pluginmodel.StoreError and
+// ApprovalRefusalError), never on a store's error codes, the guard's codes
+// or details, or a store's own text layout, and names the store's kind only
+// as the port gives it.
+var pluginStoreRule = storeRule{
+	dir:     filepath.Join("internal", "plugin"),
+	imports: storeBoundImports,
+	ident:   regexp.MustCompile(`(?i:sqlstate|jsonb)|OID|Oid|pg_`),
+	// A SQLSTATE is five digits or capitals starting with a digit, such as
+	// 42P01, or the guard's own BS007.
+	text: regexp.MustCompile(`pg_|(?i:sqlstate|jsonb)|\b[0-9][0-9A-Z]{4}\b|\bBS[0-9]{3}\b`),
+	selectors: map[string]*regexp.Regexp{
+		modulePath + "/internal/core/guidance":   regexp.MustCompile(`^(LedgerCode|StoreDetail|StoreError|TimedOut)$`),
+		modulePath + "/internal/core/guardmodel": regexp.MustCompile(`^(Code.*|Scope.*|Detail.*|UnpickedGrantsDetail)$`),
+		modulePath + "/internal/core/action":     regexp.MustCompile(`^(StoreError|StorePostgres)$`),
+	},
+	allowed: map[string]string{
+		`manifest.go: text "resources.memoryMB must be a whole number from 64 to 65536"`: "a memory bound in MB, not a store code",
+		`plugin_feed_events.go: text "2006-01-02T15:04:05.999999Z"`:                      "Go's time layout for the feed's RFC 3339 times, not a store code",
+	},
+	allowedDeps: map[string]string{},
+}
+
 // storeRules are the store-neutral domains.
-var storeRules = []storeRule{agentStoreRule, revertStoreRule, piiStoreRule, approvalStoreRule, approvalMCPStoreRule, actionStoreRule}
+var storeRules = []storeRule{agentStoreRule, revertStoreRule, piiStoreRule, approvalStoreRule, approvalMCPStoreRule, actionStoreRule, pluginStoreRule}
 
 // importName is the name a file refers to the import s by.
 func importName(s *ast.ImportSpec) string {
@@ -253,7 +277,9 @@ func requireStoreNeutral(t *testing.T, rule storeRule, hint string) {
 
 // storeChains walks graph (package to its imports) from root and returns
 // each store package it reaches, with the shortest import chain to it. It
-// does not walk past a store package.
+// does not walk past a store package, and skips the one named edge of the
+// driver-free rule (pkg/trustprofile's pgconn, drivers_test.go): every
+// other import of pkg/trustprofile is followed.
 func storeChains(graph map[string][]string, root string) map[string]string {
 	out := map[string]string{}
 	parent := map[string]string{root: ""}
@@ -262,6 +288,9 @@ func storeChains(graph map[string][]string, root string) map[string]string {
 		p := queue[0]
 		queue = queue[1:]
 		for _, q := range graph[p] {
+			if p == trustprofilePkg && q == pgconnPkg {
+				continue
+			}
 			if _, seen := parent[q]; seen {
 				continue
 			}
@@ -334,6 +363,8 @@ func TestStoreChainsFollowTheRule(t *testing.T) {
 		m + "internal/lib/w":                   {m + "internal/platform/postgres/pgpii", "github.com/jackc/pgx/v5/pgconn"},
 		m + "internal/platform/postgres/pgpii": {m + "internal/platform/postgres/sqlport"},
 		m + "internal/c":                       {"fmt", m + "internal/core/piistore"},
+		m + "internal/d":                       {m + "pkg/trustprofile"},
+		m + "pkg/trustprofile":                 {pgconnPkg, m + "internal/lib/z"},
 	}
 	got := storeChains(graph, m+"internal/a")
 	want := map[string]string{sq: "internal/a -> internal/lib/y -> " + sq}
@@ -350,6 +381,11 @@ func TestStoreChainsFollowTheRule(t *testing.T) {
 	}
 	if got := storeChains(graph, m+"internal/c"); len(got) != 0 {
 		t.Errorf("a clean graph must pass; got %q", got)
+	}
+	got = storeChains(graph, m+"internal/d")
+	want = map[string]string{sq: "internal/d -> pkg/trustprofile -> internal/lib/z -> " + sq}
+	if !maps.Equal(got, want) {
+		t.Errorf("got %q, want %q (only trustprofile's pgconn edge is skipped)", got, want)
 	}
 }
 
@@ -374,6 +410,13 @@ func TestRevertDomainIsStoreNeutral(t *testing.T) {
 	requireStoreNeutral(t, revertStoreRule,
 		"the revert domain reaches its store only through Records, Undo and Proofs and decides on action.RevertRefusalError; "+
 			"map the store's answers in its adapter (for Postgres, internal/platform/postgres/store/revert.go)")
+}
+
+func TestPluginDomainIsStoreNeutral(t *testing.T) {
+	requireStoreNeutral(t, pluginStoreRule,
+		"the plugin host reaches the agents' stores only through its Guard port and the plugin approval store, and decides on "+
+			"pluginmodel.StoreError and pluginmodel.ApprovalRefusalError; map the store's answers in its adapter "+
+			"(for Postgres, internal/platform/postgres/pluginledger and internal/platform/postgres/store/approvals.go)")
 }
 
 func TestApprovalDomainIsStoreNeutral(t *testing.T) {
@@ -563,6 +606,74 @@ var (
 		`a.go: import ` + modulePath + `/internal/platform/postgres/sqlport`,
 		`a.go: text "SELECT email FROM basalt_meta.agent_pii_columns WHERE ctid > $1"`,
 		`a.go: text "undefined table (SQLSTATE 42P01)"`,
+	}
+	if !slices.Equal(findings, want) {
+		t.Errorf("findings:\n%s\nwant:\n%s", strings.Join(findings, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// The plugin rule catches each ban, through an alias too, and leaves the
+// plugin host's own names alone: the ledger's kinds, the approval
+// statuses, the store kind type and the plugin's typed answers.
+func TestPluginStoreRuleCatchesViolations(t *testing.T) {
+	dir := fixture(t, map[string]string{
+		"a.go": `package a
+
+import (
+	"` + modulePath + `/internal/core/action"
+	gm "` + modulePath + `/internal/core/guardmodel"
+	"` + modulePath + `/internal/core/guidance"
+	"` + modulePath + `/internal/core/pluginmodel"
+	_ "` + modulePath + `/internal/platform/postgres/pluginledger"
+	_ "github.com/jackc/pgx/v5/pgconn"
+)
+
+const sqlstateUndefinedFunction = "42883"
+
+var (
+	_ = guidance.LedgerCode
+	_ = guidance.StoreDetail
+	_ = gm.DetailTooManyPending
+	_ = action.StorePostgres
+	_ *action.StoreError
+	_ = "BS007"
+	_ = "SQLSTATE "
+	_ = "as Postgres prints jsonb"
+
+	// Allowed: the plugin host's own names.
+	_ = gm.KindRefused
+	_ = gm.PluginApprovalStatusCancelled
+	_ action.StoreKind
+	_ *pluginmodel.StoreError
+	_ = pluginmodel.ApprovalCancelled
+	_ = guidance.CodeApprovalInvalid
+	_ = "TOO_MANY_PENDING"
+)
+
+func jsonbSpaces() {}
+`,
+	})
+	findings, files, err := storeNeutralFindings(dir, pluginStoreRule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files != 1 {
+		t.Fatalf("scanned %d files, want 1", files)
+	}
+	want := []string{
+		`a.go: identifier jsonbSpaces`,
+		`a.go: identifier sqlstateUndefinedFunction`,
+		`a.go: import ` + modulePath + `/internal/platform/postgres/pluginledger`,
+		`a.go: import github.com/jackc/pgx/v5/pgconn`,
+		`a.go: selector action.StoreError`,
+		`a.go: selector action.StorePostgres`,
+		`a.go: selector gm.DetailTooManyPending`,
+		`a.go: selector guidance.LedgerCode`,
+		`a.go: selector guidance.StoreDetail`,
+		`a.go: text "42883"`,
+		`a.go: text "BS007"`,
+		`a.go: text "SQLSTATE "`,
+		`a.go: text "as Postgres prints jsonb"`,
 	}
 	if !slices.Equal(findings, want) {
 		t.Errorf("findings:\n%s\nwant:\n%s", strings.Join(findings, "\n"), strings.Join(want, "\n"))

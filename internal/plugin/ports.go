@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
@@ -21,8 +22,10 @@ type Querier = any
 // Guard is the port to the guard in an agent's database, where the plugin
 // records, the approvals of plugin entries and the feed's events are kept. An
 // outbound adapter implements it (platform/postgres/pluginledger)
-// and the app hands it over in Ports. Every method takes the agent's handle and
-// returns the database's errors unwrapped.
+// and the app hands it over in Ports. Every method takes the agent's handle.
+// An error the store answered is a *pluginmodel.StoreError, its reason
+// mapped by the adapter per call, wrapping the store's own error; an error
+// the store did not answer is returned as the driver gave it (NoAnswer).
 type Guard interface {
 	// AgentVersion is the newest basalt_meta version installed.
 	AgentVersion(ctx context.Context, q Querier) (int, error)
@@ -34,11 +37,9 @@ type Guard interface {
 	// PluginApprovalsVersion is the basalt_meta version that holds plugin
 	// approvals.
 	PluginApprovalsVersion() int
-	// IsGuardError reports whether err is an error the guard raised.
-	IsGuardError(err error) bool
-	// DBError reads err as the database's own reply (a Postgres error): its
-	// SQLSTATE, message and detail; ok is false when err is not one.
-	DBError(err error) (code, message, detail string, ok bool)
+	// Kind is the kind of store the agents' ledgers are in, as the feed's
+	// events name it.
+	Kind() action.StoreKind
 	// NoAnswer reports whether the driver says the database did not answer:
 	// a connection that failed, a send safe to retry or a timeout.
 	NoAnswer(err error) bool

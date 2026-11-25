@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
@@ -29,37 +30,30 @@ func asPgx(db q) pgquerier.Querier {
 	return c
 }
 
-// Ledger is engine.Guard: it forwards each call to the guard package and
-// holds no state.
+// Ledger is engine.Guard: it forwards each call to the guard package, maps
+// the database's answers to the plugin's typed ones (storeError,
+// openApprovalError), and holds no state.
 type Ledger struct{}
 
 func (Ledger) AgentVersion(ctx context.Context, db q) (int, error) {
-	return guard.AgentVersion(ctx, asPgx(db))
+	v, err := guard.AgentVersion(ctx, asPgx(db))
+	return v, storeError(err)
 }
 
 func (Ledger) AgentStatus(ctx context.Context, db q) (guardmodel.Status, error) {
-	return guard.AgentStatus(ctx, asPgx(db), guard.Migrations())
+	st, err := guard.AgentStatus(ctx, asPgx(db), guard.Migrations())
+	return st, storeError(err)
 }
 
 func (Ledger) InstallID(ctx context.Context, db q) (uuid.UUID, error) {
-	return guard.InstallID(ctx, asPgx(db))
+	id, err := guard.InstallID(ctx, asPgx(db))
+	return id, storeError(err)
 }
 
 func (Ledger) PluginApprovalsVersion() int { return guard.PluginApprovalsVersion }
 
-func (Ledger) IsGuardError(err error) bool {
-	_, ok := guard.CodeOf(err)
-	return ok
-}
-
-// DBError reads err as the database's own reply: a Postgres error.
-func (Ledger) DBError(err error) (code, message, detail string, ok bool) {
-	var pg *pgconn.PgError
-	if !errors.As(err, &pg) {
-		return "", "", "", false
-	}
-	return pg.Code, pg.Message, pg.Detail, true
-}
+// Kind is the store the agents' ledgers are in.
+func (Ledger) Kind() action.StoreKind { return action.StorePostgres }
 
 // NoAnswer reports whether the driver says the database did not answer: a
 // connection that failed, a send safe to retry or a timeout.
@@ -69,39 +63,45 @@ func (Ledger) NoAnswer(err error) bool {
 }
 
 func (Ledger) OpenPluginApproval(ctx context.Context, db q, d guardmodel.PluginApprovalDetail, s guardmodel.PluginSettings) (guardmodel.PluginApproval, error) {
-	return guard.OpenPluginApproval(ctx, asPgx(db), d, s)
+	a, err := guard.OpenPluginApproval(ctx, asPgx(db), d, s)
+	return a, openApprovalError(err)
 }
 
 func (Ledger) ReadPluginApproval(ctx context.Context, db q, id uuid.UUID) (guardmodel.PluginApprovalRecord, bool, error) {
-	return guard.ReadPluginApproval(ctx, asPgx(db), id)
+	r, ok, err := guard.ReadPluginApproval(ctx, asPgx(db), id)
+	return r, ok, storeError(err)
 }
 
 func (Ledger) ReadPluginApprovals(ctx context.Context, db q) ([]guardmodel.PluginApprovalRecord, error) {
-	return guard.ReadPluginApprovals(ctx, asPgx(db))
+	r, err := guard.ReadPluginApprovals(ctx, asPgx(db))
+	return r, storeError(err)
 }
 
 func (Ledger) SubmitPluginApproval(ctx context.Context, db q, r guardmodel.PluginApprovalResponse) (time.Time, error) {
-	return guard.SubmitPluginApproval(ctx, asPgx(db), r)
+	at, err := guard.SubmitPluginApproval(ctx, asPgx(db), r)
+	return at, storeError(err)
 }
 
 func (Ledger) PluginSettingsSHA256(ctx context.Context, db q, s guardmodel.PluginSettings) (string, error) {
-	return guard.PluginSettingsSHA256(ctx, asPgx(db), s)
+	h, err := guard.PluginSettingsSHA256(ctx, asPgx(db), s)
+	return h, storeError(err)
 }
 
 func (Ledger) RecordPluginEntryEvent(ctx context.Context, db q, kind guardmodel.PluginEventKind, d guardmodel.PluginDetail) error {
-	return guard.RecordPluginEntryEvent(ctx, asPgx(db), kind, d)
+	return storeError(guard.RecordPluginEntryEvent(ctx, asPgx(db), kind, d))
 }
 
 func (Ledger) RecordPluginTrustAdded(ctx context.Context, db q, keyID string) error {
-	return guard.RecordPluginTrustAdded(ctx, asPgx(db), keyID)
+	return storeError(guard.RecordPluginTrustAdded(ctx, asPgx(db), keyID))
 }
 
 func (Ledger) RecordPluginTrustRemoved(ctx context.Context, db q, keyID string) error {
-	return guard.RecordPluginTrustRemoved(ctx, asPgx(db), keyID)
+	return storeError(guard.RecordPluginTrustRemoved(ctx, asPgx(db), keyID))
 }
 
 func (Ledger) ReadPluginRecords(ctx context.Context, db q) (guardmodel.PluginRecords, error) {
-	return guard.ReadPluginRecords(ctx, asPgx(db))
+	r, err := guard.ReadPluginRecords(ctx, asPgx(db))
+	return r, storeError(err)
 }
 
 // ReadSnapshot runs fn in one read-only repeatable-read transaction.
@@ -110,33 +110,39 @@ func (Ledger) ReadSnapshot(ctx context.Context, db q, fn func(guardmodel.FeedSna
 	if !ok {
 		return errors.New("the agent's connection cannot take a transaction")
 	}
-	return pgx.BeginTxFunc(ctx, b, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
+	return storeError(pgx.BeginTxFunc(ctx, b, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
 		return fn(snapshot{tx: tx})
-	})
+	}))
 }
 
 type snapshot struct{ tx pgx.Tx }
 
 func (s snapshot) InstallID(ctx context.Context) (uuid.UUID, error) {
-	return guard.InstallID(ctx, s.tx)
+	id, err := guard.InstallID(ctx, s.tx)
+	return id, storeError(err)
 }
 
 func (s snapshot) ChainHeadSeq(ctx context.Context) (int64, error) {
-	return guard.ChainHeadSeq(ctx, s.tx)
+	seq, err := guard.ChainHeadSeq(ctx, s.tx)
+	return seq, storeError(err)
 }
 
 func (s snapshot) PluginEntryEvents(ctx context.Context, name, instance string) ([]guardmodel.PluginEntryEvent, error) {
-	return guard.PluginEntryEvents(ctx, s.tx, name, instance)
+	ev, err := guard.PluginEntryEvents(ctx, s.tx, name, instance)
+	return ev, storeError(err)
 }
 
 func (s snapshot) SeqRetired(ctx context.Context, seq int64) (bool, error) {
-	return guard.SeqRetired(ctx, s.tx, seq)
+	retired, err := guard.SeqRetired(ctx, s.tx, seq)
+	return retired, storeError(err)
 }
 
 func (s snapshot) ReadFeedRows(ctx context.Context, after int64, limit int, f guardmodel.FeedFilter) ([]guardmodel.FeedRow, error) {
-	return guard.ReadFeedRows(ctx, s.tx, after, limit, f)
+	rows, err := guard.ReadFeedRows(ctx, s.tx, after, limit, f)
+	return rows, storeError(err)
 }
 
 func (s snapshot) OldestSeqAfter(ctx context.Context, after int64) (int64, bool, error) {
-	return guard.OldestSeqAfter(ctx, s.tx, after)
+	seq, ok, err := guard.OldestSeqAfter(ctx, s.tx, after)
+	return seq, ok, storeError(err)
 }

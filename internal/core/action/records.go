@@ -88,8 +88,7 @@ type Approval struct {
 	RunID       uuid.UUID
 	TaskID      uuid.NullUUID
 	Intent      string
-	Statement   string
-	Params      json.RawMessage
+	Request     HeldRequest
 	Assigned    []string
 	Rows        int
 	Status      string
@@ -98,8 +97,9 @@ type Approval struct {
 	ApprovedAt  *time.Time
 	BindingText string
 	Lines       []string
-	// LargeValues names the statement or params left out of an agent's
-	// list (CONTRACT.md, Large values): Statement is then empty, Params nil.
+	// LargeValues names the request's text or params left out of an
+	// agent's list (CONTRACT.md, Large values): Request.Text is then empty,
+	// Request.Params nil.
 	LargeValues []largevalue.Entry
 	// LinesLeftOut says an agent's read left the lines out because the
 	// request is too large for a link (withRequest): Lines are then the
@@ -107,6 +107,14 @@ type Approval struct {
 	// a read with no budget.
 	LinesLeftOut bool
 	LinesCost    int64
+}
+
+// HeldRequest is the request a write was held for, as the store holds it:
+// its family (the binding's request.kind), its text and its parameters.
+type HeldRequest struct {
+	Kind   string
+	Text   string
+	Params json.RawMessage
 }
 
 // ApprovalListParams lists held writes that can still be approved or

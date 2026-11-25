@@ -48,6 +48,9 @@ type Language interface {
 	// by the QUERY_TIMEOUT reason; any other reason is the statement
 	// timeout's.
 	LimitText(reason string) string
+	// Args is a request as the store family's query and write tools take
+	// it, for the call a next step repeats.
+	agentstore.RequestArgs
 	// ReadRow is the request that reads the item of target with key.
 	ReadRow(target string, key map[string]any) agentstore.Request
 	// StaleTarget reads the target and key of the item a STALE_READ

@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -90,7 +91,7 @@ func (wc *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutco
 	if err != nil {
 		return WriteOutcome{}, err
 	}
-	if err := sameAsHeld(a, p); err != nil {
+	if err := wc.sameAsHeld(a, p); err != nil {
 		return WriteOutcome{}, err
 	}
 	if a, err = wc.waitForSignature(ctx, a, p); err != nil {
@@ -148,18 +149,31 @@ func (wc *Service) withApprovalLink(ctx context.Context, a action.Approval, err 
 }
 
 // sameAsHeld checks the call repeats the held write.
-func sameAsHeld(a action.Approval, p WriteParams) error {
+func (wc *Service) sameAsHeld(a action.Approval, p WriteParams) error {
 	switch {
 	case a.Status == action.ApprovalApplied:
 		return approvalsvc.ApprovalInvalid(guidance.ReasonAlreadyUsed, "approval %s was already used", a.ID)
 	case a.Status == action.ApprovalExpired:
 		return &toolresult.ToolError{Code: guidance.CodeApprovalExpired, Message: fmt.Sprintf("approval %s expired at %s; the write stays blocked", a.ID, guidance.TimeText(a.ExpiresAt))}
 	case a.RunID != p.RunID:
-		return approvalsvc.DifferentWrite(a, "approval %s belongs to run %s", a.ID, a.RunID)
-	case a.Statement != p.Request.Text || !sameParams(a.Params, p.Request.Params):
-		return approvalsvc.DifferentWrite(a, "sql and params must be exactly those of the held write")
+		return approvalsvc.DifferentWrite(a, wc.heldArgs(a), "approval %s belongs to run %s", a.ID, a.RunID)
+	case a.Request.Text != p.Request.Text || !sameParams(a.Request.Params, p.Request.Params):
+		return approvalsvc.DifferentWrite(a, wc.heldArgs(a), "the request must be exactly the held write's")
 	}
 	return nil
+}
+
+// heldArgs is the held request as the store family's write tool takes it.
+// Params that do not decode are left out, as are none.
+func (wc *Service) heldArgs(a action.Approval) map[string]any {
+	req := agentstore.Request{Text: a.Request.Text}
+	if len(a.Request.Params) > 0 {
+		var params []any
+		if json.Unmarshal(a.Request.Params, &params) == nil {
+			req.Params = params
+		}
+	}
+	return wc.store.Language.Args(req)
 }
 
 // sameParams compares the held parameters (jsonb) with the call's. Numbers
@@ -215,5 +229,5 @@ func (wc *Service) waitForSignature(ctx context.Context, a action.Approval, p Wr
 		}
 		return a, approvalsvc.ApprovalStillPendingError(n)
 	}
-	return a, sameAsHeld(a, p) // it may have expired meanwhile
+	return a, wc.sameAsHeld(a, p) // it may have expired meanwhile
 }

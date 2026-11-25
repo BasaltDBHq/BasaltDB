@@ -12,7 +12,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertmcp"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -80,7 +79,7 @@ func pendingFromDomain(p approvalsvc.PendingItem) pendingDTO {
 	d := pendingDTO{
 		Kind:       guidance.KindApproval,
 		ApprovalID: p.ID.String(), RunID: p.RunID.String(), Intent: p.Intent,
-		Request:        pendingRequestDTO{Kind: approval.RequestSQL, Params: p.Params, Statement: p.Statement},
+		Request:        pendingRequestDTO{Kind: p.Request.Kind, Params: p.Request.Params, Statement: p.Request.Text},
 		AssignedFields: p.Assigned, Rows: p.Rows, Status: p.Status,
 		CreatedAt: guidance.TimeText(p.CreatedAt), ExpiresAt: guidance.TimeText(p.ExpiresAt), ApprovalURL: p.Notice.ApprovalURL, RequestFile: p.Notice.RequestFile,
 		Headline: p.Notice.Headline, PersonMessage: p.PersonMessage, Links: p.Links, NextSteps: p.NextSteps,

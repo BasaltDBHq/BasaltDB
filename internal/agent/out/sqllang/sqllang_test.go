@@ -111,3 +111,13 @@ func TestReadRow(t *testing.T) {
 	req = sqllang.Language{}.ReadRow(`"S"."t"`, map[string]any{"a\x00\"b": 1})
 	require.Equal(t, `SELECT * FROM "S"."t" WHERE "a""b" = $1`, req.Text, "a quote doubled, a NUL dropped")
 }
+
+// Args names a request's arguments as query and write take them: sql, and
+// params only when there are some.
+func TestArgs(t *testing.T) {
+	t.Parallel()
+	var l sqllang.Language
+	require.Equal(t, map[string]any{"sql": "SELECT 1"}, l.Args(agentstore.Request{Text: "SELECT 1"}))
+	require.Equal(t, map[string]any{"sql": "SELECT 1"}, l.Args(agentstore.Request{Text: "SELECT 1", Params: []any{}}))
+	require.Equal(t, map[string]any{"sql": "SELECT $1", "params": []any{"a"}}, l.Args(agentstore.Request{Text: "SELECT $1", Params: []any{"a"}}))
+}

@@ -3,7 +3,7 @@
 // it covers, the request in the revert link, and the response code the
 // revert page outputs. It reuses the approval mechanism (owner decision D6):
 // the same fragment encoding, rowsHash and challenge, and the same passkey
-// checks. Nothing here decides whether a revert runs; Postgres does, in
+// checks. Nothing here decides whether a revert runs; the guard does, in
 // basalt_meta.apply_revert.
 package revert
 

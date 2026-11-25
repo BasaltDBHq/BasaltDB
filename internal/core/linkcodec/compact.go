@@ -43,7 +43,7 @@ const (
 // key layouts of the texts, each listed once. JSON: [shapes, lines], or
 // [shapes, lines, credentialIds] when the link names the database's
 // passkeys: the page passes them as allowCredentials, so the browser offers
-// only those. They are not signed; Postgres still checks the passkey.
+// only those. They are not signed; the guard still checks the passkey.
 type Lines struct {
 	Shapes        []Shape
 	Lines         []Line
@@ -244,9 +244,9 @@ func (s Shape) slots() int {
 	return n
 }
 
-// build writes the line as Postgres's jsonb text does: `{"k": v, ...}`,
-// object entries as `{"c": v, ...}`. It stops once the text passes budget
-// bytes.
+// build writes the line in the contract's text rules (CONTRACT.md,
+// Approvals): `{"k": v, ...}`, object entries as `{"c": v, ...}`. It stops
+// once the text passes budget bytes.
 func (s Shape) build(values []json.RawMessage, budget int) (string, error) {
 	if len(values) != s.slots() {
 		return "", fmt.Errorf("has %d values, its shape %d", len(values), s.slots())
@@ -374,7 +374,7 @@ func safeInteger(raw json.RawMessage) (int64, error) {
 	return int64(f), nil
 }
 
-// quote writes s as Postgres's escape_json does: \" \\ \b \f \n \r \t,
+// quote writes s as the contract's text rules say: \" \\ \b \f \n \r \t,
 // other bytes below 0x20 as \u00xx, everything else as it is.
 func quote(b *strings.Builder, s string) {
 	b.WriteByte('"')
@@ -500,7 +500,7 @@ func (l *Line) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
-// splitLine reads a line printed by Postgres: an object whose values are
+// splitLine reads a line printed in the contract's text rules: an object whose values are
 // scalars, arrays or objects. An object value becomes an object entry, with
 // one value per column.
 func splitLine(text string) (Shape, []json.RawMessage, error) {

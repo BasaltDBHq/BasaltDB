@@ -53,7 +53,7 @@ const (
 // Entry is one value, or one whole image, left out (large-value.schema.json).
 type Entry struct {
 	In     string `json:"in"`
-	Column string `json:"column,omitempty"`
+	Field  string `json:"field,omitempty"`
 	Index  *int   `json:"index,omitempty"`
 	Bytes  int64  `json:"bytes"`
 	SHA256 string `json:"sha256"`

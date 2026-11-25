@@ -109,7 +109,7 @@ func TestElideLeavesOutAValueOverOneMiB(t *testing.T) {
 	require.Equal(t, map[string]any{"id": float64(1)}, got[1].Img)
 	require.Nil(t, got[1].Large)
 	require.Equal(t, map[string]any{"id": float64(1)}, got[2].Img, "body is absent, not null")
-	require.Equal(t, []largevalue.Entry{{In: "BEFORE", Column: "body", Bytes: int64(len(big)), SHA256: sha(big)}}, got[2].Large)
+	require.Equal(t, []largevalue.Entry{{In: "BEFORE", Field: "body", Bytes: int64(len(big)), SHA256: sha(big)}}, got[2].Large)
 	require.Equal(t, map[string]any{"id": float64(1), "body": "small"}, got[3].Img)
 }
 
@@ -128,7 +128,7 @@ func TestElideCountsEscapesInTheCost(t *testing.T) {
 	require.NotNil(t, got[1].Img, "the image is kept, with no value left in it")
 	require.Len(t, got[1].Large, 7)
 	for i, e := range got[1].Large {
-		require.Equal(t, largevalue.Entry{In: "AFTER", Column: fmt.Sprintf("c%d", i), Bytes: 1000000, SHA256: sha(lt)}, e)
+		require.Equal(t, largevalue.Entry{In: "AFTER", Field: fmt.Sprintf("c%d", i), Bytes: 1000000, SHA256: sha(lt)}, e)
 	}
 }
 
@@ -207,5 +207,5 @@ func TestElideCostsAValueByItsJSONText(t *testing.T) {
 	quotes := strings.Repeat(`"`, 140000)
 	got := elide(t, db, `SELECT 1 AS item, 1 AS ord, 'AFTER' AS part, jsonb_build_object('id', 1, 'q', repeat('"', 140000)) AS img`)
 	require.Equal(t, map[string]any{"id": float64(1)}, got[1].Img)
-	require.Equal(t, []largevalue.Entry{{In: "AFTER", Column: "q", Bytes: 140000, SHA256: sha(quotes)}}, got[1].Large)
+	require.Equal(t, []largevalue.Entry{{In: "AFTER", Field: "q", Bytes: 140000, SHA256: sha(quotes)}}, got[1].Large)
 }

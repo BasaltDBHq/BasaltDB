@@ -88,7 +88,7 @@ export function signingSummary(req) {
   const rows = plural(req.binding.rows, "row");
   if (req.binding.batched) return `You're signing ${rows}.`;
   const tables = new Set(req.lines.filter((l) => l.action === "RESTORE").map((l) => l.resource)).size;
-  return `You're signing ${rows} in ${plural(tables, "table")}.`;
+  return `You're signing ${rows} in ${plural(tables, "resource")}.`;
 }
 
 const MINUTE_MS = 60000;
@@ -247,13 +247,13 @@ function runsOfAgents(runs, runChoices, agents) {
   return kept.length === 0 ? null : kept;
 }
 
-// scopeLine is the phone's one line above the restore list ("bot, 1 table,
+// scopeLine is the phone's one line above the restore list ("bot, 1 resource,
 // 2 runs") and what it is: the proposal, a change of it, or a widen.
 export function scopeLine(req, catalog, known) {
   const b = req.binding;
   const c = scopeChoices(req, catalog, known);
   const agents = c.agents.filter((a) => a.on).map((a) => a.label).join(" + ");
-  const parts = [agents, plural(c.resources.filter((t) => t.on).length, "table")];
+  const parts = [agents, plural(c.resources.filter((t) => t.on).length, "resource")];
   if (c.runs !== null) parts.push(plural(c.runs.filter((r) => r.on).length, "run"));
   const requester = agentName(b.requestedBy);
   let sub = `As ${requester} proposed`;

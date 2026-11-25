@@ -67,14 +67,14 @@
             },
             "type": {
               "type": "string",
-              "description": "Postgres type name, e.g. int8, text, timestamptz."
+              "description": "The store's type name (Postgres: int8, text, timestamptz)."
             }
           }
         }
       },
       "rows": {
         "type": "array",
-        "description": "One object per row, keyed by column name as Postgres returns it.",
+        "description": "One object per row, keyed by field name as the store returns it.",
         "items": {
           "type": "object"
         }

@@ -108,7 +108,7 @@ test("the headline says whose rows and when the person widened", () => {
 test("what the person signs counts rows and the tables they are in", async () => {
   const req = await parseRevertRequest("#" + fixtures.request.fragment);
   const tables = new Set(req.lines.filter((l) => l.action === "RESTORE").map((l) => l.resource)).size;
-  assert.equal(signingSummary(req), `You're signing 3 rows in ${tables} ${tables === 1 ? "table" : "tables"}.`);
+  assert.equal(signingSummary(req), `You're signing 3 rows in ${tables} ${tables === 1 ? "resource" : "resources"}.`);
   // A large plan shows only a sample: the table count is not signed data.
   const big = await parseRevertRequest("#" + fixtures.batched.fragment);
   assert.equal(signingSummary(big), `You're signing ${big.binding.rows} rows.`);
@@ -270,10 +270,10 @@ test("ticking a chip builds the next select: null for all, never an empty list",
 
 test("the phone's scope line sums up the choice", async () => {
   const own = await taskReq();
-  assert.deepEqual(scopeLine(own, null, knownTables(own, [])), { text: "bot, 3 tables", sub: "As bot proposed" });
+  assert.deepEqual(scopeLine(own, null, knownTables(own, [])), { text: "bot, 3 resources", sub: "As bot proposed" });
   const wide = await taskReq((b) => b.replace('["agent:bot"]', "null")
     .replace('"widened": false', '"widened": true, "agentRows": {"agent:bot": 3, "agent:sync": 1}'));
-  assert.deepEqual(scopeLine(wide, CATALOG, []), { text: "bot + sync, 2 tables, 2 runs", sub: "bot can't see the rows you added" });
+  assert.deepEqual(scopeLine(wide, CATALOG, []), { text: "bot + sync, 2 resources, 2 runs", sub: "bot can't see the rows you added" });
   const changed = await taskReq((b) => b.replace('"resources": null', '"resources": ["public.leads"]')
     .replace('"widened": false', '"widened": false, "proposed": {"runs": null, "scope": "TASK", "agents": ["agent:bot"], "scopeId": "0193a4c2-7d1e-7c3a-9f00-0000000000b2", "resources": null}'));
   assert.equal(scopeLine(changed, null, ["public.leads", "public.notes"]).sub, "You changed bot's proposal");

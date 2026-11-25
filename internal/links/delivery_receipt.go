@@ -49,7 +49,7 @@ type Receipt struct {
 	Line string
 }
 
-// ApprovalReceipt reads approval id from Postgres, after the person's
+// ApprovalReceipt reads approval id from the store, after the person's
 // signature was accepted, and signs its receipt. Only an approved (or
 // already applied) approval gets one.
 func (dc *Service) ApprovalReceipt(ctx context.Context, id uuid.UUID) (Receipt, error) {

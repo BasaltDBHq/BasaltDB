@@ -10,13 +10,13 @@ const (
 	RescopePrefix  = "basalt-rescope.1"
 	rescopeKeyInfo = "basalt-rescope-key.1"
 	// RescopeKeyLen is the length of the key derived from a new link
-	// secret; Postgres refuses any other.
+	// secret; the guard refuses any other.
 	RescopeKeyLen = 32
 )
 
-// RescopeKey derives the key the engine passes Postgres for a widen from
+// RescopeKey derives the key the engine passes the guard for a widen from
 // the page's new link secret: HKDF-SHA-256 with an empty salt and info
-// "basalt-rescope-key.1". The secret itself never reaches Postgres.
+// "basalt-rescope-key.1". The secret itself never reaches the guard.
 func RescopeKey(newSecret []byte) ([]byte, error) {
 	return hkdf.Key(sha256.New, newSecret, nil, rescopeKeyInfo, RescopeKeyLen)
 }

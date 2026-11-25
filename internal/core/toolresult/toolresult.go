@@ -111,7 +111,7 @@ func (e *ToolError) Error() string {
 type Warning struct {
 	Code          string     `json:"code"`
 	Message       string     `json:"message"`
-	Table         string     `json:"table,omitempty"`
+	Resource      string     `json:"resource,omitempty"`
 	PersonMessage string     `json:"personMessage,omitempty"`
 	NextSteps     []NextStep `json:"nextSteps"`
 }

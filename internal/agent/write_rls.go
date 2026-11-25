@@ -39,23 +39,23 @@ func (wc *Service) rlsWarnings(ctx context.Context, tables []string, rows int) [
 
 func (wc *Service) rlsWarning(dbName string) (toolresult.Warning, error) {
 	table := guidance.Shown(dbName, guidance.MaxTableChars)
-	b := guidance.NewSteps().AskPerson("Tell the person row-level security hides every row of this table from you, and ask whether you may see its rows.")
+	b := guidance.NewSteps().AskPerson("Tell the person row-level security hides every row of this resource from you, and ask whether you may see its rows.")
 	b.AgentRunCommand(wc.core.Commands.Init(), "On the person's yes, run this and show them the link it prints, where they answer the row-level security question.")
 	if !wc.core.Commands.AgentOperated() {
 		b.TellAgent("Tell the agent once it is done.")
 	}
 	person := fmt.Sprintf("Row-level security hides every row of %s from the agent, so it sees no rows there. To let it see them, "+
-		"tell the agent: it gives you a link where you answer the row-level security question for that table. "+
-		"Leave it as it is if the agent should not see that table.", table)
+		"tell the agent: it gives you a link where you answer the row-level security question for that resource. "+
+		"Leave it as it is if the agent should not see that resource.", table)
 	steps, err := b.Build()
 	if err != nil {
 		return toolresult.Warning{}, err
 	}
 	return toolresult.Warning{
-		Code:  toolresult.WarningRLSHidesRows,
-		Table: dbName,
+		Code:     toolresult.WarningRLSHidesRows,
+		Resource: dbName,
 		Message: fmt.Sprintf("row-level security hides every row of %s from this agent, so an empty result says nothing about its data; "+
-			"do not conclude the table is empty", table),
+			"do not conclude the resource is empty", table),
 		PersonMessage: person,
 		NextSteps:     steps,
 	}, nil

@@ -23,7 +23,7 @@ type Service struct {
 	deps *Deps
 	// approvals is what delivery reads of the approval use case: the person's
 	// passkeys (the credentials a signing link accepts), an approval to receipt,
-	// and each table's column order for the pages.
+	// and each resource's field order for the pages.
 	approvals ApprovalReads
 	// failure maps an error to the tool's error body for a page answer.
 	failure func(tool string, args map[string]any, err error) *toolresult.ToolError

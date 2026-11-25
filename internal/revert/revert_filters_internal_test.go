@@ -58,7 +58,7 @@ func TestScopeRefusedGivesTheFilterReasons(t *testing.T) {
 	require.ErrorAs(t, refuse(action.RevertFilter, "public.ghost has no change of yours in this scope"), &ae)
 	require.Equal(t, guidance.ReasonScopeFilter, ae.Reason)
 	require.Equal(t, "the revert filter names work that is not yours, nothing was prepared: public.ghost has no change of yours "+
-		"in this scope. runs lists only your own runs in the task, and resources only tables you wrote in this scope; run_history "+
+		"in this scope. runs lists only your own runs in the task, and resources only resources you wrote in this scope; run_history "+
 		"shows them", ae.Message)
 
 	// A name the store cannot use says nothing of whose work it names: the

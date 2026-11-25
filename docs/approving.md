@@ -56,7 +56,7 @@ If the link was lost, the agent calls `request_revert` with `reissueLink: true` 
 
 A large plan is signed once, like any other. After you sign, the agent applies it in batches with `apply_revert_batch` until every line is done.
 
-An agent asks for a revert of its own work only: one of its changes, one of its runs, or its own changes in a task it ran in (`taskId`). It may narrow that to some of its runs in the task or some tables (`runs`, `resources`). A change, run or task that is not its own is answered `NOT_FOUND`, the same as an id that does not exist. A task revert holds only that agent's lines. To include other agents' changes, widen the revert on its page (below). If another agent's run looks wrong, ask that agent. Whichever way the revert starts, only you sign it. A revert is a change like any other, so it can itself be reverted the same way.
+An agent asks for a revert of its own work only: one of its changes, one of its runs, or its own changes in a task it ran in (`taskId`). It may narrow that to some of its runs in the task or some of the tables it wrote (its `runs` and `resources` arguments). A change, run or task that is not its own is answered `NOT_FOUND`, the same as an id that does not exist. A task revert holds only that agent's lines. To include other agents' changes, widen the revert on its page (below). If another agent's run looks wrong, ask that agent. Whichever way the revert starts, only you sign it. A revert is a change like any other, so it can itself be reverted the same way.
 
 ## Changing what a revert covers
 

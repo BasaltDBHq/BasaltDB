@@ -92,6 +92,18 @@ To add a store:
 3. Serve the store's hold columns and preview of a held write, through the approval domain today.
 4. Build the `StoreSet` for the kind in `internal/app`. Change nothing in `internal/agent`: a change there that only one store needs belongs in that store's adapter.
 
+## The revert domain is store-neutral
+
+The revert's use cases (`internal/revert`, the root package) work on any store the same way. They reach the store through one `revert.StoreSet` that `internal/app` builds for the store's kind (`revertStoreSet`), with three ports: `Records` reads the ledger of the agent's reverts, `Undo` is the agent's side (preview, prepare, reset, apply a batch of a signed plan), and `Proofs` is the person's side (apply, rescope, reject, reveal). The set carries the store's `Limits`; a prepare runs under the store's own time limit.
+
+- The service decides on the store's typed refusals (`action.RevertRefusalError` and its `RevertReason`), never on a store's error codes or texts. Each store's adapter maps its own answers to a reason per call (for Postgres, `internal/platform/postgres/store/revert.go`). The refusal's `Detail` is the store's text, shown verbatim where the answer shows what the store said, and `StoreCode` is the store's own code, passed on as it is.
+- Resource names are the store's: the service passes the agent's `resources` on as written, and the store checks their form and that the agent wrote them (`FILTER_NAME`, `FILTER`).
+- What the person signs is the same for every store: the binding text, the revert lines, `rowsHash` and a batched plan's `sampleHash` (`internal/core/revert`, `approval.RowsHash`). The store checks the person's signature itself: the wiring refuses a store whose `Capabilities` lack `InStoreSignatureCheck` (`TestNewServiceRefusesAStoreWithoutSignatureCheck`).
+
+`TestRevertDomainIsStoreNeutral` (`internal/testkit/archtest`) holds the root package's non-test files to it: no direct import of `core/sqlguard`, `platform/postgres` or the pgx packages; no `guidance.LedgerCode`, `StoreDetail`, `ScopeRefusal` or `TimedOut`, no `guardmodel.Code*`, `Scope*` or `*Refused`, and no `action.StoreError`, matched through the file's imports; no identifier with `SQLState`, `OID`, `xmin` or `pg_`, and no `pg_` or `xmin` in a string. Its one allowlist entry is the timeout answer's `toolresult.ToolError{SQLState}`, until that field is renamed. `TestObjectStoreRevertsARunThroughThePorts`, `TestObjectStoreAppliesABatchedPlanThroughThePorts` and `TestObjectStoreRefusalsGiveThePostgresAnswers` (`internal/revert`) run the service over an in-memory versioned object store, through the MCP tools and the person's page: resources named `namespace/collection`, the store's own codes, a batched plan of more than 1000 lines, and the same answers the Postgres store's refusals give.
+
+To add a store to reverts: write its `Records`, `Undo` and `Proofs` adapters, mapping its answers to the revert reasons per call, and build its `StoreSet` with its `Limits` in `internal/app`. Change nothing in `internal/revert`.
+
 ## Core
 
 `internal/core` holds code that is pure: it does no I/O. It has three kinds of package.

@@ -7,7 +7,7 @@
       "want": "2.AbC-d_9"
     },
     {
-      "name": "format 1 is read too",
+      "name": "format 1 is kept too (the passkey registration page)",
       "input": "1.AbC-d_9",
       "want": "1.AbC-d_9"
     },
@@ -130,7 +130,7 @@
     },
     {
       "name": "a link on one line",
-      "input": "Approve here:\n\nhttps://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#1.AbC-d_9\n\nExpires soon.",
+      "input": "Register here:\n\nhttps://portal.basaltvault.app/passkeys/register#1.AbC-d_9\n\nExpires soon.",
       "want": "1.AbC-d_9"
     },
     {
@@ -140,7 +140,7 @@
     },
     {
       "name": "a quoted message",
-      "input": "> Approve here:\n>\n> https://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#1.AbC\n> DeF\n>\n> Expires soon.",
+      "input": "> Register here:\n>\n> https://portal.basaltvault.app/passkeys/register#1.AbC\n> DeF\n>\n> Expires soon.",
       "want": "1.AbCDeF"
     },
     {
@@ -175,7 +175,7 @@
     },
     {
       "name": "the first link is read",
-      "input": "https://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#1.First\n\nhttps://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#2.Second\n",
+      "input": "https://portal.basaltvault.app/passkeys/register#1.First\n\nhttps://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#2.Second\n",
       "want": "1.First"
     },
     {

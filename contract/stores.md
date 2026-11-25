@@ -10,7 +10,7 @@ A store is the system an agent's actions land in. The engine records every actio
 **Binding.** `engine.json` binds an agent to its store with `agents[].store`:
 
 ```json
-{ "agents": [ { "name": "tracker-bot", "osUser": "basalt-tracker-bot", "store": { "kind": "POSTGRES", "credentialFile": "/etc/basalt/agents/tracker-bot.url" } } ] }
+{ "agents": [ { "name": "tracker_bot", "osUser": "basalt-tracker-bot", "store": { "kind": "POSTGRES", "credentialFile": "/etc/basalt/agents/tracker-bot.url" } } ] }
 ```
 
 `store.credentialFile` is the file that holds the agent's credential for that store (for `POSTGRES`, the connection string of its own `<prefix>_agent_<name>` role, as described under "One engine, many agents" in [CLI](cli.md#cli)). It replaces the `credentialFile` that used to sit directly on the agent; the old place is not read, and an `engine.json` that still has it is refused, whichever command loads it, with the edit that fixes it: `agent "<name>": "credentialFile" now goes inside "store"; replace "credentialFile": "<path>" with "store": {"kind": "POSTGRES", "credentialFile": "<path>"}`. An unknown `kind` is a config error that names the agent.
@@ -46,7 +46,7 @@ For `POSTGRES`: requiring an intent, recording changes with their old and new ro
 
 ### What every store writes
 
-Every text that describes a change to the person's data, whatever store holds it, has three parts. A text is the binding and the lines a person signs, a change record, a plugin feed event, or a tool error. Postgres is one store among them: it writes the same form as every other store, with no exception of its own.
+Every text that describes a change to the person's data, whatever store holds it, has three parts. A text is the binding and the lines a person signs, a change record, a plugin feed event, or a tool error. All of them share this model; only the texts a person signs and their lines also follow the [text rules](#text-rules), which fix their bytes. Postgres is one store among them: it writes the same form as every other store, with no exception of its own.
 
 | Part | Holds | Defined by |
 |---|---|---|
@@ -70,7 +70,10 @@ Every text that describes a change to the person's data, whatever store holds it
 
 #### Operations
 
-`op` is Basalt's safety class. The store's own word for the operation goes beside it, in `store.verb` (in Postgres the statement's command, `SELECT`, `INSERT`, `UPDATE`, `DELETE` or the DDL command; in MongoDB `insertOne`, `find`, …).
+`op` is Basalt's safety class. The store's own word for the operation goes beside it, in `store.verb`. Which operation it names depends on the text:
+
+- **On a line** (a preview line, a revert line, a ledger `ROW_CHANGE` row), `verb` is the store's word for that line's own `op`, which can differ from the request's. In Postgres it is `INSERT`, `UPDATE` or `DELETE`: a child row set to `NULL` by `ON DELETE SET NULL` under a `DELETE` has `op` `UPDATE` and `verb` `UPDATE`, a row an `INSERT … ON CONFLICT DO UPDATE` updated has `UPDATE`, and a revert line's `verb` names its inverse write.
+- **On a change record, a feed event and the ledger's other rows** (`CHANGE`, `READ`, `REFUSED`), `verb` is the request's own command: in Postgres the statement's command, `SELECT`, `INSERT`, `UPDATE`, `DELETE` or the DDL command; in MongoDB `insertOne`, `find`, ….
 
 | `op` | Means |
 |---|---|
@@ -95,7 +98,7 @@ A held request's body is `request: {kind, …}`, where `kind` is the store's fam
 
 #### Agent names
 
-Every text names an agent `agent:<name>`, with `<name>` the agent's name in `engine.json` (`agent:bot`), never the store's login for it. That holds for every agent name in a signed text (an approval's `agent`, a revert's `select.agents`, `proposed.agents`, `requestedBy`, the keys of `agentRows`, the values of `changeAgents`, a plugin approval's `agents`, `requestedBy`, `change.agentsAdded` and `change.agentsRemoved`) and for the plugin feed's `agent`. The store's adapter maps the name to its login one to one within an install (below). `person:<id>` is reserved for a person named in a text. A change record's `actor` stays `{"kind": "AGENT", "name": "<name>"}`: it is typed already.
+Every text names an agent `agent:<name>`, with `<name>` the agent's name in `engine.json` (`agent:bot`), never the store's login for it. That holds for every agent name in a signed text (an approval's `agent`, a revert's `select.agents`, `proposed.agents`, `requestedBy`, the keys of `agentRows`, the values of `changeAgents`, a plugin approval's `agents`, `requestedBy`, `change.agentsAdded` and `change.agentsRemoved`) and for the agent in the plugin feed (`feed/1`) and the notices (`deliver/1`): the params' `agent`, the event's `subject` and `data.agent`. The store's adapter maps the name to its login one to one within an install (below). `person:<id>` is reserved for a person named in a text. A change record's `actor` stays `{"kind": "AGENT", "name": "<name>"}`: it is typed already.
 
 #### Store logins
 
@@ -113,13 +116,14 @@ Texts say `agent:<name>`; the login is `<prefix>_agent_<name>`, a fixed rule wit
 
 The passkey signs `sha256` of a binding's text, and `rowsHash` covers the lines' exact bytes, so this contract fixes the layout of every text a person signs and of every line, whichever store writes it. Postgres's `jsonb` text already follows these rules, so they change no byte Postgres writes.
 
-- **Objects.** Keys sorted by their length in UTF-8 bytes, then bytewise. `{`, then the entries joined by `, `, then `}`. An entry is `"key": value`. The rule holds at every depth.
+- **Objects.** Keys are unique within an object. They are sorted by the key's own UTF-8 bytes before escaping: shorter first, then bytewise (`{"\n": 2, "A": 1}`: both are one byte, and 0x0A sorts before 0x41). `{`, then the entries joined by `, `, then `}`. An entry is `"key": value`, the key escaped like a string. The rule holds at every depth.
 - **Arrays.** `[`, then the values joined by `, `, then `]`, in the store's order.
 - **Strings.** Escaped as `\"`, `\\`, `\b`, `\f`, `\n`, `\r`, `\t`; any other character below U+0020 as `\u00xx` (lowercase hex); every other character as it is.
-- **Numbers.** A valid JSON number as the store holds it (Postgres keeps `1.50` as `1.50`). Clients read it and never rewrite it.
-- **Timestamps** Basalt writes (`expiresAt`) are strings, RFC 3339 UTC with microseconds. A value from the person's data keeps the store's form ([Wire format](../CONTRACT.md#wire-format)).
+- **Literals.** `true`, `false` and `null`, lowercase.
+- **Numbers.** A number from the person's data is a valid JSON number as the store holds it (Postgres keeps `1.50` as `1.50`). Basalt's own integers (`rows`, `skipped`, the values of `agentRows`) are plain decimal digits: no sign, no leading zero, no fraction or exponent (`0`, `27`). Clients read a number and never rewrite it.
+- **Timestamps** Basalt writes (`expiresAt`) are strings of exactly the form `YYYY-MM-DDTHH:MM:SS.ffffffZ`: UTC, always six fraction digits, and `Z`, never `+00:00` (`2026-11-11T07:02:11.123456Z`; in Postgres `to_char(t AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`, as the guard writes it). A value from the person's data keeps the store's form ([Wire format](../CONTRACT.md#wire-format)).
 - **Lines** are ordered bytewise by their text (`COLLATE "C"` in Postgres). `rowsHash` is the lowercase hex `sha256` of the lines joined by `\n`. A redacted line's `rowHash` is the lowercase hex `sha256` of the array `[key, old or now, set]` written by these rules.
-- **Clients never re-serialize.** They hash and parse a text as given. The engine checks that every text it relays follows these rules and refuses one that does not.
-- **Vectors** in the contract are written by the guard, never by hand. A vector file whose texts the guard has not written yet in the current form says so in its `description` and marks each such case `"pending": true` in place of its texts; a test that reads a pending case fails.
+- **Clients never re-serialize.** They hash and parse a text as given. The engine checks that every signed text and line it relays follows these rules and refuses one that does not.
+- **Vectors** in the contract are generated by code (the guard or the codec), never written by hand. A vector file whose texts the code has not generated yet in the current form says so in its `description` and marks each such case `"pending": true` in place of its texts; a test that reads a pending case fails.
 
 **Clean state.** These texts have no version field. The guard writes this form from its first entry, and no reader accepts a text in the form before it: a dev or demo install made before reinstalls `basalt_meta`.

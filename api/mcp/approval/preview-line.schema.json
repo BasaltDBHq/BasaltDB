@@ -52,7 +52,7 @@
             "verb": {
               "type": "string",
               "minLength": 1,
-              "description": "The store's own word for the operation (in Postgres the command: INSERT, UPDATE, DELETE)."
+              "description": "The store's own word for this line's own op, not the request's (CONTRACT.md, Stores, Operations): in Postgres INSERT, UPDATE or DELETE, so a row a cascade sets to NULL under a DELETE is UPDATE."
             }
           }
         },
@@ -134,7 +134,7 @@
             "verb": {
               "type": "string",
               "minLength": 1,
-              "description": "The store's own word for the operation (in Postgres the command: INSERT, UPDATE, DELETE)."
+              "description": "The store's own word for this line's own op, not the request's (CONTRACT.md, Stores, Operations): in Postgres INSERT, UPDATE or DELETE, so a row a cascade sets to NULL under a DELETE is UPDATE."
             }
           }
         },

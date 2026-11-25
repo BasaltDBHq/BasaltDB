@@ -38,7 +38,7 @@ Every event is one CloudEvents 1.0 event in its JSON form, with these attributes
 | `source` | `urn:uuid:<installId>` | `urn:uuid:<installId>` |
 | `type` | One per ledger kind, below | One per notice kind, below |
 | `time` | The ledger row's `at`; absent on the skipped marker | When the engine made the notice: the moment the agent's answer was built |
-| `subject` | The agent, `agent:<name>` ([Agent names](stores.md#agent-names)), as `data.agent` | The agent: its name in `engine.json` |
+| `subject` | The agent, `agent:<name>` ([Agent names](stores.md#agent-names)), as `data.agent` | The agent, `agent:<name>`, as `data.agent` |
 | `datacontenttype` | `application/json` | `application/json` |
 | `data` | The event's fields, below, as a JSON object | The notice's fields, below, as a JSON object |
 
@@ -61,7 +61,7 @@ Every event is one CloudEvents 1.0 event in its JSON form, with these attributes
 | `dev.basaltdb.revert.requested` | The engine prepared a revert: a revert was requested | `deliver/1` |
 | `dev.basaltdb.link.replaced` | The agent asked for a new link for a held write or a revert: a link was replaced | `deliver/1` |
 
-- **Versions.** These names and fields are those of `feed/1` and `deliver/1`. A later minor version may add a field to `data`, which a plugin ignores as it ignores any unknown field ([Protocol](#protocol)); a breaking change is a new contract (`feed/2`) with new type names. One exception, before the first release (clean state): `feed/1` is amended in place to the store-neutral form below (`agent:<name>`, `resource`, `store`), and the Go SDK ships its copy of the messages in the same change. The schemas list today's fields and close `data`, so a sample with a field this contract does not name fails.
+- **Versions.** These names and fields are those of `feed/1` and `deliver/1`. A later minor version may add a field to `data`, which a plugin ignores as it ignores any unknown field ([Protocol](#protocol)); a breaking change is a new contract (`feed/2`) with new type names. One exception, before the first release (clean state): `feed/1` is amended in place to the store-neutral form below (`agent:<name>`, `resource`, `store`), `deliver/1` likewise names the agent `agent:<name>`, and the Go SDK ships its copy of the messages in the same change. The schemas list today's fields and close `data`, so a sample with a field this contract does not name fails.
 
 #### `feed.observe` (`feed/1`)
 
@@ -100,7 +100,7 @@ Every event is one CloudEvents 1.0 event in its JSON form, with these attributes
 
 #### `approval.deliver` (`deliver/1`)
 
-- **The call.** JSON-RPC method `approval.deliver`, params `{ "agent", "event" }`: the agent's name and one notice, a CloudEvent in its JSON form. ConnectRPC: `basalt.plugin.v1.PluginService/ApprovalDeliver`, where `event` is the event's exact JSON bytes.
+- **The call.** JSON-RPC method `approval.deliver`, params `{ "agent", "event" }`: the agent, `agent:<name>` as in `feed/1` ([Agent names](stores.md#agent-names)), and one notice, a CloudEvent in its JSON form. ConnectRPC: `basalt.plugin.v1.PluginService/ApprovalDeliver`, where `event` is the event's exact JSON bytes.
 - **The answer** is `{}`. The notice gives the plugin no power over the action: approving and signing still need the person's passkey, checked in the store, and the signed code returns as without plugins (the page's relay, or pasted to the agent).
 - **When a notice is sent**: three moments, each for a listed agent, each with the link of that answer:
 
@@ -124,7 +124,7 @@ Every event is one CloudEvents 1.0 event in its JSON form, with these attributes
 | Field | Value |
 |---|---|
 | `kind` | `APPROVAL_REQUESTED` (a held write), `REVERT_REQUESTED` (a prepared revert) or `LINK_REPLACED` (a replaced link: the earlier link no longer works) |
-| `agent` | The agent's name in `engine.json` |
+| `agent` | The agent, `agent:<name>` with `<name>` its name in `engine.json` |
 | `approvalId` or `revertId` | The held write's approval id, or the revert's id: exactly one |
 | `headline` | The item in one line (below) |
 | `expiresAt` | When the item expires: RFC 3339 UTC |

@@ -183,14 +183,8 @@
         "afterSeq": { "description": "The cursor: the last seq the plugin acknowledged.", "type": "integer", "minimum": 0 }
       }
     },
-    "agent": {
-      "description": "The agent's name in engine.json: deliver/1's agent and subject.",
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9_]*$",
-      "maxLength": 63
-    },
     "agentName": {
-      "description": "The agent in feed/1's params, subject and data: agent:<name>, with <name> its name in engine.json (CONTRACT.md, Stores, Agent names).",
+      "description": "The agent in the params, subject and data of feed/1 and deliver/1: agent:<name>, with <name> its name in engine.json (CONTRACT.md, Stores, Agent names).",
       "type": "string",
       "pattern": "^agent:[a-z][a-z0-9_]*$",
       "maxLength": 69
@@ -215,7 +209,7 @@
       }
     },
     "verb": {
-      "description": "The store's own word for the operation (in Postgres the command: INSERT, UPDATE, DELETE, or a DDL command such as CREATE TABLE).",
+      "description": "The store's own word for the request's operation (CONTRACT.md, Stores, Operations): in Postgres the statement's command, INSERT, UPDATE, DELETE, or a DDL command such as CREATE TABLE.",
       "type": "string",
       "minLength": 1,
       "maxLength": 64,

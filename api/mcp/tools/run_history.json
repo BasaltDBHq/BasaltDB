@@ -51,15 +51,26 @@
     "$defs": {
       "changeRecord": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "changeId",
           "at",
           "actor",
+          "op",
+          "store",
           "rows",
           "cascadedRows",
           "status",
           "rowChanges"
         ],
+        "dependentRequired": {
+          "resource": [
+            "shape"
+          ],
+          "shape": [
+            "resource"
+          ]
+        },
         "properties": {
           "changeId": {
             "type": "string",
@@ -101,7 +112,7 @@
           },
           "resource": {
             "type": "string",
-            "description": "The statement's own resource, in the store's form (schema.table in Postgres); absent when the action named none."
+            "description": "The request's own resource, in the store's form (schema.table in Postgres); absent when the action named none, and then shape is absent too."
           },
           "shape": {
             "type": "string",
@@ -132,6 +143,7 @@
           },
           "store": {
             "type": "object",
+            "additionalProperties": false,
             "required": [
               "kind"
             ],
@@ -145,12 +157,13 @@
               },
               "verb": {
                 "type": "string",
-                "description": "The store's own word for the operation (in Postgres the command, SELECT for a read); absent when the request did not parse."
+                "description": "The store's own word for the request's operation (CONTRACT.md, Stores, Operations): in Postgres the statement's command, SELECT for a read; absent when the request did not parse."
               }
             }
           },
           "request": {
             "type": "object",
+            "additionalProperties": false,
             "description": "The request by family (CONTRACT.md, Stores, Request families). For SQL: statement and params; params pruned after 30 days.",
             "required": [
               "kind"
@@ -214,6 +227,7 @@
             "type": "array",
             "items": {
               "type": "object",
+              "additionalProperties": false,
               "required": [
                 "resource",
                 "shape",

@@ -2,7 +2,7 @@
 
 Planned (M3.5, Vault channel Phase 0, owner decision VC-7). Long links rarely fail on a hard length limit. They fail because chat and terminal clients format them: they hard-wrap the line, stop link detection at a line break, take a trailing `.` or `)` into the URL, or read `_` and `*` as emphasis. These rules keep a link whole from the engine to the person's browser. They apply to every link the engine, the CLI or a page hands over: approval, revert and passkey pages, short or long.
 
-Terms: a **short link** carries `#s=<secret>` ([Link secrets](local-pages.md#link-secrets)); a **long link** carries the whole request, `#2.<request>` ([Codes](approvals.md#codes); format 1, `#1.`, is no longer read); a **hash link** carries only a check of the request, `#h=<h>`, and the request travels beside it as a file or text blocks ([The request file and pasted blocks](#the-request-file-and-pasted-blocks)). Format `2.` is the compact request encoding (design section 3.2, item 1), laid out in [Format 2](approvals.md#format-2-the-compact-request) (owner decision VC-29). The pages read both `1.` and `2.`; the engine emits `2.`.
+Terms: a **short link** carries `#s=<secret>` ([Link secrets](local-pages.md#link-secrets)); a **long link** carries the whole request, `#2.<request>` ([Codes](approvals.md#codes); format 1, `#1.`, is no longer read); a **hash link** carries only a check of the request, `#h=<h>`, and the request travels beside it as a file or text blocks ([The request file and pasted blocks](#the-request-file-and-pasted-blocks)). Format `2.` is the compact request encoding (design section 3.2, item 1), laid out in [Format 2](approvals.md#format-2-the-compact-request) (owner decision VC-29). The approval and revert pages read only `2.`, and the engine emits `2.`; `1.` is left only as the passkey registration page's format ([Page links](page-links.md#page-links)).
 
 ### The link budget
 
@@ -87,14 +87,14 @@ Before decoding, the approval, revert and passkey pages repair the fragment (`lo
 1. Take the text after the first `#`.
 2. Remove every `%20`, `%09`, `%0A` and `%0D` (hex digits in either case).
 3. Remove every whitespace character (Unicode `White_Space`: spaces, tabs, line breaks, U+00A0, U+2028 and the rest; in JavaScript `/\p{White_Space}/u`, not `\s`, which differs) and every `>`, `*` and `\`.
-4. When the text starts with `1.` or `2.`, keep that prefix and the base64url characters (`A` to `Z`, `a` to `z`, `0` to `9`, `-`, `_`) right after it, up to the first other character; drop the rest (a trailing `.`, `)`, quote or text). When it starts with `s=` or `h=`, keep that prefix and the 22 characters after it when all 22 are base64url. Anything else is left as it is and fails to decode.
+4. When the text starts with `1.` (the passkey registration page) or `2.`, keep that prefix and the base64url characters (`A` to `Z`, `a` to `z`, `0` to `9`, `-`, `_`) right after it, up to the first other character; drop the rest (a trailing `.`, `)`, quote or text). When it starts with `s=` or `h=`, keep that prefix and the 22 characters after it when all 22 are base64url. Anything else is left as it is and fails to decode. On the approval and revert pages a `1.` fragment also fails to decode: they read only format 2 ([Codes](approvals.md#codes)).
 
 `_` and `-` are never removed: they are base64url. Repair never makes a wrong request pass: the page still checks the request's id against the path and `rowsHash` (or `sampleHash`) against the binding, and refuses to sign otherwise.
 
 When the repaired fragment still does not decode, or is missing, the page shows a box, "Paste the whole message from your agent", and reads the link out of the pasted text:
 
 1. Split the text into lines (`\r\n`, `\n`, `\r` or U+2028). In each line remove every `>`, `*` and `\`, then trim leading and trailing `White_Space`.
-2. Find the first line holding `#1.`, `#2.`, `#s=` or `#h=`. Take the prefix and the base64url characters right after it on that line.
+2. Find the first line holding `#1.` (the passkey registration page only), `#2.`, `#s=` or `#h=`. Take the prefix and the base64url characters right after it on that line.
 3. When they reach the end of the line, append each following line while it is not empty and holds only base64url characters; stop at the first line that does not. A short link or a hash link stops at 22 characters.
 4. Decode the result as a repaired fragment (above). The empty line the engine puts after every URL is what ends a wrapped link.
 

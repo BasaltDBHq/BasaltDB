@@ -6,7 +6,7 @@ One record per action an agent asks for, whether applied, held or refused. It ha
 {
   "changeId": "0193a4c2-…",
   "at": "2026-11-10T06:02:11Z",
-  "actor": { "kind": "AGENT", "name": "tracker-bot", "runId": "…", "taskId": "…" },
+  "actor": { "kind": "AGENT", "name": "tracker_bot", "runId": "…", "taskId": "…" },
   "intent": "Merge duplicate case reports from yesterday",
   "resource": "public.cases",
   "shape": "RECORD",
@@ -28,9 +28,9 @@ One record per action an agent asks for, whether applied, held or refused. It ha
 |---|---|
 | `status` | `APPLIED`, `APPROVAL_PENDING`, `REFUSED`, `APPROVAL_EXPIRED`, `REVERTED` |
 | `op` | Basalt's ([Operations](stores.md#operations)): `READ`, `INSERT`, `UPDATE`, `DELETE`, `OTHER` (a refused request that is none of these), `REVERT` (M3: a person's revert) |
-| `store` | `{kind, verb}`: the store's kind and its own word for the operation (in Postgres the command, `SELECT` for a read); `verb` is absent when the request did not parse |
+| `store` | `{kind, verb}`: the store's kind and its own word for the request's operation ([Operations](stores.md#operations): in Postgres the statement's command, `SELECT` for a read); `verb` is absent when the request did not parse |
 | `request` | The request by family ([Request families](stores.md#request-families)): for `SQL`, `{kind, params, statement}` |
-| `resource`, `shape`, `key` | What the action targets: the request's own resource and its shape, and, optionally, `key`, the target's identity fields. `resource` is absent when the action named none |
+| `resource`, `shape`, `key` | What the action targets: the request's own resource and its shape, and, optionally, `key`, the target's identity fields. `resource` is absent when the action named none, and `shape` is absent exactly when `resource` is |
 | `actor.kind` | `AGENT`, `PERSON` |
 | `policy.decision` | `ALLOW`, `HOLD`, `REFUSE` |
 
@@ -38,4 +38,4 @@ One record per action an agent asks for, whether applied, held or refused. It ha
 
 Reads (M1.5): every `query` the engine runs is a change record with `op: READ`, `store.verb` the store's word (`SELECT`), `status: APPLIED`, `rows` = rows returned, its request (statement and parameters) and duration, and no `rowChanges`; it carries the run's `intent` when it ran in a run. The rows it saw are kept by version in `basalt_meta` (see `reads` and the `READ` ledger row).
 
-`basedOn` (M1.5): a `rowChanges` entry for an `UPDATE` or `DELETE` of a row the run had read carries `basedOn: { "version": "<the store's version>", "changeId": "<the read>" }`, `version` an opaque string the store writes and compares ([Versions](stores.md#stores): `xmin:<n>` in Postgres, an etag, a version id); one the run never read carries `blindWrite: true` (allowed, owner decision #15). Cascaded rows and inserts carry neither. A change with exactly one non-cascaded row that was read also carries that `basedOn` at the top level, as in the shape above. A `REFUSED` record carries `reason: { code, message }` with a code from [Error codes](error-codes.md#error-codes) (`STORE_ERROR` for an error the store raised). `before` values are kept 30 days; other ledger metadata 1 year.
+`basedOn` (M1.5): a `rowChanges` entry for an `UPDATE` or `DELETE` of a row the run had read carries `basedOn: { "version": "<the store's version>", "changeId": "<the read>" }`, `version` an opaque string the store writes and compares (Versions, under [Stores](stores.md#stores): `xmin:<n>` in Postgres, an etag, a version id); one the run never read carries `blindWrite: true` (allowed, owner decision #15). Cascaded rows and inserts carry neither. A change with exactly one non-cascaded row that was read also carries that `basedOn` at the top level, as in the shape above. A `REFUSED` record carries `reason: { code, message }` with a code from [Error codes](error-codes.md#error-codes) (`STORE_ERROR` for an error the store raised). `before` values are kept 30 days; other ledger metadata 1 year.

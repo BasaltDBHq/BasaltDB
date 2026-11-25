@@ -35,7 +35,7 @@ type changeHistory = action.History[action.Change, action.RowChange]
 type Deps struct {
 	Core     coreDeps
 	Agent    agentDeps
-	Approval approvalsvc.Deps
+	Approval approvalDeps
 	Revert   revertDeps
 	Delivery linksvc.Deps
 	Status   statussvc.Deps
@@ -133,7 +133,7 @@ func (s *Service) wire() {
 	s.agent = agentsvc.New(s.agentCore(), s.agentStoreSet(), s.deps.Agent.PII, s.status.UpdateInfo)
 	// approval and delivery read each other: approval is built first and is
 	// given the delivery and revert use cases once they exist.
-	s.approval = approvalsvc.New(s.approvalCore(), &s.deps.Approval, liveChecker{&s.deps.Agent}, runChecker{s.deps.Core.Store}, s)
+	s.approval = approvalsvc.New(s.approvalCore(), s.approvalStoreSet(), &s.deps.Approval.Deps, liveChecker{&s.deps.Agent}, runChecker{s.deps.Core.Store}, s)
 	s.delivery = linksvc.New(s.linksCore(), &s.deps.Delivery, s.approval, s.Failure)
 	s.revert = revertsvc.New(s.revertCore(), s.revertStoreSet(), &s.deps.Revert.Deps, s.deps.Core.Store, s.delivery, s.agent, s)
 	s.approval.SetDelivery(s.delivery)
@@ -207,6 +207,10 @@ func (d Deps) missing() []string {
 	need("Agent.Record", d.Agent.Record == nil)
 	need("Approval.Store", d.Approval.Store == nil)
 	need("Approval.ErrNotFound", d.Approval.ErrNotFound == nil)
+	// The approval service relays the person's signed approval to the store,
+	// which must check the signature itself until the engine has a verifier
+	// of its own.
+	need("Approval.SignatureCheck", d.Core.Store != nil && !d.Core.Store.Capabilities().InStoreSignatureCheck)
 	need("Revert.Store", d.Revert.Store == nil)
 	// The revert service hands the person's proofs to the store, which must
 	// check the signature itself until the engine has a verifier of its own.

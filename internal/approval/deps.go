@@ -20,10 +20,9 @@ type Core struct {
 	LinkBudget int
 }
 
-// Deps is what held writes use: the approvals in the store and the
-// ledger's values the agent maps to tool errors.
+// Deps is what held writes use besides the store set: the ledger's values
+// the agent maps to tool errors and the pages' column order.
 type Deps struct {
-	Store Store
 	// ErrNotFound is the ledger's answer for an approval the role does not
 	// hold.
 	ErrNotFound error

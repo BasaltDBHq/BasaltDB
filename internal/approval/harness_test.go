@@ -29,9 +29,10 @@ import (
 )
 
 // settings are what a test sets before the service is built: the approval
-// use case's own core and deps, and the delivery use case it sits on.
+// use case's own core, store and deps, and the delivery use case it sits on.
 type settings struct {
 	core     Core
+	store    Store
 	deps     Deps
 	links    linksvc.Core
 	delivery linksvc.Deps
@@ -97,7 +98,8 @@ func newService(t *testing.T, goos, configPath string, opts ...option) *Service 
 			Name: "bot", Log: slog.New(slog.DiscardHandler), Now: time.Now, Commands: cmds, Errors: testErrors(),
 			PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget,
 		},
-		deps: Deps{Store: catalogStore{}, ErrNotFound: ledger.ErrApprovalNotFound, SortSpec: ledger.ApprovalSortSpec},
+		store: catalogStore{},
+		deps:  Deps{ErrNotFound: ledger.ErrApprovalNotFound, SortSpec: ledger.ApprovalSortSpec},
 	}
 	st.links = linksvc.Core{Name: "bot", Log: st.core.Log, Now: st.core.Now, Commands: cmds, Errors: st.core.Errors, PagesBase: st.core.PagesBase}
 	st.delivery = linksvc.Deps{
@@ -109,7 +111,11 @@ func newService(t *testing.T, goos, configPath string, opts ...option) *Service 
 		opt(&st)
 	}
 	st.links.Now = st.core.Now
-	ac := New(st.core, &st.deps, checkNothing{}, foundRuns{}, admitted{})
+	set := StoreSet{
+		Kind: action.StorePostgres, Capabilities: action.Capabilities{InStoreSignatureCheck: true},
+		Records: st.store, Holds: st.store, Proofs: st.store,
+	}
+	ac := New(st.core, set, &st.deps, checkNothing{}, foundRuns{}, admitted{})
 	failure := func(_ string, _ map[string]any, err error) *toolresult.ToolError {
 		return st.core.Errors.ToolError(err)
 	}

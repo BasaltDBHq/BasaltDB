@@ -36,8 +36,11 @@ type readRecorder interface {
 	RecordRead(ctx context.Context, r action.Read) (uuid.UUID, error)
 }
 
+// approvalStore is the approvals part, with the Postgres store's catalog
+// read the parts' HoldColumns asks.
 type approvalStore interface {
 	approvalsvc.Store
+	TableColumns(ctx context.Context, table string) ([]string, error)
 	WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any) (action.WriteResult, error)
 }
 

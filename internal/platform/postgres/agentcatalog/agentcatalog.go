@@ -203,16 +203,16 @@ type pgIndexDisplay struct {
 // pgForeignKeyDisplay is one foreign key as describe shows it.
 type pgForeignKeyDisplay struct {
 	Direction string   `json:"direction"`
-	Columns   []string `json:"columns"`
-	Table     string   `json:"table"`
+	Fields    []string `json:"fields"`
+	Resource  string   `json:"resource"`
 	OnDelete  string   `json:"onDelete"`
 	OnUpdate  string   `json:"onUpdate"`
 }
 
-// pgStatsDisplay is a table's size and scan activity as describe shows it.
+// pgStatsDisplay is a resource's size and scan activity as describe shows it.
 type pgStatsDisplay struct {
 	EstimatedRows *int64  `json:"estimatedRows"`
-	TableBytes    int64   `json:"tableBytes"`
+	ResourceBytes int64   `json:"resourceBytes"`
 	TotalBytes    int64   `json:"totalBytes"`
 	SeqScans      int64   `json:"seqScans"`
 	IndexScans    int64   `json:"indexScans"`
@@ -268,14 +268,14 @@ func pgField(oid uint32, c pgcatalog.Column) agentstore.Field {
 
 func pgForeignKey(k pgcatalog.Key, names map[int16]string, lang sqllang.Language) pgForeignKeyDisplay {
 	fk := pgForeignKeyDisplay{
-		Direction: "INCOMING", Columns: make([]string, 0, len(k.Attnums)), Table: lang.PrintName(k.OtherSchema, k.OtherTable),
+		Direction: "INCOMING", Fields: make([]string, 0, len(k.Attnums)), Resource: lang.PrintName(k.OtherSchema, k.OtherTable),
 		OnDelete: pgFKAction(k.OnDelete), OnUpdate: pgFKAction(k.OnUpdate),
 	}
 	if k.Outgoing {
 		fk.Direction = "OUTGOING"
 	}
 	for _, n := range k.Attnums {
-		fk.Columns = append(fk.Columns, names[n])
+		fk.Fields = append(fk.Fields, names[n])
 	}
 	return fk
 }
@@ -285,7 +285,7 @@ func pgFKAction(a string) string { return strings.ReplaceAll(a, " ", "_") }
 
 func pgStats(d pgcatalog.Detail) pgStatsDisplay {
 	st := pgStatsDisplay{
-		EstimatedRows: d.EstimatedRows, TableBytes: d.Stats.TableBytes, TotalBytes: d.Stats.TotalBytes,
+		EstimatedRows: d.EstimatedRows, ResourceBytes: d.Stats.TableBytes, TotalBytes: d.Stats.TotalBytes,
 		SeqScans: d.Stats.SeqScans, IndexScans: d.Stats.IndexScans,
 	}
 	if d.Stats.LastAnalyzed != nil {

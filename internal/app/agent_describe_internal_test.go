@@ -289,7 +289,7 @@ func TestHideColumnsDropsIndexesKeysAndExpressions(t *testing.T) {
 		"direction": "INCOMING", "fields": []any{"id"}, "resource": "shop.lines",
 		"onDelete": "CASCADE", "onUpdate": "NO_ACTION",
 	}}, fks)
-	require.Equal(t, []any{"SELECT", "UPDATE"}, m["actions"])
+	require.Equal(t, []any{"READ", "UPDATE"}, m["actions"])
 	require.NotNil(t, m["policy"])
 	require.Equal(t, map[string]any{
 		"estimatedRows": 12.0, "resourceBytes": 8192.0, "totalBytes": 32768.0,
@@ -321,6 +321,7 @@ func TestReadOnlyTableHasNullPolicy(t *testing.T) {
 	body, isError := callDescribe(t, describeService(t, cat, classes, ""), map[string]any{"resource": "shop.orders"})
 	require.False(t, isError, body)
 	m := decodeBody(t, body)
+	require.Equal(t, []any{"READ"}, m["actions"])
 	require.Contains(t, m, "policy")
 	require.Nil(t, m["policy"])
 }
@@ -334,7 +335,7 @@ func TestUnguardedWritableTableHasNullPolicy(t *testing.T) {
 	body, isError := callDescribe(t, describeService(t, cat, classes, ""), map[string]any{"resource": "shop.orders"})
 	require.False(t, isError, body)
 	m := decodeBody(t, body)
-	require.Equal(t, []any{"SELECT", "UPDATE"}, m["actions"])
+	require.Equal(t, []any{"READ", "UPDATE"}, m["actions"])
 	require.Contains(t, m, "policy")
 	require.Nil(t, m["policy"])
 }
@@ -367,7 +368,7 @@ func TestOverviewSmallListsResources(t *testing.T) {
 	require.Equal(t, map[string]any{"namespaces": 2.0, "resources": 50.0, "notGranted": 0.0}, m["counts"])
 	require.Equal(t, map[string]any{"kind": "POSTGRES", "database": "app", "host": "db.example.com"}, m["store"])
 	first := m["resources"].([]any)[0].(map[string]any)
-	require.Equal(t, map[string]any{"resource": "app.t001", "kind": "TABLE", "estimatedRows": 12.0, "access": []any{"SELECT"}}, first)
+	require.Equal(t, map[string]any{"resource": "app.t001", "kind": "TABLE", "estimatedRows": 12.0, "access": []any{"READ"}}, first)
 	limits := m["limits"].(map[string]any)
 	require.EqualValues(t, sqlguard.DefaultReadRowLimit, limits["readRowLimit"])
 	require.EqualValues(t, sqlguard.DefaultStatementTimeout.Milliseconds(), limits["statementTimeoutMs"])

@@ -75,7 +75,7 @@ func (docLanguage) Check(req agentstore.Request, tool action.Tool) (action.State
 	}
 	switch {
 	case r.Find != "" && tool == action.ToolQuery:
-		return action.Statement{Op: action.OpSelect, Tables: []string{r.Find}, Handle: r}, nil
+		return action.Statement{Op: action.OpRead, Tables: []string{r.Find}, Handle: r}, nil
 	case r.Update != "" && tool == action.ToolWrite:
 		return action.Statement{Op: action.OpUpdate, Tables: []string{r.Update}, Handle: r}, nil
 	}
@@ -219,7 +219,7 @@ func (s *docStore) customers() agentstore.Resource {
 	n := int64(len(s.collections["customers"]))
 	return agentstore.Resource{
 		Ref: "customers", Namespace: "shop", Name: "customers", Kind: "COLLECTION", Estimate: &n,
-		Actions: []action.Op{action.OpSelect, action.OpUpdate},
+		Actions: []action.Op{action.OpRead, action.OpUpdate},
 	}
 }
 

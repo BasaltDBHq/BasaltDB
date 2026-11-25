@@ -90,7 +90,7 @@ func TestNothingLeaksToNotifier(t *testing.T) {
 	})
 	require.NoError(t, err)
 	_, err = guard.RecordRefusal(ctx, c, guard.Refusal{
-		Intent: refused, Op: "SELECT", Statement: "SELECT " + marker,
+		Intent: refused, Op: "READ", Statement: "SELECT " + marker,
 		Code: "QUERY_TIMEOUT", Reason: marker + "-reason",
 	})
 	require.NoError(t, err)

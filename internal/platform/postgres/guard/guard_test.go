@@ -218,7 +218,7 @@ func TestRecordRefusal(t *testing.T) {
 
 	// A refused read is recorded with Basalt's op, READ, and the store's
 	// verb, SELECT.
-	id, err = guard.RecordRefusal(ctx, a.Conn, guard.Refusal{Intent: in, Op: "SELECT", Code: "QUERY_TIMEOUT"})
+	id, err = guard.RecordRefusal(ctx, a.Conn, guard.Refusal{Intent: in, Op: "READ", Code: "QUERY_TIMEOUT"})
 	require.NoError(t, err)
 	var op, verb string
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT c.op, l.verb FROM basalt_meta.changes c

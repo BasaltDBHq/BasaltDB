@@ -1,6 +1,6 @@
 {
   "actions": [
-    "SELECT"
+    "READ"
   ],
   "cascadesIntoHidden": 1,
   "comment": "Customer orders",

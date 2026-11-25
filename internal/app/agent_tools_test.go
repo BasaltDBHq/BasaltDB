@@ -147,7 +147,6 @@ func TestNewServicePanicsWithoutDeps(t *testing.T) {
 		"Approval.Store":                func(d *Deps) { d.Approval.Store = nil },
 		"Approval.ErrNotFound":          func(d *Deps) { d.Approval.ErrNotFound = nil },
 		"Revert.Store":                  func(d *Deps) { d.Revert.Store = nil },
-		"Revert.ErrNotFound":            func(d *Deps) { d.Revert.ErrNotFound = nil },
 		"Revert.AfterAnswer":            func(d *Deps) { d.Revert.AfterAnswer = nil },
 		"Revert.RotateSession":          func(d *Deps) { d.Revert.RotateSession = nil },
 		"Delivery.VaultConflict":        func(d *Deps) { d.Delivery.VaultConflict = nil },

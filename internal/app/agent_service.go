@@ -211,7 +211,6 @@ func (d Deps) missing() []string {
 	// The revert service hands the person's proofs to the store, which must
 	// check the signature itself until the engine has a verifier of its own.
 	need("Revert.SignatureCheck", d.Core.Store != nil && !d.Core.Store.Capabilities().InStoreSignatureCheck)
-	need("Revert.ErrNotFound", d.Revert.ErrNotFound == nil)
 	need("Revert.AfterAnswer", d.Revert.AfterAnswer == nil)
 	need("Revert.RotateSession", d.Revert.RotateSession == nil)
 	need("Delivery.VaultConflict", d.Delivery.VaultConflict == nil)

@@ -9,7 +9,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -63,21 +62,20 @@ func (rc *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string
 // revealRevertError is the page's answer to a revert reveal the store
 // refused.
 func (rc *Service) revealRevertError(r action.Revert, err error, link string) error {
-	code, _ := guidance.LedgerCode(err)
-	detail := guidance.StoreDetail(err)
-	switch {
-	case code == guardmodel.CodeRevertInvalid && detail == guardmodel.RevealRefused:
+	switch refusalOf(err).Reason {
+	case action.RevertRevealRefused:
 		return linksvc.RevealRefused(guidance.CodeRevertInvalid, link)
-	case code == guardmodel.CodeRevertInvalid && detail == revertNotFoundDetail:
+	case action.RevertNotFound:
 		return linksvc.ErrNotThisAgent
-	case code == guardmodel.CodeRevertExpired:
+	case action.RevertExpiredReason:
 		return rc.revertExpired(r)
-	case code == guardmodel.CodeRevertInvalid:
+	case action.RevertNotPending:
 		return &guidance.PageError{ToolError: &toolresult.ToolError{
 			Code:          guidance.CodeRevertInvalid,
 			Message:       "the hidden rows cannot be shown: the revert was signed or rejected meanwhile",
 			PersonMessage: "This revert was signed or rejected meanwhile, so its hidden rows can no longer be shown.",
 		}}
+	default:
+		return err
 	}
-	return err
 }

@@ -9,7 +9,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
 
@@ -93,7 +92,7 @@ func (rc *Service) openRevert(ctx context.Context, id uuid.UUID) (action.Revert,
 		return action.Revert{}, err
 	}
 	r, err := rc.store.Records.FindRevert(ctx, id)
-	if guidance.Sentinel(err, rc.deps.ErrNotFound) {
+	if refusalOf(err).Reason == action.RevertNotFound {
 		return action.Revert{}, linksvc.ErrNotThisAgent
 	}
 	if err != nil {

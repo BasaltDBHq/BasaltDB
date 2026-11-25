@@ -103,7 +103,6 @@ func newService(t *testing.T, goos, configPath string, opts ...option) *Service 
 		core:  Core{Name: "bot", Log: slog.New(slog.DiscardHandler), Now: time.Now, Commands: cmds, Errors: testErrors()},
 		store: struct{ Store }{},
 		deps: Deps{
-			ErrNotFound: ledger.ErrRevertNotFound,
 			AfterAnswer: vault.AfterAnswer, RotateSession: vault.RotateSession,
 		},
 		runs: foundRuns{},

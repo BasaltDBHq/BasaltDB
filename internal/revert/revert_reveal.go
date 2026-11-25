@@ -17,7 +17,7 @@ import (
 
 // RevealRevert reveals the hidden rows of a revert this agent's role
 // prepared to the person on the revert page holding secret, its live link
-// secret. It serializes with the revert's other page routes; Postgres
+// secret. It serializes with the revert's other page routes; the store
 // locks the revert row, so a signature racing it comes first or second,
 // never between.
 func (rc *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string, in linksvc.RevealRequest) (approval.RevealAnswer, error) {
@@ -42,7 +42,7 @@ func (rc *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string
 	lines := r.Lines
 	if r.Widened {
 		if !held {
-			nonce, err := rc.deps.Store.RevertNonce(ctx, id)
+			nonce, err := rc.store.Records.RevertNonce(ctx, id)
 			if err != nil {
 				return approval.RevealAnswer{}, err
 			}
@@ -50,7 +50,7 @@ func (rc *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string
 		}
 		lines = st.request.Lines
 	}
-	out, err := rc.deps.Store.RevealRevertRows(ctx, id, in.Proof.Assertion(), key)
+	out, err := rc.store.Proofs.RevealRevertRows(ctx, id, in.Proof.Assertion(), key)
 	if err != nil {
 		return approval.RevealAnswer{}, rc.revealRevertError(r, err, rc.delivery.PageLink(links.Revert, id, secret))
 	}
@@ -60,7 +60,7 @@ func (rc *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string
 	return linksvc.CheckedAnswer(lines, out.Rows)
 }
 
-// revealRevertError is the page's answer to a revert reveal Postgres
+// revealRevertError is the page's answer to a revert reveal the store
 // refused.
 func (rc *Service) revealRevertError(r action.Revert, err error, link string) error {
 	code, _ := guidance.LedgerCode(err)

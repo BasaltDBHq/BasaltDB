@@ -165,6 +165,21 @@ func TestNewServicePanicsWithoutDeps(t *testing.T) {
 	require.NotPanics(t, func() { NewService(deps()) })
 }
 
+// unsignedStore is a store that does not check a passkey signature itself.
+type unsignedStore struct{ parts }
+
+func (unsignedStore) Capabilities() action.Capabilities { return action.Capabilities{} }
+
+// A store that does not check the person's signature itself is refused:
+// the revert service hands the person's proofs straight to the store.
+func TestNewServiceRefusesAStoreWithoutSignatureCheck(t *testing.T) {
+	t.Parallel()
+	d := deps()
+	p, _ := d.Core.Store.(parts)
+	useStore(&d, unsignedStore{p})
+	require.PanicsWithValue(t, "agent: required dependencies missing: Revert.SignatureCheck", func() { NewService(d) })
+}
+
 // An INTERNAL or UNAVAILABLE error carries a UUIDv7 errorId that the engine
 // logs with the error, so the person can find the log line.
 func TestErrorIDIsInTheBodyAndTheLogLine(t *testing.T) {

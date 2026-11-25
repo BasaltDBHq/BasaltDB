@@ -16,7 +16,7 @@ import (
 // RevertRequest is the revert request of a revert this agent's role
 // prepared that the person has not signed yet, for the page holding
 // secret, its live link secret, with the nonce of the next widen read from
-// Postgres. A revert not widened is served from Postgres. A widened one is
+// the store. A revert not widened is served from the store. A widened one is
 // served from the engine's memory, since the agent role's view shows no
 // binding or lines (RS-5): an engine that restarted since asks the person
 // to widen again (owner, Q13), with the nonce that widen signs.
@@ -34,11 +34,11 @@ func (rc *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret strin
 	if err != nil {
 		return revert.Request{}, err
 	}
-	nonce, err := rc.deps.Store.RevertNonce(ctx, id)
+	nonce, err := rc.store.Records.RevertNonce(ctx, id)
 	if err != nil {
 		return revert.Request{}, err
 	}
-	reveal, err := rc.deps.Store.RevealNonce(ctx, approval.KindRevert, id)
+	reveal, err := rc.store.Records.RevealNonce(ctx, approval.KindRevert, id)
 	if err != nil {
 		return revert.Request{}, err
 	}
@@ -61,7 +61,7 @@ func (rc *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret strin
 	}, nil
 }
 
-// RelayRevert applies the person's signed revert (apply_revert): Postgres
+// RelayRevert applies the person's signed revert (apply_revert): the store
 // verifies the signature and runs the revert, or for a large plan records
 // it for the agent's batches.
 func (rc *Service) RelayRevert(ctx context.Context, r revert.Response) (action.AppliedRevert, linksvc.Receipt, error) {
@@ -69,13 +69,13 @@ func (rc *Service) RelayRevert(ctx context.Context, r revert.Response) (action.A
 	if err != nil {
 		return action.AppliedRevert{}, linksvc.Receipt{}, err
 	}
-	applied, err := rc.deps.Store.ApplyRevert(ctx, r.RevertID, r.Assertion())
+	applied, err := rc.store.Proofs.ApplyRevert(ctx, r.RevertID, r.Assertion())
 	if err != nil {
 		return action.AppliedRevert{}, linksvc.Receipt{}, rc.applyRevertError(ctx, open, err)
 	}
-	// Postgres accepted the signature: the receipt names the revert as
-	// Postgres records it now.
-	signed, err := rc.deps.Store.FindRevert(ctx, r.RevertID)
+	// The store accepted the signature: the receipt names the revert as
+	// the store records it now.
+	signed, err := rc.store.Records.FindRevert(ctx, r.RevertID)
 	if err != nil {
 		return action.AppliedRevert{}, linksvc.Receipt{}, err
 	}
@@ -92,7 +92,7 @@ func (rc *Service) openRevert(ctx context.Context, id uuid.UUID) (action.Revert,
 	if err := rc.admit.Admit(ctx); err != nil {
 		return action.Revert{}, err
 	}
-	r, err := rc.deps.Store.FindRevert(ctx, id)
+	r, err := rc.store.Records.FindRevert(ctx, id)
 	if guidance.Sentinel(err, rc.deps.ErrNotFound) {
 		return action.Revert{}, linksvc.ErrNotThisAgent
 	}

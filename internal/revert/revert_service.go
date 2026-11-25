@@ -52,7 +52,7 @@ func (rc *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (Re
 	if err != nil {
 		return RevertPreview{}, err
 	}
-	pv, err := rc.deps.Store.PreviewRevert(ctx, p.Scope, after, p.Limit)
+	pv, err := rc.store.Undo.PreviewRevert(ctx, p.Scope, after, p.Limit)
 	if err != nil {
 		return RevertPreview{}, rc.prepareError(ctx, guidance.ToolPreviewRevert, p.Scope, err)
 	}
@@ -124,7 +124,7 @@ type RevertPlan struct {
 // and one page of its lines, for the agent to apply with ApplyRevertBatch
 // once the person signed it.
 func (rc *Service) RevertPlan(ctx context.Context, p action.RevertLineParams) (RevertPlan, error) {
-	r, err := rc.deps.Store.FindRevert(ctx, p.RevertID)
+	r, err := rc.store.Records.FindRevert(ctx, p.RevertID)
 	if guidance.Sentinel(err, rc.deps.ErrNotFound) {
 		return RevertPlan{}, &toolresult.ToolError{Code: guidance.CodeNotFound, Reason: guidance.ReasonRevert, Message: fmt.Sprintf("no revert %s prepared by this agent", p.RevertID)}
 	}
@@ -135,7 +135,7 @@ func (rc *Service) RevertPlan(ctx context.Context, p action.RevertLineParams) (R
 		return RevertPlan{}, &guidance.ArgumentError{Message: fmt.Sprintf(
 			"revert %s has %d lines: the revert page applies it in one call, there is no plan to apply in batches", r.ID, r.Rows+r.Skipped)}
 	}
-	page, err := rc.deps.Store.RevertLines(ctx, p)
+	page, err := rc.store.Records.RevertLines(ctx, p)
 	if err != nil {
 		return RevertPlan{}, err
 	}
@@ -179,9 +179,9 @@ type ApplyRevertBatchParams struct {
 }
 
 // ApplyRevertBatch applies lines of a signed plan this agent prepared.
-// Postgres checks them against the signed plan and re-checks each row.
+// The store checks them against the signed plan and re-checks each row.
 func (rc *Service) ApplyRevertBatch(ctx context.Context, p ApplyRevertBatchParams) (AppliedBatch, error) {
-	res, err := rc.deps.Store.ApplyRevertBatch(ctx, p.RevertID, p.Lines)
+	res, err := rc.store.Undo.ApplyRevertBatch(ctx, p.RevertID, p.Lines)
 	if err != nil {
 		return AppliedBatch{}, err
 	}
@@ -233,11 +233,11 @@ func (rc *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (Re
 	if err := rc.checkOwnScope(ctx, p.Scope); err != nil {
 		return RequestedRevert{}, err
 	}
-	prep, err := rc.deps.Store.PrepareRevert(ctx, p.Scope, p.Intent, guardmodel.MCPPrepareTimeout)
+	prep, err := rc.store.Undo.PrepareRevert(ctx, p.Scope, p.Intent, rc.store.Limits.Prepare)
 	if err != nil {
 		return RequestedRevert{}, rc.prepareError(ctx, guidance.ToolRequestRevert, p.Scope, err)
 	}
-	r, err := rc.deps.Store.FindRevert(ctx, prep.RevertID)
+	r, err := rc.store.Records.FindRevert(ctx, prep.RevertID)
 	if err != nil {
 		return RequestedRevert{}, err
 	}
@@ -315,7 +315,7 @@ type AwaitRevertParams struct {
 // otherwise it reads the revert about every s.deps.Delivery.Poll until it is not PENDING
 // or Wait is over. It never signs: the person signs on the revert page.
 func (rc *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (RequestedRevert, error) {
-	r, err := rc.deps.Store.FindRevert(ctx, p.RevertID)
+	r, err := rc.store.Records.FindRevert(ctx, p.RevertID)
 	if guidance.Sentinel(err, rc.deps.ErrNotFound) {
 		return RequestedRevert{}, revertNotFound(p.RevertID)
 	}
@@ -336,7 +336,7 @@ func (rc *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Reques
 	err = rc.delivery.AwaitWhile(ctx, p.Wait, func() bool { return r.Status == action.RevertPending }, func(ctx context.Context) error {
 		// Each poll is one measured read with a budget of its own (as the
 		// waiting write's).
-		next, err := rc.deps.Store.FindRevert(budget.With(ctx), r.ID)
+		next, err := rc.store.Records.FindRevert(budget.With(ctx), r.ID)
 		if err != nil {
 			return err
 		}
@@ -349,7 +349,7 @@ func (rc *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Reques
 	return rc.revertState(ctx, r)
 }
 
-// applyRevertError gives Postgres's refusal of a signature the revert page
+// applyRevertError gives the store's refusal of a signature the revert page
 // relayed: expired meanwhile, rows changed since the preview, or a
 // signature that does not verify.
 func (rc *Service) applyRevertError(ctx context.Context, r action.Revert, err error) error {
@@ -390,7 +390,7 @@ func (rc *Service) revertState(ctx context.Context, r action.Revert) (RequestedR
 	if r.Status != action.RevertApplied && r.Status != action.RevertApplying {
 		return out, nil
 	}
-	// A signed revert: its receipt, from Postgres's record, the line first
+	// A signed revert: its receipt, from the store's record, the line first
 	// (CONTRACT.md, Vault channel, Receipts).
 	receipt, err := rc.revertReceipt(r)
 	if err != nil {
@@ -471,7 +471,7 @@ func applyByText(r action.Revert) string {
 // checkOwnScope runs before any guard call on preview_revert and
 // request_revert (RS-1, RS-6): the change, the run, or a task the agent ran
 // in (any run with that task id) must be its own. Another agent's id and an
-// unknown one get the same NOT_FOUND; Postgres refuses the same scopes when
+// unknown one get the same NOT_FOUND; the store refuses the same scopes when
 // an agent role calls the guard directly.
 func (rc *Service) checkOwnScope(ctx context.Context, scope action.Scope) error {
 	switch scope.Kind {
@@ -482,10 +482,10 @@ func (rc *Service) checkOwnScope(ctx context.Context, scope action.Scope) error 
 		}
 		return err
 	case revert.ScopeChange:
-		own, err := rc.deps.Store.HasChange(ctx, scope.ID)
+		own, err := rc.store.Records.HasChange(ctx, scope.ID)
 		return ownOr(own, err, notOwnScope(scope))
 	case revert.ScopeTask:
-		own, err := rc.deps.Store.HasTaskRun(ctx, scope.ID)
+		own, err := rc.store.Records.HasTaskRun(ctx, scope.ID)
 		return ownOr(own, err, notOwnTask(scope))
 	}
 	return &guidance.ArgumentError{Message: fmt.Sprintf("unknown revert scope %q", scope.Kind)}
@@ -681,7 +681,7 @@ func widenedHeadline(r action.Revert) string {
 }
 
 // revertHeadline is r's headline for list_pending and the person's
-// notifications, built from what Postgres returned.
+// notifications, built from what the store returned.
 func revertHeadline(r action.Revert) (string, error) {
 	if r.Widened {
 		return widenedHeadline(r), nil

@@ -17,6 +17,7 @@ func newGuide(name string, cmds guidance.Commands, log *slog.Logger, now func() 
 	s := &Service{deps: Deps{
 		Core:   coreDeps{Name: name, Commands: cmds, Log: log, Now: now, Errors: errs},
 		Status: statussvc.Deps{ConnectBudget: connectBudget},
+		Revert: revertDeps{Store: noRevertStore{}},
 	}}
 	s.wire()
 	return s

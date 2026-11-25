@@ -25,7 +25,6 @@ type Core struct {
 
 // Deps is what reverts use.
 type Deps struct {
-	Store Store
 	// ErrNotFound is the ledger's answer for a revert the role did not
 	// prepare.
 	ErrNotFound error

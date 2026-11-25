@@ -18,6 +18,95 @@ import (
 // ErrEmptyProposal is a task revert with no line of the agent's own.
 var ErrEmptyProposal = errors.New("the task has no line of this agent's own to revert")
 
+// RevertReason is why the store refused a revert call, in the revert's own
+// words. The store's adapter maps its own answers to one, per call; the
+// service decides on it. Reasons are internal: they never reach the wire.
+type RevertReason string
+
+const (
+	// RevertNotFound is a revert the calling agent did not prepare, or none.
+	RevertNotFound RevertReason = "NOT_FOUND"
+	// RevertExpiredReason is a revert past its deadline (RevertExpired is
+	// the status the ledger keeps).
+	RevertExpiredReason RevertReason = "EXPIRED"
+	// RevertNothing is a scope, or a signed revert, with no row to restore.
+	RevertNothing RevertReason = "NOTHING_TO_REVERT"
+	// RevertReadsOnly is a scope that changed no row a revert could restore.
+	RevertReadsOnly RevertReason = "READS_ONLY"
+	// RevertRowsChanged is a signed revert whose rows changed since the
+	// preview: nothing was reverted.
+	RevertRowsChanged RevertReason = "ROWS_CHANGED"
+	// RevertPasskeyRevoked is a signature by a passkey no longer registered.
+	RevertPasskeyRevoked RevertReason = "PASSKEY_REVOKED"
+	// RevertAlreadySigned is a signature on a revert already signed or
+	// applied.
+	RevertAlreadySigned RevertReason = "ALREADY_SIGNED"
+	// RevertSignature is any other signature the store did not accept.
+	RevertSignature RevertReason = "SIGNATURE_REFUSED"
+	// RevertNotPending is a revert signed, applied or rejected meanwhile,
+	// for a call that needs it still waiting for the person.
+	RevertNotPending RevertReason = "NOT_PENDING"
+	// RevertWidenRefused is a failed proof or scope token check of a
+	// rescope or of a reject after a widen.
+	RevertWidenRefused RevertReason = "WIDEN_REFUSED"
+	// RevertRevealRefused is a failed reveal proof.
+	RevertRevealRefused RevertReason = "REVEAL_REFUSED"
+	// RevertNotOwnChange, RevertNotOwnRun and RevertNotOwnTask are a scope
+	// that is not the agent's own change, run or task.
+	RevertNotOwnChange RevertReason = "NOT_OWN_CHANGE"
+	RevertNotOwnRun    RevertReason = "NOT_OWN_RUN"
+	RevertNotOwnTask   RevertReason = "NOT_OWN_TASK"
+	// RevertFilter is a filter naming work that is not the agent's.
+	RevertFilter RevertReason = "FILTER"
+	// RevertFilterName is a filter holding a resource name the store
+	// cannot use, whoever's work it would name. Detail is the store's text.
+	RevertFilterName RevertReason = "FILTER_NAME"
+	// RevertFilterCap is a filter over its length limit.
+	RevertFilterCap RevertReason = "FILTER_CAP"
+	// RevertTimedOut is a call the store stopped at its time limit.
+	RevertTimedOut RevertReason = "TIMED_OUT"
+	// RevertInvalid is any other scope the store refused.
+	RevertInvalid RevertReason = "INVALID"
+)
+
+// RevertRefusalError is a revert call the store refused, as the store's adapter
+// maps it. It wraps the adapter's own error, so any other reader of that
+// error still finds it.
+type RevertRefusalError struct {
+	Reason RevertReason
+	// Detail is the store's own text, shown verbatim where the answer
+	// shows what the store said.
+	Detail string
+	// StoreCode is the store's own error code, when it has one.
+	StoreCode string
+	// Err is the store's own error, kept in the chain for its other
+	// readers.
+	Err error
+}
+
+// Error is the store's own text, or the reason and detail without one.
+func (e *RevertRefusalError) Error() string {
+	if e.Err != nil {
+		return e.Err.Error()
+	}
+	if e.Detail == "" {
+		return "revert refused: " + string(e.Reason)
+	}
+	return "revert refused: " + string(e.Reason) + ": " + e.Detail
+}
+
+func (e *RevertRefusalError) Unwrap() error { return e.Err }
+
+// RevertRefusalOf is the revert refusal in err's chain, nil when there is
+// none.
+func RevertRefusalOf(err error) *RevertRefusalError {
+	var rr *RevertRefusalError
+	if !errors.As(err, &rr) {
+		return nil
+	}
+	return rr
+}
+
 // Scope is what a revert covers: one change, run or task of the caller,
 // narrowed to some of its runs (a task only) and tables.
 type Scope struct {
@@ -65,12 +154,13 @@ type PreparedRevert struct {
 	LineCount int
 }
 
-// BatchItem is one line of an applied batch.
+// BatchItem is one line of an applied batch. StoreCode is the store's own
+// error code for a skipped line, when it has one.
 type BatchItem struct {
-	Line     int    `json:"line"`
-	Outcome  string `json:"outcome"`
-	Conflict string `json:"conflict,omitempty"`
-	SQLState string `json:"sqlState,omitempty"`
+	Line      int    `json:"line"`
+	Outcome   string `json:"outcome"`
+	Conflict  string `json:"conflict,omitempty"`
+	StoreCode string `json:"storeCode,omitempty"`
 }
 
 // BatchResult is one applied batch: its number, the plan's status and

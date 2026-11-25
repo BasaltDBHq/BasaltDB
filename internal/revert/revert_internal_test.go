@@ -18,8 +18,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
-// slowPrepare is a revert store whose prepare runs into its time limit,
-// recording the limit it was given; nothing else is called.
+// slowPrepare is a revert store whose prepare runs into its time limit, as
+// the Postgres store answers it, recording the limit it was given; nothing
+// else is called.
 type slowPrepare struct {
 	Store
 	timeout *time.Duration
@@ -27,7 +28,8 @@ type slowPrepare struct {
 
 func (s slowPrepare) PrepareRevert(_ context.Context, _ action.Scope, _ string, timeout time.Duration) (action.PreparedRevert, error) {
 	*s.timeout = timeout
-	return action.PreparedRevert{}, store.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"})
+	canceled := store.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"})
+	return action.PreparedRevert{}, &action.RevertRefusalError{Reason: action.RevertTimedOut, StoreCode: "57014", Err: canceled}
 }
 
 // A prepare too large for an MCP call is QUERY_TIMEOUT, and its message
@@ -48,7 +50,7 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	require.Equal(t, guidance.CodeQueryTimeout, te.Code)
 	require.Equal(t, guidance.ReasonTimeLimit, te.Reason)
 	require.Contains(t, te.Message, "nothing was prepared")
-	require.Contains(t, te.Message, "runs or tables")
+	require.Contains(t, te.Message, "runs or resources")
 	require.NotContains(t, te.Message, "basalt ", "no person command")
 	require.NotContains(t, te.PersonMessage, "basalt ", "the person runs no command")
 	kinds := make([]string, 0, len(te.NextSteps))
@@ -78,7 +80,7 @@ func TestPreviewRevertTimeLimitNamesTheStatementTimeout(t *testing.T) {
 	require.Equal(t, guidance.CodeQueryTimeout, preview.Code)
 	require.Equal(t, guidance.ReasonTimeLimit, preview.Reason)
 	require.Equal(t, "previewing the revert of run "+scope.ID.String()+" took longer than the agent's statement timeout of 5 seconds; "+
-		"nothing was previewed. A narrower revert, with runs or tables, may fit.", preview.Message)
+		"nothing was previewed. A narrower revert, with runs or resources, may fit.", preview.Message)
 	require.NotContains(t, preview.Message, "100 seconds")
 
 	request := testErrors().ToolError(s.prepareTimeout(guidance.ToolRequestRevert, scope, "57014"))
@@ -127,4 +129,53 @@ func TestNotOwnScopeBeforeAnyGuardCall(t *testing.T) {
 		require.Equal(t, reason, testErrors().ToolError(err).Reason)
 	}
 	require.Zero(t, calls, "no guard call for a scope that is not the agent's")
+}
+
+// A store set with a nil port is refused when the service is built: the
+// service reads the store only through the three ports.
+func TestNewRefusesAStoreSetWithANilPort(t *testing.T) {
+	t.Parallel()
+	for name, breakIt := range map[string]func(*StoreSet){
+		"Records": func(s *StoreSet) { s.Records = nil },
+		"Undo":    func(s *StoreSet) { s.Undo = nil },
+		"Proofs":  func(s *StoreSet) { s.Proofs = nil },
+	} {
+		set := storeSet(struct{ Store }{})
+		breakIt(&set)
+		require.PanicsWithValue(t, "revert: store set missing ports: "+name, func() {
+			New(Core{}, set, &Deps{}, nil, nil, nil, nil)
+		}, name)
+	}
+	require.NotPanics(t, func() { New(Core{}, storeSet(struct{ Store }{}), &Deps{}, nil, nil, nil, nil) })
+}
+
+// A store set without a prepare time limit is refused when the service is
+// built: Postgres reads a zero statement timeout as no limit at all.
+func TestNewRefusesAStoreSetWithoutAPrepareLimit(t *testing.T) {
+	t.Parallel()
+	for _, limit := range []time.Duration{0, -time.Second} {
+		set := storeSet(struct{ Store }{})
+		set.Limits.Prepare = limit
+		require.PanicsWithValue(t, "revert: store set has no prepare time limit", func() {
+			New(Core{}, set, &Deps{}, nil, nil, nil, nil)
+		}, limit.String())
+	}
+}
+
+// A rescope past the store's Limits.Prepare names that limit on the
+// person's page: for Postgres's 100 seconds the texts are the ones the
+// contract shows (contract/revert.md), byte for byte.
+func TestRescopeTimeoutNamesThePrepareLimit(t *testing.T) {
+	t.Parallel()
+	var pe *guidance.PageError
+	require.ErrorAs(t, rescopeTimeout(100*time.Second), &pe)
+	require.Equal(t, guidance.CodeQueryTimeout, pe.Code)
+	require.Equal(t, guidance.ReasonTimeLimit, pe.Reason)
+	require.Equal(t, "the scope change took longer than 100 seconds and was stopped; nothing changed", pe.Message)
+	require.Equal(t, "Changing the scope took longer than 100 seconds and was stopped. Nothing changed. "+
+		"Choose fewer agents, runs or tables, or try again.", pe.PersonMessage)
+
+	require.ErrorAs(t, rescopeTimeout(30*time.Second), &pe)
+	require.Contains(t, pe.Message, "longer than 30 seconds")
+	require.Contains(t, pe.PersonMessage, "longer than 30 seconds")
 }

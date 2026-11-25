@@ -10,7 +10,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
 
-// revertReceipt is the receipt of r as Postgres shows it after the
+// revertReceipt is the receipt of r as the store shows it after the
 // person's signature: APPLIED or APPLYING. A widened revert has none: the
 // agent role's view holds no binding of it (RS-5).
 func (rc *Service) revertReceipt(r action.Revert) (linksvc.Receipt, error) {

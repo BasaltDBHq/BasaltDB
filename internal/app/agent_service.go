@@ -36,7 +36,7 @@ type Deps struct {
 	Core     coreDeps
 	Agent    agentDeps
 	Approval approvalsvc.Deps
-	Revert   revertsvc.Deps
+	Revert   revertDeps
 	Delivery linksvc.Deps
 	Status   statussvc.Deps
 	Plugin   pluginsvc.Deps
@@ -135,7 +135,7 @@ func (s *Service) wire() {
 	// given the delivery and revert use cases once they exist.
 	s.approval = approvalsvc.New(s.approvalCore(), &s.deps.Approval, liveChecker{&s.deps.Agent}, runChecker{s.deps.Core.Store}, s)
 	s.delivery = linksvc.New(s.linksCore(), &s.deps.Delivery, s.approval, s.Failure)
-	s.revert = revertsvc.New(s.revertCore(), &s.deps.Revert, s.deps.Core.Store, s.delivery, s.agent, s)
+	s.revert = revertsvc.New(s.revertCore(), s.revertStoreSet(), &s.deps.Revert.Deps, s.deps.Core.Store, s.delivery, s.agent, s)
 	s.approval.SetDelivery(s.delivery)
 	s.approval.SetReverts(s.revert)
 	s.plugin = pluginsvc.NewService(s.pluginCore(), &s.deps.Plugin, s.delivery, s.status, s)
@@ -208,7 +208,9 @@ func (d Deps) missing() []string {
 	need("Approval.Store", d.Approval.Store == nil)
 	need("Approval.ErrNotFound", d.Approval.ErrNotFound == nil)
 	need("Revert.Store", d.Revert.Store == nil)
-	need("Revert.ErrNotFound", d.Revert.ErrNotFound == nil)
+	// The revert service hands the person's proofs to the store, which must
+	// check the signature itself until the engine has a verifier of its own.
+	need("Revert.SignatureCheck", d.Core.Store != nil && !d.Core.Store.Capabilities().InStoreSignatureCheck)
 	need("Revert.AfterAnswer", d.Revert.AfterAnswer == nil)
 	need("Revert.RotateSession", d.Revert.RotateSession == nil)
 	need("Delivery.VaultConflict", d.Delivery.VaultConflict == nil)

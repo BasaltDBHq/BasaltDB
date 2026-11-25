@@ -13,7 +13,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -52,7 +51,7 @@ func (rc *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (Re
 	if err != nil {
 		return RevertPreview{}, err
 	}
-	pv, err := rc.deps.Store.PreviewRevert(ctx, p.Scope, after, p.Limit)
+	pv, err := rc.store.Undo.PreviewRevert(ctx, p.Scope, after, p.Limit)
 	if err != nil {
 		return RevertPreview{}, rc.prepareError(ctx, guidance.ToolPreviewRevert, p.Scope, err)
 	}
@@ -124,8 +123,8 @@ type RevertPlan struct {
 // and one page of its lines, for the agent to apply with ApplyRevertBatch
 // once the person signed it.
 func (rc *Service) RevertPlan(ctx context.Context, p action.RevertLineParams) (RevertPlan, error) {
-	r, err := rc.deps.Store.FindRevert(ctx, p.RevertID)
-	if guidance.Sentinel(err, rc.deps.ErrNotFound) {
+	r, err := rc.store.Records.FindRevert(ctx, p.RevertID)
+	if refusalOf(err).Reason == action.RevertNotFound {
 		return RevertPlan{}, &toolresult.ToolError{Code: guidance.CodeNotFound, Reason: guidance.ReasonRevert, Message: fmt.Sprintf("no revert %s prepared by this agent", p.RevertID)}
 	}
 	if err != nil {
@@ -135,7 +134,7 @@ func (rc *Service) RevertPlan(ctx context.Context, p action.RevertLineParams) (R
 		return RevertPlan{}, &guidance.ArgumentError{Message: fmt.Sprintf(
 			"revert %s has %d lines: the revert page applies it in one call, there is no plan to apply in batches", r.ID, r.Rows+r.Skipped)}
 	}
-	page, err := rc.deps.Store.RevertLines(ctx, p)
+	page, err := rc.store.Records.RevertLines(ctx, p)
 	if err != nil {
 		return RevertPlan{}, err
 	}
@@ -179,9 +178,9 @@ type ApplyRevertBatchParams struct {
 }
 
 // ApplyRevertBatch applies lines of a signed plan this agent prepared.
-// Postgres checks them against the signed plan and re-checks each row.
+// The store checks them against the signed plan and re-checks each row.
 func (rc *Service) ApplyRevertBatch(ctx context.Context, p ApplyRevertBatchParams) (AppliedBatch, error) {
-	res, err := rc.deps.Store.ApplyRevertBatch(ctx, p.RevertID, p.Lines)
+	res, err := rc.store.Undo.ApplyRevertBatch(ctx, p.RevertID, p.Lines)
 	if err != nil {
 		return AppliedBatch{}, err
 	}
@@ -233,11 +232,11 @@ func (rc *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (Re
 	if err := rc.checkOwnScope(ctx, p.Scope); err != nil {
 		return RequestedRevert{}, err
 	}
-	prep, err := rc.deps.Store.PrepareRevert(ctx, p.Scope, p.Intent, guardmodel.MCPPrepareTimeout)
+	prep, err := rc.store.Undo.PrepareRevert(ctx, p.Scope, p.Intent, rc.store.Limits.Prepare)
 	if err != nil {
 		return RequestedRevert{}, rc.prepareError(ctx, guidance.ToolRequestRevert, p.Scope, err)
 	}
-	r, err := rc.deps.Store.FindRevert(ctx, prep.RevertID)
+	r, err := rc.store.Records.FindRevert(ctx, prep.RevertID)
 	if err != nil {
 		return RequestedRevert{}, err
 	}
@@ -315,8 +314,8 @@ type AwaitRevertParams struct {
 // otherwise it reads the revert about every s.deps.Delivery.Poll until it is not PENDING
 // or Wait is over. It never signs: the person signs on the revert page.
 func (rc *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (RequestedRevert, error) {
-	r, err := rc.deps.Store.FindRevert(ctx, p.RevertID)
-	if guidance.Sentinel(err, rc.deps.ErrNotFound) {
+	r, err := rc.store.Records.FindRevert(ctx, p.RevertID)
+	if refusalOf(err).Reason == action.RevertNotFound {
 		return RequestedRevert{}, revertNotFound(p.RevertID)
 	}
 	if err != nil {
@@ -336,7 +335,7 @@ func (rc *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Reques
 	err = rc.delivery.AwaitWhile(ctx, p.Wait, func() bool { return r.Status == action.RevertPending }, func(ctx context.Context) error {
 		// Each poll is one measured read with a budget of its own (as the
 		// waiting write's).
-		next, err := rc.deps.Store.FindRevert(budget.With(ctx), r.ID)
+		next, err := rc.store.Records.FindRevert(budget.With(ctx), r.ID)
 		if err != nil {
 			return err
 		}
@@ -349,31 +348,36 @@ func (rc *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Reques
 	return rc.revertState(ctx, r)
 }
 
-// applyRevertError gives Postgres's refusal of a signature the revert page
+// applyRevertError gives the store's refusal of a signature the revert page
 // relayed: expired meanwhile, rows changed since the preview, or a
 // signature that does not verify.
 func (rc *Service) applyRevertError(ctx context.Context, r action.Revert, err error) error {
-	code, ok := guidance.LedgerCode(err)
-	switch {
-	case ok && code == guardmodel.CodeRevertExpired:
+	refused := refusalOf(err)
+	switch refused.Reason {
+	case action.RevertExpiredReason:
 		return rc.revertExpired(r)
-	case ok && code == guardmodel.CodeNothingToRevert:
+	case action.RevertNothing:
 		return nothingSigned(r)
-	}
-	if !ok || code != guardmodel.CodeRevertInvalid {
+	case action.RevertRowsChanged:
+		return rc.rowsChanged(r, refused.Detail)
+	case action.RevertPasskeyRevoked:
+		return rc.passkeyRevoked(ctx, r)
+	case action.RevertAlreadySigned:
+		return alreadySigned(r)
+	case action.RevertSignature:
+		return rc.badSignature(ctx, r, "the database refused the signature, nothing was reverted: "+refused.Detail)
+	default:
 		return err
 	}
-	// apply_revert's details (basalt_meta version 9) tell the cases apart.
-	detail := guidance.StoreDetail(err)
-	switch {
-	case strings.Contains(detail, "rows changed since"):
-		return rc.rowsChanged(r, detail)
-	case strings.Contains(detail, "passkey revoked"):
-		return rc.passkeyRevoked(ctx, r)
-	case strings.Contains(detail, "already"):
-		return alreadySigned(r)
+}
+
+// refusalOf is the store's refusal in err, the zero refusal (no reason)
+// when err carries none.
+func refusalOf(err error) action.RevertRefusalError {
+	if rr := action.RevertRefusalOf(err); rr != nil {
+		return *rr
 	}
-	return rc.badSignature(ctx, r, "the database refused the signature, nothing was reverted: "+detail)
+	return action.RevertRefusalError{}
 }
 
 // revertState is the answer for r without a new link: what happened, for
@@ -390,7 +394,7 @@ func (rc *Service) revertState(ctx context.Context, r action.Revert) (RequestedR
 	if r.Status != action.RevertApplied && r.Status != action.RevertApplying {
 		return out, nil
 	}
-	// A signed revert: its receipt, from Postgres's record, the line first
+	// A signed revert: its receipt, from the store's record, the line first
 	// (CONTRACT.md, Vault channel, Receipts).
 	receipt, err := rc.revertReceipt(r)
 	if err != nil {
@@ -471,7 +475,7 @@ func applyByText(r action.Revert) string {
 // checkOwnScope runs before any guard call on preview_revert and
 // request_revert (RS-1, RS-6): the change, the run, or a task the agent ran
 // in (any run with that task id) must be its own. Another agent's id and an
-// unknown one get the same NOT_FOUND; Postgres refuses the same scopes when
+// unknown one get the same NOT_FOUND; the store refuses the same scopes when
 // an agent role calls the guard directly.
 func (rc *Service) checkOwnScope(ctx context.Context, scope action.Scope) error {
 	switch scope.Kind {
@@ -482,10 +486,10 @@ func (rc *Service) checkOwnScope(ctx context.Context, scope action.Scope) error 
 		}
 		return err
 	case revert.ScopeChange:
-		own, err := rc.deps.Store.HasChange(ctx, scope.ID)
+		own, err := rc.store.Records.HasChange(ctx, scope.ID)
 		return ownOr(own, err, notOwnScope(scope))
 	case revert.ScopeTask:
-		own, err := rc.deps.Store.HasTaskRun(ctx, scope.ID)
+		own, err := rc.store.Records.HasTaskRun(ctx, scope.ID)
 		return ownOr(own, err, notOwnTask(scope))
 	}
 	return &guidance.ArgumentError{Message: fmt.Sprintf("unknown revert scope %q", scope.Kind)}
@@ -538,40 +542,49 @@ func notOwnTask(scope action.Scope) error {
 	}
 }
 
-// scopeRefused answers a scope the guard refused (BS011, CONTRACT.md,
-// Guard errors): another agent's or an unknown change, run or task is
-// NOT_FOUND, alike; a descriptor the engine built badly is
-// INVALID_ARGUMENT with the guard's explanation. nil when err is not a
-// scope refusal.
-func scopeRefused(scope action.Scope, err error) error {
-	detail, hint, ok := guidance.ScopeRefusal(err)
-	if !ok {
+// scopeRefused answers a scope the store refused (CONTRACT.md, Guard
+// errors): another agent's or an unknown change, run or task is NOT_FOUND,
+// alike; a descriptor the engine built badly is INVALID_ARGUMENT with the
+// store's explanation. nil when refused is not about the scope.
+func scopeRefused(scope action.Scope, refused action.RevertRefusalError) error {
+	switch refused.Reason {
+	case action.RevertNotOwnChange, action.RevertNotOwnRun:
+		return notOwnScope(scope)
+	case action.RevertNotOwnTask:
+		return notOwnTask(scope)
+	case action.RevertFilter:
+		return scopeFilterRefused(refused.Detail)
+	case action.RevertFilterName:
+		return scopeFilterInvalid(refused.Detail)
+	case action.RevertFilterCap:
+		return ScopeFilterCapped()
+	case action.RevertInvalid:
+		return &guidance.ArgumentError{Message: "the revert scope was refused: " + refused.Detail}
+	default:
 		return nil
 	}
-	switch detail {
-	case guardmodel.ScopeNotOwnChange, guardmodel.ScopeNotOwnRun:
-		return notOwnScope(scope)
-	case guardmodel.ScopeNotOwnTask:
-		return notOwnTask(scope)
-	case guardmodel.ScopeFilter:
-		return scopeFilterRefused(hint)
-	case guardmodel.ScopeFilterCap:
-		return ScopeFilterCapped()
-	}
-	return &guidance.ArgumentError{Message: "the revert scope was refused: " + hint}
 }
 
-// scopeFilterRefused answers runs or tables outside the agent's own work.
-// refused is the guard's list of refused entries, one fixed text per kind,
-// so another agent's run or table reads exactly like an unknown one.
+// scopeFilterRefused answers runs or resources outside the agent's own
+// work. refused is the store's list of refused entries, one fixed text per
+// kind, so another agent's run or resource reads exactly like an unknown
+// one.
 func scopeFilterRefused(refused string) error {
 	return &guidance.ArgumentError{Reason: guidance.ReasonScopeFilter, Message: "the revert filter names work that is not yours, nothing was " +
-		"prepared: " + refused + ". runs lists only your own runs in the task, and tables only tables you wrote in this " +
+		"prepared: " + refused + ". runs lists only your own runs in the task, and resources only resources you wrote in this " +
 		"scope; run_history shows them"}
 }
 
+// scopeFilterInvalid answers a resource name the store cannot use: the
+// store's own text, never "not yours", since the name says nothing of
+// whose work it is.
+func scopeFilterInvalid(detail string) error {
+	return &guidance.ArgumentError{Reason: guidance.ReasonScopeFilter, Message: "the revert filter is not valid, nothing was " +
+		"prepared: " + detail}
+}
+
 func ScopeFilterCapped() error {
-	return &guidance.ArgumentError{Reason: guidance.ReasonScopeFilterCap, Message: fmt.Sprintf("runs and tables each list at most %d "+
+	return &guidance.ArgumentError{Reason: guidance.ReasonScopeFilterCap, Message: fmt.Sprintf("runs and resources each list at most %d "+
 		"entries, nothing was prepared. Leave a filter out for all of your work in the scope: the person can narrow it on the "+
 		"signing page", revert.MaxFilter)}
 }
@@ -580,23 +593,24 @@ func ScopeFilterCapped() error {
 // can do when nothing can be reverted, or when the prepare is too large for
 // an MCP call and their terminal is the better path.
 func (rc *Service) prepareError(ctx context.Context, tool string, scope action.Scope, err error) error {
-	if refused := scopeRefused(scope, err); refused != nil {
-		return refused
+	refused := refusalOf(err)
+	if out := scopeRefused(scope, refused); out != nil {
+		return out
 	}
 	if errors.Is(err, action.ErrEmptyProposal) {
 		return rc.nothingToRevertError(ctx, tool, scope, guidance.ReasonReadsOnly, "this agent changed no rows in it that a revert could restore")
 	}
-	if code, ok := guidance.LedgerCode(err); ok && code == guardmodel.CodeNothingToRevert {
-		return rc.nothingToRevert(ctx, tool, scope, err)
+	if refused.Reason == action.RevertNothing || refused.Reason == action.RevertReadsOnly {
+		return rc.nothingToRevert(ctx, tool, scope, refused)
 	}
 	if ctx.Err() != nil {
 		// The client canceled the call: not the prepare's time limit.
 		return fmt.Errorf("prepare revert: %w", ctx.Err())
 	}
-	if !guidance.TimedOut(err) {
+	if refused.Reason != action.RevertTimedOut {
 		return err
 	}
-	return rc.prepareTimeout(tool, scope, guidance.StoreError(err).SQLState)
+	return rc.prepareTimeout(tool, scope, refused.StoreCode)
 }
 
 // revertLink is what the agent hands the person to sign a prepared revert:
@@ -681,7 +695,7 @@ func widenedHeadline(r action.Revert) string {
 }
 
 // revertHeadline is r's headline for list_pending and the person's
-// notifications, built from what Postgres returned.
+// notifications, built from what the store returned.
 func revertHeadline(r action.Revert) (string, error) {
 	if r.Widened {
 		return widenedHeadline(r), nil

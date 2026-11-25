@@ -33,16 +33,15 @@
         },
         "description": "Only with taskId, 1 to 20 of your own runs with that task id; the preview holds only their lines. Absent: all your runs in the task."
       },
-      "tables": {
+      "resources": {
         "type": "array",
         "minItems": 1,
         "maxItems": 20,
         "uniqueItems": true,
         "items": {
-          "type": "string",
-          "pattern": "^[^.\\s;]+\\.[^.\\s;]+$"
+          "type": "string"
         },
-        "description": "1 to 20 schema.table names, each a table you wrote in this scope; the preview holds only their lines. Absent: every table."
+        "description": "1 to 20 resource names, each one you wrote in this scope (Postgres: schema.table names); the preview holds only their lines. Absent: every resource."
       },
       "limit": {
         "type": "integer",
@@ -80,7 +79,7 @@
       },
       "select": {
         "$ref": "../revert/revert-select.schema.json",
-        "description": "Planned (revert scope, RS-3): the scope descriptor the preview covers, as Postgres normalized it: agents is exactly [your role], runs and tables your filters or null."
+        "description": "Planned (revert scope, RS-3): the scope descriptor the preview covers, as Postgres normalized it: agents is exactly [your role]; its runs and tables keys hold your runs and resources filters, or null."
       },
       "rows": {
         "type": "integer",
@@ -100,7 +99,7 @@
           "required": [
             "action",
             "op",
-            "table",
+            "resource",
             "cascaded",
             "changeIds"
           ],
@@ -121,7 +120,7 @@
               ],
               "description": "The inverse write the revert would run."
             },
-            "table": {
+            "resource": {
               "type": "string"
             },
             "key": {
@@ -156,7 +155,7 @@
               ],
               "description": "Set on SKIP lines only."
             },
-            "sqlState": {
+            "storeCode": {
               "type": "string",
               "description": "Set on CONSTRAINT conflicts only."
             },

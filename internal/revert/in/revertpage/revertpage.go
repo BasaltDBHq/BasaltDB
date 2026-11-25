@@ -93,7 +93,7 @@ func (p revertPage) postRevert(w http.ResponseWriter, r *http.Request) {
 // postScope narrows or widens a revert's scope for the page (CONTRACT.md,
 // Local pages, POST …/scope). The body is decoded strictly: an unknown key
 // (the reserved store included) or a proof without its new secret is
-// refused on its shape, before anything is looked up. Postgres checks the
+// refused on its shape, before anything is looked up. The store checks the
 // rest in the contract's order.
 func (p revertPage) postScope(w http.ResponseWriter, r *http.Request) {
 	id, ok := p.s.LinkedID(w, r, pageserver.RevertParam)
@@ -127,7 +127,7 @@ func (p revertPage) postScope(w http.ResponseWriter, r *http.Request) {
 
 // postReject rejects a revert for the page (CONTRACT.md, Local pages, POST
 // …/reject). The body is decoded strictly, { "note"? }; the note's length is
-// the service's to check. Postgres decides the rest.
+// the service's to check. The store decides the rest.
 func (p revertPage) postReject(w http.ResponseWriter, r *http.Request) {
 	id, ok := p.s.LinkedID(w, r, pageserver.RevertParam)
 	if !ok {

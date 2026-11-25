@@ -234,7 +234,7 @@ func sizeLimitText(tool, otherwise string) string {
 	case guidance.ToolRunHistory, guidance.ToolListPending, guidance.ToolPreviewRevert, guidance.ToolRevertPlan:
 		return "Call it again with a smaller limit (half of it, for example) so the result stays under 16 MiB."
 	case guidance.ToolRequestRevert:
-		return "Request a narrower revert, with runs or tables, so its lines stay under 16 MiB."
+		return "Request a narrower revert, with runs or resources, so its lines stay under 16 MiB."
 	}
 	return otherwise
 }

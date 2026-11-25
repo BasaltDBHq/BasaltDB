@@ -5,12 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -21,12 +17,12 @@ import (
 
 // A request made from the steps keeps the filters the person was shown:
 // the preview's REVISE_CALL, and requesting an expired or changed revert
-// again, carry runs and tables.
+// again, carry runs and resources.
 func TestRevertStepsKeepTheFilters(t *testing.T) {
 	t.Parallel()
 	run := uuid.MustParse(caseRunID)
 	scope := action.Scope{Kind: revert.ScopeTask, ID: run, Runs: []uuid.UUID{run}, Tables: []string{"public.leads", "public.lead_owner"}}
-	require.Equal(t, map[string]any{"taskId": caseRunID, "runs": []string{caseRunID}, "tables": []string{"public.leads", "public.lead_owner"}},
+	require.Equal(t, map[string]any{"taskId": caseRunID, "runs": []string{caseRunID}, "resources": []string{"public.leads", "public.lead_owner"}},
 		scopeArgs(scope))
 	require.Equal(t, map[string]any{"runId": caseRunID}, scopeArgs(action.Scope{Kind: revert.ScopeRun, ID: run}))
 
@@ -38,7 +34,7 @@ func TestRevertStepsKeepTheFilters(t *testing.T) {
 
 	r := revertOf(t, "Undo", []string{changedAfterLine}, false)
 	r.BindingText = strings.Replace(r.BindingText, `"tables": null`, `"tables": ["public.lead_owner"]`, 1)
-	want := map[string]any{"runId": caseRunID, "tables": []string{"public.lead_owner"}}
+	want := map[string]any{"runId": caseRunID, "resources": []string{"public.lead_owner"}}
 	require.Equal(t, want, expiredSteps(r)[1].Arguments)
 	var te *toolresult.ToolError
 	require.True(t, errors.As(newService(t, "linux", "").rowsChanged(r, "rows changed since"), &te))
@@ -54,19 +50,27 @@ func TestRevertStepsKeepTheFilters(t *testing.T) {
 func TestScopeRefusedGivesTheFilterReasons(t *testing.T) {
 	t.Parallel()
 	scope := action.Scope{Kind: revert.ScopeRun, ID: uuid.MustParse(caseRunID)}
-	refuse := func(detail, hint string) error {
-		return scopeRefused(scope, store.MapError(&pgconn.PgError{Code: "BS011", Message: "SCOPE_REFUSED", Detail: detail, Hint: hint}))
+	refuse := func(reason action.RevertReason, detail string) error {
+		return scopeRefused(scope, action.RevertRefusalError{Reason: reason, Detail: detail})
 	}
 
 	var ae *guidance.ArgumentError
-	require.ErrorAs(t, refuse(guardmodel.ScopeFilter, "public.ghost has no change of yours in this scope"), &ae)
+	require.ErrorAs(t, refuse(action.RevertFilter, "public.ghost has no change of yours in this scope"), &ae)
 	require.Equal(t, guidance.ReasonScopeFilter, ae.Reason)
-	require.Contains(t, ae.Message, "public.ghost has no change of yours in this scope")
+	require.Equal(t, "the revert filter names work that is not yours, nothing was prepared: public.ghost has no change of yours "+
+		"in this scope. runs lists only your own runs in the task, and resources only resources you wrote in this scope; run_history "+
+		"shows them", ae.Message)
 
-	require.ErrorAs(t, refuse(guardmodel.ScopeFilterCap, ""), &ae)
+	// A name the store cannot use says nothing of whose work it names: the
+	// store's text, without "not yours".
+	require.ErrorAs(t, refuse(action.RevertFilterName, "tables are schema.table names"), &ae)
+	require.Equal(t, guidance.ReasonScopeFilter, ae.Reason)
+	require.Equal(t, "the revert filter is not valid, nothing was prepared: tables are schema.table names", ae.Message)
+
+	require.ErrorAs(t, refuse(action.RevertFilterCap, ""), &ae)
 	require.Equal(t, guidance.ReasonScopeFilterCap, ae.Reason)
 
 	var te *toolresult.ToolError
-	require.ErrorAs(t, refuse(guardmodel.ScopeNotOwnRun, ""), &te)
+	require.ErrorAs(t, refuse(action.RevertNotOwnRun, ""), &te)
 	require.Equal(t, guidance.CodeNotFound, te.Code)
 }

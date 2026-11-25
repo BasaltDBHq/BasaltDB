@@ -150,7 +150,7 @@ func collectRevertLines(ctx context.Context, q guard.Querier, p action.RevertLin
 	}
 	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (action.RevertLine, error) {
 		var l action.RevertLine
-		err := row.Scan(&l.No, &l.Text, &l.Outcome, &l.Conflict, &l.SQLState, &l.Batch)
+		err := row.Scan(&l.No, &l.Text, &l.Outcome, &l.Conflict, &l.StoreCode, &l.Batch)
 		return l, err
 	})
 	if err != nil {

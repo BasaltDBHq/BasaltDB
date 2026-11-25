@@ -76,11 +76,11 @@ func plainFunc(f func() error) func(*testing.T, *testService) error {
 	return func(*testing.T, *testService) error { return f() }
 }
 
-func nothingToRevert(tool string, lines []string, detail string, by uuid.UUID) func(*testing.T, *testService) error {
+func nothingToRevert(tool string, lines []string, reason action.RevertReason, detail string, by uuid.UUID) func(*testing.T, *testService) error {
 	return func(t *testing.T, s *testService) error {
-		s.deps.Store = catalogReverts{lines: lines, by: by}
+		svc := s.with(withStore(catalogReverts{lines: lines, by: by}))
 		scope := action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}
-		return s.nothingToRevert(context.Background(), tool, scope, store.MapError(&pgconn.PgError{Code: "BS009", Message: "NOTHING_TO_REVERT", Detail: detail}))
+		return svc.nothingToRevert(context.Background(), tool, scope, action.RevertRefusalError{Reason: reason, Detail: detail})
 	}
 }
 
@@ -162,17 +162,17 @@ func catalogCases() map[string]catalogCase {
 		stepcatalogtest.CaseKey("NOTHING_TO_REVERT", "READS_ONLY", ""): {
 			"request_revert",
 			map[string]any{"runId": caseRunID, "intent": "Undo"},
-			nothingToRevert("request_revert", nil, "the run changed no rows", uuid.Nil),
+			nothingToRevert("request_revert", nil, action.RevertReadsOnly, "the run changed no rows", uuid.Nil),
 		},
 		stepcatalogtest.CaseKey("NOTHING_TO_REVERT", "ALL_CHANGED_BY_PEOPLE", ""): {
 			"preview_revert",
 			map[string]any{"runId": caseRunID},
-			nothingToRevert("preview_revert", []string{changedAfterLine}, "every line skipped", uuid.Nil),
+			nothingToRevert("preview_revert", []string{changedAfterLine}, action.RevertNothing, "every line skipped", uuid.Nil),
 		},
 		stepcatalogtest.CaseKey("NOTHING_TO_REVERT", "ALREADY_REVERTED", ""): {
 			"preview_revert",
 			map[string]any{"runId": caseRunID},
-			nothingToRevert("preview_revert", []string{alreadyRevertedLine}, "every line skipped", uuid.MustParse(caseChangeID)),
+			nothingToRevert("preview_revert", []string{alreadyRevertedLine}, action.RevertNothing, "every line skipped", uuid.MustParse(caseChangeID)),
 		},
 		stepcatalogtest.CaseKey("NOT_FOUND", "REVERT", ""): {"request_revert", revertArgs, plainFunc(func() error { return revertNotFound(uuid.MustParse(caseRevertID)) })},
 		stepcatalogtest.CaseKey("NOT_FOUND", "TASK", ""): {

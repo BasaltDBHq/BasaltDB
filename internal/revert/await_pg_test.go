@@ -11,12 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	corerevert "github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
@@ -52,7 +52,7 @@ func TestRequestRevertWaitCancelled(t *testing.T) {
 	t.Cleanup(pool.Close)
 	finds := &countedFinds{Store: postgres.NewStore(resultsize.Pool(pool), sqlguard.DefaultLimits(), time.Now)}
 	delivery := linksvc.New(linksvc.Core{Name: "bot", Log: slog.New(slog.DiscardHandler), Now: time.Now}, &linksvc.Deps{Poll: 10 * time.Millisecond}, nil, nil)
-	rc := revert.New(revert.Core{Name: "bot", Log: slog.New(slog.DiscardHandler), Now: time.Now}, &revert.Deps{Store: finds, ErrNotFound: ledger.ErrRevertNotFound}, nil, delivery, nil, nil)
+	rc := revert.New(revert.Core{Name: "bot", Log: slog.New(slog.DiscardHandler), Now: time.Now}, revert.StoreSet{Limits: revert.Limits{Prepare: guardmodel.MCPPrepareTimeout}, Records: finds, Undo: finds, Proofs: finds}, &revert.Deps{}, nil, delivery, nil, nil)
 
 	waitCtx, cancel := context.WithCancel(ctx)
 	go func() {

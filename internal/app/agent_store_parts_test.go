@@ -51,7 +51,9 @@ type parts struct {
 
 func (parts) Kind() action.StoreKind { return action.StorePostgres }
 
-func (parts) Capabilities() action.Capabilities { return action.Capabilities{} }
+func (parts) Capabilities() action.Capabilities {
+	return action.Capabilities{InStoreSignatureCheck: true}
+}
 
 // RevealNonce asks the approvals part for an approval's nonce and the
 // reverts part for a revert's.

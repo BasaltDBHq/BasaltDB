@@ -156,7 +156,7 @@ func (dc *Service) tooLargeText(what string, cost int64, expires time.Time, isRe
 func tooLargeAsk(isRevert bool) string {
 	if isRevert {
 		return "Show personMessage: no link can carry this revert. Ask them to change the setup and tell you before opening it, " +
-			"or for a narrower one: request_revert with runs or tables."
+			"or for a narrower one: request_revert with runs or resources."
 	}
 	return "Show personMessage: no link this engine has can carry this held write. Ask the person to change the setup " +
 		"as it says and to tell you when it is done."

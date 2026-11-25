@@ -7,7 +7,6 @@ package revertmcp
 import (
 	"context"
 	"encoding/json"
-	"regexp"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
@@ -49,48 +48,40 @@ type previewRevertArgs struct {
 
 // scopeIDs are the scope arguments preview_revert and request_revert share:
 // exactly one of the ids names the change, run or task to revert, and the
-// optional runs and tables filters narrow it to some of the agent's own
-// work in it (RS-1).
+// optional runs and resources filters narrow it to some of the agent's own
+// work in it (RS-1). resources are the store's names, the scope's Tables.
 type scopeIDs struct {
-	ChangeID string   `json:"changeId" validate:"omitempty,uuid"`
-	RunID    string   `json:"runId" validate:"omitempty,uuid"`
-	TaskID   string   `json:"taskId" validate:"omitempty,uuid"`
-	Runs     []string `json:"runs" validate:"omitempty,unique,dive,uuid"`
-	Tables   []string `json:"tables" validate:"omitempty,unique"`
+	ChangeID  string   `json:"changeId" validate:"omitempty,uuid"`
+	RunID     string   `json:"runId" validate:"omitempty,uuid"`
+	TaskID    string   `json:"taskId" validate:"omitempty,uuid"`
+	Runs      []string `json:"runs" validate:"omitempty,unique,dive,uuid"`
+	Resources []string `json:"resources" validate:"omitempty,unique"`
 }
 
-// filterTable is a schema.table name as the tools' tables filter takes it:
-// no whitespace, no semicolon, one dot.
-var filterTable = regexp.MustCompile(`^[^.\s;]+\.[^.\s;]+$`)
+// hasFilters reports whether the arguments carry a runs or resources filter.
+func (a scopeIDs) hasFilters() bool { return a.Runs != nil || a.Resources != nil }
 
-// hasFilters reports whether the arguments carry a runs or tables filter.
-func (a scopeIDs) hasFilters() bool { return a.Runs != nil || a.Tables != nil }
-
-// filtered narrows scope by the runs and tables filters. It refuses what
+// filtered narrows scope by the runs and resources filters. It refuses what
 // the arguments alone show is outside the agent's own work or over the cap;
-// whether each run and table is the agent's own Postgres checks, and the
-// engine maps its refusal (scopeRefused).
+// the resource names pass through as the agent wrote them. Whether each name
+// is well formed, and whether each run and resource is the agent's own, the
+// store checks, and the engine maps its refusal (scopeRefused).
 func (a scopeIDs) filtered(scope action.Scope) (action.Scope, error) {
 	if a.Runs != nil && scope.Kind != revert.ScopeTask {
 		return action.Scope{}, &guidance.ArgumentError{Reason: guidance.ReasonScopeFilter, Message: "invalid arguments: runs goes only with " +
-			"taskId, nothing was prepared: a change or a run is one run already. Narrow it with tables"}
+			"taskId, nothing was prepared: a change or a run is one run already. Narrow it with resources"}
 	}
-	if len(a.Runs) > revert.MaxFilter || len(a.Tables) > revert.MaxFilter {
+	if len(a.Runs) > revert.MaxFilter || len(a.Resources) > revert.MaxFilter {
 		return action.Scope{}, revertsvc.ScopeFilterCapped()
 	}
-	if (a.Runs != nil && len(a.Runs) == 0) || (a.Tables != nil && len(a.Tables) == 0) {
-		return action.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: runs and tables list at least one entry; leave " +
+	if (a.Runs != nil && len(a.Runs) == 0) || (a.Resources != nil && len(a.Resources) == 0) {
+		return action.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: runs and resources list at least one entry; leave " +
 			"a filter out for all of your work in the scope"}
-	}
-	for _, t := range a.Tables {
-		if !filterTable.MatchString(t) {
-			return action.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: tables are schema.table names, such as public.leads"}
-		}
 	}
 	for _, id := range a.Runs {
 		scope.Runs = append(scope.Runs, uuid.MustParse(id))
 	}
-	scope.Tables = a.Tables
+	scope.Tables = a.Resources
 	return scope, nil
 }
 
@@ -133,12 +124,12 @@ type revertPreviewResult struct {
 type revertLineDTO struct {
 	Action    string          `json:"action"`
 	Op        string          `json:"op"`
-	Table     string          `json:"table"`
+	Resource  string          `json:"resource"`
 	Key       json.RawMessage `json:"key,omitempty"`
 	Now       json.RawMessage `json:"now,omitempty"`
 	Set       json.RawMessage `json:"set,omitempty"`
 	Conflict  string          `json:"conflict,omitempty"`
-	SQLState  string          `json:"sqlState,omitempty"`
+	StoreCode string          `json:"storeCode,omitempty"`
 	Cascaded  bool            `json:"cascaded"`
 	Redacted  bool            `json:"redacted,omitempty"`
 	RowHash   string          `json:"rowHash,omitempty"`
@@ -151,15 +142,17 @@ type revertLineDTO struct {
 
 func revertLineFromDomain(l revert.Line) revertLineDTO {
 	d := revertLineDTO{
-		Action: l.Action, Op: l.Op, Table: l.Table, Key: l.Key, Now: l.Now, Set: l.Set,
+		Action: l.Action, Op: l.Op, Resource: l.Table, Key: l.Key, Now: l.Now, Set: l.Set,
 		Cascaded: l.Cascaded, Redacted: l.Redacted, RowHash: l.RowHash, ChangeIDs: make([]string, 0, len(l.ChangeIDs)),
 		LargeValues: l.LargeValues, MoreChangeIDs: l.MoreChangeIDs,
 	}
 	if l.Conflict != nil {
 		d.Conflict = *l.Conflict
 	}
+	// The signed line names the store's code sqlState; the agent reads it
+	// as storeCode, and the signed text is never changed.
 	if l.SQLState != nil {
-		d.SQLState = *l.SQLState
+		d.StoreCode = *l.SQLState
 	}
 	for _, id := range l.ChangeIDs {
 		d.ChangeIDs = append(d.ChangeIDs, id.String())
@@ -233,7 +226,7 @@ func (a requestRevertArgs) requestScope() (action.Scope, error) {
 func (a requestRevertArgs) awaitParams() (revertsvc.AwaitRevertParams, error) {
 	if len(a.named()) > 0 || a.hasFilters() || a.Intent != "" {
 		return revertsvc.AwaitRevertParams{}, &guidance.ArgumentError{Message: "invalid arguments: revertId takes no changeId, runId, taskId, runs, " +
-			"tables or intent; the revert already has them"}
+			"resources or intent; the revert already has them"}
 	}
 	reissue := a.ReissueLink != nil && *a.ReissueLink
 	if a.WaitForSignature != nil && reissue {
@@ -382,12 +375,12 @@ type revertPlanResult struct {
 // revertPlanItemDTO is one line of a batched plan: its number, what
 // happened to it, and the signed line as an object.
 type revertPlanItemDTO struct {
-	Line     int            `json:"line"`
-	Outcome  string         `json:"outcome"`
-	Batch    *int           `json:"batch,omitempty"`
-	Conflict string         `json:"conflict,omitempty"`
-	SQLState string         `json:"sqlState,omitempty"`
-	Plan     *revertLineDTO `json:"plan,omitempty"`
+	Line      int            `json:"line"`
+	Outcome   string         `json:"outcome"`
+	Batch     *int           `json:"batch,omitempty"`
+	Conflict  string         `json:"conflict,omitempty"`
+	StoreCode string         `json:"storeCode,omitempty"`
+	Plan      *revertLineDTO `json:"plan,omitempty"`
 }
 
 func revertPlanFromDomain(p revertsvc.RevertPlan) revertPlanResult {
@@ -407,7 +400,7 @@ func revertPlanFromDomain(p revertsvc.RevertPlan) revertPlanResult {
 		out.Widened, out.Scope, out.ScopeID, out.RevertURL, out.RequestFile, out.Links = true, "", "", "", nil, nil
 	}
 	for _, l := range p.Page.Items {
-		item := revertPlanItemDTO{Line: l.No, Outcome: l.Outcome, Batch: l.Batch, Conflict: l.Conflict, SQLState: l.SQLState}
+		item := revertPlanItemDTO{Line: l.No, Outcome: l.Outcome, Batch: l.Batch, Conflict: l.Conflict, StoreCode: l.StoreCode}
 		if l.Plan != nil {
 			d := revertLineFromDomain(*l.Plan)
 			item.Plan = &d

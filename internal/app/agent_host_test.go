@@ -34,7 +34,6 @@ func testDeps() Deps {
 	d.Agent.Record = func(ch action.Change, rows []action.RowChange) any { return ledger.RecordFromDomain(ch, rows) }
 	d.Approval.ErrNotFound = ledger.ErrApprovalNotFound
 	d.Approval.SortSpec = ledger.ApprovalSortSpec
-	d.Revert.ErrNotFound = ledger.ErrRevertNotFound
 	d.Revert.AfterAnswer = vault.AfterAnswer
 	d.Revert.RotateSession = vault.RotateSession
 	d.Delivery.VaultConflict = vault.IsConflict
@@ -118,7 +117,7 @@ func TestNewServiceRequiresEveryAdapterPort(t *testing.T) {
 	missing := Deps{}.missing()
 	for _, name := range []string{
 		"Core.ServiceManager", "Core.Errors.InvalidParams", "Core.Errors.InvalidIntent", "Core.Errors.RowTooLarge",
-		"Agent.Record", "Approval.ErrNotFound", "Revert.ErrNotFound", "Revert.AfterAnswer", "Revert.RotateSession",
+		"Agent.Record", "Approval.ErrNotFound", "Revert.AfterAnswer", "Revert.RotateSession",
 		"Delivery.VaultConflict", "Delivery.ErrVaultNotConnected", "Status.CrashReports",
 		"Status.LatestGuardVersion", "Status.UpdateMessage", "Status.StartHoldOffUntil",
 	} {

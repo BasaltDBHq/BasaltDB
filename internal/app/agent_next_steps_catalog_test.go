@@ -226,12 +226,12 @@ func catalogCases() map[string]catalogCase {
 
 		stepcatalogtest.CaseKey("INVALID_ARGUMENT", "SCOPE_FILTER", ""): {
 			"preview_revert",
-			map[string]any{"runId": caseRunID, "tables": []any{"public.ghost"}},
-			plain(&guidance.ArgumentError{Reason: guidance.ReasonScopeFilter, Message: "the revert filter names work that is not yours, nothing was prepared: public.ghost has no change of yours in this scope. runs lists only your own runs in the task, and tables only tables you wrote in this scope; run_history shows them"}),
+			map[string]any{"runId": caseRunID, "resources": []any{"public.ghost"}},
+			plain(&guidance.ArgumentError{Reason: guidance.ReasonScopeFilter, Message: "the revert filter names work that is not yours, nothing was prepared: public.ghost has no change of yours in this scope. runs lists only your own runs in the task, and resources only resources you wrote in this scope; run_history shows them"}),
 		},
 		stepcatalogtest.CaseKey("INVALID_ARGUMENT", "SCOPE_FILTER_CAP", ""): {
 			"request_revert",
-			map[string]any{"taskId": caseRunID, "intent": "Undo", "tables": []any{"public.leads"}},
+			map[string]any{"taskId": caseRunID, "intent": "Undo", "resources": []any{"public.leads"}},
 			plainFunc(revertsvc.ScopeFilterCapped),
 		},
 		stepcatalogtest.CaseKey("INVALID_ARGUMENT", "ADMIN_CREDENTIAL", ""): {"query", queryArgs0, plain(mcpserver.AdminCredentialError())},

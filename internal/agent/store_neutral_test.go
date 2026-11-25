@@ -500,6 +500,7 @@ func TestDocumentStoreRunsTheAgentThroughThePorts(t *testing.T) {
 	require.ErrorIs(t, err, errDocWrongTool)
 	require.Len(t, store.refusals, 1)
 	require.Equal(t, find.Text, store.refusals[0].Statement)
+	require.Empty(t, store.refusals[0].Resources, "the language named no statement it refused")
 
 	// write: one item, applied at once.
 	one := agentstore.Request{Text: `{"update":"customers","filter":{"_id":"c01"},"set":{"plan":"pro"}}`}

@@ -60,7 +60,7 @@ func (wc *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, erro
 	stmt, err := wc.store.Language.Check(p.Request, action.ToolWrite)
 	op := stmt.Op
 	if err != nil {
-		return WriteOutcome{}, wc.refused(ctx, in, op, p.Request, start, err)
+		return WriteOutcome{}, wc.refused(ctx, in, stmt, p.Request, start, err)
 	}
 	res, err := wc.store.Data.Write(ctx, in, p.Request, stmt)
 	if errors.Is(err, action.ErrApprovalRequired) {
@@ -88,7 +88,7 @@ func (wc *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, erro
 		return out, waitErr
 	}
 	if err != nil {
-		return WriteOutcome{}, wc.refused(ctx, in, op, p.Request, start, err)
+		return WriteOutcome{}, wc.refused(ctx, in, stmt, p.Request, start, err)
 	}
 	return WriteOutcome{WriteResult: res, RunID: run.ID, Op: op, Warnings: wc.rlsWarnings(ctx, stmt.Tables, res.Rows)}, nil
 }

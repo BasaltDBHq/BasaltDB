@@ -42,7 +42,7 @@ func (s *Store) holdColumns(ctx context.Context, sql string, params []any) ([]st
 // statementOf is the checked statement as the service takes it: the row
 // sources a recorded read versions travel as its opaque handle.
 func statementOf(stmt sqlguard.Statement) action.Statement {
-	return action.Statement{Op: action.Op(stmt.Op), Tables: stmt.Tables, ParamCount: stmt.ParamCount, Handle: stmt.RowSources}
+	return action.Statement{Op: action.Op(stmt.Op), Tables: stmt.Tables, Target: stmt.Target, ParamCount: stmt.ParamCount, Handle: stmt.RowSources}
 }
 
 // refusalOf is a policy refusal as an *action.RefusalError with the

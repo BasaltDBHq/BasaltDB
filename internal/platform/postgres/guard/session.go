@@ -136,6 +136,10 @@ type Refusal struct {
 	Code      string
 	Reason    string
 	Duration  time.Duration
+	// Resources are the relations the statement names, as written; none
+	// when it did not parse. They are recorded qualified
+	// (qualifiedResources).
+	Resources []string
 }
 
 // RecordRefusal writes a REFUSED change record and ledger row. Call it in a
@@ -144,15 +148,19 @@ type Refusal struct {
 // text field and parameter (storable), so a NUL an agent sends cannot keep
 // its refused attempt out of the ledger. Op is Basalt's (READ for a read,
 // CONTRACT.md, Stores, Operations); the guard records SELECT as the verb.
+// The resources are qualified in q's session, as the agent's statement
+// would have resolved them. The agent service records the refusal once
+// more without resources when a call with them fails.
 func RecordRefusal(ctx context.Context, q Querier, r Refusal) (uuid.UUID, error) {
 	params, err := paramsJSON(r.Params)
 	if err != nil {
 		return uuid.Nil, err
 	}
 	return returnUUID(ctx, q, sq.Expr(
-		"basalt_meta.record_refusal(?::uuid, ?::uuid, ?, ?, ?, nullif(?::jsonb, 'null'), ?, ?, ?::int)",
+		"basalt_meta.record_refusal(?::uuid, ?::uuid, ?, ?, ?, nullif(?::jsonb, 'null'), ?, ?, ?::int, ?)",
 		nullUUID(r.Intent.RunID), nullUUID(r.Intent.TaskID), storableText(r.Intent.Text), storableText(r.Op),
-		storableText(r.Statement), params, storableText(r.Code), storableText(r.Reason), r.Duration.Milliseconds()))
+		storableText(r.Statement), params, storableText(r.Code), storableText(r.Reason), r.Duration.Milliseconds(),
+		qualifiedResources(storableTexts(r.Resources))))
 }
 
 // EventKind is an engine event record_event accepts.
@@ -203,6 +211,15 @@ const nulReplacement = "\uFFFD"
 // hold a NUL, so a statement or reason with one would fail to record.
 func storableText(s string) string {
 	return strings.ReplaceAll(s, "\x00", nulReplacement)
+}
+
+// storableTexts is names with storableText applied to each.
+func storableTexts(names []string) []string {
+	out := make([]string, len(names))
+	for i, n := range names {
+		out[i] = storableText(n)
+	}
+	return out
 }
 
 // storable is v, as decoded from JSON, with storableText applied to every

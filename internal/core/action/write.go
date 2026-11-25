@@ -27,4 +27,8 @@ type Refusal struct {
 	Code      string
 	Reason    string
 	Duration  time.Duration
+	// Resources are the resources the statement names, as the store's check
+	// gave them (Statement.Tables); none when it did not parse. The store
+	// records them in its own qualified form.
+	Resources []string
 }

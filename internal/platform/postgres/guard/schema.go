@@ -70,6 +70,10 @@ const (
 	// restore, a code as their detail and the sentence as their hint, and
 	// names the bad entry of a revert scope descriptor: schema/024.
 	versionGuardTypedDetails
+	// versionRefusalResources gives record_refusal the resources the
+	// refused statement names, recorded on the change and in the ledger
+	// row's detail: schema/025.
+	versionRefusalResources
 )
 
 // StoreNeutralVersion is the basalt_meta version that writes store-neutral
@@ -92,7 +96,7 @@ const PluginApprovalsVersion = versionPluginApprovals
 // versionFiles is how many schema files each version runs, in version
 // order: a new version appends its own schema files after the last and its
 // count here, and every earlier version keeps the files it has.
-var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, versionPluginEvents: 1, versionPluginTrustRemoved: 1, versionPluginApprovals: 1, versionTrustPins: 1, versionSetupCodeLife: 1, versionEngineAddressRemoved: 1, versionRevertFilterName: 1, versionStoreNeutral: storeNeutralFiles, versionGuardTypedDetails: 1}
+var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, versionPluginEvents: 1, versionPluginTrustRemoved: 1, versionPluginApprovals: 1, versionTrustPins: 1, versionSetupCodeLife: 1, versionEngineAddressRemoved: 1, versionRevertFilterName: 1, versionStoreNeutral: storeNeutralFiles, versionGuardTypedDetails: 1, versionRefusalResources: 1}
 
 // nonBreakingVersions are the versions an engine serves an agent without
 // (migration.nonBreaking). versionPluginEvents: without it the engine

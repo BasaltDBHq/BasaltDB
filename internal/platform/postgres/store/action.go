@@ -46,7 +46,7 @@ func guardVersions(vs []action.RowVersion) ([]guard.RowVersion, error) {
 func guardRefusal(r action.Refusal) guard.Refusal {
 	return guard.Refusal{
 		Intent: guardIntent(r.Intent), Op: string(r.Op), Statement: r.Statement, Params: r.Params,
-		Code: r.Code, Reason: r.Reason, Duration: r.Duration,
+		Code: r.Code, Reason: r.Reason, Duration: r.Duration, Resources: r.Resources,
 	}
 }
 

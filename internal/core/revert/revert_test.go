@@ -739,3 +739,25 @@ func TestDecodeResponseOfASignedRevert(t *testing.T) {
 		require.ErrorIs(t, err, approval.ErrInvalid)
 	})
 }
+
+// The engine relays only texts that follow the text rules: Fragment, and
+// so URL, refuses a binding or a line that breaks them before encoding.
+func TestFragmentRefusesTextsOutOfTheRules(t *testing.T) {
+	t.Parallel()
+	lines := revertLines()
+	binding := bindingText(lines)
+	broken := slices.Clone(lines)
+	broken[2] = strings.Replace(broken[2], `"cascaded": false`, `"cascaded":false`, 1)
+	for name, req := range map[string]revert.Request{
+		"binding": {RevertID: revertID, Binding: strings.Replace(binding, `"rows": 3, `, `"rows":3, `, 1), Lines: lines},
+		"line":    {RevertID: revertID, Binding: binding, Lines: broken},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := req.Fragment()
+			require.ErrorIs(t, err, approval.ErrInvalid)
+			require.ErrorContains(t, err, name)
+			_, err = req.URL(links.DefaultLocal + "/")
+			require.ErrorIs(t, err, approval.ErrInvalid)
+		})
+	}
+}

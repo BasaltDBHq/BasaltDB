@@ -16,12 +16,10 @@ import (
 // built. The service reads the store only through it.
 type StoreSet struct {
 	// Kind is the kind of store the agent is bound to.
-	Kind         action.StoreKind
-	Capabilities action.Capabilities
-	Limits       Limits
-	Records      Records
-	Undo         Undo
-	Proofs       Proofs
+	Limits  Limits
+	Records Records
+	Undo    Undo
+	Proofs  Proofs
 }
 
 // Limits are the store's time limits on a revert's calls.

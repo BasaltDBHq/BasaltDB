@@ -289,10 +289,11 @@ func TestRevertScopeBadTableNameNamed(t *testing.T) {
 	}
 	long := strings.Repeat("x", 200)
 	cases := map[string]struct{ tables, hint string }{
-		"one bad name":       {`["leads"]`, "leads is not a schema.table name"},
-		"the first is named": {`["public.leads", "b.c.d", "leads"]`, "b.c.d is not a schema.table name"},
-		"a space":            {`["public.lead s"]`, "public.lead s is not a schema.table name"},
-		"a long name is cut": {fmt.Sprintf("[%q]", long), long[:127] + "... is not a schema.table name"},
+		"one bad name":          {`["leads"]`, "leads is not a schema.table name"},
+		"the first is named":    {`["public.leads", "b.c.d", "leads"]`, "b.c.d is not a schema.table name"},
+		"in the caller's order": {`["public.leads", "zz", "aa"]`, "zz is not a schema.table name"},
+		"a space":               {`["public.lead s"]`, "public.lead s is not a schema.table name"},
+		"a long name is cut":    {fmt.Sprintf("[%q]", long), long[:127] + "... is not a schema.table name"},
 	}
 	for name, tc := range cases {
 		for call, err := range map[string]error{"preview": rawPreview(e.bot.Conn, sel(tc.tables)), "prepare": rawPrepare(e.bot.Conn, sel(tc.tables))} {

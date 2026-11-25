@@ -1,7 +1,7 @@
 // Package sqlport is the driver-free shape of a database handle: the query
 // port a service declares for itself, with no driver type in it. A package
 // that names these types links no database driver; a driver handle is handed
-// over through internal/lib/pgquerier.
+// over through internal/platform/postgres/pgquerier.
 package sqlport
 
 import "context"

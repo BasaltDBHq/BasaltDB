@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
-	"github.com/basaltdbhq/basaltdb/internal/lib/sqlport"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // A sample that fails with a Postgres error keeps only its SQLSTATE; any

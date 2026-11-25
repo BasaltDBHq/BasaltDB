@@ -15,8 +15,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
 )
 
 // A result column from a table carries its field ref as the store's

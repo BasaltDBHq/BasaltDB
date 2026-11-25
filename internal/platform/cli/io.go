@@ -17,7 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
 )
 
 // AgentConn is the agent's own connection init --remote reads with.

@@ -6,10 +6,10 @@ import (
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
-	"github.com/basaltdbhq/basaltdb/internal/lib/sqlport"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgpii"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // resultFields names the fields of a Postgres result for the PII observer:

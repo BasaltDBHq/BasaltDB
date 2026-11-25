@@ -43,8 +43,8 @@ type storeRule struct {
 var storeBoundImports = []string{
 	modulePath + "/internal/core/sqlguard",
 	modulePath + "/internal/platform/postgres",
-	modulePath + "/internal/lib/sqlport",
-	modulePath + "/internal/lib/pgquerier",
+	modulePath + "/internal/platform/postgres/sqlport",
+	modulePath + "/internal/platform/postgres/pgquerier",
 	"github.com/jackc/pgx",
 	"github.com/jackc/pgconn",
 	"github.com/Masterminds/squirrel",
@@ -334,7 +334,7 @@ func TestStoreChainsFollowTheRule(t *testing.T) {
 		m + "internal/core/sqlguardian":        {"fmt"},
 		m + "internal/b":                       {m + "internal/lib/w"},
 		m + "internal/lib/w":                   {m + "internal/platform/postgres/pgpii", "github.com/jackc/pgx/v5/pgconn"},
-		m + "internal/platform/postgres/pgpii": {m + "internal/lib/sqlport"},
+		m + "internal/platform/postgres/pgpii": {m + "internal/platform/postgres/sqlport"},
 		m + "internal/c":                       {"fmt", m + "internal/core/piistore"},
 	}
 	got := storeChains(graph, m+"internal/a")
@@ -525,8 +525,8 @@ func TestPIIStoreRuleCatchesViolations(t *testing.T) {
 
 import (
 	sq "github.com/Masterminds/squirrel"
-	_ "` + modulePath + `/internal/lib/sqlport"
-	_ "` + modulePath + `/internal/lib/pgquerier"
+	_ "` + modulePath + `/internal/platform/postgres/sqlport"
+	_ "` + modulePath + `/internal/platform/postgres/pgquerier"
 )
 
 type col struct{ TableOid uint32; relkind string }
@@ -557,8 +557,8 @@ var (
 		`a.go: identifier ctid`,
 		`a.go: identifier relkind`,
 		`a.go: import github.com/Masterminds/squirrel`,
-		`a.go: import ` + modulePath + `/internal/lib/pgquerier`,
-		`a.go: import ` + modulePath + `/internal/lib/sqlport`,
+		`a.go: import ` + modulePath + `/internal/platform/postgres/pgquerier`,
+		`a.go: import ` + modulePath + `/internal/platform/postgres/sqlport`,
 		`a.go: text "SELECT email FROM basalt_meta.agent_pii_columns WHERE ctid > $1"`,
 		`a.go: text "undefined table (SQLSTATE 42P01)"`,
 	}

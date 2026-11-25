@@ -1,6 +1,6 @@
 // Package pgquerier is the part of a pgx connection, pool or transaction
 // that code needs to run queries, and the bridge from a pgx handle to the
-// driver-free port of internal/lib/sqlport. It imports the driver; a service
+// driver-free port of internal/platform/postgres/sqlport. It imports the driver; a service
 // names sqlport, never this package.
 package pgquerier
 
@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/lib/sqlport"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // Querier runs a statement or a query on a connection, pool or transaction.

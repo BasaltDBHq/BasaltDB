@@ -9,7 +9,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
-	"github.com/basaltdbhq/basaltdb/internal/lib/wiretime"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/wiretime"
 )
 
 // ActorKindAgent is the actor kind of every change an agent made.

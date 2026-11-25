@@ -9,7 +9,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/textrule"
-	"github.com/basaltdbhq/basaltdb/internal/lib/wiretime"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/wiretime"
 )
 
 // What a revert does with a row.

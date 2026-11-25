@@ -33,9 +33,9 @@ type Service struct {
 type ApprovalReads interface {
 	Passkeys(ctx context.Context) ([]passkey.Credential, error)
 	FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error)
-	// HasColumns says whether the pages can show the tables' column order.
+	// HasColumns says whether the pages can show the resources' field order.
 	HasColumns() bool
-	ColumnOrder(ctx context.Context, tables []string) (map[string][]string, error)
+	ColumnOrder(ctx context.Context, resources []string) (map[string][]string, error)
 }
 
 func New(core Core, deps *Deps, approvals ApprovalReads,

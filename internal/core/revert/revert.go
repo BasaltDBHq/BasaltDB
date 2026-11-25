@@ -279,8 +279,8 @@ type Request struct {
 	// long link.
 	RevealNonce   passkey.Bytes   `json:"revealNonce,omitempty"`
 	CredentialIDs []passkey.Bytes `json:"credentialIds,omitempty"`
-	// Columns orders each table's columns as the table does (attnum), for
-	// the page's display only (CONTRACT.md, Local pages): served only by the
+	// Columns orders each resource's fields as its store does, for the
+	// page's display only (CONTRACT.md, Local pages): served only by the
 	// engine, never signed, never carried in a link.
 	Columns approval.ColumnOrder `json:"columns,omitempty"`
 }

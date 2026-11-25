@@ -25,7 +25,7 @@ type Core struct {
 type Deps struct {
 	// SortSpec whitelists the approval list sort.
 	SortSpec pagination.SortSpec
-	// Columns reads each table's columns in table order for the pages;
+	// Columns reads each resource's fields in the store's order for the pages;
 	// optional, and the pages show the order the rows carry when nil.
 	Columns linksvc.ColumnOrder
 }

@@ -78,11 +78,11 @@ func (wc *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, erro
 	start := wc.core.Now()
 	stmt, err := wc.store.Language.Check(p.Request, action.ToolQuery)
 	if err != nil {
-		return QueryOutcome{}, wc.refused(ctx, in, stmt.Op, p.Request, start, err)
+		return QueryOutcome{}, wc.refused(ctx, in, stmt, p.Request, start, err)
 	}
 	res, err := wc.store.Data.Read(ctx, p.Request, stmt)
 	if err != nil {
-		return QueryOutcome{}, wc.refused(ctx, in, stmt.Op, p.Request, start, err)
+		return QueryOutcome{}, wc.refused(ctx, in, stmt, p.Request, start, err)
 	}
 	// The values of IDENTIFIER columns go in the dictionary before the rows
 	// leave the engine (M5.1 plan, section 6). One that cannot be added
@@ -120,9 +120,11 @@ func recorded(code string) bool {
 }
 
 // refused records a REFUSED change for err when it is an action the ledger
-// keeps, and returns err. A failure to record is logged; the agent still
-// gets the original refusal.
-func (wc *Service) refused(ctx context.Context, in action.Intent, op action.Op, req agentstore.Request, start time.Time, err error) error {
+// keeps, with the op and resources of stmt (as much as the check
+// classified), and returns err. A failure to record is logged; the agent
+// still gets the original refusal.
+func (wc *Service) refused(ctx context.Context, in action.Intent, stmt action.Statement, req agentstore.Request, start time.Time, err error) error {
+	op := stmt.Op
 	te := guidance.MessageTooLarge(actionTool(op), err, wc.core.Errors.ToolError(err))
 	if !recorded(te.Code) {
 		return err
@@ -130,6 +132,7 @@ func (wc *Service) refused(ctx context.Context, in action.Intent, op action.Op, 
 	r := action.Refusal{
 		Intent: in, Op: refusalOp(op), Statement: req.Text, Params: req.Params,
 		Code: te.Code, Reason: truncate(te.Message, maxReasonBytes), Duration: wc.core.Now().Sub(start),
+		Resources: stmt.Tables,
 	}
 	if recErr := wc.store.Ledger.RecordRefusal(context.WithoutCancel(ctx), r); recErr != nil {
 		wc.core.Log.Error("record refusal", "code", te.Code, "err", recErr)

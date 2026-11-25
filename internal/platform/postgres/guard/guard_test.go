@@ -199,17 +199,19 @@ func TestRecordRefusal(t *testing.T) {
 	code, ok := guard.CodeOf(err)
 	require.True(t, ok)
 	id, err := guard.RecordRefusal(ctx, a.Conn, guard.Refusal{
-		Intent: in, Op: "DELETE", Statement: "DELETE FROM public.leads WHERE id = 1",
-		Code: string(code), Reason: err.Error(), Duration: time.Millisecond,
+		Intent: in, Op: "DELETE", Statement: "DELETE FROM leads WHERE id = 1",
+		Code: string(code), Reason: err.Error(), Duration: time.Millisecond, Resources: []string{"leads"},
 	})
 	require.NoError(t, err)
 
-	var status, gotCode string
-	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT status, code FROM basalt_meta.changes WHERE change_id = $1`, id).
-		Scan(&status, &gotCode))
+	var status, gotCode, resource string
+	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT status, code, table_name FROM basalt_meta.changes WHERE change_id = $1`, id).
+		Scan(&status, &gotCode, &resource))
 	require.Equal(t, "REFUSED", status)
 	require.Equal(t, "APPROVAL_REQUIRED", gotCode)
+	require.Equal(t, "public.leads", resource, "the name the agent wrote, qualified")
 	require.Equal(t, 1, count(t, d.Admin, `SELECT count(1)::int FROM basalt_meta.ledger WHERE kind = 'REFUSED' AND change_id = $1`, id))
+	require.Equal(t, []any{"public.leads"}, refusalResources(t, d, id))
 
 	_, err = guard.RecordRefusal(ctx, a.Conn, guard.Refusal{Intent: in, Op: "DROP", Code: "X"})
 	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
@@ -224,6 +226,58 @@ func TestRecordRefusal(t *testing.T) {
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT c.op, l.verb FROM basalt_meta.changes c
 		JOIN basalt_meta.ledger l ON l.change_id = c.change_id AND l.kind = 'REFUSED' WHERE c.change_id = $1`, id).Scan(&op, &verb))
 	require.Equal(t, []string{"READ", "SELECT"}, []string{op, verb})
+}
+
+// refusalResources is the resources of the REFUSED ledger row of change id.
+func refusalResources(t *testing.T, d *guardtest.DB, id uuid.UUID) []any {
+	t.Helper()
+	var detail map[string]any
+	require.NoError(t, d.Admin.QueryRow(context.Background(),
+		`SELECT detail FROM basalt_meta.ledger WHERE kind = 'REFUSED' AND change_id = $1`, id).Scan(&detail))
+	got, ok := detail["resources"].([]any)
+	require.True(t, ok, "resources is an array: %v", detail["resources"])
+	return got
+}
+
+// A refusal records the resources its statement names, qualified as the
+// agent's session resolves them, and none when the statement did not
+// parse. A qualified name needs no lookup, so a schema the agent cannot
+// use never keeps the refusal out of the ledger.
+func TestRecordRefusalNamesItsResources(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	d.Exec(t, `CREATE SCHEMA secret; CREATE TABLE secret.keys (id int)`)
+	a := d.NewAgent(t, "bot", leads, nil)
+	ctx := context.Background()
+	in := newRun(t, a, "clean up")
+	refuse := func(resources ...string) uuid.UUID {
+		t.Helper()
+		id, err := guard.RecordRefusal(ctx, a.Conn, guard.Refusal{
+			Intent: in, Op: "DELETE", Statement: "DELETE FROM ...", Code: "STATEMENT_REFUSED", Reason: "refused",
+			Resources: resources,
+		})
+		require.NoError(t, err)
+		return id
+	}
+	tableName := func(id uuid.UUID) *string {
+		t.Helper()
+		var name *string
+		require.NoError(t, d.Admin.QueryRow(ctx, `SELECT table_name FROM basalt_meta.changes WHERE change_id = $1`, id).Scan(&name))
+		return name
+	}
+
+	id := refuse("secret.keys", "leads", "missing")
+	require.Equal(t, []any{"missing", "public.leads", "secret.keys"}, refusalResources(t, d, id))
+	require.Equal(t, "missing", *tableName(id), "the change record names the first")
+
+	// An unparseable statement names none.
+	id = refuse()
+	require.Empty(t, refusalResources(t, d, id))
+	require.Nil(t, tableName(id))
+
+	_, err := guard.RecordRefusal(ctx, a.Conn, guard.Refusal{Intent: in, Op: "OTHER", Code: "X", Resources: []string{""}})
+	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireIntact(t, a.Conn)
 }
 
 // TestRecordRefusalStoresANUL: Postgres text and jsonb cannot hold a NUL,

@@ -84,7 +84,8 @@ func TestHoldExitsRecordWhatTheyRecordedBefore(t *testing.T) {
 			req := agentstore.Request{Text: "DELETE FROM public.leads WHERE id = $1", Params: []any{1}}
 			in := action.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "drop a lead"}
 
-			id, _, err := wc.hold(context.Background(), in, WriteParams{Request: req}, action.Statement{Op: action.OpDelete}, wc.core.Now())
+			stmt := action.Statement{Op: action.OpDelete, Tables: []string{"public.leads"}}
+			id, _, err := wc.hold(context.Background(), in, WriteParams{Request: req}, stmt, wc.core.Now())
 			require.Equal(t, uuid.Nil, id)
 			var hr *approvalsvc.HoldRefusalError
 			require.False(t, errors.As(err, &hr), "the agent answers with the refusal itself")
@@ -101,6 +102,40 @@ func TestHoldExitsRecordWhatTheyRecordedBefore(t *testing.T) {
 			require.Equal(t, action.OpDelete, r.Op)
 			require.Equal(t, req.Text, r.Statement)
 			require.Equal(t, in, r.Intent)
+			require.Equal(t, stmt.Tables, r.Resources)
+		})
+	}
+}
+
+// A refusal is recorded with the resources the store's check gave the
+// statement, as written (the store qualifies them when it records); a
+// statement the check could not parse names none.
+func TestRefusedRecordsTheStatementsResources(t *testing.T) {
+	t.Parallel()
+	refusal := &action.RefusalError{Reason: action.ReasonFunction, Detail: "pg_sleep is not on the function allowlist"}
+	parse := &action.RefusalError{Reason: action.ReasonParseError, Detail: "syntax error at or near \"FORM\""}
+	for _, tc := range []struct {
+		name string
+		stmt action.Statement
+		err  error
+		want []string
+	}{
+		{"a refused read", action.Statement{Op: action.OpRead, Tables: []string{"leads"}}, refusal, []string{"leads"}},
+		{"a refused write", action.Statement{Op: action.OpDelete, Tables: []string{"leads", "sales.orders"}}, refusal, []string{"leads", "sales.orders"}},
+		{"an unparseable statement", action.Statement{}, parse, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ledger := &refusalLedger{}
+			wc := newTestService(t, "linux", "", func(s *settings) { s.store.Ledger = ledger })
+			in := action.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "tidy the leads"}
+			req := agentstore.Request{Text: "DELETE FROM leads"}
+
+			err := wc.refused(context.Background(), in, tc.stmt, req, wc.core.Now(), tc.err)
+			require.Equal(t, tc.err, err)
+			require.Len(t, ledger.refusals, 1)
+			require.Equal(t, tc.want, ledger.refusals[0].Resources)
+			require.Equal(t, refusalOp(tc.stmt.Op), ledger.refusals[0].Op)
 		})
 	}
 }

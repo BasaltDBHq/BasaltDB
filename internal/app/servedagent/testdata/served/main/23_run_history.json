@@ -27,8 +27,10 @@
           ],
           "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3"
         },
+        "resource": "public.leads",
         "rowChanges": [],
         "rows": 0,
+        "shape": "RECORD",
         "status": "REFUSED",
         "store": {
           "kind": "POSTGRES",
@@ -60,8 +62,10 @@
           ],
           "statement": "UPDATE leads SET status = $1 WHERE id = $2"
         },
+        "resource": "public.leads",
         "rowChanges": [],
         "rows": 0,
+        "shape": "RECORD",
         "status": "REFUSED",
         "store": {
           "kind": "POSTGRES",
@@ -88,7 +92,7 @@
           ],
           "statement": "SELECT id, status FROM leads WHERE id = $1"
         },
-        "resource": "leads",
+        "resource": "public.leads",
         "rowChanges": [],
         "rows": 1,
         "shape": "RECORD",
@@ -120,8 +124,10 @@
           "params": [],
           "statement": "UPDATE leads SET nope = 1 WHERE id = 5"
         },
+        "resource": "public.leads",
         "rowChanges": [],
         "rows": 0,
+        "shape": "RECORD",
         "status": "REFUSED",
         "store": {
           "kind": "POSTGRES",
@@ -150,8 +156,10 @@
           "params": [],
           "statement": "UPDATE payroll SET amount = 0"
         },
+        "resource": "public.payroll",
         "rowChanges": [],
         "rows": 0,
+        "shape": "RECORD",
         "status": "REFUSED",
         "store": {
           "kind": "POSTGRES",
@@ -209,8 +217,10 @@
           "params": [],
           "statement": "UPDATE leads SET score = 1 WHERE id <= 60"
         },
+        "resource": "public.leads",
         "rowChanges": [],
         "rows": 0,
+        "shape": "RECORD",
         "status": "REFUSED",
         "store": {
           "kind": "POSTGRES",
@@ -326,8 +336,10 @@
           "params": [],
           "statement": "SELECT amount FROM payroll"
         },
+        "resource": "public.payroll",
         "rowChanges": [],
         "rows": 0,
+        "shape": "RECORD",
         "status": "REFUSED",
         "store": {
           "kind": "POSTGRES",
@@ -356,8 +368,10 @@
           "params": [],
           "statement": "SELECT nope FROM leads"
         },
+        "resource": "public.leads",
         "rowChanges": [],
         "rows": 0,
+        "shape": "RECORD",
         "status": "REFUSED",
         "store": {
           "kind": "POSTGRES",
@@ -441,7 +455,7 @@
           "params": [],
           "statement": "SELECT id, status FROM leads WHERE id <= 3 ORDER BY id"
         },
-        "resource": "leads",
+        "resource": "public.leads",
         "rowChanges": [],
         "rows": 3,
         "shape": "RECORD",

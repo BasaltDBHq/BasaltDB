@@ -19,7 +19,7 @@
       "run_id": "<id-2>",
       "statement": "SELECT id, status FROM leads WHERE id <= 3 ORDER BY id",
       "status": "APPLIED",
-      "table_name": "leads",
+      "table_name": "public.leads",
       "task_id": "<id-3>"
     },
     {
@@ -85,7 +85,7 @@
       "run_id": "<id-2>",
       "statement": "SELECT nope FROM leads",
       "status": "REFUSED",
-      "table_name": null,
+      "table_name": "public.leads",
       "task_id": "<id-3>"
     },
     {
@@ -107,7 +107,7 @@
       "run_id": "<id-2>",
       "statement": "SELECT amount FROM payroll",
       "status": "REFUSED",
-      "table_name": null,
+      "table_name": "public.payroll",
       "task_id": "<id-3>"
     },
     {
@@ -154,7 +154,7 @@
       "run_id": "<id-2>",
       "statement": "UPDATE leads SET score = 1 WHERE id <= 60",
       "status": "REFUSED",
-      "table_name": null,
+      "table_name": "public.leads",
       "task_id": "<id-3>"
     },
     {
@@ -198,7 +198,7 @@
       "run_id": "<id-2>",
       "statement": "UPDATE payroll SET amount = 0",
       "status": "REFUSED",
-      "table_name": null,
+      "table_name": "public.payroll",
       "task_id": "<id-3>"
     },
     {
@@ -220,7 +220,7 @@
       "run_id": "<id-2>",
       "statement": "UPDATE leads SET nope = 1 WHERE id = 5",
       "status": "REFUSED",
-      "table_name": null,
+      "table_name": "public.leads",
       "task_id": "<id-3>"
     },
     {
@@ -244,7 +244,7 @@
       "run_id": "<id-2>",
       "statement": "SELECT id, status FROM leads WHERE id = $1",
       "status": "APPLIED",
-      "table_name": "leads",
+      "table_name": "public.leads",
       "task_id": "<id-3>"
     },
     {
@@ -269,7 +269,7 @@
       "run_id": "<id-2>",
       "statement": "UPDATE leads SET status = $1 WHERE id = $2",
       "status": "REFUSED",
-      "table_name": null,
+      "table_name": "public.leads",
       "task_id": "<id-3>"
     },
     {
@@ -295,7 +295,7 @@
       "run_id": "<id-2>",
       "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3",
       "status": "REFUSED",
-      "table_name": null,
+      "table_name": "public.leads",
       "task_id": "<id-3>"
     },
     {
@@ -365,7 +365,7 @@
       "run_id": "<id-22>",
       "statement": "SELECT id FROM leads WHERE id = 1",
       "status": "APPLIED",
-      "table_name": "leads",
+      "table_name": "public.leads",
       "task_id": "<id-23>"
     }
   ],
@@ -396,7 +396,7 @@
       "detail": {
         "durationMs": "<durationMs>",
         "resources": [
-          "leads"
+          "public.leads"
         ],
         "rows": 3,
         "runId": "<id-2>",
@@ -444,6 +444,7 @@
         "code": "STATEMENT_REFUSED",
         "intent": "Tidy the lead list",
         "reason": "DDL_NOT_ALLOWED: DropStmt",
+        "resources": [],
         "runId": "<id-2>",
         "statement": "DROP TABLE leads",
         "taskId": "<id-3>"
@@ -466,6 +467,7 @@
         "code": "QUERY_TIMEOUT",
         "intent": "Tidy the lead list",
         "reason": "the query returned more rows than the read row limit; add a LIMIT or a narrower WHERE",
+        "resources": [],
         "runId": "<id-2>",
         "statement": "SELECT g FROM generate_series(1, 1001) g",
         "taskId": "<id-3>"
@@ -488,6 +490,9 @@
         "code": "STORE_ERROR",
         "intent": "Tidy the lead list",
         "reason": "column \"nope\" does not exist",
+        "resources": [
+          "public.leads"
+        ],
         "runId": "<id-2>",
         "statement": "SELECT nope FROM leads",
         "taskId": "<id-3>"
@@ -510,6 +515,9 @@
         "code": "PERMISSION_DENIED",
         "intent": "Tidy the lead list",
         "reason": "permission denied for table payroll",
+        "resources": [
+          "public.payroll"
+        ],
         "runId": "<id-2>",
         "statement": "SELECT amount FROM payroll",
         "taskId": "<id-3>"
@@ -613,6 +621,9 @@
         "code": "ROW_LIMIT_EXCEEDED",
         "intent": "Reset every score",
         "reason": "ROW_LIMIT_EXCEEDED: more than 50 rows in one action (cascades included)",
+        "resources": [
+          "public.leads"
+        ],
         "runId": "<id-2>",
         "statement": "UPDATE leads SET score = 1 WHERE id <= 60",
         "taskId": "<id-3>"
@@ -635,6 +646,7 @@
         "code": "STATEMENT_REFUSED",
         "intent": "Tidy up",
         "reason": "DDL_NOT_ALLOWED: DropStmt",
+        "resources": [],
         "runId": "<id-2>",
         "statement": "DROP TABLE leads",
         "taskId": "<id-3>"
@@ -657,6 +669,9 @@
         "code": "PERMISSION_DENIED",
         "intent": "Pay nobody",
         "reason": "permission denied for table payroll",
+        "resources": [
+          "public.payroll"
+        ],
         "runId": "<id-2>",
         "statement": "UPDATE payroll SET amount = 0",
         "taskId": "<id-3>"
@@ -679,6 +694,9 @@
         "code": "STORE_ERROR",
         "intent": "Set a column that is not there",
         "reason": "column \"nope\" of relation \"leads\" does not exist",
+        "resources": [
+          "public.leads"
+        ],
         "runId": "<id-2>",
         "statement": "UPDATE leads SET nope = 1 WHERE id = 5",
         "taskId": "<id-3>"
@@ -700,7 +718,7 @@
       "detail": {
         "durationMs": "<durationMs>",
         "resources": [
-          "leads"
+          "public.leads"
         ],
         "rows": 1,
         "runId": "<id-2>",
@@ -734,6 +752,9 @@
         "code": "STALE_READ",
         "intent": "No answer",
         "reason": "STALE_READ: public.leads {\"id\": 42} read at xmin <n>, now <n> (hint: read the row again in this run, then decide)",
+        "resources": [
+          "public.leads"
+        ],
         "runId": "<id-2>",
         "statement": "UPDATE leads SET status = $1 WHERE id = $2",
         "taskId": "<id-3>"
@@ -756,6 +777,9 @@
         "code": "APPROVAL_INVALID",
         "intent": "Leads 21 to 31 went cold",
         "reason": "APPROVAL_INVALID: not approved yet: the person has not signed it with their passkey",
+        "resources": [
+          "public.leads"
+        ],
         "runId": "<id-2>",
         "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3",
         "taskId": "<id-3>"
@@ -1268,7 +1292,7 @@
       "detail": {
         "durationMs": "<durationMs>",
         "resources": [
-          "leads"
+          "public.leads"
         ],
         "rows": 1,
         "runId": "<id-22>",

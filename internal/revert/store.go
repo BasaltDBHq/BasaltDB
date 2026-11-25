@@ -2,6 +2,7 @@ package revert
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,6 +20,10 @@ type StoreSet struct {
 	Records Records
 	Undo    Undo
 	Proofs  Proofs
+	// ShowValues turns a row image of a revert line, as the store wrote it
+	// in the signed text, into the wire format the agent is shown (for
+	// Postgres, a timestamptz as RFC 3339 UTC). nil shows it as written.
+	ShowValues func(json.RawMessage) json.RawMessage
 }
 
 // Limits are the store's time limits on a revert's calls.

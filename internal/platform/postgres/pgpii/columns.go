@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
-	"github.com/basaltdbhq/basaltdb/internal/lib/sqlport"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // refsSQL finds the table oid and attribute number of each listed column by

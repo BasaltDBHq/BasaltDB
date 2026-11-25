@@ -8,8 +8,8 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/demo"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
 	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 )
 

@@ -7,7 +7,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
-	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pglargevalue"
 )
 
 // The request a held write's or revert's link carries is its binding text
@@ -31,7 +31,7 @@ const (
 // textCost is the SQL of what one text t costs in the budget's unit: its
 // bytes, 6 more for each byte JSON escapes, and the per-value overhead.
 func textCost(t string) string {
-	return fmt.Sprintf("(octet_length(%[1]s) + 6 * %[2]s + 128)", t, largevalue.EscapesOf(t))
+	return fmt.Sprintf("(octet_length(%[1]s) + 6 * %[2]s + 128)", t, pglargevalue.EscapesOf(t))
 }
 
 // requestJoin measures the binding text and lines of the row being read

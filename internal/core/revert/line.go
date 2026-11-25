@@ -9,7 +9,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/textrule"
-	"github.com/basaltdbhq/basaltdb/internal/lib/wiretime"
 )
 
 // What a revert does with a row.
@@ -135,15 +134,17 @@ func ParseMarkedLine(text string) (Line, error) {
 }
 
 // ForDisplay returns the line with its row values as the wire format has
-// them (RFC 3339 UTC for a timestamptz). The signed text, which the passkey
-// signature and the hashes cover, is never changed: only what is shown.
+// them: show turns a row image as the store wrote it into that form (for
+// Postgres, a timestamptz as RFC 3339 UTC); nil leaves it as written. The
+// signed text, which the passkey signature and the hashes cover, is never
+// changed: only what is shown.
 //
 // Marks are measured on the text as signed, before the values are shown
 // another way: they must match the agent's marker.
-func (l Line) ForDisplay() Line {
+func (l Line) ForDisplay(show func(json.RawMessage) json.RawMessage) Line {
 	l.Marks = largevalue.Marks{Key: imageMarks(l.Key), Before: imageMarks(l.Now), After: imageMarks(l.Set)}
-	l.Key = wiretime.JSON(l.Key)
-	l.Now = wiretime.JSON(l.Now)
-	l.Set = wiretime.JSON(l.Set)
+	if show != nil {
+		l.Key, l.Now, l.Set = show(l.Key), show(l.Now), show(l.Set)
+	}
 	return l
 }

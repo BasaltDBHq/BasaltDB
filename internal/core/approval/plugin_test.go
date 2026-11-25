@@ -11,7 +11,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
-	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec/linkcodectest"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -66,8 +65,7 @@ func TestPluginLinkRoundTrip(t *testing.T) {
 			t.Parallel()
 			id := pluginID(t, v.Binding)
 			req := approval.PluginRequest{ApprovalID: id, Binding: v.Binding, Settings: v.Settings, CredentialIDs: ids}
-			url, err := req.URL(links.DefaultLocal + "/")
-			require.NoError(t, err)
+			url := pluginURL(t, req, links.DefaultLocal+"/")
 			page, frag, ok := strings.Cut(url, "#")
 			require.True(t, ok)
 			require.Equal(t, "http://localhost:8787/plugins/"+id.String(), page)
@@ -96,6 +94,21 @@ func TestPluginLinkRoundTrip(t *testing.T) {
 	}
 }
 
+// pluginURL is req's long link as PluginRequest.URL writes it, but also for
+// a vector the engine would refuse to relay, so the page can be tested on
+// refusing it.
+func pluginURL(t *testing.T, req approval.PluginRequest, base string) string {
+	t.Helper()
+	if _, err := req.Check(); err == nil {
+		url, err := req.URL(base)
+		require.NoError(t, err)
+		return url
+	}
+	frag, err := linkcodec.EncodeRequest(req.Binding, []string{req.Settings}, req.CredentialIDs)
+	require.NoError(t, err)
+	return links.PluginApproval(base, req.ApprovalID) + "#" + frag
+}
+
 const pluginLinksFile = "testdata/plugin-links.json"
 
 // pluginLink is one vector's links as Go writes them, which the page's
@@ -119,8 +132,7 @@ func TestPluginLinkFixtures(t *testing.T) {
 	out := make([]pluginLink, 0, len(vs))
 	for _, v := range vs {
 		req := approval.PluginRequest{ApprovalID: pluginID(t, v.Binding), Binding: v.Binding, Settings: v.Settings, CredentialIDs: ids}
-		url, err := req.URL(links.DefaultLocal)
-		require.NoError(t, err)
+		url := pluginURL(t, req, links.DefaultLocal)
 		hashLink, file, err := links.HashLink(url, linkstest.PluginFile(req.ApprovalID))
 		require.NoError(t, err)
 		out = append(out, pluginLink{Name: v.Name, URL: url, HashLink: hashLink, RequestText: file.Text, CredentialIDs: []string{ids[0].String()}})
@@ -155,10 +167,10 @@ func TestPluginRequestRefuses(t *testing.T) {
 		require.ErrorIs(t, err, approval.ErrInvalid, name)
 	}
 
-	// Only format 2: a plugin approval link was never written in format 1.
-	f1, err := linkcodectest.Encode(linkcodec.Format1, map[string]any{"approvalId": id, "binding": v.Binding, "settings": v.Settings})
+	// Only format 2.
+	f2, err := good.Fragment()
 	require.NoError(t, err)
-	_, _, err = approval.ParsePluginRequest(f1)
+	_, _, err = approval.ParsePluginRequest("1." + strings.TrimPrefix(f2, linkcodec.Format2))
 	require.ErrorIs(t, err, approval.ErrInvalid)
 
 	// Exactly two texts: a held write's link with lines is not a plugin

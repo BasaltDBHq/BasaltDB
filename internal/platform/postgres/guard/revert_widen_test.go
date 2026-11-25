@@ -304,7 +304,7 @@ func TestRescopeProbeUniform(t *testing.T) {
 	}
 	withTable := func(table string) revert.Select {
 		s := e.own()
-		s.Tables = []string{table}
+		s.Resources = []string{table}
 		return s
 	}
 	unknownRun := uuid.Must(uuid.NewV7())
@@ -383,7 +383,7 @@ func TestRescopeTokenAfterCeiling(t *testing.T) {
 	ctx := context.Background()
 	id := e.prep.RevertID
 	leadsOnly := e.own()
-	leadsOnly.Tables = []string{"public.leads"}
+	leadsOnly.Resources = []string{"public.leads"}
 
 	out, err := guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{RevertID: id, Select: leadsOnly})
 	require.NoError(t, err)
@@ -395,7 +395,7 @@ func TestRescopeTokenAfterCeiling(t *testing.T) {
 	require.False(t, b.Widened)
 
 	ceiling := e.every()
-	ceiling.Tables = []string{"public.leads"}
+	ceiling.Resources = []string{"public.leads"}
 	widened := e.widen(t, ceiling)
 	token := []byte(widened.ScopeToken)
 
@@ -403,7 +403,7 @@ func TestRescopeTokenAfterCeiling(t *testing.T) {
 	_, err = guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{RevertID: id, Select: leadsOnly})
 	requireWidenRefused(t, err)
 	// Inside the ceiling with the token: the helper's leads only.
-	helperLeads := revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Name}, Tables: []string{"public.leads"}}
+	helperLeads := revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Name}, Resources: []string{"public.leads"}}
 	out, err = guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{RevertID: id, Select: helperLeads, Token: token})
 	require.NoError(t, err)
 	require.NotNil(t, out.Catalog)
@@ -453,7 +453,7 @@ func TestRescopeMembership(t *testing.T) {
 	run.Runs = []uuid.UUID{e.helperOutside.RunID}
 	requireScopeRefused(t, try(run), guardmodel.ScopeFilter)
 	table := e.every()
-	table.Tables = []string{"public.payroll"}
+	table.Resources = []string{"public.payroll"}
 	requireScopeRefused(t, try(table), guardmodel.ScopeFilter)
 	agent := e.every()
 	agent.Agents = []string{e.helper.Name, "agent:nobody"}
@@ -535,7 +535,7 @@ func TestRescopeInvalidatesEarlierSignature(t *testing.T) {
 	sig, err := e.p.Sign(approval.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	leadsOnly := e.own()
-	leadsOnly.Tables = []string{"public.leads"}
+	leadsOnly.Resources = []string{"public.leads"}
 	_, err = guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{RevertID: e.prep.RevertID, Select: leadsOnly})
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, e.bot.Conn, e.prep.RevertID, sig)

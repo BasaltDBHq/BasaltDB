@@ -77,18 +77,16 @@ func pageFixture(t *testing.T, file string) (string, []string) {
 	return f.Request.Binding, f.Request.Lines
 }
 
-// valueLines are preview lines with every kind of value format 2 carries,
-// and one whose spacing is not jsonb's, which travels as its text.
+// valueLines are preview lines with every kind of value format 2 carries.
 func valueLines() []string {
 	return []string{
-		`{"op":"INSERT","key":null,"old":null,"set":{"id":1},"table":"public.t","cascaded":false}`,
-		`{"op": "INSERT", "key": null, "old": null, "set": {}, "table": "public.empty", "cascaded": false}`,
-		`{"op": "UPDATE", "key": {"id": 9}, "old": {"id": 9, "big": 9007199254740993, "doc": {"a": [1, 2], "b": null}, "neg": -42, "flag": true, "note": "tab\there \"quoted\" back\\slash \u0001 é 日本 🚀", "tags": ["x", "y", []], "price": 1.50}, "set": {"price": 2.00}, "table": "public.items", "cascaded": false}`,
+		`{"op": "INSERT", "key": null, "old": null, "set": {}, "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "INSERT"}, "cascaded": false, "resource": "public.empty"}`,
+		`{"op": "UPDATE", "key": {"id": 9}, "old": {"id": 9, "big": 9007199254740993, "doc": {"a": [1, 2], "b": null}, "neg": -42, "flag": true, "note": "tab\there \"quoted\" back\\slash \u0001 é 日本 🚀", "tags": ["x", "y", []], "price": 1.50}, "set": {"price": 2.00}, "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "UPDATE"}, "cascaded": false, "resource": "public.items"}`,
 	}
 }
 
 func approvalBinding(lines []string) string {
-	return fmt.Sprintf(`{"kind": "APPROVE", "rows": %d, "agent": "basalt_agent_bot", "runId": "0193a4c2-7d1e-7c3a-9f00-0000000000b2", "intent": "Fix <prices> & notes", "params": [2.00, "x"], "taskId": null, "database": "app", "rowsHash": %q, "expiresAt": "2026-11-12T06:02:11.123456Z", "statement": "UPDATE public.items SET price = $1 WHERE id = 9", "approvalId": "0193a4c2-7d1e-7c3a-9f00-0000000000a1", "assignedColumns": ["price"]}`,
+	return fmt.Sprintf(`{"kind": "APPROVE", "rows": %d, "agent": "agent:bot", "runId": "0193a4c2-7d1e-7c3a-9f00-0000000000b2", "store": {"kind": "POSTGRES", "name": "app"}, "intent": "Fix <prices> & notes", "taskId": null, "request": {"kind": "SQL", "params": [2.00, "x"], "statement": "UPDATE public.items SET price = $1 WHERE id = 9"}, "rowsHash": %q, "expiresAt": "2026-11-12T06:02:11.123456Z", "approvalId": "0193a4c2-7d1e-7c3a-9f00-0000000000a1", "assignedFields": ["price"]}`,
 		len(lines), approval.RowsHash(lines))
 }
 
@@ -144,7 +142,7 @@ func buildVectors(t *testing.T) vectors {
 		Valid: []validVector{
 			validOf(t, "an approval: the pages' fixture", kindApprove, aBinding, aLines),
 			validOf(t, "a revert: the pages' fixture", kindRevert, rBinding, rLines),
-			validOf(t, "every kind of value, and a line that travels as its text", kindApprove, vBinding, vLines),
+			validOf(t, "every kind of value", kindApprove, vBinding, vLines),
 			validOf(t, "an approval with the database's credential ids", kindApprove, aBinding, aLines, idOf(1, 16), idOf(2, 32)),
 			validOf(t, "a revert with the database's credential ids", kindRevert, rBinding, rLines, idOf(3, 20)),
 		},
@@ -163,7 +161,7 @@ func buildVectors(t *testing.T) vectors {
 	setValue := func(raw string) func(c *linkcodec.Lines) {
 		return func(c *linkcodec.Lines) { last(c).Values[2] = json.RawMessage(raw) }
 	}
-	format1, err := linkcodectest.Encode(linkcodec.Format1, approval.Request{Binding: vBinding, Lines: vLines})
+	requestJSON, err := linkcodectest.Encode(linkcodec.Format2, approval.Request{Binding: vBinding, Lines: vLines})
 	require.NoError(t, err)
 	tooMany := make([]string, approval.MaxRows+1)
 	for i := range tooMany {
@@ -177,7 +175,7 @@ func buildVectors(t *testing.T) vectors {
 	changed := shaped(vBinding, vLines)
 	last(&changed).Values[0] = json.RawMessage(`"DELETE"`)
 
-	add("format 1 JSON after 2.", kindApprove, linkcodec.Format2+strings.TrimPrefix(format1, linkcodec.Format1))
+	add("the request JSON after 2.", kindApprove, requestJSON)
 	withIDs := func(ids any) string {
 		return fragmentOf(t, []any{shaped(vBinding, vLines).Shapes, shaped(vBinding, vLines).Lines, ids})
 	}

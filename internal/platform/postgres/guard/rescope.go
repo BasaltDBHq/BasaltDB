@@ -75,7 +75,7 @@ func decodeRescoped(raw []byte) (action.RescopedRevert, error) {
 func RescopeRevert(ctx context.Context, q Querier, req action.RescopeRequest) (action.RescopedRevert, error) {
 	sel, err := json.Marshal(selectJSON{
 		Scope: req.Select.Scope, ScopeID: req.Select.ScopeID, Agents: req.Select.Agents,
-		Runs: req.Select.Runs, Resources: req.Select.Tables,
+		Runs: req.Select.Runs, Resources: req.Select.Resources,
 	})
 	if err != nil {
 		return action.RescopedRevert{}, err

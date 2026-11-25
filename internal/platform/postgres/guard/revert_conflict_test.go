@@ -80,7 +80,7 @@ func TestRevertConflictSuite(t *testing.T) {
 			e.agent(t, `UPDATE public.leads SET status = 'won' WHERE id IN (1, 2)`)
 		},
 		person: `DELETE FROM public.leads WHERE id = 2`,
-		want:   map[string]string{`{"id":1}`: "", `{"id":2}`: revert.ConflictRowGone},
+		want:   map[string]string{`{"id":1}`: "", `{"id":2}`: revert.ConflictTargetGone},
 		after: func(t *testing.T, e suiteEnv) {
 			require.Zero(t, count(t, e.d.Admin, `SELECT count(id)::int FROM public.leads WHERE id = 2`))
 		},

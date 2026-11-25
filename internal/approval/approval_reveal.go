@@ -59,20 +59,20 @@ type heldRun struct {
 	params []any
 }
 
-// heldWrite reads the held write from approval a's binding: the statement,
-// its parameters (numbers kept exact, as the write tool decodes them), and
+// heldWrite reads the held write from approval a's binding: its SQL
+// request's statement and parameters (numbers kept exact, as the write tool decodes them), and
 // the run it belongs to.
 func heldWrite(a action.Approval, check StatementChecker) (heldRun, error) {
 	b, err := approval.ParseBinding(a.BindingText)
 	if err != nil {
 		return heldRun{}, err
 	}
-	stmt, err := check.Check(b.Statement, action.ToolWrite)
+	stmt, err := check.Check(b.Request.Statement, action.ToolWrite)
 	if err != nil {
 		return heldRun{}, fmt.Errorf("the held statement no longer parses: %w", err)
 	}
-	params := make([]any, 0, len(b.Params))
-	for _, raw := range b.Params {
+	params := make([]any, 0, len(b.Request.Params))
+	for _, raw := range b.Request.Params {
 		var v any
 		dec := json.NewDecoder(bytes.NewReader(raw))
 		dec.UseNumber()
@@ -85,7 +85,7 @@ func heldWrite(a action.Approval, check StatementChecker) (heldRun, error) {
 	if b.TaskID != nil {
 		in.TaskID = *b.TaskID
 	}
-	return heldRun{intent: in, op: stmt.Op, sql: b.Statement, params: params}, nil
+	return heldRun{intent: in, op: stmt.Op, sql: b.Request.Statement, params: params}, nil
 }
 
 // revealApprovalError is the page's answer to a reveal Postgres refused.

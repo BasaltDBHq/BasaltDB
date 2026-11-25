@@ -118,7 +118,7 @@ func TestApprovalFlow(t *testing.T) {
 	require.NoError(t, err, "the Go codec accepts what Postgres built")
 	require.Equal(t, in.RunID, b.RunID)
 	require.Equal(t, a.Name, b.Agent)
-	require.Equal(t, stmt, b.Statement)
+	require.Equal(t, stmt, b.Request.Statement)
 	require.WithinDuration(t, time.Now().Add(24*time.Hour), held.ExpiresAt, time.Minute)
 	require.Equal(t, "APPROVAL_PENDING", scalarOf[string](t, a.Conn,
 		`SELECT status FROM basalt_meta.agent_changes WHERE approval_id = $1`, held.ApprovalID))

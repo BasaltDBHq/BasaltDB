@@ -1,26 +1,26 @@
 {
   "request": {
     "approvalId": "0193a4c2-7d1e-7c3a-9f00-0000000000a1",
-    "binding": "{\"kind\": \"APPROVE\", \"rows\": 3, \"agent\": \"basalt_agent_bot\", \"runId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000b2\", \"intent\": \"Remove the spam lead\", \"params\": [3], \"taskId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000c3\", \"database\": \"app\", \"rowsHash\": \"3c4e241b3edf41860015fee8ec777698cd66631ddd185902261f9256a8a5bfa4\", \"expiresAt\": \"2026-11-12T06:02:11.123456Z\", \"statement\": \"DELETE FROM public.leads WHERE id = $1\", \"approvalId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000a1\", \"assignedColumns\": []}",
+    "binding": "{\"kind\": \"APPROVE\", \"rows\": 3, \"agent\": \"agent:bot\", \"runId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000b2\", \"store\": {\"kind\": \"POSTGRES\", \"name\": \"app\"}, \"intent\": \"Remove the spam lead\", \"taskId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000c3\", \"request\": {\"kind\": \"SQL\", \"params\": [3], \"statement\": \"DELETE FROM public.leads WHERE id = $1\"}, \"rowsHash\": \"303a26bb56f34a3c9bfa13d7b205cdc61859a27a39fb1092afe3a29b3c972701\", \"expiresAt\": \"2026-11-12T06:02:11.123456Z\", \"approvalId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000a1\", \"assignedFields\": []}",
     "lines": [
-      "{\"op\": \"DELETE\", \"key\": {\"id\": 3}, \"old\": {\"id\": 3, \"name\": \"Café ✓ lead\", \"status\": \"open\"}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
-      "{\"op\": \"DELETE\", \"key\": {\"id\": 5}, \"old\": {\"id\": 5, \"note\": \"note 5 — 日本 🚀\", \"lead_id\": 3}, \"set\": null, \"table\": \"public.lead_notes\", \"cascaded\": true}",
-      "{\"op\": \"DELETE\", \"table\": \"public.note_tags\", \"rowHash\": \"abababababababababababababababababababababababababababababababab\", \"cascaded\": true, \"redacted\": true}"
+      "{\"op\": \"DELETE\", \"key\": {\"id\": 3}, \"old\": {\"id\": 3, \"name\": \"Café ✓ lead\", \"status\": \"open\"}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+      "{\"op\": \"DELETE\", \"key\": {\"id\": 5}, \"old\": {\"id\": 5, \"note\": \"note 5 — 日本 🚀\", \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.lead_notes\"}",
+      "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"abababababababababababababababababababababababababababababababab\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.note_tags\"}"
     ],
     "credentialIds": [
       "AQIDBAUGBwgJCgsMDQ4PEA"
     ],
-    "fragment": "1.pJLPattMFMVfZRi-pRU0-mdb8C2cRG1SGpKYtIVGxlxprhQRaSQ0o6QlBPIOLRRKoKsuCn2LvkkWWfcRymhUx6WhNdTeSEdzz_3dM_eKQtO09QWU-5yG1GZTF7zUscacoTVOXbCmmW1b9uoHjI5oUgheiJyG9Cqm54XgMQ1JTGdHR_PDl1FMRySmbX0ptezqF8hRKHMoAQmlWvbKMqnVcLoT-4PL3xkSxxQVQq1s51jVF0jUGRLZQEVKBG5ONdBC1aOcugstKJDnmzdLXWPDQUECEk0dNM3DmHsgz4zsph46Hktc5JnHJoFtMz9DnGA6Ho-D6STlQRC4jHPOJv7UdpyAZVPHD2ACfpKBZzzxTVO0KGfDaI7tBBZjFnNO7CC0nZCxLea4nh-8NuelAoXVKord6Hl0EpEn88MD0nRJWaRbOg1JXu1F84gUnPxP_mOm9OH2N80DflZKWeQC-U5ddpUw-S6u6YiWhUBJw1O9G3WzjmQKz_GtFq9iWvRN3Wut1iX_VdWigGrIeweyb1_I3e27tYvVY3fSfK8bFDHtnST2OYiuLM1tJ-Vgsh6GsUhBpsCx75hBKVEPsCG3_yi333PXamipn4hP7m7ek_sPn-9vv5Lvnz7eGEPNsVzPYCPypbZ8BF-13Z_ofzfTPksFuVwt8sMeQ_Jv_8fx-jbIIVXryIsRTVvkKFSh97Bfndnx_u727MXT7cv82U4uD3aPvaNoRhfXPwIAAP__",
-    "rowsHash": "3c4e241b3edf41860015fee8ec777698cd66631ddd185902261f9256a8a5bfa4",
-    "challenge": "DlTiJgSQf58uJ40XpwHbHAFGccDc0io10f7I_VTrH18"
+    "fragment": "2.rJPPattMFMVfZbh8y3HQzFj2p0AXTqz8KQl2lLSFChGuNFeOiCypGilpd3mHFgol0FUXhb5F3ySLrPsIZSy7iUtpDa29sAed-ztnzozCMITLrNDAoS6vDXDAGRWNXbbFoQYegmnKmuyfpa7AOUEUcciKppM2aC47bU2vWjLNI3WFNc4t1zTY0NwO2FlrdoDmAjjQ6yqryYwsCauqLq8wtzRAY7JZQXovo1wbiHgIZbVA0xv7k2mLCqHM9XK5DNeZtWbhZMiCzQVW9KvdXFEdL3QJmgQ1LZogU7Z1Qhtalo21zAn1eff8n3huMF6X18sO10Aak-YnZsTD0OEwmk6DyXMfuFqe83Zc2qSO8BT2E9kbakG9YaKw56WO03N-fGIJHKaT07P9wD_tDgo4BDQvr4g1F8RMhXNmO9gIlyjgcHpyBDxUEYexf-Sf-WwvmByzqo3zLNmyKMNeHPiBzzLNnrD_BHBQjkI5iGN3kKo-qsSLUxRKD2PpuIlOBuJ_10M5ROWlsXA8iSkplF6sEm8oh45FSEcOekL0hDxzBtuO3BZiS0jVdwcvN4qOAnhoCxWr3LZOxWEX06-f2d3t21UNZUUF8KLNcw6BvzsJxusdrqZTzA1xeLxxewvkg8LlbnfPmMvubt6x-_ef7m-_sG8fP9xY8z9bNHW77nBuaQsb9aD6LQIw_rvvMsVaFJvivMGZ6V6r0cnheGf0bH_nevZ0d2aOxyf9qT-CKPoeAAD__w",
+    "rowsHash": "303a26bb56f34a3c9bfa13d7b205cdc61859a27a39fb1092afe3a29b3c972701",
+    "challenge": "pkNjE2FsX0IqEqhTDhJx5P1SVzH5xYQ_CST1K1CM_5k"
   },
   "response": {
     "approvalId": "0193a4c2-7d1e-7c3a-9f00-0000000000a1",
     "credentialId": "AQIDBAUGBwgJCgsMDQ4PEA",
     "authenticatorData": "EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8wMTIzNA",
-    "clientDataJson": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRGxUaUpnU1FmNTh1SjQwWHB3SGJIQUZHY2NEYzBpbzEwZjdJX1ZUckgxOCIsIm9yaWdpbiI6Imh0dHBzOi8vYmFzYWx0dmF1bHQuYXBwIiwiY3Jvc3NPcmlnaW4iOmZhbHNlfQ",
+    "clientDataJson": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoicGtOakUyRnNYMElxRXFoVERoSng1UDFTVnpINXhZUV9DU1QxSzFDTV81ayIsIm9yaWdpbiI6Imh0dHBzOi8vYmFzYWx0dmF1bHQuYXBwIiwiY3Jvc3NPcmlnaW4iOmZhbHNlfQ",
     "signature": "MDEyMzQ1Njc4OTo7PD0-P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dQ",
-    "json": "{\"approvalId\":\"0193a4c2-7d1e-7c3a-9f00-0000000000a1\",\"credentialId\":\"AQIDBAUGBwgJCgsMDQ4PEA\",\"authenticatorData\":\"EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8wMTIzNA\",\"clientDataJson\":\"eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRGxUaUpnU1FmNTh1SjQwWHB3SGJIQUZHY2NEYzBpbzEwZjdJX1ZUckgxOCIsIm9yaWdpbiI6Imh0dHBzOi8vYmFzYWx0dmF1bHQuYXBwIiwiY3Jvc3NPcmlnaW4iOmZhbHNlfQ\",\"signature\":\"MDEyMzQ1Njc4OTo7PD0-P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dQ\"}"
+    "json": "{\"approvalId\":\"0193a4c2-7d1e-7c3a-9f00-0000000000a1\",\"credentialId\":\"AQIDBAUGBwgJCgsMDQ4PEA\",\"authenticatorData\":\"EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8wMTIzNA\",\"clientDataJson\":\"eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoicGtOakUyRnNYMElxRXFoVERoSng1UDFTVnpINXhZUV9DU1QxSzFDTV81ayIsIm9yaWdpbiI6Imh0dHBzOi8vYmFzYWx0dmF1bHQuYXBwIiwiY3Jvc3NPcmlnaW4iOmZhbHNlfQ\",\"signature\":\"MDEyMzQ1Njc4OTo7PD0-P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dQ\"}"
   },
   "registrationRequest": {
     "challenge": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8",
@@ -41,21 +41,21 @@
     {
       "name": "no cascade",
       "lines": [
-        "{\"op\": \"UPDATE\", \"key\": {\"id\": 21}, \"old\": {\"id\": 21, \"lead_id\": 3}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
-        "{\"op\": \"UPDATE\", \"key\": {\"id\": 22}, \"old\": {\"id\": 22, \"lead_id\": 3}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
-        "{\"op\": \"UPDATE\", \"key\": {\"id\": 23}, \"old\": {\"id\": 23, \"lead_id\": 3}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
-        "{\"op\": \"UPDATE\", \"key\": {\"id\": 24}, \"old\": {\"id\": 24, \"lead_id\": 3}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
-        "{\"op\": \"UPDATE\", \"key\": {\"id\": 25}, \"old\": {\"id\": 25, \"lead_id\": 3}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
-        "{\"op\": \"UPDATE\", \"key\": {\"id\": 26}, \"old\": {\"id\": 26, \"lead_id\": 3}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
-        "{\"op\": \"UPDATE\", \"key\": {\"id\": 27}, \"old\": {\"id\": 27, \"lead_id\": 3}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
-        "{\"op\": \"UPDATE\", \"key\": {\"id\": 28}, \"old\": {\"id\": 28, \"lead_id\": 3}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
-        "{\"op\": \"UPDATE\", \"key\": {\"id\": 29}, \"old\": {\"id\": 29, \"lead_id\": 3}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
-        "{\"op\": \"UPDATE\", \"key\": {\"id\": 30}, \"old\": {\"id\": 30, \"lead_id\": 3}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
-        "{\"op\": \"UPDATE\", \"key\": {\"id\": 31}, \"old\": {\"id\": 31, \"lead_id\": 3}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
-        "{\"op\": \"UPDATE\", \"key\": {\"id\": 32}, \"old\": {\"id\": 32, \"lead_id\": 3}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
-        "{\"op\": \"UPDATE\", \"key\": {\"id\": 33}, \"old\": {\"id\": 33, \"lead_id\": 3}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
-        "{\"op\": \"UPDATE\", \"key\": {\"id\": 34}, \"old\": {\"id\": 34, \"lead_id\": 3}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
-        "{\"op\": \"UPDATE\", \"key\": {\"id\": 35}, \"old\": {\"id\": 35, \"lead_id\": 3}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}"
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 21}, \"old\": {\"id\": 21, \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 22}, \"old\": {\"id\": 22, \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 23}, \"old\": {\"id\": 23, \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 24}, \"old\": {\"id\": 24, \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 25}, \"old\": {\"id\": 25, \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 26}, \"old\": {\"id\": 26, \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 27}, \"old\": {\"id\": 27, \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 28}, \"old\": {\"id\": 28, \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 29}, \"old\": {\"id\": 29, \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 30}, \"old\": {\"id\": 30, \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 31}, \"old\": {\"id\": 31, \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 32}, \"old\": {\"id\": 32, \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 33}, \"old\": {\"id\": 33, \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 34}, \"old\": {\"id\": 34, \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 35}, \"old\": {\"id\": 35, \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}"
       ],
       "headline": "Update 15 rows in public.leads",
       "cascadedRows": 0
@@ -63,37 +63,37 @@
     {
       "name": "cascades, one table hidden",
       "lines": [
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 7}, \"old\": {\"id\": 7}, \"set\": null, \"table\": \"public.customers\", \"cascaded\": false}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 100}, \"old\": {\"id\": 100}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 101}, \"old\": {\"id\": 101}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 102}, \"old\": {\"id\": 102}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 103}, \"old\": {\"id\": 103}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 104}, \"old\": {\"id\": 104}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 105}, \"old\": {\"id\": 105}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 106}, \"old\": {\"id\": 106}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 107}, \"old\": {\"id\": 107}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 108}, \"old\": {\"id\": 108}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 109}, \"old\": {\"id\": 109}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 110}, \"old\": {\"id\": 110}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 111}, \"old\": {\"id\": 111}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 112}, \"old\": {\"id\": 112}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 113}, \"old\": {\"id\": 113}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 114}, \"old\": {\"id\": 114}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 115}, \"old\": {\"id\": 115}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 116}, \"old\": {\"id\": 116}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 117}, \"old\": {\"id\": 117}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 118}, \"old\": {\"id\": 118}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 119}, \"old\": {\"id\": 119}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 120}, \"old\": {\"id\": 120}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 121}, \"old\": {\"id\": 121}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 122}, \"old\": {\"id\": 122}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 123}, \"old\": {\"id\": 123}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 124}, \"old\": {\"id\": 124}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 125}, \"old\": {\"id\": 125}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 126}, \"old\": {\"id\": 126}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 127}, \"old\": {\"id\": 127}, \"set\": null, \"table\": \"public.invoices\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"table\": \"public.payments\", \"rowHash\": \"cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\", \"cascaded\": true, \"redacted\": true}",
-        "{\"op\": \"DELETE\", \"table\": \"public.payments\", \"rowHash\": \"cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\", \"cascaded\": true, \"redacted\": true}"
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 7}, \"old\": {\"id\": 7}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": false, \"resource\": \"public.customers\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 100}, \"old\": {\"id\": 100}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 101}, \"old\": {\"id\": 101}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 102}, \"old\": {\"id\": 102}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 103}, \"old\": {\"id\": 103}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 104}, \"old\": {\"id\": 104}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 105}, \"old\": {\"id\": 105}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 106}, \"old\": {\"id\": 106}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 107}, \"old\": {\"id\": 107}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 108}, \"old\": {\"id\": 108}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 109}, \"old\": {\"id\": 109}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 110}, \"old\": {\"id\": 110}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 111}, \"old\": {\"id\": 111}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 112}, \"old\": {\"id\": 112}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 113}, \"old\": {\"id\": 113}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 114}, \"old\": {\"id\": 114}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 115}, \"old\": {\"id\": 115}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 116}, \"old\": {\"id\": 116}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 117}, \"old\": {\"id\": 117}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 118}, \"old\": {\"id\": 118}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 119}, \"old\": {\"id\": 119}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 120}, \"old\": {\"id\": 120}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 121}, \"old\": {\"id\": 121}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 122}, \"old\": {\"id\": 122}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 123}, \"old\": {\"id\": 123}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 124}, \"old\": {\"id\": 124}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 125}, \"old\": {\"id\": 125}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 126}, \"old\": {\"id\": 126}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 127}, \"old\": {\"id\": 127}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.invoices\"}",
+        "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.payments\"}",
+        "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.payments\"}"
       ],
       "headline": "Delete 1 row in public.customers + 30 cascaded rows (public.invoices 28, public.payments 2 [values hidden])",
       "cascadedRows": 30
@@ -101,9 +101,9 @@
     {
       "name": "the fixture request",
       "lines": [
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 3}, \"old\": {\"id\": 3, \"name\": \"Café ✓ lead\", \"status\": \"open\"}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 5}, \"old\": {\"id\": 5, \"note\": \"note 5 — 日本 🚀\", \"lead_id\": 3}, \"set\": null, \"table\": \"public.lead_notes\", \"cascaded\": true}",
-        "{\"op\": \"DELETE\", \"table\": \"public.note_tags\", \"rowHash\": \"abababababababababababababababababababababababababababababababab\", \"cascaded\": true, \"redacted\": true}"
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 3}, \"old\": {\"id\": 3, \"name\": \"Café ✓ lead\", \"status\": \"open\"}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 5}, \"old\": {\"id\": 5, \"note\": \"note 5 — 日本 🚀\", \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.lead_notes\"}",
+        "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"abababababababababababababababababababababababababababababababab\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.note_tags\"}"
       ],
       "headline": "Delete 1 row in public.leads + 2 cascaded rows (public.lead_notes 1, public.note_tags 1 [values hidden])",
       "cascadedRows": 2
@@ -111,9 +111,9 @@
     {
       "name": "a cascade of another operation",
       "lines": [
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 3}, \"old\": {\"id\": 3}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
-        "{\"op\": \"DELETE\", \"key\": {\"id\": 4}, \"old\": {\"id\": 4}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
-        "{\"op\": \"UPDATE\", \"key\": {\"id\": 1}, \"old\": {\"id\": 1, \"lead_id\": 3}, \"set\": null, \"table\": \"public.lead_owner\", \"cascaded\": true}"
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 3}, \"old\": {\"id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 4}, \"old\": {\"id\": 4}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 1}, \"old\": {\"id\": 1, \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"cascaded\": true, \"resource\": \"public.lead_owner\"}"
       ],
       "headline": "Delete 2 rows in public.leads + 1 cascaded row (public.lead_owner 1 updated)",
       "cascadedRows": 1
@@ -121,9 +121,9 @@
     {
       "name": "an upsert on a hidden table",
       "lines": [
-        "{\"op\": \"INSERT\", \"key\": null, \"old\": null, \"set\": {\"name\": \"x\"}, \"table\": \"public.leads\", \"cascaded\": false}",
-        "{\"op\": \"UPDATE\", \"table\": \"public.leads\", \"rowHash\": \"cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\", \"cascaded\": false, \"redacted\": true}",
-        "{\"op\": \"INSERT\", \"key\": null, \"old\": null, \"set\": {\"name\": \"x\"}, \"table\": \"public.leads\", \"cascaded\": false}"
+        "{\"op\": \"INSERT\", \"key\": null, \"old\": null, \"set\": {\"name\": \"x\"}, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"INSERT\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"UPDATE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"rowHash\": \"cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\", \"cascaded\": false, \"redacted\": true, \"resource\": \"public.leads\"}",
+        "{\"op\": \"INSERT\", \"key\": null, \"old\": null, \"set\": {\"name\": \"x\"}, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"INSERT\"}, \"cascaded\": false, \"resource\": \"public.leads\"}"
       ],
       "headline": "Insert 2 rows in public.leads, update 1 row in public.leads [values hidden]",
       "cascadedRows": 0

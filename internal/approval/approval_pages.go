@@ -21,6 +21,10 @@ func (ac *Service) ApprovalRequest(ctx context.Context, id uuid.UUID) (approval.
 	if err != nil {
 		return approval.Request{}, err
 	}
+	// The engine relays only texts that follow the text rules.
+	if err := approval.CheckTexts(a.BindingText, a.Lines...); err != nil {
+		return approval.Request{}, err
+	}
 	ids, err := ac.delivery.CredentialIDs(ctx)
 	if err != nil {
 		return approval.Request{}, err

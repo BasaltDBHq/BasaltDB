@@ -46,6 +46,10 @@ func (pc *Service) PluginApprovalRequest(ctx context.Context, id uuid.UUID) (app
 	if err != nil {
 		return approval.PluginRequest{}, err
 	}
+	// The engine relays only texts that follow the text rules.
+	if err := approval.CheckTexts(r.BindingText, r.SettingsText); err != nil {
+		return approval.PluginRequest{}, err
+	}
 	return approval.PluginRequest{ApprovalID: r.ApprovalID, Binding: r.BindingText, Settings: r.SettingsText, CredentialIDs: ids}, nil
 }
 

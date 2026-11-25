@@ -7,8 +7,8 @@
       "nonce": "ZGVmZ2hpamtsbW5vcHFycw",
       "revealSecret": "AAECAwQFBgcICQoLDA0ODw",
       "revealKey": "10ab07b083d16ab69eb9fdff08c23623b83a2c93f77d8d584c57ec2cdc66e1fd",
-      "rowsHash": "69d5d2184ded63dacce7552772be6b94feaec534ad9849beca6d0c48698dcd26",
-      "challenge": "dVbyiXIYpcsGhp_N6Plp6VK2QHaVEnzlyhSRzeVsZdc"
+      "rowsHash": "b23d4a39dd3f09c93a94f7c137c8bd70263ef52c0c178ed17918e36ae73180ba",
+      "challenge": "2iOk40dAby0l2xlmYNW0LjYGvgjJIIt_wjPyKTNbk6s"
     },
     {
       "name": "revert, large plan",
@@ -24,7 +24,7 @@
   "rows": [
     {
       "name": "approval row that hashes to its line",
-      "line": "{\"op\": \"DELETE\", \"table\": \"public.lead_notes\", \"rowHash\": \"50728b5685b09931dbe5ce580db1736af673cc5731312300fd1b5a63f7a26e4d\", \"cascaded\": true, \"redacted\": true}",
+      "line": "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"50728b5685b09931dbe5ce580db1736af673cc5731312300fd1b5a63f7a26e4d\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.lead_notes\"}",
       "row": {
         "line": 0,
         "row": "[{\"id\": 8}, {\"id\": 8, \"body\": \"call back\", \"lead_id\": 4}, null]"
@@ -33,7 +33,7 @@
     },
     {
       "name": "revert row that hashes to its line",
-      "line": "{\"op\": \"INSERT\", \"table\": \"public.lead_notes\", \"action\": \"RESTORE\", \"rowHash\": \"281b357e17fe3eb1066267c02a515ce13058cd9b09e214b13089c29e32263854\", \"cascaded\": true, \"conflict\": null, \"redacted\": true, \"changeIds\": [\"0193a3f0-0000-7000-8000-0000000000c1\"]}",
+      "line": "{\"op\": \"INSERT\", \"shape\": \"RECORD\", \"store\": {\"code\": null, \"kind\": \"POSTGRES\", \"verb\": \"INSERT\"}, \"action\": \"RESTORE\", \"rowHash\": \"281b357e17fe3eb1066267c02a515ce13058cd9b09e214b13089c29e32263854\", \"cascaded\": true, \"conflict\": null, \"redacted\": true, \"resource\": \"public.lead_notes\", \"changeIds\": [\"0193a3f0-0000-7000-8000-0000000000c1\"]}",
       "row": {
         "line": 0,
         "row": "[{\"id\": 8}, null, {\"id\": 8, \"body\": \"call back \\\"Ana\\\"\", \"lead_id\": 4}]"
@@ -42,7 +42,7 @@
     },
     {
       "name": "a changed value",
-      "line": "{\"op\": \"DELETE\", \"table\": \"public.lead_notes\", \"rowHash\": \"50728b5685b09931dbe5ce580db1736af673cc5731312300fd1b5a63f7a26e4d\", \"cascaded\": true, \"redacted\": true}",
+      "line": "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"50728b5685b09931dbe5ce580db1736af673cc5731312300fd1b5a63f7a26e4d\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.lead_notes\"}",
       "row": {
         "line": 0,
         "row": "[{\"id\": 8}, {\"id\": 8, \"body\": \"call later\", \"lead_id\": 4}, null]"
@@ -51,7 +51,7 @@
     },
     {
       "name": "a re-serialized row",
-      "line": "{\"op\": \"DELETE\", \"table\": \"public.lead_notes\", \"rowHash\": \"50728b5685b09931dbe5ce580db1736af673cc5731312300fd1b5a63f7a26e4d\", \"cascaded\": true, \"redacted\": true}",
+      "line": "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"50728b5685b09931dbe5ce580db1736af673cc5731312300fd1b5a63f7a26e4d\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.lead_notes\"}",
       "row": {
         "line": 0,
         "row": "[{\"id\":8},{\"id\":8,\"body\":\"call back\",\"lead_id\":4},null]"
@@ -60,7 +60,7 @@
     },
     {
       "name": "a SECRET column nulled",
-      "line": "{\"op\": \"DELETE\", \"table\": \"public.lead_notes\", \"rowHash\": \"137ecb328189c8196f9ef997fa5b17d3c8dd8131217c5482583456d631b8a7fb\", \"cascaded\": true, \"redacted\": true}",
+      "line": "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"137ecb328189c8196f9ef997fa5b17d3c8dd8131217c5482583456d631b8a7fb\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.lead_notes\"}",
       "row": {
         "line": 0,
         "row": "[{\"id\": 9}, {\"id\": 9, \"pin\": null, \"lead_id\": 4}, null]",
@@ -72,7 +72,7 @@
     },
     {
       "name": "a SECRET column with a value",
-      "line": "{\"op\": \"DELETE\", \"table\": \"public.lead_notes\", \"rowHash\": \"137ecb328189c8196f9ef997fa5b17d3c8dd8131217c5482583456d631b8a7fb\", \"cascaded\": true, \"redacted\": true}",
+      "line": "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"137ecb328189c8196f9ef997fa5b17d3c8dd8131217c5482583456d631b8a7fb\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.lead_notes\"}",
       "row": {
         "line": 0,
         "row": "[{\"id\": 9}, {\"id\": 9, \"pin\": \"1234\", \"lead_id\": 4}, {\"pin\": null}]",
@@ -84,7 +84,7 @@
     },
     {
       "name": "a SECRET column the row does not contain",
-      "line": "{\"op\": \"DELETE\", \"table\": \"public.lead_notes\", \"rowHash\": \"137ecb328189c8196f9ef997fa5b17d3c8dd8131217c5482583456d631b8a7fb\", \"cascaded\": true, \"redacted\": true}",
+      "line": "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"137ecb328189c8196f9ef997fa5b17d3c8dd8131217c5482583456d631b8a7fb\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.lead_notes\"}",
       "row": {
         "line": 0,
         "row": "[{\"id\": 9}, {\"id\": 9, \"pin\": null, \"lead_id\": 4}, null]",
@@ -96,7 +96,7 @@
     },
     {
       "name": "a SECRET column named twice",
-      "line": "{\"op\": \"DELETE\", \"table\": \"public.lead_notes\", \"rowHash\": \"137ecb328189c8196f9ef997fa5b17d3c8dd8131217c5482583456d631b8a7fb\", \"cascaded\": true, \"redacted\": true}",
+      "line": "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"137ecb328189c8196f9ef997fa5b17d3c8dd8131217c5482583456d631b8a7fb\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.lead_notes\"}",
       "row": {
         "line": 0,
         "row": "[{\"id\": 9}, {\"id\": 9, \"pin\": null, \"lead_id\": 4}, null]",
@@ -109,7 +109,7 @@
     },
     {
       "name": "a SECRET column with an empty name",
-      "line": "{\"op\": \"DELETE\", \"table\": \"public.lead_notes\", \"rowHash\": \"137ecb328189c8196f9ef997fa5b17d3c8dd8131217c5482583456d631b8a7fb\", \"cascaded\": true, \"redacted\": true}",
+      "line": "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"137ecb328189c8196f9ef997fa5b17d3c8dd8131217c5482583456d631b8a7fb\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.lead_notes\"}",
       "row": {
         "line": 0,
         "row": "[{\"id\": 9}, {\"id\": 9, \"pin\": null, \"lead_id\": 4}, null]",
@@ -121,7 +121,7 @@
     },
     {
       "name": "a line that is not redacted",
-      "line": "{\"op\": \"DELETE\", \"key\": {\"id\": 8}, \"old\": {\"id\": 8}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
+      "line": "{\"op\": \"DELETE\", \"key\": {\"id\": 8}, \"old\": {\"id\": 8}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
       "row": {
         "line": 0,
         "row": "[{\"id\": 8}, {\"id\": 8, \"body\": \"call back\", \"lead_id\": 4}, null]"
@@ -130,7 +130,7 @@
     },
     {
       "name": "a row that is not three values",
-      "line": "{\"op\": \"DELETE\", \"table\": \"public.lead_notes\", \"rowHash\": \"a51215ae4fca167c61f18eded688219cf34128c0948697f36ecc1f5bc2251132\", \"cascaded\": true, \"redacted\": true}",
+      "line": "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"a51215ae4fca167c61f18eded688219cf34128c0948697f36ecc1f5bc2251132\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.lead_notes\"}",
       "row": {
         "line": 0,
         "row": "[{\"id\": 8}, null]"
@@ -139,7 +139,7 @@
     },
     {
       "name": "a row with a scalar value",
-      "line": "{\"op\": \"DELETE\", \"table\": \"public.lead_notes\", \"rowHash\": \"64ba01e3e54bd59df8bbc97672b87e0239d324816bf8069dee4b3e96f47ba6c1\", \"cascaded\": true, \"redacted\": true}",
+      "line": "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"64ba01e3e54bd59df8bbc97672b87e0239d324816bf8069dee4b3e96f47ba6c1\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.lead_notes\"}",
       "row": {
         "line": 0,
         "row": "[{\"id\": 8}, 5, null]"
@@ -148,7 +148,7 @@
     },
     {
       "name": "a row that is not JSON",
-      "line": "{\"op\": \"DELETE\", \"table\": \"public.lead_notes\", \"rowHash\": \"a2603cfea5c9d5ce8fc9ef08d3c113360b360a1b0b0f5eda550374fc163a935c\", \"cascaded\": true, \"redacted\": true}",
+      "line": "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"a2603cfea5c9d5ce8fc9ef08d3c113360b360a1b0b0f5eda550374fc163a935c\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.lead_notes\"}",
       "row": {
         "line": 0,
         "row": "[{\"id\": 8}"
@@ -157,7 +157,7 @@
     },
     {
       "name": "an empty secretColumns",
-      "line": "{\"op\": \"DELETE\", \"table\": \"public.lead_notes\", \"rowHash\": \"50728b5685b09931dbe5ce580db1736af673cc5731312300fd1b5a63f7a26e4d\", \"cascaded\": true, \"redacted\": true}",
+      "line": "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"50728b5685b09931dbe5ce580db1736af673cc5731312300fd1b5a63f7a26e4d\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.lead_notes\"}",
       "row": {
         "line": 0,
         "row": "[{\"id\": 8}, {\"id\": 8, \"body\": \"call back\", \"lead_id\": 4}, null]",
@@ -167,7 +167,7 @@
     },
     {
       "name": "a line whose keys differ in case",
-      "line": "{\"op\": \"DELETE\", \"table\": \"public.lead_notes\", \"rowHash\": \"50728b5685b09931dbe5ce580db1736af673cc5731312300fd1b5a63f7a26e4d\", \"cascaded\": true, \"REDACTED\": true}",
+      "line": "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"50728b5685b09931dbe5ce580db1736af673cc5731312300fd1b5a63f7a26e4d\", \"cascaded\": true, \"REDACTED\": true, \"resource\": \"public.lead_notes\"}",
       "row": {
         "line": 0,
         "row": "[{\"id\": 8}, {\"id\": 8, \"body\": \"call back\", \"lead_id\": 4}, null]"
@@ -176,7 +176,7 @@
     },
     {
       "name": "a line whose rowHash key differs in case",
-      "line": "{\"op\": \"DELETE\", \"table\": \"public.lead_notes\", \"RowHash\": \"50728b5685b09931dbe5ce580db1736af673cc5731312300fd1b5a63f7a26e4d\", \"cascaded\": true, \"redacted\": true}",
+      "line": "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"RowHash\": \"50728b5685b09931dbe5ce580db1736af673cc5731312300fd1b5a63f7a26e4d\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.lead_notes\"}",
       "row": {
         "line": 0,
         "row": "[{\"id\": 8}, {\"id\": 8, \"body\": \"call back\", \"lead_id\": 4}, null]"

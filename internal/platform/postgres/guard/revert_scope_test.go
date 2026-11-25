@@ -190,14 +190,14 @@ func TestRevertScopeFilters(t *testing.T) {
 	require.Len(t, lines, 1)
 	l, err := revert.ParseLine(lines[0])
 	require.NoError(t, err)
-	require.Equal(t, "public.lead_owner", l.Table)
+	require.Equal(t, "public.lead_owner", l.Resource)
 
 	prep, err := guard.PrepareRevert(ctx, e.bot.Conn, ownerOnly, "Undo the owner only")
 	require.NoError(t, err)
 	b, err := revert.ParseBinding(prep.BindingText)
 	require.NoError(t, err)
 	require.Equal(t, []uuid.UUID{e.botB.RunID}, b.Select.Runs)
-	require.Equal(t, []string{"public.lead_owner"}, b.Select.Tables)
+	require.Equal(t, []string{"public.lead_owner"}, b.Select.Resources)
 
 	// Runs: the helper's run in the task, bot's run outside it and an
 	// unknown run all read the same.
@@ -321,7 +321,7 @@ func TestRevertScopeNormalized(t *testing.T) {
 	}
 	require.Equal(t, revert.Select{
 		Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Name}, Runs: want,
-		Tables: []string{"public.lead_owner", "public.leads"},
+		Resources: []string{"public.lead_owner", "public.leads"},
 	}, b.Select)
 	require.Contains(t, stored, fmt.Sprintf(`"select": {"runs": [%q, %q], "scope": "TASK", "agents": [%q], "scopeId": %q, "resources": ["public.lead_owner", "public.leads"]}`,
 		want[0], want[1], e.bot.Name, e.task))

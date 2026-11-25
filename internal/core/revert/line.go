@@ -8,6 +8,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
+	"github.com/basaltdbhq/basaltdb/internal/core/textrule"
 	"github.com/basaltdbhq/basaltdb/internal/lib/wiretime"
 )
 
@@ -20,7 +21,7 @@ const (
 // Conflict reasons: why a row is skipped (CONTRACT.md, Revert, Conflicts).
 const (
 	ConflictChangedAfter    = "CHANGED_AFTER"
-	ConflictRowGone         = "ROW_GONE"
+	ConflictTargetGone      = "TARGET_GONE"
 	ConflictKeyTaken        = "KEY_TAKEN"
 	ConflictAlreadyReverted = "ALREADY_REVERTED"
 	ConflictValuesPruned    = "VALUES_PRUNED"
@@ -30,23 +31,33 @@ const (
 )
 
 var conflicts = map[string]bool{
-	ConflictChangedAfter: true, ConflictRowGone: true, ConflictKeyTaken: true, ConflictAlreadyReverted: true,
+	ConflictChangedAfter: true, ConflictTargetGone: true, ConflictKeyTaken: true, ConflictAlreadyReverted: true,
 	ConflictValuesPruned: true, ConflictSchemaChanged: true, ConflictCascade: true, ConflictConstraint: true,
 }
 
-// Line is one parsed revert line. Key, Now and Set keep the person's column
-// names and values exactly as Postgres returned them. Op is the inverse
-// write the revert runs. A redacted line has no Key, Now, Set or SQLState.
+// LineStore is a revert line's store part: the store's kind, its own word
+// for the inverse write, and its own error code for a line it could not
+// restore (null otherwise).
+type LineStore struct {
+	Kind string  `json:"kind"`
+	Verb string  `json:"verb"`
+	Code *string `json:"code"`
+}
+
+// Line is one parsed revert line. Key, Now and Set keep the person's field
+// names and values exactly as the store returned them. Op is the inverse
+// write the revert runs. A redacted line has no Key, Now or Set.
 type Line struct {
 	Op        string          `json:"op"`
 	Key       json.RawMessage `json:"key,omitempty"`
 	Now       json.RawMessage `json:"now,omitempty"`
 	Set       json.RawMessage `json:"set,omitempty"`
-	Table     string          `json:"table"`
+	Shape     string          `json:"shape"`
+	Store     LineStore       `json:"store"`
+	Resource  string          `json:"resource"`
 	Action    string          `json:"action"`
 	Cascaded  bool            `json:"cascaded"`
 	Conflict  *string         `json:"conflict"`
-	SQLState  *string         `json:"sqlState,omitempty"`
 	ChangeIDs []uuid.UUID     `json:"changeIds"`
 	Redacted  bool            `json:"redacted,omitempty"`
 	RowHash   string          `json:"rowHash,omitempty"`
@@ -70,9 +81,13 @@ func imageMarks(image json.RawMessage) map[string]string {
 	return marks
 }
 
-// ParseLine parses one revert line for display and checks its action and
-// conflict agree: a RESTORE line has no conflict, a SKIP line names one.
+// ParseLine parses one signed revert line for display: the text rules,
+// then its keys, and its action and conflict agree: a RESTORE line has no
+// conflict, a SKIP line names one.
 func ParseLine(text string) (Line, error) {
+	if err := textrule.Check(text); err != nil {
+		return Line{}, Invalid("revert line: %v", err)
+	}
 	l, err := ParseMarkedLine(text)
 	if err != nil {
 		return Line{}, err
@@ -98,8 +113,8 @@ func ParseMarkedLine(text string) (Line, error) {
 	default:
 		return Line{}, Invalid("revert line op %q", l.Op)
 	}
-	if l.Table == "" {
-		return Line{}, Invalid("revert line without a table")
+	if err := approval.CheckLinePart(l.Shape, l.Store.Kind, l.Store.Verb, l.Resource); err != nil {
+		return Line{}, Invalid("revert line %v", err)
 	}
 	if len(l.ChangeIDs) == 0 {
 		return Line{}, Invalid("revert line names no change")

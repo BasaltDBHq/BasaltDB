@@ -2,7 +2,6 @@ package revert
 
 import (
 	"context"
-	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -17,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/textrule/textruletest"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
@@ -510,13 +510,13 @@ func TestSuppliedTextCannotFakeALinkInARevertMessage(t *testing.T) {
 	s := resultService(t, "linux", "")
 
 	r := caseRevertWith(t, ledger.RevertPending)
-	raw, err := json.Marshal(revert.Binding{
-		Kind: revert.KindRevert, RevertID: r.ID, Database: "app",
-		Select: revert.Select{Scope: revert.ScopeRun, ScopeID: r.ScopeID, Agents: []string{"bot"}},
-		Intent: evil, Rows: 3, Skipped: 1, RowsHash: strings.Repeat("a", 64), ExpiresAt: r.ExpiresAt, RequestedBy: "bot",
+	raw, err := textruletest.Text(revert.Binding{
+		Kind: revert.KindRevert, RevertID: r.ID, Store: postgresApp,
+		Select: revert.Select{Scope: revert.ScopeRun, ScopeID: r.ScopeID, Agents: []string{"agent:bot"}},
+		Intent: evil, Rows: 3, Skipped: 1, RowsHash: strings.Repeat("a", 64), ExpiresAt: r.ExpiresAt, RequestedBy: "agent:bot",
 	})
 	require.NoError(t, err)
-	r.BindingText = string(raw)
+	r.BindingText = raw
 	n, err := s.revertNotice(context.Background(), r)
 	require.NoError(t, err)
 	mcptest.Require(t, n.Message, n.Links)

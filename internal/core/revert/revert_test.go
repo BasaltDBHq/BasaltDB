@@ -43,15 +43,15 @@ var (
 // (skipped). Non-ASCII text checks every client hashes UTF-8 bytes.
 func revertLines() []string {
 	return []string{
-		`{"op": "DELETE", "table": "public.note_tags", "action": "RESTORE", "rowHash": "` + strings.Repeat("ab", sha256.Size) + `", "cascaded": true, "conflict": null, "redacted": true, "changeIds": ["` + change1 + `"]}`,
-		`{"op": "INSERT", "key": {"id": 5}, "now": null, "set": {"id": 5, "note": "note 5 — 日本 🚀", "lead_id": 3}, "table": "public.lead_notes", "action": "RESTORE", "cascaded": true, "conflict": null, "sqlState": null, "changeIds": ["` + change1 + `"]}`,
-		`{"op": "UPDATE", "key": {"id": 3}, "now": {"id": 3, "name": "Café ✓ lead", "status": "merged"}, "set": {"id": 3, "name": "Café ✓ lead", "status": "open"}, "table": "public.leads", "action": "RESTORE", "cascaded": false, "conflict": null, "sqlState": null, "changeIds": ["` + change1 + `", "` + change2 + `"]}`,
-		`{"op": "UPDATE", "key": {"id": 7}, "now": {"id": 7, "name": "Edited by a person", "status": "won"}, "set": {"id": 7, "name": "Lead 7", "status": "open"}, "table": "public.leads", "action": "SKIP", "cascaded": false, "conflict": "CHANGED_AFTER", "sqlState": null, "changeIds": ["` + change2 + `"]}`,
+		`{"op": "DELETE", "shape": "RECORD", "store": {"code": null, "kind": "POSTGRES", "verb": "DELETE"}, "action": "RESTORE", "rowHash": "` + strings.Repeat("ab", sha256.Size) + `", "cascaded": true, "conflict": null, "redacted": true, "resource": "public.note_tags", "changeIds": ["` + change1 + `"]}`,
+		`{"op": "INSERT", "key": {"id": 5}, "now": null, "set": {"id": 5, "note": "note 5 — 日本 🚀", "lead_id": 3}, "shape": "RECORD", "store": {"code": null, "kind": "POSTGRES", "verb": "INSERT"}, "action": "RESTORE", "cascaded": true, "conflict": null, "resource": "public.lead_notes", "changeIds": ["` + change1 + `"]}`,
+		`{"op": "UPDATE", "key": {"id": 3}, "now": {"id": 3, "name": "Café ✓ lead", "status": "merged"}, "set": {"id": 3, "name": "Café ✓ lead", "status": "open"}, "shape": "RECORD", "store": {"code": null, "kind": "POSTGRES", "verb": "UPDATE"}, "action": "RESTORE", "cascaded": false, "conflict": null, "resource": "public.leads", "changeIds": ["` + change1 + `", "` + change2 + `"]}`,
+		`{"op": "UPDATE", "key": {"id": 7}, "now": {"id": 7, "name": "Edited by a person", "status": "won"}, "set": {"id": 7, "name": "Lead 7", "status": "open"}, "shape": "RECORD", "store": {"code": null, "kind": "POSTGRES", "verb": "UPDATE"}, "action": "SKIP", "cascaded": false, "conflict": "CHANGED_AFTER", "resource": "public.leads", "changeIds": ["` + change2 + `"]}`,
 	}
 }
 
 func bindingText(lines []string) string {
-	return fmt.Sprintf(`{"kind": "REVERT", "rows": 3, "intent": "Undo the bad merge", "select": {"runs": null, "scope": "RUN", "agents": ["basalt_agent_bot"], "tables": null, "scopeId": %q}, "skipped": 1, "widened": false, "database": "app", "revertId": %q, "rowsHash": %q, "expiresAt": "2026-11-11T07:02:11.123456Z", "requestedBy": "basalt_agent_bot"}`,
+	return fmt.Sprintf(`{"kind": "REVERT", "rows": 3, "store": {"kind": "POSTGRES", "name": "app"}, "intent": "Undo the bad merge", "select": {"runs": null, "scope": "RUN", "agents": ["agent:bot"], "scopeId": %q, "resources": null}, "skipped": 1, "widened": false, "revertId": %q, "rowsHash": %q, "expiresAt": "2026-11-11T07:02:11.123456Z", "requestedBy": "agent:bot"}`,
 		runID.String(), revertID.String(), approval.RowsHash(lines))
 }
 
@@ -70,7 +70,7 @@ func planLines() []string {
 		if i < planSkips {
 			action, conflict = `"SKIP"`, `"CHANGED_AFTER"`
 		}
-		lines = append(lines, fmt.Sprintf(`{"op": "UPDATE", "key": {"id": %d}, "now": {"id": %d, "v": "agent"}, "set": {"id": %d, "v": "before"}, "table": "public.items", "action": %s, "cascaded": false, "conflict": %s, "sqlState": null, "changeIds": [%q]}`,
+		lines = append(lines, fmt.Sprintf(`{"op": "UPDATE", "key": {"id": %d}, "now": {"v": "agent", "id": %d}, "set": {"v": "before", "id": %d}, "shape": "RECORD", "store": {"code": null, "kind": "POSTGRES", "verb": "UPDATE"}, "action": %s, "cascaded": false, "conflict": %s, "resource": "public.items", "changeIds": [%q]}`,
 			i+1, i+1, i+1, action, conflict, change1))
 	}
 	slices.Sort(lines)
@@ -78,7 +78,7 @@ func planLines() []string {
 }
 
 func batchedBinding(all, sample []string) string {
-	return fmt.Sprintf(`{"kind": "REVERT", "rows": %d, "intent": "Undo the bulk load", "select": {"runs": null, "scope": "RUN", "agents": ["basalt_agent_bot"], "tables": null, "scopeId": %q}, "batched": true, "skipped": %d, "widened": false, "database": "app", "revertId": %q, "rowsHash": %q, "expiresAt": "2026-11-11T07:02:11.123456Z", "sampleHash": %q, "requestedBy": "basalt_agent_bot"}`,
+	return fmt.Sprintf(`{"kind": "REVERT", "rows": %d, "store": {"kind": "POSTGRES", "name": "app"}, "intent": "Undo the bulk load", "select": {"runs": null, "scope": "RUN", "agents": ["agent:bot"], "scopeId": %q, "resources": null}, "batched": true, "skipped": %d, "widened": false, "revertId": %q, "rowsHash": %q, "expiresAt": "2026-11-11T07:02:11.123456Z", "sampleHash": %q, "requestedBy": "agent:bot"}`,
 		planRestores, runID.String(), planSkips, revertID.String(), approval.RowsHash(all), approval.RowsHash(sample))
 }
 
@@ -131,10 +131,9 @@ type fixtures struct {
 	// BatchedSkips is a large plan with more SKIP lines than a sample holds:
 	// its sample still carries every RESTORE line (decision RSS-1).
 	BatchedSkips struct {
-		Fragment  string `json:"fragment"`
-		Fragment2 string `json:"fragment2"` // the same request in format 2
-		Rows      int    `json:"rows"`
-		Skipped   int    `json:"skipped"`
+		Fragment string `json:"fragment"`
+		Rows     int    `json:"rows"`
+		Skipped  int    `json:"skipped"`
 	} `json:"batchedSkips"`
 	// Rescope are widen proofs' challenges (CONTRACT.md, Rescope, widen
 	// and reject): the page builds the normalized select text, derives the
@@ -165,15 +164,15 @@ type rescopeFixture struct {
 var rescopeCases = []struct{ name, sel, text string }{
 	{
 		name: "every agent of a task",
-		sel:  `{"scope": "TASK", "scopeId": "0193a4c2-7d1e-7c3a-9f00-0000000000c1", "agents": null, "runs": null, "tables": null}`,
-		text: `{"runs": null, "scope": "TASK", "agents": null, "tables": null, "scopeId": "0193a4c2-7d1e-7c3a-9f00-0000000000c1"}`,
+		sel:  `{"scope": "TASK", "scopeId": "0193a4c2-7d1e-7c3a-9f00-0000000000c1", "agents": null, "runs": null, "resources": null}`,
+		text: `{"runs": null, "scope": "TASK", "agents": null, "scopeId": "0193a4c2-7d1e-7c3a-9f00-0000000000c1", "resources": null}`,
 	},
 	{
 		name: "lists sorted, deduplicated, ids lowercase",
-		sel: `{"scope": "TASK", "scopeId": "0193A4C2-7D1E-7C3A-9F00-0000000000C1", "agents": ["basalt_agent_sync", "basalt_agent_bot", "basalt_agent_sync"], ` +
-			`"runs": ["0193a4c2-7d1e-7c3a-9f00-0000000000b3", "0193A4C2-7D1E-7C3A-9F00-0000000000B2"], "tables": ["public.notes", "public.Leads", "public.leads", "public.notes"]}`,
-		text: `{"runs": ["0193a4c2-7d1e-7c3a-9f00-0000000000b2", "0193a4c2-7d1e-7c3a-9f00-0000000000b3"], "scope": "TASK", "agents": ["basalt_agent_bot", "basalt_agent_sync"], ` +
-			`"tables": ["public.Leads", "public.leads", "public.notes"], "scopeId": "0193a4c2-7d1e-7c3a-9f00-0000000000c1"}`,
+		sel: `{"scope": "TASK", "scopeId": "0193A4C2-7D1E-7C3A-9F00-0000000000C1", "agents": ["agent:sync", "agent:bot", "agent:sync"], ` +
+			`"runs": ["0193a4c2-7d1e-7c3a-9f00-0000000000b3", "0193A4C2-7D1E-7C3A-9F00-0000000000B2"], "resources": ["public.notes", "public.Leads", "public.leads", "public.notes"]}`,
+		text: `{"runs": ["0193a4c2-7d1e-7c3a-9f00-0000000000b2", "0193a4c2-7d1e-7c3a-9f00-0000000000b3"], "scope": "TASK", "agents": ["agent:bot", "agent:sync"], ` +
+			`"scopeId": "0193a4c2-7d1e-7c3a-9f00-0000000000c1", "resources": ["public.Leads", "public.leads", "public.notes"]}`,
 	},
 }
 
@@ -203,7 +202,7 @@ const (
 
 // mixedBinding is the binding of a batched plan of mixedLines(skips, rows).
 func mixedBinding(all, sample []string, skips, rows int) string {
-	return fmt.Sprintf(`{"kind": "REVERT", "rows": %d, "intent": "Undo the bulk load", "select": {"runs": null, "scope": "RUN", "agents": ["basalt_agent_bot"], "tables": null, "scopeId": %q}, "batched": true, "skipped": %d, "widened": false, "database": "app", "revertId": %q, "rowsHash": %q, "expiresAt": "2026-11-11T07:02:11.123456Z", "sampleHash": %q, "requestedBy": "basalt_agent_bot"}`,
+	return fmt.Sprintf(`{"kind": "REVERT", "rows": %d, "store": {"kind": "POSTGRES", "name": "app"}, "intent": "Undo the bulk load", "select": {"runs": null, "scope": "RUN", "agents": ["agent:bot"], "scopeId": %q, "resources": null}, "batched": true, "skipped": %d, "widened": false, "revertId": %q, "rowsHash": %q, "expiresAt": "2026-11-11T07:02:11.123456Z", "sampleHash": %q, "requestedBy": "agent:bot"}`,
 		rows, runID.String(), skips, revertID.String(), approval.RowsHash(all), approval.RowsHash(sample))
 }
 
@@ -213,9 +212,7 @@ func buildFixtures(t *testing.T) fixtures {
 	lines := revertLines()
 	binding := bindingText(lines)
 	req := revert.Request{RevertID: revertID, Binding: binding, Lines: lines, CredentialIDs: []passkey.Bytes{seq(16, 1)}}
-	// The page's fixtures keep format 1, which the pages still read; format 2
-	// has its shared vectors in api/mcp/links/compact-request.json.
-	frag, err := linkcodectest.Encode(linkcodec.Format1, req)
+	frag, err := req.Fragment()
 	require.NoError(t, err)
 	f.Request.RevertID = revertID.String()
 	f.Request.Binding = binding
@@ -243,7 +240,7 @@ func buildFixtures(t *testing.T) fixtures {
 
 	all, sample := planSample(t)
 	plan := revert.Request{RevertID: revertID, Binding: batchedBinding(all, sample), Lines: sample}
-	f.Batched.Fragment, err = linkcodectest.Encode(linkcodec.Format1, plan)
+	f.Batched.Fragment, err = plan.Fragment()
 	require.NoError(t, err)
 	f.Batched.RevertID = revertID.String()
 	f.Batched.Binding = plan.Binding
@@ -255,9 +252,7 @@ func buildFixtures(t *testing.T) fixtures {
 	sample, err = reverttest.Sample(all)
 	require.NoError(t, err)
 	plan = revert.Request{RevertID: revertID, Binding: mixedBinding(all, sample, skipsPlanSkips, skipsPlanRestores), Lines: sample}
-	f.BatchedSkips.Fragment, err = linkcodectest.Encode(linkcodec.Format1, plan)
-	require.NoError(t, err)
-	f.BatchedSkips.Fragment2, err = plan.Fragment()
+	f.BatchedSkips.Fragment, err = plan.Fragment()
 	require.NoError(t, err)
 	f.BatchedSkips.Rows = skipsPlanRestores
 	f.BatchedSkips.Skipped = skipsPlanSkips
@@ -309,13 +304,17 @@ func TestParseLineRefuses(t *testing.T) {
 	cases := map[string]string{
 		"op":                      strings.Replace(ok, `"op": "UPDATE"`, `"op": "MERGE"`, 1),
 		"action":                  strings.Replace(ok, `"RESTORE"`, `"MAYBE"`, 1),
-		"RESTORE with a conflict": strings.Replace(ok, `"conflict": null`, `"conflict": "ROW_GONE"`, 1),
+		"RESTORE with a conflict": strings.Replace(ok, `"conflict": null`, `"conflict": "TARGET_GONE"`, 1),
 		"SKIP without a conflict": strings.Replace(ok, `"RESTORE"`, `"SKIP"`, 1),
 		"unknown conflict":        strings.Replace(strings.Replace(ok, `"RESTORE"`, `"SKIP"`, 1), `"conflict": null`, `"conflict": "BAD_LUCK"`, 1),
 		"no change ids":           strings.Replace(ok, `["`+change1+`", "`+change2+`"]`, `[]`, 1),
-		"no table":                strings.Replace(ok, `"public.leads"`, `""`, 1),
+		"no resource":             strings.Replace(ok, `"public.leads"`, `""`, 1),
+		"unknown shape":           strings.Replace(ok, `"RECORD"`, `"ROW"`, 1),
+		"no verb":                 strings.Replace(ok, `"verb": "UPDATE"`, `"verb": ""`, 1),
+		"the old sqlState":        strings.Replace(ok, `"conflict": null`, `"conflict": null, "sqlState": null`, 1),
+		"out of the text rules":   strings.Replace(ok, `"action": "RESTORE"`, `"action":"RESTORE"`, 1),
 		"unknown field":           strings.Replace(ok, `{"op"`, `{"x": 1, "op"`, 1),
-		"approval line":           `{"op": "DELETE", "key": {"id": 3}, "old": {"id": 3}, "set": null, "table": "public.leads", "cascaded": false}`,
+		"approval line":           `{"op": "DELETE", "key": {"id": 3}, "old": {"id": 3}, "set": null, "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "DELETE"}, "cascaded": false, "resource": "public.leads"}`,
 	}
 	for name, line := range cases {
 		_, err := revert.ParseLine(line)
@@ -338,7 +337,8 @@ func TestRequestRoundTrip(t *testing.T) {
 	require.Equal(t, revertID, b.RevertID)
 	require.Equal(t, revert.ScopeRun, b.Select.Scope)
 	require.Equal(t, runID, b.Select.ScopeID)
-	require.Equal(t, []string{"basalt_agent_bot"}, b.Select.Agents)
+	require.Equal(t, []string{"agent:bot"}, b.Select.Agents)
+	require.Equal(t, approval.BindingStore{Kind: "POSTGRES", Name: "app"}, b.Store)
 	require.False(t, b.Widened)
 	require.Nil(t, b.Proposed)
 	require.Equal(t, 3, b.Rows)
@@ -350,8 +350,10 @@ func TestRequestRefusesMismatch(t *testing.T) {
 	t.Parallel()
 	lines := revertLines()
 	binding := bindingText(lines)
+	// The engine refuses to encode a request that fails Check, so the test
+	// encodes as a forged link would.
 	encode := func(r revert.Request) string {
-		frag, err := r.Fragment()
+		frag, err := linkcodec.EncodeRequest(r.Binding, r.Lines, r.CredentialIDs)
 		require.NoError(t, err)
 		return frag
 	}
@@ -369,12 +371,13 @@ func TestRequestRefusesMismatch(t *testing.T) {
 		{"a skipped row turned into a restore", encode(revert.Request{RevertID: revertID, Binding: binding, Lines: unskipped}), "rowsHash"},
 		{"a line dropped", encode(revert.Request{RevertID: revertID, Binding: binding, Lines: lines[:3]}), "3 lines, binding 4"},
 		{"lines reordered", encode(revert.Request{RevertID: revertID, Binding: binding, Lines: []string{lines[1], lines[0], lines[2], lines[3]}}), "rowsHash"},
-		{"another revert id (format 1)", encodeV1(t, revert.Request{RevertID: runID, Binding: binding, Lines: lines}), "binding for"},
 		{"approval binding", encode(revert.Request{RevertID: revertID, Binding: strings.Replace(binding, `"REVERT"`, `"APPROVE"`, 1), Lines: lines}), "kind"},
 		{"restore count", encode(revert.Request{RevertID: revertID, Binding: strings.Replace(strings.Replace(binding, `"rows": 3`, `"rows": 2`, 1), `"skipped": 1`, `"skipped": 2`, 1), Lines: lines}), "RESTORE lines"},
 		{"wrong version", "3." + strings.TrimPrefix(encode(revert.Request{RevertID: revertID, Binding: binding, Lines: lines}), "2."), "must start with"},
 		{"not base64url", "2.@@@", "base64url"},
-		{"format 1 json in format 2", "2." + strings.TrimPrefix(fixtureFormat1(t), "1."), "shapes, lines"},
+		{"format 1", "1." + strings.TrimPrefix(encode(revert.Request{RevertID: revertID, Binding: binding, Lines: lines}), "2."), "must start with"},
+		{"request JSON in format 2", requestJSONFragment(t, revert.Request{RevertID: revertID, Binding: binding, Lines: lines}), "shapes, lines"},
+		{"a requestedBy that is a login", encode(revert.Request{RevertID: revertID, Binding: strings.Replace(binding, `"requestedBy": "agent:bot"`, `"requestedBy": "basalt_agent_bot"`, 1), Lines: lines}), "agent:<name>"},
 		{"only a binding", compactFragment(t, binding), "no lines"},
 		{"a revert line rebuilt wrong", format2Swap(t), "rowsHash"},
 	}
@@ -392,22 +395,27 @@ func TestBindingLimits(t *testing.T) {
 	t.Parallel()
 	binding := bindingText(revertLines())
 	cases := map[string]struct{ binding, detail string }{
-		"over the line cap":        {strings.Replace(binding, `"skipped": 1`, `"skipped": 998`, 1), "out of 1..1000"},
-		"nothing to restore":       {strings.Replace(binding, `"rows": 3`, `"rows": 0`, 1), "rows 0"},
-		"negative skipped":         {strings.Replace(binding, `"skipped": 1`, `"skipped": -1`, 1), "skipped -1"},
-		"unknown scope":            {strings.Replace(binding, `"RUN"`, `"DATABASE"`, 1), "scope"},
-		"no agents":                {strings.Replace(binding, `["basalt_agent_bot"]`, `[]`, 1), "agents"},
-		"rowsHash not hex":         {strings.Replace(binding, approval.RowsHash(revertLines()), "xyz", 1), "rowsHash"},
-		"unknown field":            {strings.Replace(binding, `{"kind"`, `{"x": 1, "kind"`, 1), "unknown field"},
-		"an approval's fields":     {`{"kind": "REVERT", "approvalId": "` + revertID.String() + `"}`, "unknown field"},
-		"the old top-level scope":  {strings.Replace(binding, `"widened": false`, `"widened": false, "scope": "RUN"`, 1), "unknown field"},
-		"the reserved store key":   {strings.Replace(binding, `"tables": null`, `"tables": null, "store": "x"`, 1), "unknown field"},
-		"runs on a run scope":      {strings.Replace(binding, `"runs": null`, `"runs": ["`+runID.String()+`"]`, 1), "lists runs"},
-		"widened not set":          {strings.Replace(binding, `"agents": ["basalt_agent_bot"]`, `"agents": ["basalt_agent_bot", "basalt_agent_sync"]`, 1), "widened false"},
-		"every agent, not widened": {strings.Replace(binding, `"agents": ["basalt_agent_bot"]`, `"agents": null`, 1), "widened false"},
-		"widened without agentRows": {strings.Replace(strings.Replace(binding, `"agents": ["basalt_agent_bot"]`, `"agents": null`, 1),
+		"over the line cap":         {strings.Replace(binding, `"skipped": 1`, `"skipped": 998`, 1), "out of 1..1000"},
+		"nothing to restore":        {strings.Replace(binding, `"rows": 3`, `"rows": 0`, 1), "rows 0"},
+		"negative skipped":          {strings.Replace(binding, `"skipped": 1`, `"skipped": -1`, 1), "skipped"},
+		"rows not plain digits":     {strings.Replace(binding, `"rows": 3`, `"rows": 3.0`, 1), "rows"},
+		"expiresAt with an offset":  {strings.Replace(binding, `07:02:11.123456Z`, `07:02:11.123456+00:00`, 1), "expiresAt"},
+		"no store name":             {strings.Replace(binding, `"name": "app"`, `"name": ""`, 1), "store"},
+		"an agent that is a login":  {strings.Replace(binding, `["agent:bot"]`, `["basalt_agent_bot"]`, 1), "agent:<name>"},
+		"the old tables":            {strings.Replace(binding, `"resources": null`, `"resources": null, "tables": null`, 1), "text rules"},
+		"unknown scope":             {strings.Replace(binding, `"RUN"`, `"DATABASE"`, 1), "scope"},
+		"no agents":                 {strings.Replace(binding, `["agent:bot"]`, `[]`, 1), "agents"},
+		"rowsHash not hex":          {strings.Replace(binding, approval.RowsHash(revertLines()), "xyz", 1), "rowsHash"},
+		"unknown field":             {strings.Replace(binding, `{"kind"`, `{"x": 1, "kind"`, 1), "unknown field"},
+		"an approval's fields":      {`{"kind": "REVERT", "approvalId": "` + revertID.String() + `"}`, "unknown field"},
+		"the old top-level scope":   {strings.Replace(binding, `"store"`, `"scope": "RUN", "store"`, 1), "unknown field"},
+		"a store that is no object": {strings.Replace(binding, `"store": {"kind": "POSTGRES", "name": "app"}`, `"store": "app"`, 1), "binding"},
+		"runs on a run scope":       {strings.Replace(binding, `"runs": null`, `"runs": ["`+runID.String()+`"]`, 1), "lists runs"},
+		"widened not set":           {strings.Replace(binding, `"agents": ["agent:bot"]`, `"agents": ["agent:bot", "agent:sync"]`, 1), "widened false"},
+		"every agent, not widened":  {strings.Replace(binding, `"agents": ["agent:bot"]`, `"agents": null`, 1), "widened false"},
+		"widened without agentRows": {strings.Replace(strings.Replace(binding, `"agents": ["agent:bot"]`, `"agents": null`, 1),
 			`"widened": false`, `"widened": true`, 1), "agentRows"},
-		"agentRows not widened": {strings.Replace(binding, `"widened": false`, `"widened": false, "agentRows": {"basalt_agent_bot": 4}`, 1), "agentRows"},
+		"agentRows not widened": {strings.Replace(binding, `"expiresAt"`, `"agentRows": {"agent:bot": 4}, "expiresAt"`, 1), "agentRows"},
 		"empty run proposal":    {strings.Replace(strings.Replace(binding, `"rows": 3`, `"rows": 0`, 1), `"skipped": 1`, `"skipped": 0`, 1), "rows 0"},
 	}
 	for name, tc := range cases {
@@ -422,14 +430,15 @@ func TestBindingLimits(t *testing.T) {
 func TestBindingScopes(t *testing.T) {
 	t.Parallel()
 	binding := bindingText(revertLines())
-	widened := strings.Replace(strings.Replace(binding, `"agents": ["basalt_agent_bot"]`, `"agents": null`, 1),
-		`"widened": false`, `"widened": true, "proposed": {"runs": null, "scope": "RUN", "agents": ["basalt_agent_bot"], "tables": ["public.leads"], "scopeId": "`+runID.String()+`"}, "agentRows": {"basalt_agent_bot": 3, "basalt_agent_sync": 1}`, 1)
+	widened := strings.Replace(strings.Replace(binding, `"agents": ["agent:bot"]`, `"agents": null`, 1),
+		`"widened": false`, `"widened": true, "proposed": {"runs": null, "scope": "RUN", "agents": ["agent:bot"], "scopeId": "`+runID.String()+`", "resources": ["public.leads"]}`, 1)
+	widened = strings.Replace(widened, `"expiresAt"`, `"agentRows": {"agent:bot": 3, "agent:sync": 1}, "expiresAt"`, 1)
 	b, err := revert.ParseBinding(widened)
 	require.NoError(t, err)
 	require.True(t, b.Widened)
 	require.Nil(t, b.Select.Agents)
-	require.Equal(t, []string{"public.leads"}, b.Proposed.Tables)
-	require.Equal(t, map[string]int{"basalt_agent_bot": 3, "basalt_agent_sync": 1}, b.AgentRows)
+	require.Equal(t, []string{"public.leads"}, b.Proposed.Resources)
+	require.Equal(t, map[string]int{"agent:bot": 3, "agent:sync": 1}, b.AgentRows)
 
 	task := strings.NewReplacer(`"scope": "RUN"`, `"scope": "TASK"`, `"rows": 3`, `"rows": 0`, `"skipped": 1`, `"skipped": 0`).Replace(binding)
 	b, err = revert.ParseBinding(task)
@@ -471,7 +480,7 @@ func mixedLines(skips, restores int) []string {
 		} else {
 			restores--
 		}
-		lines = append(lines, fmt.Sprintf(`{"op": "UPDATE", "key": {"id": %d}, "now": {"id": %d, "v": "agent"}, "set": {"id": %d, "v": "before"}, "table": "public.items", "action": %s, "cascaded": false, "conflict": %s, "sqlState": null, "changeIds": [%q]}`,
+		lines = append(lines, fmt.Sprintf(`{"op": "UPDATE", "key": {"id": %d}, "now": {"v": "agent", "id": %d}, "set": {"v": "before", "id": %d}, "shape": "RECORD", "store": {"code": null, "kind": "POSTGRES", "verb": "UPDATE"}, "action": %s, "cascaded": false, "conflict": %s, "resource": "public.items", "changeIds": [%q]}`,
 			i+1, i+1, i+1, action, conflict, change1))
 	}
 	return lines
@@ -570,18 +579,13 @@ func format2Swap(t *testing.T) string {
 	return frag
 }
 
-// encodeV1 encodes r in format 1, which carries the revert id apart from
-// the binding.
-func encodeV1(t *testing.T, r revert.Request) string {
+// requestJSONFragment deflates the request JSON itself after "2.", which
+// is not the compact form.
+func requestJSONFragment(t *testing.T, r revert.Request) string {
 	t.Helper()
-	frag, err := linkcodectest.Encode(linkcodec.Format1, r)
+	frag, err := linkcodectest.Encode(linkcodec.Format2, r)
 	require.NoError(t, err)
 	return frag
-}
-
-func fixtureFormat1(t *testing.T) string {
-	t.Helper()
-	return buildFixtures(t).Request.Fragment
 }
 
 // compactFragment encodes texts in format 2 as they are.
@@ -592,25 +596,14 @@ func compactFragment(t *testing.T, texts ...string) string {
 	return frag
 }
 
-func TestRequestReadsFormat1(t *testing.T) {
-	t.Parallel()
-	f := buildFixtures(t)
-	require.True(t, strings.HasPrefix(f.Request.Fragment, "1."))
-	req, _, err := reverttest.ParseRequest("#" + f.Request.Fragment)
-	require.NoError(t, err)
-	require.Equal(t, f.Request.Lines, req.Lines)
-	require.Len(t, req.CredentialIDs, 1, "format 1 still carries credential ids")
-}
-
 func TestBatchedRequestFormat2(t *testing.T) {
 	t.Parallel()
 	all, sample := planSample(t)
 	plan := revert.Request{RevertID: revertID, Binding: batchedBinding(all, sample), Lines: sample, CredentialIDs: []passkey.Bytes{seq(16, 1)}}
-	v1, err := linkcodectest.Encode(linkcodec.Format1, plan)
-	require.NoError(t, err)
+	plain := requestJSONFragment(t, plan)
 	v2, err := plan.Fragment()
 	require.NoError(t, err)
-	require.Less(t, len(v2), len(v1), "format 2 is shorter")
+	require.Less(t, len(v2), len(plain), "the compact form is shorter")
 	req, b, err := reverttest.ParseRequest(v2)
 	require.NoError(t, err)
 	require.True(t, b.Batched)
@@ -618,19 +611,14 @@ func TestBatchedRequestFormat2(t *testing.T) {
 	require.Equal(t, []passkey.Bytes{seq(16, 1)}, req.CredentialIDs, "format 2 carries the credential ids, so the page offers only those passkeys")
 }
 
-// TestBatchedSkipsFormat2: the batchedSkips fixture round-trips in format 2
-// as in format 1, its sample split as RSS-1 gives (the page runs the same
-// fixture in web/lib/revert.test.mjs).
+// TestBatchedSkipsFormat2: the batchedSkips fixture round-trips, its
+// sample split as RSS-1 gives (the page runs the same fixture in
+// web/lib/revert.test.mjs).
 func TestBatchedSkipsFormat2(t *testing.T) {
 	t.Parallel()
 	f := buildFixtures(t).BatchedSkips
-	v1, b1, err := reverttest.ParseRequest(f.Fragment)
+	_, b2, err := reverttest.ParseRequest(f.Fragment)
 	require.NoError(t, err)
-	v2, b2, err := reverttest.ParseRequest(f.Fragment2)
-	require.NoError(t, err)
-	require.Equal(t, b1, b2)
-	require.Equal(t, v1.Binding, v2.Binding)
-	require.Equal(t, v1.Lines, v2.Lines)
 	s, r := revert.SampleCounts(b2.Skipped, b2.Rows)
 	require.Equal(t, [2]int{950, 50}, [2]int{s, r})
 }
@@ -640,11 +628,8 @@ func TestBatchedSkipsFormat2(t *testing.T) {
 func FuzzParseRequest(f *testing.F) {
 	lines := revertLines()
 	req := revert.Request{RevertID: revertID, Binding: bindingText(lines), Lines: lines}
-	v1, err := linkcodectest.Encode(linkcodec.Format1, req)
-	require.NoError(f, err)
 	v2, err := req.Fragment()
 	require.NoError(f, err)
-	f.Add(v1)
 	f.Add(v2)
 	f.Add("2.")
 	f.Add("2.@@@")
@@ -695,7 +680,7 @@ func TestBatchedBindingLimits(t *testing.T) {
 	cases := map[string]struct{ binding, detail string }{
 		"batched with few lines": {strings.Replace(binding, `"rows": 1490`, `"rows": 990`, 1), "only a plan of more than 1000"},
 		"batched without sample": {strings.Replace(binding, approval.RowsHash(sample), "", 1), "sampleHash"},
-		"sample without batched": {strings.Replace(small, `"kind"`, `"sampleHash": "`+approval.RowsHash(sample)+`", "kind"`, 1), "not batched"},
+		"sample without batched": {strings.Replace(small, `"requestedBy"`, `"sampleHash": "`+approval.RowsHash(sample)+`", "requestedBy"`, 1), "not batched"},
 		"large but not batched":  {strings.Replace(binding, `"batched": true, `, ``, 1), "not batched"},
 	}
 	for name, tc := range cases {

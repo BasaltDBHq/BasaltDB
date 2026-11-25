@@ -63,7 +63,7 @@ func TestCompactIsShorter(t *testing.T) {
 	for i := range 50 {
 		lines = append(lines, strings.ReplaceAll(pgLines()[1], `"id": 5`, `"id": `+strings.Repeat("1", i%9+1)))
 	}
-	v1, err := linkcodectest.Encode(linkcodec.Format1, map[string]any{"lines": lines})
+	v1, err := linkcodectest.Encode(linkcodec.Format2, map[string]any{"lines": lines})
 	require.NoError(t, err)
 	v2, err := linkcodectest.Encode(linkcodec.Format2, linkcodec.Compact(lines))
 	require.NoError(t, err)
@@ -166,14 +166,13 @@ func TestDecodeRefuses(t *testing.T) {
 
 func TestSplit(t *testing.T) {
 	t.Parallel()
-	for _, frag := range []string{"#1.abc", "1.abc", "#2.abc", "2.abc"} {
-		format, payload, err := linkcodec.Split(frag)
+	for _, frag := range []string{"#2.abc", "2.abc"} {
+		payload, err := linkcodec.Split(frag)
 		require.NoError(t, err, frag)
-		require.Equal(t, strings.TrimPrefix(frag, "#")[:2], format)
 		require.Equal(t, "abc", payload)
 	}
-	for _, frag := range []string{"", "#", "3.abc", "s=abc", "1"} {
-		_, _, err := linkcodec.Split(frag)
+	for _, frag := range []string{"", "#", "#1.abc", "1.abc", "3.abc", "s=abc", "1"} {
+		_, err := linkcodec.Split(frag)
 		require.ErrorContains(t, err, "must start with", frag)
 	}
 }

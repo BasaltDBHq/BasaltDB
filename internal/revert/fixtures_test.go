@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -14,8 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/textrule/textruletest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
@@ -68,22 +69,26 @@ func caseRevert(signed bool) action.Revert {
 	return r
 }
 
-const alreadyRevertedLine = `{"op": "UPDATE", "key": {"id": 3}, "now": {"id": 3}, "set": {"id": 3}, "table": "public.leads", ` +
-	`"action": "SKIP", "cascaded": false, "conflict": "ALREADY_REVERTED", "sqlState": null, "changeIds": ["` + caseChangeID + `"]}`
+const alreadyRevertedLine = `{"op": "UPDATE", "key": {"id": 3}, "now": {"id": 3}, "set": {"id": 3}, "shape": "RECORD", "store": {"code": null, "kind": "POSTGRES", "verb": "UPDATE"}, ` +
+	`"action": "SKIP", "cascaded": false, "conflict": "ALREADY_REVERTED", "resource": "public.leads", "changeIds": ["` + caseChangeID + `"]}`
 
-const changedAfterLine = `{"op": "UPDATE", "key": {"id": 3}, "now": {"id": 3}, "set": {"id": 3}, "table": "public.leads", ` +
-	`"action": "SKIP", "cascaded": false, "conflict": "CHANGED_AFTER", "sqlState": null, "changeIds": ["` + caseChangeID + `"]}`
+const changedAfterLine = `{"op": "UPDATE", "key": {"id": 3}, "now": {"id": 3}, "set": {"id": 3}, "shape": "RECORD", "store": {"code": null, "kind": "POSTGRES", "verb": "UPDATE"}, ` +
+	`"action": "SKIP", "cascaded": false, "conflict": "CHANGED_AFTER", "resource": "public.leads", "changeIds": ["` + caseChangeID + `"]}`
 
 const localPages = "http://localhost:8787"
+
+// postgresApp is the store part of the fixtures' bindings.
+var postgresApp = approval.BindingStore{Kind: "POSTGRES", Name: "app"}
 
 func revertOf(t *testing.T, intent string, lines []string, batched bool) action.Revert {
 	t.Helper()
 	rows := len(lines)
-	binding := fmt.Sprintf(`{"kind": "REVERT", "rows": %d, "intent": %q, "select": {"runs": null, "scope": "RUN", "agents": ["basalt_agent_bot"], "tables": null, "scopeId": %q}, "skipped": 0, "widened": false, `+
-		`"database": "app", "revertId": %q, "rowsHash": "14caa48f26bad4a8e9febd038704ee65a3922fad6a0a1b5f30d16a49cb27db80", `+
-		`"expiresAt": "2026-11-11T07:02:11.123456Z", "requestedBy": "basalt_agent_bot"}`, rows, intent, caseRunID, caseRevertID)
+	binding := fmt.Sprintf(`{"kind": "REVERT", "rows": %d, "store": {"kind": "POSTGRES", "name": "app"}, "intent": %q, "select": {"runs": null, "scope": "RUN", "agents": ["agent:bot"], "scopeId": %q, "resources": null}, "skipped": 0, "widened": false, `+
+		`"revertId": %q, "rowsHash": "14caa48f26bad4a8e9febd038704ee65a3922fad6a0a1b5f30d16a49cb27db80", `+
+		`"expiresAt": "2026-11-11T07:02:11.123456Z", "requestedBy": "agent:bot"}`, rows, intent, caseRunID, caseRevertID)
 	if batched {
-		binding = strings.Replace(binding, `"skipped": 0`, `"skipped": 0, "batched": true, "sampleHash": "14caa48f26bad4a8e9febd038704ee65a3922fad6a0a1b5f30d16a49cb27db80"`, 1)
+		binding = strings.Replace(binding, `"skipped": 0`, `"batched": true, "skipped": 0`, 1)
+		binding = strings.Replace(binding, `"expiresAt": "2026-11-11T07:02:11.123456Z"`, `"expiresAt": "2026-11-11T07:02:11.123456Z", "sampleHash": "14caa48f26bad4a8e9febd038704ee65a3922fad6a0a1b5f30d16a49cb27db80"`, 1)
 		binding = strings.Replace(binding, fmt.Sprintf(`"rows": %d`, rows), `"rows": 1200`, 1)
 	}
 	r := caseRevert(false)
@@ -96,8 +101,8 @@ func revertLines(n int) []string {
 	for i := range n {
 		sum := sha256.Sum256(fmt.Appendf(nil, "restore %d", i))
 		sum2 := sha256.Sum256(sum[:])
-		out = append(out, fmt.Sprintf(`{"op": "INSERT", "key": {"id": %d}, "now": null, "set": {"id": %d, "note": "%s%s"}, "table": "public.leads", `+
-			`"action": "RESTORE", "cascaded": false, "conflict": null, "sqlState": null, "changeIds": ["%s"]}`,
+		out = append(out, fmt.Sprintf(`{"op": "INSERT", "key": {"id": %d}, "now": null, "set": {"id": %d, "note": "%s%s"}, "shape": "RECORD", "store": {"code": null, "kind": "POSTGRES", "verb": "INSERT"}, `+
+			`"action": "RESTORE", "cascaded": false, "conflict": null, "resource": "public.leads", "changeIds": ["%s"]}`,
 			i, i, hex.EncodeToString(sum[:]), hex.EncodeToString(sum2[:]), caseChangeID))
 	}
 	return out
@@ -109,14 +114,14 @@ func caseBindingText(t *testing.T, batched bool) string {
 	if batched {
 		rows, skipped = 1209, 1
 	}
-	raw, err := json.Marshal(revert.Binding{
-		Kind: revert.KindRevert, RevertID: uuid.MustParse(caseRevertID), Database: "app",
-		Select: revert.Select{Scope: revert.ScopeRun, ScopeID: uuid.MustParse(caseRunID), Agents: []string{"bot"}}, Intent: strings.Repeat("The agent set the wrong status. ", 30),
-		Rows: rows, Skipped: skipped, RowsHash: strings.Repeat("a", 64), ExpiresAt: caseRevert(false).ExpiresAt, RequestedBy: "bot",
+	raw, err := textruletest.Text(revert.Binding{
+		Kind: revert.KindRevert, RevertID: uuid.MustParse(caseRevertID), Store: postgresApp,
+		Select: revert.Select{Scope: revert.ScopeRun, ScopeID: uuid.MustParse(caseRunID), Agents: []string{"agent:bot"}}, Intent: strings.Repeat("The agent set the wrong status. ", 30),
+		Rows: rows, Skipped: skipped, RowsHash: strings.Repeat("a", 64), ExpiresAt: caseRevert(false).ExpiresAt, RequestedBy: "agent:bot",
 		Batched: batched, SampleHash: map[bool]string{true: strings.Repeat("b", 64)}[batched],
 	})
 	require.NoError(t, err)
-	return string(raw)
+	return raw
 }
 
 func caseRevertWith(t *testing.T, status string) action.Revert {

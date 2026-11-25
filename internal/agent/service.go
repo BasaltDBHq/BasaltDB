@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -48,6 +49,9 @@ type Language interface {
 	// by the QUERY_TIMEOUT reason; any other reason is the statement
 	// timeout's.
 	LimitText(reason string) string
+	// Args is a request as the store family's query and write tools take
+	// it, for the call a next step repeats.
+	agentstore.RequestArgs
 	// ReadRow is the request that reads the item of target with key.
 	ReadRow(target string, key map[string]any) agentstore.Request
 	// StaleTarget reads the target and key of the item a STALE_READ
@@ -167,12 +171,10 @@ type Delivery interface {
 // hold a write and to read it back.
 type Approvals interface {
 	ApprovalNotice(ctx context.Context, id, runID uuid.UUID, req linksvc.SizedRequest, expires time.Time, issue bool) (linksvc.HeldAnswer, error)
-	HoldColumns(ctx context.Context, req agentstore.Request) ([]string, error)
-	Preview(ctx context.Context, in action.Intent, req agentstore.Request, assigned []string) ([]string, error)
-	Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error)
+	// Hold holds a write for the person's approval; a refusal to record
+	// as a refused write comes as an *approvalsvc.HoldRefusalError.
+	Hold(ctx context.Context, in action.Intent, req agentstore.Request, op action.Op) (approvalsvc.HeldWrite, error)
 	FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error)
-	// NotFound is the ledger's answer for an approval the role does not hold.
-	NotFound() error
 	// HoldTooLargeSteps and ApprovalRequiredSteps are the steps and the
 	// person's message of the errors a held write answers with.
 	HoldTooLargeSteps(b *guidance.Steps, te *toolresult.ToolError) string

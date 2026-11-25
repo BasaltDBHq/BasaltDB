@@ -2,6 +2,8 @@ package approval
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"time"
 
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
@@ -11,23 +13,26 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
-// approvalCase is the held writes use case: what is held for the person, the
+// Service is the held writes use case: what is held for the person, the
 // links that open it, the pending list and the reveal. It holds a reference to
-// the shared core group and to its own ApprovalDeps. What it needs from the
-// other use cases it names as small ports of its own: the delivery of links
-// and notices, the open reverts, the write store's statement check, and the
-// call admission.
+// the shared core group and to its own Deps, and a copy of the store set it
+// reads the store through. What it needs from the other use cases it names as
+// small ports of its own: the delivery of links and notices, the open
+// reverts, the run check, and the call admission.
 type Service struct {
 	core     Core
+	store    StoreSet
 	deps     *Deps
 	delivery Delivery
 	reverts  Reverts
-	writes   StatementChecker
 	runs     RunChecker
 	admit    Admitter
 }
@@ -60,21 +65,20 @@ type Admitter interface {
 	Admit(ctx context.Context) error
 }
 
-// StatementChecker checks a statement against the engine's SQL policy for a
-// tool, and returns it as the store will run it, or an *action.RefusalError.
-type StatementChecker interface {
-	Check(sql string, tool action.Tool) (action.Statement, error)
-}
-
 // RunChecker answers whether a run is one of the agent's: NOT_FOUND when not.
 type RunChecker interface {
 	CheckRun(ctx context.Context, id uuid.UUID) error
 }
 
-// New builds the approval use case. delivery and reverts are the other use
-// cases it asks, and are set after they exist (SetDelivery, SetReverts).
-func New(core Core, deps *Deps, writes StatementChecker, runs RunChecker, admit Admitter) *Service {
-	return &Service{core: core, deps: deps, writes: writes, runs: runs, admit: admit}
+// New builds the approval use case over core and the approval's store set.
+// delivery and reverts are the other use cases it asks, and are set after
+// they exist (SetDelivery, SetReverts). It panics on a set with a nil port,
+// since the service reads the store only through them.
+func New(core Core, store StoreSet, deps *Deps, runs RunChecker, admit Admitter) *Service {
+	if missing := store.missingPorts(); len(missing) > 0 {
+		panic("approval: store set missing ports: " + strings.Join(missing, ", "))
+	}
+	return &Service{core: core, store: store, deps: deps, runs: runs, admit: admit}
 }
 
 // SetDelivery gives the use case the delivery use case it asks.
@@ -86,11 +90,11 @@ func (ac *Service) SetReverts(r Reverts) { ac.reverts = r }
 // The reads the delivery use case makes of the approval group (approvalReads).
 
 func (ac *Service) Passkeys(ctx context.Context) ([]passkey.Credential, error) {
-	return ac.deps.Store.Passkeys(ctx)
+	return ac.store.Records.Passkeys(ctx)
 }
 
 func (ac *Service) FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error) {
-	return ac.deps.Store.FindApproval(ctx, id)
+	return ac.store.Records.FindApproval(ctx, id)
 }
 
 func (ac *Service) HasColumns() bool { return ac.deps.Columns != nil }
@@ -99,18 +103,52 @@ func (ac *Service) ColumnOrder(ctx context.Context, tables []string) (map[string
 	return ac.deps.Columns.ColumnOrder(ctx, tables)
 }
 
-// The calls the write use case makes to hold a write.
-
-func (ac *Service) HoldColumns(ctx context.Context, sql string, params []any) ([]string, error) {
-	return ac.deps.Store.HoldColumns(ctx, sql, params)
+// HeldWrite is a write held for the person's approval, with the preview
+// lines its notice is built from.
+type HeldWrite struct {
+	action.Held
+	Lines []string
 }
 
-func (ac *Service) Preview(ctx context.Context, in action.Intent, sql string, params []any, assigned []string) ([]string, error) {
-	return ac.deps.Store.Preview(ctx, in, sql, params, assigned)
+// HoldRefusalError is a write the hold refused, which the agent records as a
+// refused write: a write that cannot be run again the same way, an error of
+// its preview run, or preview lines over the cap. Err is the answer.
+type HoldRefusalError struct {
+	Err error
 }
 
-func (ac *Service) Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error) {
-	return ac.deps.Store.Hold(ctx, in, r)
-}
+func (e *HoldRefusalError) Error() string { return e.Err.Error() }
 
-func (ac *Service) NotFound() error { return ac.deps.ErrNotFound }
+func (e *HoldRefusalError) Unwrap() error { return e.Err }
+
+// Hold holds a write for the person's approval (the write use case's one
+// call): the store previews it, Basalt checks the lines (some rows, within
+// the cap), and the store holds it with op, the request as the agent sent it
+// and the preview's bound fields and lines. The request is passed on
+// unread. A refusal the agent records comes as a *HoldRefusalError; any other
+// error, the agent answers without recording it.
+func (ac *Service) Hold(ctx context.Context, in action.Intent, req agentstore.Request, op action.Op) (HeldWrite, error) {
+	p, err := ac.store.Holds.Preview(ctx, in, req)
+	var notRepeatable *action.RefusalError
+	var previewFailed *action.PreviewFailedError
+	switch {
+	case errors.As(err, &previewFailed):
+		return HeldWrite{}, &HoldRefusalError{Err: previewFailed.Err}
+	case errors.As(err, &notRepeatable):
+		return HeldWrite{}, &HoldRefusalError{Err: err}
+	case err != nil:
+		return HeldWrite{}, err
+	}
+	if len(p.Lines) == 0 {
+		// The rows went away between the attempt and the preview.
+		return HeldWrite{}, &toolresult.ToolError{Code: guidance.CodeStoreError, Reason: guidance.ReasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
+	}
+	if te := HoldTooLarge(p.Lines); te != nil {
+		return HeldWrite{}, &HoldRefusalError{Err: te}
+	}
+	held, err := ac.store.Holds.Hold(ctx, in, action.HoldRequest{Op: op, Request: req, Assigned: p.Assigned, Lines: p.Lines})
+	if err != nil {
+		return HeldWrite{}, err
+	}
+	return HeldWrite{Held: held, Lines: p.Lines}, nil
+}

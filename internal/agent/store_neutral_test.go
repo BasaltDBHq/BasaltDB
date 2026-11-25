@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/agent"
+	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -54,6 +55,9 @@ type docRequest struct {
 // docLanguage checks and names requests of the document store.
 type docLanguage struct{}
 
+// docRequestKind is the document store's request family.
+const docRequestKind = "DOCUMENT"
+
 var errDocWrongTool = &action.RefusalError{Reason: action.ReasonWrongTool, Detail: "a find runs with query, an update with write"}
 
 func parseDoc(req agentstore.Request) (docRequest, error) {
@@ -87,6 +91,16 @@ func (docLanguage) ReadRow(target string, key map[string]any) agentstore.Request
 		return agentstore.Request{}
 	}
 	return agentstore.Request{Text: string(raw)}
+}
+
+// Args names the request's arguments as the document store's tools take
+// them: q, never sql.
+func (docLanguage) Args(req agentstore.Request) map[string]any {
+	args := map[string]any{"q": req.Text}
+	if len(req.Params) > 0 {
+		args["params"] = req.Params
+	}
+	return args
 }
 
 func (docLanguage) StaleTarget(string) (string, map[string]any, error) {
@@ -349,28 +363,21 @@ func (a *docApprovals) ApprovalNotice(_ context.Context, id, _ uuid.UUID, req li
 	}, nil
 }
 
-func (a *docApprovals) HoldColumns(context.Context, agentstore.Request) ([]string, error) {
-	return nil, nil
-}
-
-func (a *docApprovals) Preview(_ context.Context, _ action.Intent, req agentstore.Request, _ []string) ([]string, error) {
-	return a.preview(req), nil
-}
-
-func (a *docApprovals) Hold(_ context.Context, in action.Intent, r action.HoldRequest) (action.Held, error) {
+func (a *docApprovals) Hold(_ context.Context, in action.Intent, req agentstore.Request, _ action.Op) (approvalsvc.HeldWrite, error) {
+	lines := a.preview(req)
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	params, err := json.Marshal(r.Params)
+	params, err := json.Marshal(req.Params)
 	if err != nil {
-		return action.Held{}, err
+		return approvalsvc.HeldWrite{}, err
 	}
 	id := uuid.Must(uuid.NewV7())
 	expires := time.Now().Add(time.Hour)
 	a.approvals[id] = action.Approval{
-		ID: id, RunID: in.RunID, Intent: in.Text, Statement: r.Statement, Params: params, Rows: len(r.Lines),
-		Status: action.ApprovalPending, ExpiresAt: expires, Lines: r.Lines, BindingText: "binding",
+		ID: id, RunID: in.RunID, Intent: in.Text, Request: action.HeldRequest{Kind: docRequestKind, Text: req.Text, Params: params}, Rows: len(lines),
+		Status: action.ApprovalPending, ExpiresAt: expires, Lines: lines, BindingText: "binding",
 	}
-	return action.Held{ApprovalID: id, BindingText: "binding", ExpiresAt: expires}, nil
+	return approvalsvc.HeldWrite{Held: action.Held{ApprovalID: id, BindingText: "binding", ExpiresAt: expires}, Lines: lines}, nil
 }
 
 func (a *docApprovals) FindApproval(_ context.Context, id uuid.UUID) (action.Approval, error) {
@@ -378,12 +385,10 @@ func (a *docApprovals) FindApproval(_ context.Context, id uuid.UUID) (action.App
 	defer a.mu.Unlock()
 	ap, ok := a.approvals[id]
 	if !ok {
-		return action.Approval{}, errNoApproval
+		return action.Approval{}, &action.ApprovalRefusalError{Reason: action.ApprovalNotFound, Err: errNoApproval}
 	}
 	return ap, nil
 }
-
-func (a *docApprovals) NotFound() error { return errNoApproval }
 
 func (a *docApprovals) HoldTooLargeSteps(*guidance.Steps, *toolresult.ToolError) string { return "" }
 
@@ -517,8 +522,8 @@ func TestDocumentStoreRunsTheAgentThroughThePorts(t *testing.T) {
 	require.Equal(t, many.Text, approvals.notified[0].Statement)
 	require.Equal(t, docHeldOver+1, approvals.notified[0].Rows)
 	held := approvals.approvals[w.ApprovalID]
-	require.Equal(t, many.Text, held.Statement)
-	require.JSONEq(t, `["trial"]`, string(held.Params))
+	require.Equal(t, many.Text, held.Request.Text)
+	require.JSONEq(t, `["trial"]`, string(held.Request.Params))
 
 	docs := store.match(docRequest{Find: "customers", Filter: map[string]any{"plan": "trial"}}, nil)
 	require.Empty(t, docs, "the approved write changed every trial customer")
@@ -604,4 +609,58 @@ func TestDocumentStoreDescribeRefusesADisplayOnAFieldKey(t *testing.T) {
 	_, err := svc.DescribeResource(context.Background(), "shop/customers", "")
 	require.ErrorContains(t, err, `"pii"`)
 	requireInternal(t, svc, err)
+}
+
+// A write that is not the held one is refused with DIFFERENT_WRITE, and its
+// step repeats the held request in the family's own arguments (q, never sql).
+func TestDocumentStoreDifferentWriteNamesTheFamilysArguments(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _, approvals := newDocService(t)
+	run, err := svc.StartRun(ctx, "move trial customers to pro", uuid.Nil)
+	require.NoError(t, err)
+
+	held := `{"update":"customers","filter":{"plan":{"$param":0}},"set":{"plan":"pro"}}`
+	id := uuid.Must(uuid.NewV7())
+	approvals.mu.Lock()
+	approvals.approvals[id] = action.Approval{
+		ID: id, RunID: run.RunID, Intent: "upgrade every trial",
+		Request: action.HeldRequest{Kind: docRequestKind, Text: held, Params: json.RawMessage(`["trial"]`)},
+		Status:  action.ApprovalPending, ExpiresAt: time.Now().Add(time.Hour),
+	}
+	approvals.mu.Unlock()
+
+	other := agentstore.Request{Text: `{"update":"customers","filter":{"_id":"c01"},"set":{"plan":"pro"}}`}
+	_, err = svc.Write(ctx, agent.WriteParams{Request: other, Intent: "upgrade every trial", RunID: run.RunID, ApprovalID: id})
+	var te *toolresult.ToolError
+	require.ErrorAs(t, err, &te)
+	require.Equal(t, guidance.ReasonDifferentWrite, te.Reason)
+	require.Equal(t, "the request must be exactly the held write's", te.Message)
+	require.Len(t, te.NextSteps, 1)
+	step := te.NextSteps[0]
+	require.Equal(t, guidance.ToolWrite, step.Tool)
+	require.Equal(t, map[string]any{
+		"q": held, "params": []any{"trial"}, "intent": "upgrade every trial",
+		guidance.ArgRunID: run.RunID.String(), guidance.ArgApprovalID: id.String(),
+	}, step.Arguments)
+	require.NotContains(t, step.Arguments, "sql")
+}
+
+// A write under an approval the store does not find is APPROVAL_INVALID
+// NOT_THIS_AGENT: the store's refusal, not its error value, says so.
+func TestDocumentStoreUnknownApprovalIsNotThisAgent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _, _ := newDocService(t)
+	run, err := svc.StartRun(ctx, "move trial customers to pro", uuid.Nil)
+	require.NoError(t, err)
+
+	id := uuid.Must(uuid.NewV7())
+	req := agentstore.Request{Text: `{"update":"customers","filter":{"_id":"c01"},"set":{"plan":"pro"}}`}
+	_, err = svc.Write(ctx, agent.WriteParams{Request: req, Intent: "upgrade c01", RunID: run.RunID, ApprovalID: id})
+	var te *toolresult.ToolError
+	require.ErrorAs(t, err, &te)
+	require.Equal(t, guidance.CodeApprovalInvalid, te.Code)
+	require.Equal(t, guidance.ReasonNotThisAgent, te.Reason)
+	require.Equal(t, "approval "+id.String()+" is not one of this agent's held writes", te.Message)
 }

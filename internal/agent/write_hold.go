@@ -15,44 +15,29 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // hold turns a write the guard held into a held action (decision M2-1):
-// refuse it when it is not repeatable, preview it in a transaction that
-// rolls back, store it with its lines, notify the person, and answer
-// APPROVAL_REQUIRED with the approval link. It returns the held write's
-// approval id and expiry with the APPROVAL_REQUIRED error, or uuid.Nil and
-// the error that kept it from being held.
+// the approval use case refuses it when it is not repeatable, previews it in
+// a transaction that rolls back and stores it with its lines; then the
+// person is notified and the answer is APPROVAL_REQUIRED with the approval
+// link. A refusal of the hold is recorded as a refused write. It returns the
+// held write's approval id and expiry with the APPROVAL_REQUIRED error, or
+// uuid.Nil and the error that kept it from being held.
 func (wc *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stmt action.Statement, start time.Time) (uuid.UUID, time.Time, error) {
-	assigned, err := wc.approvals.HoldColumns(ctx, p.Request)
-	var notRepeatable *action.RefusalError
-	if errors.As(err, &notRepeatable) {
-		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.Request, start, err)
+	held, err := wc.approvals.Hold(ctx, in, p.Request, stmt.Op)
+	var refusal *approvalsvc.HoldRefusalError
+	if errors.As(err, &refusal) {
+		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.Request, start, refusal.Err)
 	}
 	if err != nil {
 		return uuid.Nil, time.Time{}, err
 	}
-	lines, err := wc.approvals.Preview(ctx, in, p.Request, assigned)
-	if err != nil {
-		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.Request, start, err)
-	}
-	if len(lines) == 0 {
-		// The rows went away between the attempt and the preview.
-		return uuid.Nil, time.Time{}, &toolresult.ToolError{Code: guidance.CodeStoreError, Reason: guidance.ReasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
-	}
-	if te := approvalsvc.HoldTooLarge(lines, nil); te != nil {
-		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.Request, start, te)
-	}
-	held, err := wc.approvals.Hold(ctx, in, action.HoldRequest{Verb: string(stmt.Op), Statement: p.Request.Text, Params: p.Request.Params, Assigned: assigned, Lines: lines})
-	if err != nil {
-		if te := approvalsvc.HoldTooLarge(lines, err); te != nil {
-			return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.Request, start, te)
-		}
-		return uuid.Nil, time.Time{}, err
-	}
+	lines := held.Lines
 	req := linksvc.SizedRequest{Binding: held.BindingText, Lines: lines, Cost: linksvc.TextsCost(lines)}
 	notice, err := wc.approvals.ApprovalNotice(ctx, held.ApprovalID, in.RunID, req, held.ExpiresAt, linksvc.IssueLink)
 	if err != nil {
@@ -84,13 +69,13 @@ func (wc *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutco
 		return WriteOutcome{}, err
 	}
 	a, err := wc.approvals.FindApproval(ctx, p.ApprovalID)
-	if guidance.Sentinel(err, wc.approvals.NotFound()) {
+	if action.IsApprovalRefused(err, action.ApprovalNotFound) {
 		return WriteOutcome{}, approvalsvc.ApprovalInvalid(guidance.ReasonNotThisAgent, "approval %s is not one of this agent's held writes", p.ApprovalID)
 	}
 	if err != nil {
 		return WriteOutcome{}, err
 	}
-	if err := sameAsHeld(a, p); err != nil {
+	if err := wc.sameAsHeld(a, p); err != nil {
 		return WriteOutcome{}, err
 	}
 	if a, err = wc.waitForSignature(ctx, a, p); err != nil {
@@ -148,18 +133,34 @@ func (wc *Service) withApprovalLink(ctx context.Context, a action.Approval, err 
 }
 
 // sameAsHeld checks the call repeats the held write.
-func sameAsHeld(a action.Approval, p WriteParams) error {
+func (wc *Service) sameAsHeld(a action.Approval, p WriteParams) error {
 	switch {
 	case a.Status == action.ApprovalApplied:
 		return approvalsvc.ApprovalInvalid(guidance.ReasonAlreadyUsed, "approval %s was already used", a.ID)
 	case a.Status == action.ApprovalExpired:
 		return &toolresult.ToolError{Code: guidance.CodeApprovalExpired, Message: fmt.Sprintf("approval %s expired at %s; the write stays blocked", a.ID, guidance.TimeText(a.ExpiresAt))}
 	case a.RunID != p.RunID:
-		return approvalsvc.DifferentWrite(a, "approval %s belongs to run %s", a.ID, a.RunID)
-	case a.Statement != p.Request.Text || !sameParams(a.Params, p.Request.Params):
-		return approvalsvc.DifferentWrite(a, "sql and params must be exactly those of the held write")
+		return approvalsvc.DifferentWrite(a, wc.heldArgs(a), "approval %s belongs to run %s", a.ID, a.RunID)
+	case a.Request.Text != p.Request.Text || !sameParams(a.Request.Params, p.Request.Params):
+		return approvalsvc.DifferentWrite(a, wc.heldArgs(a), "the request must be exactly the held write's")
 	}
 	return nil
+}
+
+// heldArgs is the held request as the store family's write tool takes it.
+// Params that do not decode are left out, as are none.
+func (wc *Service) heldArgs(a action.Approval) map[string]any {
+	req := agentstore.Request{Text: a.Request.Text}
+	if len(a.Request.Params) > 0 {
+		// Numbers stay exact (json.Number): 9007199254740993 must reach the
+		// step as it was held, not rounded through float64.
+		if v, ok := decodeExact(a.Request.Params); ok {
+			if params, ok := v.([]any); ok {
+				req.Params = params
+			}
+		}
+	}
+	return wc.store.Language.Args(req)
 }
 
 // sameParams compares the held parameters (jsonb) with the call's. Numbers
@@ -215,5 +216,5 @@ func (wc *Service) waitForSignature(ctx context.Context, a action.Approval, p Wr
 		}
 		return a, approvalsvc.ApprovalStillPendingError(n)
 	}
-	return a, sameAsHeld(a, p) // it may have expired meanwhile
+	return a, wc.sameAsHeld(a, p) // it may have expired meanwhile
 }

@@ -136,8 +136,7 @@ func (s *Service) staleReadQuery(message, runID string) (map[string]any, error) 
 	if err != nil {
 		return nil, err
 	}
-	req := s.store.Language.ReadRow(target, key)
-	args := map[string]any{"sql": req.Text, "params": req.Params}
+	args := s.store.Language.Args(s.store.Language.ReadRow(target, key))
 	if runID != "" {
 		args[guidance.ArgRunID] = runID
 	}

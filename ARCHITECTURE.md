@@ -77,7 +77,7 @@ Three tests in `internal/app` scan the source rather than import graphs. Each on
 
 ## The agent domain is store-neutral
 
-The agent's use cases (`internal/agent`, the root package) work on any store: today Postgres, later stores that do not speak SQL. They reach the store through one `agent.StoreSet` that `internal/app` builds for the store's kind, and the types its ports are written in live in `internal/core/agentstore`. A held write also reaches it through the `Approvals` port: the hold's columns and its preview (`HoldColumns`, `Preview`) come from the approval domain, which speaks SQL today.
+The agent's use cases (`internal/agent`, the root package) work on any store: today Postgres, later stores that do not speak SQL. They reach the store through one `agent.StoreSet` that `internal/app` builds for the store's kind, and the types its ports are written in live in `internal/core/agentstore`. A held write goes to the approval domain through the `Approvals` port in one call (`Hold`), which passes the request on to the approval's store.
 
 - The service passes a request (`agentstore.Request`) on and records it, and never reads its text. Checking it, the texts of its refusals and the store's resource names belong to the store's `Language` (for SQL, `internal/agent/out/sqllang`).
 - Resources and fields are opaque refs (`agentstore.ResourceRef`, `FieldRef`) the store makes up; the service compares them, never parses them. The store fills describe's content; the service decides what is hidden: a field the agent cannot read or that is classed SECRET, and every identity, feature and expression that touches one.
@@ -89,8 +89,21 @@ To add a store:
 
 1. Name its kind in `core/action`, and the `Family` it belongs to in `internal/app` (`storeFamily`). A family that is not SQL is a new `Family` in `core/agentstore`, and its tools are a contract change first, then `internal/agent/in/agentmcp`.
 2. Write its adapters: the `Language` (check a request, the refusal and step texts, resource names), `Data` (read, write, the approved write, limits), `Catalog` (resources, one resource's `agentstore.Detail`, search, the structure lines), its `Ledger`, and its PII `Classes`; `Visibility` only when the store can hide items from the agent.
-3. Serve the store's hold columns and preview of a held write, through the approval domain today.
+3. Serve its held writes through the approval domain's store ports (see below).
 4. Build the `StoreSet` for the kind in `internal/app`. Change nothing in `internal/agent`: a change there that only one store needs belongs in that store's adapter.
+
+## The approval domain is store-neutral
+
+The approval's use cases (`internal/approval`, the root package, and its tools in `internal/approval/in/approvalmcp`) work on any store the same way. They reach the store through one `approval.StoreSet` that `internal/app` builds (`approvalStoreSet`), with three ports: `Records` reads the ledger of the agent's held writes, `Holds` is the agent's side (preview a write, hold it) and `Proofs` is the person's side (submit a signed approval, reveal a held write's hidden rows in one call).
+
+- The service passes the held request on unread: to the store's preview and hold as the agent sent it, and on a reveal as the binding carries it (`action.HeldRun`). It never parses a statement, and next steps name the request's arguments the way the store family's tools do (`agentstore.RequestArgs`), never `sql`. `list_pending` answers `request.kind` from the held write.
+- The service decides on the store's typed refusals (`action.ApprovalRefusalError` and its `ApprovalReason`), never on a store's error codes or texts. Each store's adapter maps its own answers to a reason per call (for Postgres, `internal/platform/postgres/store/approvals.go`). A hold's refusal the agent records comes as a `HoldRefusalError`, and the store marks an error of its preview run as `action.PreviewFailedError`.
+- The hold's own rules (no rows now, `guardmodel.MaxHeldLinesBytes`) are Basalt's, checked by the service on the preview's lines; which fields a write binds is the store's.
+- The store checks the person's signature itself: the wiring refuses a store whose `Capabilities` lack `InStoreSignatureCheck`, and the service refuses a set with a nil port (`TestNewServiceRefusesAStoreWithoutSignatureCheck`, `TestNewRefusesAStoreSetWithANilPort`).
+
+`TestApprovalDomainIsStoreNeutral` (`internal/testkit/archtest`) holds the root package's and `approvalmcp`'s non-test files to it: no direct import of `core/sqlguard`, `platform/postgres`, the pgx packages, `lib/sqlport`, `lib/pgquerier` or squirrel; no `guidance.LedgerCode`, `StoreDetail` or `StoreError`, no `guardmodel.Code*`, `*Refused` or `Reveal*`, no `approval.RequestSQL` and no `action.StoreError`, matched by exact name through the file's imports (so `guidance.CodeStoreError`, the answer for a write that changes no rows now, and `guardmodel.MaxHeldLinesBytes` stay); no identifier with `SQLState`, `OID` or `pg_`; and no `pg_` or the literal `"sql"` in a string. Its allowlist is empty. `TestStoreNeutralDomainsLinkNoStorePackage` checks its imports through every other package too (see the PII domain below). `TestApprovalStoreRuleCatchesViolations` proves each ban.
+
+To add a store to approvals: write its `Records`, `Holds` and `Proofs` adapters, mapping its answers to the approval reasons per call, its family's `RequestArgs`, and build its `StoreSet` in `internal/app`. Change nothing in `internal/approval`.
 
 ## The revert domain is store-neutral
 
@@ -114,7 +127,7 @@ The PII use cases (`internal/pii`, the root package: the class map, the observer
 
 `TestPIIDomainIsStoreNeutral` (`internal/testkit/archtest`) holds the root package's non-test files to it: no direct import of `core/sqlguard`, `platform/postgres`, the pgx packages, `lib/sqlport`, `lib/pgquerier` or squirrel; no identifier with `OID`, `Attnum`, `SQLState`, `relkind`, `ctid` or `pg_`; and no `pg_`, `basalt_meta`, `$1`-style placeholder or SQLSTATE-shaped code in a string. Its allowlist is empty.
 
-`TestStoreNeutralDomainsLinkNoStorePackage` runs `go list -deps` for `internal/agent`, `internal/revert` and `internal/pii` on linux and darwin and fails when one of those store packages is among their imports at any depth, naming the import chain. Its allowlists are empty: SQL helpers that only a Postgres adapter calls live beside it in `internal/platform/postgres` (the ledger's keyset paging), never in a shared `lib` package the domains import.
+`TestStoreNeutralDomainsLinkNoStorePackage` runs `go list -deps` for `internal/agent`, `internal/revert`, `internal/pii`, `internal/approval` and `internal/approval/in/approvalmcp` on linux and darwin and fails when one of those store packages is among their imports at any depth, naming the import chain. Its allowlists are empty: SQL helpers that only a Postgres adapter calls live beside it in `internal/platform/postgres` (the ledger's keyset paging), never in a shared `lib` package the domains import.
 
 To add a store to PII: write its `Classes` and `Fields` adapters and its sampler, mapping its types to a `Kind` and its errors to the two skip errors, and wire them in `internal/app` and setup's backend. Change nothing in `internal/pii`.
 

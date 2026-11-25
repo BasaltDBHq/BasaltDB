@@ -2,8 +2,8 @@ package approval
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"maps"
 	"time"
 
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
@@ -198,15 +198,17 @@ func ApprovalInvalid(reason, format string, args ...any) *toolresult.ToolError {
 }
 
 // DifferentWrite is the refusal of a write that is not the held one: its
-// step repeats the held write exactly, with its approval id.
-func DifferentWrite(a action.Approval, format string, args ...any) error {
+// step repeats the held write exactly, with its approval id. request is the
+// held request as the store family's tools take it (the caller's
+// agentstore.RequestArgs); the service never reads it.
+func DifferentWrite(a action.Approval, request map[string]any, format string, args ...any) error {
 	te := ApprovalInvalid(guidance.ReasonDifferentWrite, format, args...)
-	call := map[string]any{"sql": a.Statement, "intent": a.Intent, guidance.ArgRunID: a.RunID.String(), guidance.ArgApprovalID: a.ID.String()}
-	var params []any
-	if len(a.Params) > 0 && json.Unmarshal(a.Params, &params) == nil && len(params) > 0 {
-		call["params"] = params
-	}
-	if steps, err := guidance.NewSteps().CallTool(guidance.ToolWrite, call, "Send exactly the held write: this sql, these params and this intent, with its approvalId.").Build(); err == nil {
+	call := make(map[string]any, len(request)+3)
+	maps.Copy(call, request)
+	call["intent"] = a.Intent
+	call[guidance.ArgRunID] = a.RunID.String()
+	call[guidance.ArgApprovalID] = a.ID.String()
+	if steps, err := guidance.NewSteps().CallTool(guidance.ToolWrite, call, "Send exactly the held write: this request and this intent, with its approvalId.").Build(); err == nil {
 		te.NextSteps = steps
 	}
 	return te

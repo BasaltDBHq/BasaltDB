@@ -36,6 +36,8 @@ type readRecorder interface {
 	RecordRead(ctx context.Context, r action.Read) (uuid.UUID, error)
 }
 
+// approvalStore is the approvals part, with the Postgres store's apply of
+// an approved write.
 type approvalStore interface {
 	approvalsvc.Store
 	WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any) (action.WriteResult, error)
@@ -67,12 +69,6 @@ func (p parts) RevealNonce(ctx context.Context, kind string, id uuid.UUID) ([]by
 // Check is the Postgres store's policy check, which needs no connection.
 func (parts) Check(sql string, tool action.Tool) (action.Statement, error) {
 	return store.Check(sql, tool)
-}
-
-// HoldColumns is the Postgres store's, reading a table's columns from the
-// approvals part.
-func (p parts) HoldColumns(ctx context.Context, sql string, params []any) ([]string, error) {
-	return store.HoldColumns(ctx, sql, params, p.TableColumns)
 }
 
 // setApprovals and setReverts replace one part of d's store.

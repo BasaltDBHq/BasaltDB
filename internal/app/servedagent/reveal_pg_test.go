@@ -424,40 +424,50 @@ func TestAgentRoleCannotRevealDirectly(t *testing.T) {
 	_, err = guard.OpenReveal(ctx, conn, uuid.MustParse(s.approval), made, key)
 	requireRevealRefused(t, err, guardmodel.CodeApprovalInvalid)
 
-	// A preview of the held write with a ticket the agent guessed.
+	// The engine's one-call reveal of the held write with a proof the agent
+	// made: the reveal's ticket never leaves the store, so a guessed ticket
+	// is the guard's own test (TestRevealApprovalRowsRefused).
 	store := agenttest.PgService(t, s.env.a.URL, agenttest.WithConns(1)).Store
 	in := guard.Intent{RunID: uuid.MustParse(s.heldRun), Text: "Lead 20 left"}
-	_, err = store.RevealPreview(ctx, action.Intent(in), action.OpDelete, dropLead, []any{json.Number("20")}, uuid.MustParse(s.approval), make([]byte, 16))
+	_, err = store.RevealHeld(ctx, uuid.MustParse(s.approval), action.HeldRun{Intent: action.Intent(in), Request: heldDropLead("20")}, made, key)
 	requireRevealRefused(t, err, guardmodel.CodeApprovalInvalid)
+}
+
+// heldDropLead is the held request of dropLead with param as its value.
+func heldDropLead(param string) approval.HeldRequest {
+	return approval.HeldRequest{Kind: approval.RequestSQL, Statement: dropLead, Params: []json.RawMessage{json.RawMessage(param)}}
 }
 
 // An approval reveal answers ROWS_CHANGED when a hidden row changed since
 // the hold; a re-run of other parameters or another statement, even with
-// the person's ticket, is REVEAL_REFUSED.
+// the person's proof, is REVEAL_REFUSED.
 func TestApprovalRevealRowsChangedAndMismatch(t *testing.T) {
 	t.Parallel()
 	s := newRevealSetup(t)
-	ctx := context.Background()
-	req, b := s.approvalRequest(t)
 	id := uuid.MustParse(s.approval)
 
-	// The person's ticket, opened as the engine does.
+	// The person's proof, made fresh for each reveal as the page does; the
+	// store opens the reveal and re-runs the request it is given.
 	store := agenttest.PgService(t, s.env.a.URL, agenttest.WithConns(1)).Store
-	raw := make([]byte, links.SecretBytes)
-	_, err := rand.Read(raw)
-	require.NoError(t, err)
-	key, err := approval.RevealKey(raw)
-	require.NoError(t, err)
-	ch, err := approvaltest.RevealChallenge(approval.KindApprove, id, req.RevealNonce, key, b.RowsHash)
-	require.NoError(t, err)
-	ticket, err := store.OpenReveal(ctx, id, s.personSigns(t)(ch), key)
-	require.NoError(t, err)
 	in := guard.Intent{RunID: uuid.MustParse(s.heldRun), Text: "Lead 20 left"}
-	_, err = store.RevealPreview(ctx, action.Intent(in), action.OpDelete, dropLead, []any{json.Number("21")}, id, ticket)
+	reveal := func(held approval.HeldRequest) ([]approval.RevealedRow, error) {
+		fresh, fb := s.approvalRequest(t)
+		raw := make([]byte, links.SecretBytes)
+		_, err := rand.Read(raw)
+		require.NoError(t, err)
+		key, err := approval.RevealKey(raw)
+		require.NoError(t, err)
+		ch, err := approvaltest.RevealChallenge(approval.KindApprove, id, fresh.RevealNonce, key, fb.RowsHash)
+		require.NoError(t, err)
+		return store.RevealHeld(context.Background(), id, action.HeldRun{Intent: action.Intent(in), Request: held}, s.personSigns(t)(ch), key)
+	}
+	_, err := reveal(heldDropLead("21"))
 	requireRevealRefused(t, err, guardmodel.CodeApprovalInvalid)
-	_, err = store.RevealPreview(ctx, action.Intent(in), action.OpDelete, dropLead+" AND status IS NOT NULL", []any{json.Number("20")}, id, ticket)
+	other := heldDropLead("20")
+	other.Statement += " AND status IS NOT NULL"
+	_, err = reveal(other)
 	requireRevealRefused(t, err, guardmodel.CodeApprovalInvalid)
-	rows, err := store.RevealPreview(ctx, action.Intent(in), action.OpDelete, dropLead, []any{json.Number("20")}, id, ticket)
+	rows, err := reveal(heldDropLead("20"))
 	require.NoError(t, err, "the held statement with its parameters")
 	require.Len(t, rows, 2)
 

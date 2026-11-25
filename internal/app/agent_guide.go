@@ -15,9 +15,10 @@ import (
 // operator runs them.
 func newGuide(name string, cmds guidance.Commands, log *slog.Logger, now func() time.Time, errs guidance.ErrorMap, connectBudget int) *Service {
 	s := &Service{deps: Deps{
-		Core:   coreDeps{Name: name, Commands: cmds, Log: log, Now: now, Errors: errs},
-		Status: statussvc.Deps{ConnectBudget: connectBudget},
-		Revert: revertDeps{Store: noRevertStore{}},
+		Core:     coreDeps{Name: name, Commands: cmds, Log: log, Now: now, Errors: errs},
+		Status:   statussvc.Deps{ConnectBudget: connectBudget},
+		Approval: approvalDeps{Store: noApprovalStore{}},
+		Revert:   revertDeps{Store: noRevertStore{}},
 	}}
 	s.wire()
 	return s

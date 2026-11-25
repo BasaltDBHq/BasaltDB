@@ -118,12 +118,13 @@ func (e *revealEnv) hold(t *testing.T, store *postgres.Store, in guard.Intent, i
 	t.Helper()
 	ctx := context.Background()
 	stmt, params := `DELETE FROM public.leads WHERE id = $1`, []any{json.Number(strconv.Itoa(id))}
-	lines, err := store.Preview(ctx, action.Intent(in), stmt, params, []string{})
+	req := action.Request{Text: stmt, Params: params}
+	p, err := store.Preview(ctx, action.Intent(in), req)
 	require.NoError(t, err)
-	held, err := store.Hold(ctx, action.Intent(in), action.HoldRequest{Statement: stmt, Params: params, Assigned: []string{}, Lines: lines})
+	held, err := store.Hold(ctx, action.Intent(in), action.HoldRequest{Op: action.OpDelete, Request: req, Assigned: p.Assigned, Lines: p.Lines})
 	require.NoError(t, err)
 	if id == 20 {
-		e.lines = lines
+		e.lines = p.Lines
 	}
 	then(held.ApprovalID, held.BindingText)
 }

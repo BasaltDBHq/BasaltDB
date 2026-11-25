@@ -39,7 +39,10 @@ $$;
 -- intent come from session_user and the basalt.* settings; the binding is
 -- built here, so the engine cannot choose what the passkey signs beyond the
 -- statement, parameters and lines, which the commit check recomputes.
-CREATE OR REPLACE FUNCTION basalt_meta.hold_action(p_statement text, p_params jsonb, p_assigned text[], p_lines text[])
+-- p_op is the request's own command (INSERT, UPDATE or DELETE), the verb
+-- of its APPROVAL_PENDING row; the earlier form, without it, is dropped.
+DROP FUNCTION IF EXISTS basalt_meta.hold_action(text, jsonb, text[], text[]);
+CREATE OR REPLACE FUNCTION basalt_meta.hold_action(p_op text, p_statement text, p_params jsonb, p_assigned text[], p_lines text[])
 RETURNS TABLE (approval_id uuid, binding_text text, expires_at timestamptz)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 #variable_conflict use_column
@@ -128,15 +131,17 @@ BEGIN
     VALUES (v_id, 'APPROVE', session_user, v_run, v_task, v_intent, p_statement, p_params, p_assigned, p_lines,
             v_rows, v_hash, v_text, sha256(convert_to(v_text, 'UTF8')), v_change, v_expires);
 
-    PERFORM basalt_meta._append(session_user, v_change, 'APPROVAL_PENDING', NULL, v_first ->> 'op', NULL, NULL, NULL, NULL,
+    PERFORM basalt_meta._append_verb(session_user, v_change, 'APPROVAL_PENDING', NULL, v_first ->> 'op', NULL, NULL, NULL, NULL,
         jsonb_build_object('approvalId', v_id, 'runId', v_run, 'taskId', v_task, 'intent', v_intent,
                            'statement', p_statement, 'rows', v_rows, 'rowsHash', encode(v_hash, 'hex'),
-                           'expiresAt', v_expires));
+                           'expiresAt', v_expires),
+        CASE WHEN p_op IN ('INSERT', 'UPDATE', 'DELETE') THEN p_op END);
     approval_id := v_id;
     binding_text := v_text;
     expires_at := v_expires;
     RETURN NEXT;
 END $$;
+GRANT EXECUTE ON FUNCTION basalt_meta.hold_action(text, text, jsonb, text[], text[]) TO {{agents}};
 
 -- Relay of the approval page's reveal, second transaction: in the PREVIEW
 -- transaction that re-ran the held statement and recorded it with

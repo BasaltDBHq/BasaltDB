@@ -96,7 +96,7 @@ func approvedWrite(t *testing.T, a *guardtest.Agent, p *passkeytest.Authenticato
 func changeIDOf(t *testing.T, a *guardtest.Agent, run uuid.UUID) uuid.UUID {
 	t.Helper()
 	return scalarOf[uuid.UUID](t, a.Conn, `SELECT change_id FROM basalt_meta.agent_changes
-		WHERE run_id = $1 AND op <> 'SELECT' ORDER BY change_id LIMIT 1`, run)
+		WHERE run_id = $1 AND op <> 'READ' ORDER BY change_id LIMIT 1`, run)
 }
 
 func TestRevertLinesUpdate(t *testing.T) {

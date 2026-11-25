@@ -12,7 +12,6 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
@@ -142,7 +141,7 @@ func (s *Service) failure(t *testing.T, tool string, args map[string]any, err er
 // catalog the use case builds.
 func catalogCases() map[string]catalogCase {
 	return map[string]catalogCase{
-		stepcatalogtest.CaseKey("STATEMENT_REFUSED", "HOLD_TOO_LARGE", ""): {"write", writeArgs0, pgFail("BS007", "NOT_ALLOWED", guardmodel.DetailHoldTooLarge)},
+		stepcatalogtest.CaseKey("STATEMENT_REFUSED", "HOLD_TOO_LARGE", ""): {"write", writeArgs0, pgFail("BS007", "NOT_ALLOWED", "HOLD_TOO_LARGE")},
 		stepcatalogtest.CaseKey("APPROVAL_REQUIRED", "REQUEST_TOO_LARGE", ""): {"write", writeArgs0, func(t *testing.T, s *testService) error {
 			n := tooLargeNotice(t, s, linksvc.IssueLink)
 			require.Equal(t, linksvc.ReasonRequestTooLarge, n.Reason)

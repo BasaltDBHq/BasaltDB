@@ -8,7 +8,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
@@ -58,7 +57,7 @@ func TestApprovalExpiryReadsTheWallClock(t *testing.T) {
 		tx := frozenTx(t, a.Conn)
 		expireNow(t, d, "approvals", "expires_at", held.ApprovalID)
 		_, err := guard.SubmitApproval(ctx, tx, held.ApprovalID, sign(t, p, held, nil))
-		requireCode(t, err, guardmodel.CodeApprovalExpired)
+		requireCode(t, err, guard.CodeApprovalExpired)
 	})
 
 	t.Run("the check when the approved write starts", func(t *testing.T) {
@@ -71,7 +70,7 @@ func TestApprovalExpiryReadsTheWallClock(t *testing.T) {
 		expireNow(t, d, "approvals", "expires_at", held.ApprovalID)
 		require.NoError(t, guard.BeginApproved(ctx, tx, in, guardtest.Timeout, held.ApprovalID))
 		_, err = tx.Exec(ctx, stmt)
-		requireCode(t, err, guardmodel.CodeApprovalExpired)
+		requireCode(t, err, guard.CodeApprovalExpired)
 	})
 
 	t.Run("the check at commit", func(t *testing.T) {
@@ -87,7 +86,7 @@ func TestApprovalExpiryReadsTheWallClock(t *testing.T) {
 		_, err = guard.FinishChange(ctx, tx, guard.Finish{Op: "DELETE", Statement: stmt})
 		require.NoError(t, err)
 		expireNow(t, d, "approvals", "expires_at", held.ApprovalID)
-		requireCode(t, tx.Commit(ctx), guardmodel.CodeApprovalExpired)
+		requireCode(t, tx.Commit(ctx), guard.CodeApprovalExpired)
 		require.Equal(t, 1, count(t, d.Admin, `SELECT count(id)::int FROM public.leads WHERE id = 64`))
 	})
 }
@@ -106,7 +105,7 @@ func TestRevertExpiryReadsTheWallClock(t *testing.T) {
 		tx := frozenTx(t, a.Conn)
 		expireNow(t, d, "reverts", "expires_at", prep.RevertID)
 		_, err := guard.ApplyRevert(ctx, tx, prep.RevertID, as)
-		requireCode(t, err, guardmodel.CodeRevertExpired)
+		requireCode(t, err, guard.CodeRevertExpired)
 	})
 
 	t.Run("reject_revert", func(t *testing.T) {
@@ -117,7 +116,7 @@ func TestRevertExpiryReadsTheWallClock(t *testing.T) {
 		tx := frozenTx(t, a.Conn)
 		expireNow(t, d, "reverts", "expires_at", prep.RevertID)
 		_, err := guard.RejectRevert(ctx, tx, prep.RevertID, "", nil)
-		requireCode(t, err, guardmodel.CodeRevertExpired)
+		requireCode(t, err, guard.CodeRevertExpired)
 	})
 }
 
@@ -130,5 +129,5 @@ func TestRevertBatchDeadlineReadsTheWallClock(t *testing.T) {
 	tx := frozenTx(t, e.a.Conn)
 	expireNow(t, e.d, "reverts", "apply_by", prep.RevertID)
 	_, err := guard.ApplyRevertBatch(ctx, tx, prep.RevertID, []int{1})
-	requireCode(t, err, guardmodel.CodeRevertExpired)
+	requireCode(t, err, guard.CodeRevertExpired)
 }

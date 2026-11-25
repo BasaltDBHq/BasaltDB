@@ -8,7 +8,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
@@ -142,8 +141,8 @@ func TestAgentCannotForgeLedger(t *testing.T) {
 	}
 
 	_, err := a.Conn.Exec(ctx, `SELECT basalt_meta.record_event('ROW_CHANGE', NULL, '{}')`)
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
 	err = guard.Heartbeat(ctx, a.Conn, map[string]any{"pad": strings.Repeat("x", 70*1024)})
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
 	requireIntact(t, a.Conn)
 }

@@ -170,6 +170,6 @@ func TestAgentRLSUnchanged(t *testing.T) {
 	// exist.
 	other := d.NewAgent(t, "auditor", nil, leads)
 	_, err := guard.PreviewRevert(ctx, other.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID})
-	requireScopeRefused(t, err, guardmodel.ScopeNotOwnRun)
+	requireScopeRefused(t, err, guard.ScopeNotOwnRun)
 	require.Equal(t, 98, count(t, other.Conn, `SELECT count(1)::int FROM public.leads`), "1 to 100 without the deleted 4 and the moved 51")
 }

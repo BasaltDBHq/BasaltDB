@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -72,7 +71,7 @@ func (dc *Service) pageSignatureFailure(te *toolresult.ToolError) bool {
 	switch te.Code {
 	case guidance.CodeApprovalInvalid:
 		what, again = "approval", "Approve again on this page."
-	case string(guardmodel.CodeRevertInvalid):
+	case guidance.CodeRevertInvalid:
 		what, again = "revert", "Sign again on this page."
 	default:
 		return false

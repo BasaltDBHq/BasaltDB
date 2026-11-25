@@ -14,7 +14,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -419,5 +418,5 @@ func requireRevertInvalid(t *testing.T, err error) {
 	t.Helper()
 	code, ok := guard.CodeOf(err)
 	require.True(t, ok, "%v", err)
-	require.Equal(t, guardmodel.CodeRevertInvalid, code, "%v", err)
+	require.Equal(t, guard.CodeRevertInvalid, code, "%v", err)
 }

@@ -6,7 +6,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
@@ -120,7 +119,7 @@ func TestVerifyChainFromRefusesBadInput(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", leads, nil)
 	_, _, err := guard.VerifyChainFrom(context.Background(), a.Conn, guard.ChainHead{Seq: -1, Hash: []byte{1}})
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
 	st, _ := verifyFrom(t, a.Conn, guard.ChainHead{Seq: 99, Hash: []byte{1}})
 	require.Equal(t, guard.ChainStatus{BrokenAt: 1}, st, "a pin beyond the head means rows were removed")
 }
@@ -136,6 +135,6 @@ func TestRecordEventKinds(t *testing.T) {
 	require.Equal(t, 3, count(t, d.Admin,
 		`SELECT count(1)::int FROM basalt_meta.ledger WHERE kind IN ('HEARTBEAT', 'DEAD_MAN', 'UNCOVERED_TABLES')`))
 	err := guard.RecordEvent(ctx, a.Conn, "RUN_STARTED", nil)
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
 	requireIntact(t, a.Conn)
 }

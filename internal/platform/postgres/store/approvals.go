@@ -14,7 +14,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
@@ -198,13 +197,13 @@ func findApprovalRefusal(err error) error {
 // any other APPROVAL_INVALID is an approval signed or used meanwhile.
 func revealApprovalRefusal(err error) error {
 	se := guardAnswer(err)
-	if se == nil || guardmodel.Code(se.LedgerCode) != guardmodel.CodeApprovalInvalid {
+	if se == nil || guard.Code(se.LedgerCode) != guard.CodeApprovalInvalid {
 		return err
 	}
 	switch se.Detail {
-	case guardmodel.RevealRefused:
+	case guard.RevealRefused:
 		return approvalRefusal(err, action.ApprovalRevealRefused, se.Detail)
-	case guardmodel.RevealRowsChanged:
+	case guard.RevealRowsChanged:
 		return approvalRefusal(err, action.ApprovalRevealRowsChanged, se.Detail)
 	case approvalNotFoundDetail:
 		return approvalRefusal(err, action.ApprovalNotFound, se.Detail)

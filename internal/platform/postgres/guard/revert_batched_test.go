@@ -248,7 +248,7 @@ func TestBatchChecks(t *testing.T) {
 	_, err = guard.ApplyRevert(ctx, e.a.Conn, prep.RevertID, as)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, e.a.Conn, prep.RevertID, as)
-	requireRevertRefused(t, err, guardmodel.RevertAlreadySigned, "already signed")
+	requireRevertRefused(t, err, guard.RevertAlreadySigned, "already signed")
 
 	other := e.d.NewAgent(t, "other", []string{"public.items"}, []string{"public.items"})
 	tooMany := make([]int, revert.MaxBatch+1)
@@ -283,7 +283,7 @@ func TestBatchChecks(t *testing.T) {
 
 	e.d.Exec(t, `UPDATE basalt_meta.reverts SET apply_by = now() - interval '1 second' WHERE revert_id = $1`, prep.RevertID)
 	_, err = guard.ApplyRevertBatch(ctx, e.a.Conn, prep.RevertID, []int{3})
-	requireCode(t, err, guardmodel.CodeRevertExpired)
+	requireCode(t, err, guard.CodeRevertExpired)
 	require.Equal(t, "EXPIRED", scalarOf[string](t, e.a.Conn, `SELECT status FROM basalt_meta.agent_reverts WHERE revert_id = $1`, prep.RevertID))
 
 	// A one-call revert has no batches.

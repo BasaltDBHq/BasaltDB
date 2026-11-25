@@ -19,7 +19,7 @@ import (
 // agent role, as pii_unclassified() filters them for its login role, and in
 // its order. Plain SQL: it calls a set-returning function of the guard with
 // privilege checks on a named role, which squirrel cannot express.
-const agentReadableSQL = `SELECT r.table_oid, r.attnum, r.table_schema, r.table_name, r.column_name, r.data_type
+const agentReadableSQL = `SELECT r.table_schema, r.table_name, r.column_name, r.data_type
   FROM basalt_meta.pii_readable_columns() r
  WHERE coalesce(pg_catalog.has_schema_privilege($1::text, r.table_schema, 'USAGE'), false)
    AND coalesce(pg_catalog.has_column_privilege($1::text, r.table_oid, r.attnum, 'SELECT'), false)
@@ -34,7 +34,7 @@ func agentColumns(ctx context.Context, tx pgx.Tx, role string) ([]guardmodel.Age
 	}
 	readable, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (guardmodel.ReadableColumn, error) {
 		var c guardmodel.ReadableColumn
-		err := r.Scan(&c.TableOID, &c.Attnum, &c.Schema, &c.Table, &c.Column, &c.DataType)
+		err := r.Scan(&c.Schema, &c.Table, &c.Column, &c.DataType)
 		return c, err
 	})
 	if err != nil {

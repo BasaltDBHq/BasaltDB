@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
@@ -162,9 +161,9 @@ func TestPrepareNothingToRevert(t *testing.T) {
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'won' WHERE id = 84`))
 	d.Exec(t, `UPDATE public.leads SET status = 'person' WHERE id = 84`)
 	_, err := guard.PrepareRevert(ctx, a.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo")
-	requireCode(t, err, guardmodel.CodeNothingToRevert)
+	requireCode(t, err, guard.CodeNothingToRevert)
 	_, err = guard.PrepareRevert(ctx, a.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "")
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
 }
 
 // TestPrepareBatchedAboveOneCall: up to revert.MaxLines lines a revert is
@@ -238,5 +237,5 @@ func TestAgentCannotUseRevertPath(t *testing.T) {
 	// can set turns its own write into a revert write.
 	in := newRun(t, a, "Try a big write")
 	err := guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET score = 1 WHERE id BETWEEN 1 AND 12`)
-	requireCode(t, err, guardmodel.CodeApprovalRequired)
+	requireCode(t, err, guard.CodeApprovalRequired)
 }

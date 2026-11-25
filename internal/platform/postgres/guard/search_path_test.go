@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
 
@@ -63,16 +63,16 @@ func TestCatalogShadowDoesNotBypassGuard(t *testing.T) {
 	require.True(t, shadowed)
 
 	_, err = a.Conn.Exec(ctx, `UPDATE public.leads SET status = 'lost' WHERE id = 4`)
-	requireCode(t, err, guardmodel.CodeIntentRequired)
+	requireCode(t, err, guard.CodeIntentRequired)
 
 	err = guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'lost' WHERE id <= 25`)
-	requireCode(t, err, guardmodel.CodeApprovalRequired)
+	requireCode(t, err, guard.CodeApprovalRequired)
 
 	err = guardtest.Guarded(ctx, a.Conn, in, `DELETE FROM public.leads WHERE id = 5`)
-	requireCode(t, err, guardmodel.CodeApprovalRequired)
+	requireCode(t, err, guard.CodeApprovalRequired)
 
 	_, err = a.Conn.Exec(ctx, `TRUNCATE public.scratch`)
-	requireCode(t, err, guardmodel.CodeNotAllowed)
+	requireCode(t, err, guard.CodeNotAllowed)
 
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'lost' WHERE id = 4`))
 	require.Equal(t, 1, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger

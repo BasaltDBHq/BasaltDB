@@ -151,7 +151,7 @@ func TestInitRefusesToAdoptAnElevatedRole(t *testing.T) {
 				s := spec()
 				s.Name = name
 				err = d.TryInit(s)
-				requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+				requireCode(t, err, guard.CodeLedgerInputInvalid)
 				require.Equal(t, before, state(), "nothing changed")
 			})
 		}
@@ -227,7 +227,7 @@ func TestInitRefusesAnAgentThatOwns(t *testing.T) {
 				{Name: "bot", Write: leads, Read: leads},
 				{Name: "bot", Password: guard.NewPassword(), Write: leads, Read: leads},
 			} {
-				requireCode(t, d.TryInit(spec), guardmodel.CodeLedgerInputInvalid)
+				requireCode(t, d.TryInit(spec), guard.CodeLedgerInputInvalid)
 			}
 		})
 	}
@@ -255,7 +255,7 @@ func TestInitResetsTheRoleSettings(t *testing.T) {
 	bot := requireLogin(t, d, pw)
 	require.Equal(t, "origin", scalarOf[string](t, bot, `SHOW session_replication_role`))
 	_, err = bot.Exec(ctx, `UPDATE public.leads SET status = 'merged' WHERE id = 4`)
-	requireCode(t, err, guardmodel.CodeIntentRequired)
+	requireCode(t, err, guard.CodeIntentRequired)
 
 	// Keeping the password resets them too.
 	d.Exec(t, `ALTER ROLE `+role+` SET session_replication_role = replica`)
@@ -288,7 +288,7 @@ func TestInitRefusesSettingsTheAdminCannotReset(t *testing.T) {
 	sql, err := guard.AgentAdoptSQL(d.Names, "bot", guardmodel.AgentSpec{Write: leads})
 	require.NoError(t, err)
 	_, err = c.Exec(ctx, sql)
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
 	require.Equal(t, 1, count(t, d.Admin, `SELECT count(1)::int FROM pg_db_role_setting s, unnest(s.setconfig) c
 		WHERE s.setrole = $1::regrole AND c = 'session_replication_role=replica'`, role))
 }

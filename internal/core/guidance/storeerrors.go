@@ -8,7 +8,6 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -52,12 +51,12 @@ func StoreError(err error) *action.StoreError {
 
 // LedgerCode is the ledger's code of a refusal the store answered (the
 // guard's code for Postgres), and false for any other error.
-func LedgerCode(err error) (guardmodel.Code, bool) {
+func LedgerCode(err error) (string, bool) {
 	se := StoreError(err)
 	if se == nil || se.LedgerCode == "" {
 		return "", false
 	}
-	return guardmodel.Code(se.LedgerCode), true
+	return se.LedgerCode, true
 }
 
 // StoreDetail is the detail of the store's error in err, "" when none.
@@ -66,17 +65,6 @@ func StoreDetail(err error) string {
 		return se.Detail
 	}
 	return ""
-}
-
-// ScopeRefusal returns the detail (guardmodel.ScopeShape, ScopeNotOwnRun, ...)
-// and the explanation of a SCOPE_REFUSED error, and false for any other
-// error.
-func ScopeRefusal(err error) (detail, hint string, ok bool) {
-	se := StoreError(err)
-	if se == nil || se.LedgerCode != string(guardmodel.CodeScopeRefused) {
-		return "", "", false
-	}
-	return se.Detail, se.Hint, true
 }
 
 // TimedOut reports whether the store canceled the statement at its time

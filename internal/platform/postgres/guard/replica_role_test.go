@@ -36,14 +36,14 @@ func TestGuardTriggersFireUnderReplicaRole(t *testing.T) {
 	require.Equal(t, "replica", scalarOf[string](t, c, `SHOW session_replication_role`))
 
 	_, err := c.Exec(ctx, `UPDATE public.leads SET status = 'lost' WHERE id = 4`)
-	requireCode(t, err, guardmodel.CodeIntentRequired)
+	requireCode(t, err, guard.CodeIntentRequired)
 
 	in := newRun(t, a, "Under replica")
 	err = guardtest.Guarded(ctx, c, in, `UPDATE public.leads SET status = 'lost' WHERE id <= 25`)
-	requireCode(t, err, guardmodel.CodeApprovalRequired)
+	requireCode(t, err, guard.CodeApprovalRequired)
 
 	_, err = c.Exec(ctx, `TRUNCATE public.scratch`)
-	requireCode(t, err, guardmodel.CodeNotAllowed)
+	requireCode(t, err, guard.CodeNotAllowed)
 
 	err = pgx.BeginFunc(ctx, c, func(tx pgx.Tx) error {
 		if err := guard.BeginPreview(ctx, tx, in, guardtest.Timeout); err != nil {
@@ -52,7 +52,7 @@ func TestGuardTriggersFireUnderReplicaRole(t *testing.T) {
 		_, err := tx.Exec(ctx, `UPDATE public.leads SET status = 'lost' WHERE id = 5`)
 		return err
 	})
-	requireCode(t, err, guardmodel.CodePreviewCannotCommit)
+	requireCode(t, err, guard.CodePreviewCannotCommit)
 
 	require.NoError(t, guardtest.Guarded(ctx, c, in, `UPDATE public.leads SET status = 'lost' WHERE id = 4`))
 	require.Equal(t, 1, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger

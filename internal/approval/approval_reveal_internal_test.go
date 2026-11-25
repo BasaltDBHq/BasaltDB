@@ -11,7 +11,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
@@ -59,7 +58,7 @@ func TestRevealApprovalHandsTheStoreTheHeldRequestUnread(t *testing.T) {
 
 	var pe *guidance.PageError
 	require.ErrorAs(t, err, &pe, "the store's refusal is the page's answer")
-	require.Equal(t, guardmodel.RevealRefused, pe.Reason)
+	require.Equal(t, guidance.ReasonRevealRefused, pe.Reason)
 	require.Len(t, calls, 1, "one store call")
 	got := calls[0]
 	require.Equal(t, a.ID, got.id)

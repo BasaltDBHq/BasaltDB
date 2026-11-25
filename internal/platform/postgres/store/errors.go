@@ -164,14 +164,11 @@ func guardReason(code, detail string) string {
 // whose hint is the guard's sentence (version 11): apply_revert's
 // REVERT_INVALID codes and NOTHING_TO_REVERT READS_ONLY.
 func typedSentence(gc guardmodel.Code, detail string) bool {
-	switch gc {
-	case guardmodel.CodeRevertInvalid:
-		_, ok := revertTypedReasons[detail]
-		return ok
-	case guardmodel.CodeNothingToRevert:
+	if gc == guardmodel.CodeNothingToRevert {
 		return detail == guardmodel.NothingReadsOnly
 	}
-	return false
+	_, typed := revertTypedReasons[detail]
+	return gc == guardmodel.CodeRevertInvalid && typed
 }
 
 // revertTypedReasons are the catalog reasons of apply_revert's typed

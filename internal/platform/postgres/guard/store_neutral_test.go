@@ -186,6 +186,12 @@ func TestStoreNeutralVerbIsTheRequestsCommand(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "UPDATE INSERT", scalarOf[string](t, d.Admin,
 		`SELECT op || ' ' || verb FROM basalt_meta.ledger WHERE kind = 'APPROVAL_PENDING' AND detail ->> 'approvalId' = $1`, held.ApprovalID.String()))
+
+	// A command outside INSERT, UPDATE and DELETE is refused, never replaced
+	// by the first line's op.
+	_, err = guard.Hold(ctx, a.Conn, in, guardtest.Timeout, guard.HoldRequest{Verb: "SELECT", Statement: upsert, Assigned: []string{"id", "name"}, Lines: lines})
+	require.Error(t, err)
+	require.Equal(t, "BS008", guardtest.SQLState(err))
 }
 
 // agent_reverts never leaves out a selected agent it cannot name: a role

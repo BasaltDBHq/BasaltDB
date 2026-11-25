@@ -498,7 +498,11 @@ func TestResetRevert(t *testing.T) {
 	require.Len(t, resets, 1)
 	dropped, err := json.Marshal(resets[0]["droppedSelect"])
 	require.NoError(t, err)
-	require.JSONEq(t, normText(t, e.d, e.every()), string(dropped))
+	// The ledger keeps the select in its stored form (logins and tables),
+	// the form agent_ledger's redaction compares with the row's login.
+	require.JSONEq(t, widenedRow.Selection, string(dropped))
+	require.Contains(t, resets[0]["droppedSelect"], "tables", "the stored form names tables")
+	require.NotContains(t, resets[0]["droppedSelect"], "resources")
 
 	// The old token no longer reaches anything wider than own work.
 	_, err = guard.RescopeRevert(ctx, e.bot.Conn,

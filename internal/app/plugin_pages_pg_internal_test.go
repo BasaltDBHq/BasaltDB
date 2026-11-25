@@ -16,6 +16,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -202,9 +203,10 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 	require.Equal(t, other.Name, theirsRequestedBy(t, theirs.BindingText))
 }
 
-// TestPluginRoutesOnOlderGuard: an agent whose guard predates plugin
-// approvals cannot hold one; the routes answer it as an unknown id, never
-// a failed read of a view that does not exist.
+// TestPluginRoutesOnOlderGuard: a guard that predates plugin approvals also
+// lacks a later breaking version, so this build cannot use it: the route
+// answers 503 GUARD_OUTDATED before any read, never a failed read of a view
+// that does not exist.
 func TestPluginRoutesOnOlderGuard(t *testing.T) {
 	restore := guardtest.UpToVersion(t, guard.PluginApprovalsVersion-1)
 	d := guardtest.New(t).WithDemo(t)
@@ -228,7 +230,8 @@ func TestPluginRoutesOnOlderGuard(t *testing.T) {
 	req.Header.Set(links.SecretHeader, secret)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
-	require.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), guidance.ReasonGuardOutdated, "the person is told the guard needs an update")
 }
 
 func pluginApprovedRows(t *testing.T, d *guardtest.DB, role string) int {

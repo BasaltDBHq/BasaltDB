@@ -378,3 +378,24 @@ func TestChallengeHashesUTF8Bytes(t *testing.T) {
 	want := sha256.Sum256([]byte("é"))
 	require.True(t, bytes.Equal(want[:], approval.Challenge("é")))
 }
+
+// The engine relays only texts that follow the text rules: Fragment, and
+// so URL, refuses a binding or a line that breaks them before encoding.
+func TestFragmentRefusesTextsOutOfTheRules(t *testing.T) {
+	t.Parallel()
+	lines := previewLines()
+	binding := bindingText(lines)
+	broken := []string{lines[0], strings.Replace(lines[1], `"cascaded": true`, `"cascaded":true`, 1), lines[2]}
+	for name, req := range map[string]approval.Request{
+		"binding": {ApprovalID: approvalID, Binding: strings.Replace(binding, `"rows": 3, `, `"rows":3, `, 1), Lines: lines},
+		"line":    {ApprovalID: approvalID, Binding: binding, Lines: broken},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := req.Fragment()
+			require.ErrorIs(t, err, approval.ErrInvalid)
+			require.ErrorContains(t, err, name)
+			_, err = req.URL(links.DefaultLocal + "/")
+			require.ErrorIs(t, err, approval.ErrInvalid)
+		})
+	}
+}

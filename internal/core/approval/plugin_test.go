@@ -235,3 +235,30 @@ func TestVerifyPlugin(t *testing.T) {
 	_, err = approval.VerifyPlugin(v.Binding, person.Credential(), moved)
 	require.ErrorContains(t, err, "binding for")
 }
+
+// The engine relays only texts that follow the text rules: a plugin
+// request's binding or settings that break them is refused before encoding.
+func TestPluginFragmentRefusesTextsOutOfTheRules(t *testing.T) {
+	t.Parallel()
+	var v pluginVector
+	for _, x := range readPluginVectors(t).Vectors {
+		if x.Expect.Error == "" && (x.Expect.SettingsMatch == nil || *x.Expect.SettingsMatch) {
+			v = x
+			break
+		}
+	}
+	require.NotEmpty(t, v.Binding)
+	id := pluginID(t, v.Binding)
+	_, err := approval.PluginRequest{ApprovalID: id, Binding: v.Binding, Settings: v.Settings}.Fragment()
+	require.NoError(t, err)
+	for name, req := range map[string]approval.PluginRequest{
+		"binding": {ApprovalID: id, Binding: strings.Replace(v.Binding, `{"kind": `, `{"kind":`, 1), Settings: v.Settings},
+		"line":    {ApprovalID: id, Binding: v.Binding, Settings: `{"a":1}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := req.Fragment()
+			require.ErrorIs(t, err, approval.ErrInvalid)
+			require.ErrorContains(t, err, name)
+		})
+	}
+}

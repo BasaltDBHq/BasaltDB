@@ -66,7 +66,8 @@
       "row_key": null,
       "seq": 1,
       "table_name": null,
-      "values_pruned": false
+      "values_pruned": false,
+      "verb": null
     },
     {
       "agent": "<prefix>_agent_bot",
@@ -89,7 +90,8 @@
       "row_key": null,
       "seq": 2,
       "table_name": null,
-      "values_pruned": false
+      "values_pruned": false,
+      "verb": "UPDATE"
     },
     {
       "agent": "<prefix>_agent_bot",
@@ -107,7 +109,8 @@
       "row_key": null,
       "seq": 3,
       "table_name": null,
-      "values_pruned": false
+      "values_pruned": false,
+      "verb": null
     },
     {
       "agent": "<prefix>_agent_bot",
@@ -138,7 +141,8 @@
       },
       "seq": 4,
       "table_name": "public.leads",
-      "values_pruned": false
+      "values_pruned": false,
+      "verb": "UPDATE"
     },
     {
       "agent": "<prefix>_agent_bot",
@@ -169,7 +173,8 @@
       },
       "seq": 5,
       "table_name": "public.leads",
-      "values_pruned": false
+      "values_pruned": false,
+      "verb": "UPDATE"
     },
     {
       "agent": "<prefix>_agent_bot",
@@ -200,7 +205,8 @@
       },
       "seq": 6,
       "table_name": "public.leads",
-      "values_pruned": false
+      "values_pruned": false,
+      "verb": "UPDATE"
     },
     {
       "agent": "<prefix>_agent_bot",
@@ -210,11 +216,11 @@
         "cascadedRows": 0,
         "durationMs": "<durationMs>",
         "intent": "They signed",
+        "resource": "public.leads",
         "rows": 3,
         "runId": "<id-6>",
         "statement": "UPDATE leads SET status = 'won' WHERE id IN (71, 72, 73)",
         "status": "APPLIED",
-        "table": "public.leads",
         "taskId": "<id-7>"
       },
       "kind": "CHANGE",
@@ -224,7 +230,8 @@
       "row_key": null,
       "seq": 7,
       "table_name": null,
-      "values_pruned": false
+      "values_pruned": false,
+      "verb": "UPDATE"
     },
     {
       "agent": "<prefix>_agent_bot",
@@ -256,7 +263,8 @@
       "row_key": null,
       "seq": 8,
       "table_name": null,
-      "values_pruned": false
+      "values_pruned": false,
+      "verb": null
     },
     {
       "agent": "<prefix>_agent_bot",
@@ -274,7 +282,8 @@
       "row_key": null,
       "seq": 9,
       "table_name": null,
-      "values_pruned": false
+      "values_pruned": false,
+      "verb": null
     }
   ]
 }

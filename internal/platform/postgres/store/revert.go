@@ -247,6 +247,15 @@ var scopeReasons = map[string]action.RevertReason{
 	guardmodel.ScopeFilterCap:    action.RevertFilterCap,
 }
 
+// nothingSentence is the guard's sentence for a NOTHING_TO_REVERT: the
+// hint of a typed detail (READS_ONLY), the detail otherwise.
+func nothingSentence(se *action.StoreError) string {
+	if se.Detail == guardmodel.NothingReadsOnly {
+		return se.Hint
+	}
+	return se.Detail
+}
+
 // applyReasons are the revert reasons of apply_revert's typed
 // REVERT_INVALID details.
 var applyReasons = map[string]action.RevertReason{
@@ -310,7 +319,7 @@ func prepareRefusal(err error) error {
 		return refusal(err, reason, se.Hint)
 	case guardmodel.CodeNothingToRevert:
 		if se.Detail == guardmodel.NothingReadsOnly {
-			return refusal(err, action.RevertReadsOnly, se.LedgerCode+": "+se.Hint)
+			return refusal(err, action.RevertReadsOnly, se.Message)
 		}
 		return refusal(err, action.RevertNothing, se.Message)
 	default:
@@ -335,7 +344,7 @@ func applyRevertRefusal(err error) error {
 	case code == guardmodel.CodeRevertExpired:
 		return refusal(err, action.RevertExpiredReason, se.Detail)
 	case code == guardmodel.CodeNothingToRevert:
-		return refusal(err, action.RevertNothing, se.Detail)
+		return refusal(err, action.RevertNothing, nothingSentence(se))
 	case code != guardmodel.CodeRevertInvalid:
 		return err
 	}

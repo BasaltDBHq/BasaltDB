@@ -168,3 +168,43 @@ func TestRevertRefusalKeepsTheStoreError(t *testing.T) {
 	require.Equal(t, action.CodeRevertInvalid, se.Code)
 	require.Equal(t, "BS005", se.StoreCode)
 }
+
+// A typed detail (version 11) is for the engine: MapError says the guard's
+// sentence as it said it before the detail was typed, and keeps the
+// catalog reason the sentence had. A rescope passes the error through, so
+// the page reads this message.
+func TestTypedDetailsKeepTheirSentence(t *testing.T) {
+	t.Parallel()
+	const (
+		readsOnly   = "RUN 0193a3f0-0000-7000-8000-000000000002 changed no rows that a revert could restore"
+		rowsChanged = "rows changed since the preview; nothing was reverted, prepare the revert again"
+	)
+	cases := []struct {
+		name                  string
+		err                   error
+		code, message, reason string
+	}{
+		{"reads only", guardErr("BS009", "NOTHING_TO_REVERT", "READS_ONLY", readsOnly), action.CodeNothingToRevert, "NOTHING_TO_REVERT: " + readsOnly, ""},
+		{"rows changed", revertRefused("ROWS_CHANGED", rowsChanged), action.CodeRevertInvalid, "REVERT_INVALID: " + rowsChanged, action.ReasonRowsChanged},
+		{"already applied", revertRefused("ALREADY_APPLIED", "revert already applied"), action.CodeRevertInvalid, "REVERT_INVALID: revert already applied", action.ReasonPlanFinished},
+		{"already signed", revertRefused("ALREADY_SIGNED", "revert already signed; the agent applies it in batches"), action.CodeRevertInvalid, "REVERT_INVALID: revert already signed; the agent applies it in batches", action.ReasonPlanFinished},
+		{"passkey revoked", revertRefused("PASSKEY_REVOKED", "passkey revoked"), action.CodeRevertInvalid, "REVERT_INVALID: passkey revoked", action.ReasonBadSignature},
+		// An untyped detail keeps its sentence, a hint said after it.
+		{"every row skipped", guardErr("BS009", "NOTHING_TO_REVERT", "x", "y"), action.CodeNothingToRevert, "NOTHING_TO_REVERT: x (hint: y)", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var se *action.StoreError
+			require.ErrorAs(t, MapError(tc.err), &se)
+			require.Equal(t, tc.message, se.Message)
+			require.Equal(t, tc.code, se.Code)
+			require.Equal(t, tc.reason, se.Reason)
+		})
+	}
+	// A signed revert's nothing to revert says the sentence, never the code.
+	refused := action.RevertRefusalOf(applyRevertRefusal(MapError(guardErr("BS009", "NOTHING_TO_REVERT", "READS_ONLY", readsOnly))))
+	require.NotNil(t, refused)
+	require.Equal(t, action.RevertNothing, refused.Reason)
+	require.Equal(t, readsOnly, refused.Detail)
+}

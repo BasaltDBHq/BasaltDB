@@ -91,13 +91,20 @@ func storeError(err error, pe *pgconn.PgError) *action.StoreError {
 	}
 	if code, ok := guardCodes[pe.Code]; ok {
 		se.Code = code
-		if pe.Detail != "" {
-			// The guard's detail says what to fix (the stale row and its
-			// versions, the missing intent); it names nothing secret.
-			se.Message = pe.Message + ": " + pe.Detail
-		}
-		if pe.Hint != "" {
-			se.Message += " (hint: " + pe.Hint + ")"
+		switch {
+		case typedSentence(gc, pe.Detail):
+			// A typed detail (version 11) is for the engine; the hint is the
+			// sentence, said as the guard said it before.
+			se.Message = pe.Message + ": " + pe.Hint
+		default:
+			if pe.Detail != "" {
+				// The guard's detail says what to fix (the stale row and its
+				// versions, the missing intent); it names nothing secret.
+				se.Message = pe.Message + ": " + pe.Detail
+			}
+			if pe.Hint != "" {
+				se.Message += " (hint: " + pe.Hint + ")"
+			}
 		}
 		if isGuard && slices.Contains(messageCodes, gc) {
 			se.Code = string(gc)
@@ -145,9 +152,36 @@ func guardReason(code, detail string) string {
 	case action.CodeApprovalInvalid:
 		return detailReason(detail, approvalDetails, action.ReasonBadSignature)
 	case action.CodeRevertInvalid:
+		if reason, ok := revertTypedReasons[detail]; ok {
+			return reason
+		}
 		return detailReason(detail, revertDetails, action.ReasonBadSignature)
 	}
 	return ""
+}
+
+// typedSentence reports whether detail is a typed detail of guard code gc
+// whose hint is the guard's sentence (version 11): apply_revert's
+// REVERT_INVALID codes and NOTHING_TO_REVERT READS_ONLY.
+func typedSentence(gc guardmodel.Code, detail string) bool {
+	switch gc {
+	case guardmodel.CodeRevertInvalid:
+		_, ok := revertTypedReasons[detail]
+		return ok
+	case guardmodel.CodeNothingToRevert:
+		return detail == guardmodel.NothingReadsOnly
+	}
+	return false
+}
+
+// revertTypedReasons are the catalog reasons of apply_revert's typed
+// REVERT_INVALID details (version 11), the reasons their sentences had: a
+// revoked passkey stays a signature the guard did not accept.
+var revertTypedReasons = map[string]string{
+	guardmodel.RevertAlreadyApplied: action.ReasonPlanFinished,
+	guardmodel.RevertAlreadySigned:  action.ReasonPlanFinished,
+	guardmodel.RevertRowsChanged:    action.ReasonRowsChanged,
+	guardmodel.RevertPasskeyRevoked: action.ReasonBadSignature,
 }
 
 type detailRule struct{ contains, reason string }

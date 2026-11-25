@@ -122,10 +122,6 @@ BEGIN
     RETURN jsonb_build_object('changeId', v_change, 'rows', v_rows, 'skipped', cardinality(v_lines) - v_rows);
 END $$;
 
--- One revert line (CONTRACT.md, Revert), redacted unless _line_visible, in
--- the store-neutral form (CONTRACT.md, Stores): shape RECORD, store {kind,
--- verb, code} with the inverse write as verb and the SQLSTATE that stopped
-
 -- The chains that need a line, in ledger order of their first row.
 -- NOTHING_TO_REVERT when none, unless p_empty_ok (a task proposal the
 -- person may widen): detail READS_ONLY, the hint naming the scope.

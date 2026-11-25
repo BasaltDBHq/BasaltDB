@@ -256,6 +256,10 @@ func TestRevertRunsFilterNeedsATask(t *testing.T) {
 				[]any{"public.leads", "b.c.d", "leads"},
 				"the revert filter is not valid, nothing was prepared: b.c.d is not a schema.table name",
 			},
+			"in the caller's order": {
+				[]any{"public.leads", "zz", "aa"},
+				"the revert filter is not valid, nothing was prepared: zz is not a schema.table name",
+			},
 			"a semicolon": {[]any{"public.leads;drop"}, "the revert filter names work that is not yours, nothing was prepared: " +
 				"public.leads;drop has no change of yours in this scope. runs lists only your own runs in the task, and resources " +
 				"only resources you wrote in this scope; run_history shows them"},

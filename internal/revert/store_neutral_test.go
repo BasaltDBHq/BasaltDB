@@ -51,8 +51,6 @@ import (
 // parsed a resource name, read a store code as a SQLSTATE or decided on the
 // store's error text, these tests would fail.
 
-const objStoreKind action.StoreKind = "OBJECTSTORE"
-
 const (
 	objAgent = "docbot"
 	// objPrepareLimit is the store's own time limit on a prepare.
@@ -759,10 +757,8 @@ func newObjHarness(t *testing.T, asPostgres bool) *objHarness {
 			PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget,
 		},
 		revertsvc.StoreSet{
-			Kind:         objStoreKind,
-			Capabilities: action.Capabilities{TransactionalPreview: false, RetainsHistory: true, InStoreSignatureCheck: true},
-			Limits:       revertsvc.Limits{Prepare: objPrepareLimit},
-			Records:      store, Undo: store, Proofs: store,
+			Limits:  revertsvc.Limits{Prepare: objPrepareLimit},
+			Records: store, Undo: store, Proofs: store,
 		},
 		&revertsvc.Deps{
 			AfterAnswer:   func(context.Context, func()) bool { return false },

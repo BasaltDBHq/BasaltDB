@@ -284,9 +284,9 @@ func findRevertRefusal(err error) error {
 
 // prepareRefusal maps PreviewRevert's and PrepareRevert's errors: a scope
 // the guard refused, by its detail (the hint says why; NAME, a badly formed
-// table name, is the agent's filter refused for its form), nothing to revert (the scope
-// changed no rows, or every row would be skipped; the detail is the guard's
-// whole message), and the time limit.
+// table name, is the agent's filter refused for its form), nothing to
+// revert (the scope changed no rows, or every row would be skipped; the
+// detail is the guard's whole message), and the time limit.
 func prepareRefusal(err error) error {
 	se := guardAnswer(err)
 	if se == nil {

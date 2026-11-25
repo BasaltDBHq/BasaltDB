@@ -125,10 +125,9 @@ func newService(t *testing.T, goos, configPath string, opts ...option) *Service 
 	return New(st.core, storeSet(st.store), &st.deps, st.runs, delivery, describing{st.timeout}, admitted{})
 }
 
-// storeSet is a Postgres store set over st, as the wiring builds it.
+// storeSet is the store set over st, as the wiring builds it.
 func storeSet(st Store) StoreSet {
 	return StoreSet{
-		Kind: action.StorePostgres, Capabilities: action.Capabilities{InStoreSignatureCheck: true},
 		Limits: Limits{Prepare: guardmodel.MCPPrepareTimeout}, Records: st, Undo: st, Proofs: st,
 	}
 }

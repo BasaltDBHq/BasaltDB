@@ -55,7 +55,9 @@ var revertStoreRule = storeRule{
 	dir:     filepath.Join("internal", "revert"),
 	imports: storeBoundImports,
 	ident:   regexp.MustCompile(`SQLState|OID|Oid|xmin|pg_`),
-	text:    regexp.MustCompile(`pg_|xmin`),
+	// A SQLSTATE is five digits or capitals starting with a digit, such as
+	// 57014; the domain reads the store's codes only through its ports.
+	text: regexp.MustCompile(`pg_|xmin|\b[0-9][0-9A-Z]{4}\b`),
 	selectors: map[string]*regexp.Regexp{
 		modulePath + "/internal/core/guidance":   regexp.MustCompile(`^(LedgerCode|StoreDetail|ScopeRefusal|TimedOut)$`),
 		modulePath + "/internal/core/guardmodel": regexp.MustCompile(`^(Code.*|Scope.*|.*Refused)$`),
@@ -274,6 +276,7 @@ var (
 	_ *pgconn.PgError
 	_ = toolresult.ToolError{SQLState: "57014"}
 	_ = "SELECT xmin FROM t"
+	_ = "canceled (SQLSTATE 40P01)"
 
 	// Allowed: the revert's own names.
 	_ = guidance.CodeNotFound
@@ -283,6 +286,9 @@ var (
 	_ = action.RevertWidenRefused
 	_ = revert.ScopeRun
 	_ *action.RevertRefusalError
+	_ = "at most 20 runs and 1000 lines"
+	_ = "id 123456, ref abc12345, version v0.1.0"
+	_ = "0193b2c4-57a1-7c3e-9f2d-5e8a1b4c6d7f"
 )
 
 func scopeRefused() {}
@@ -305,7 +311,9 @@ func widenRefused() {}
 		`a.go: selector gm.ScopeShape`,
 		`a.go: selector guidance.LedgerCode`,
 		`a.go: selector guidance.TimedOut`,
+		`a.go: text "57014"`,
 		`a.go: text "SELECT xmin FROM t"`,
+		`a.go: text "canceled (SQLSTATE 40P01)"`,
 	}
 	if !slices.Equal(findings, want) {
 		t.Errorf("findings:\n%s\nwant:\n%s", strings.Join(findings, "\n"), strings.Join(want, "\n"))

@@ -16,7 +16,7 @@
         "arguments": {
           "runId": "<id-1>"
         },
-        "text": "Read the run's history to see the tables you wrote in it.",
+        "text": "Read the run's history to see the resources you wrote in it.",
         "tool": "run_history"
       }
     ],

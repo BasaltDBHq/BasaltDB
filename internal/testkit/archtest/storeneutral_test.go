@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -14,16 +15,23 @@ import (
 	"testing"
 )
 
-// The agent domain (the root package internal/agent) is store-neutral: it
-// reaches its store only through the ports it declares, so it never imports
-// a SQL or Postgres package and never writes a Postgres placeholder or
-// catalog name (ARCHITECTURE.md, The agent domain is store-neutral).
+// storeRule is what a store-neutral domain's root package (its non-test
+// files) may not hold: imports of a store's packages, identifiers and
+// string texts that name a store's own things, and selectors of the shared
+// packages that read a store's answers.
+type storeRule struct {
+	dir     string
+	imports []string
+	ident   *regexp.Regexp
+	text    *regexp.Regexp
+	// selectors are, by import path, the names of that package the domain
+	// may not use. They are matched on the selector, resolved through the
+	// file's imports, so an alias does not hide one.
+	selectors map[string]*regexp.Regexp
+	// allowed are findings that may stay, each with its reason.
+	allowed map[string]string
+}
 
-// storeNeutralDir is the package the rule holds, from the module root.
-var storeNeutralDir = filepath.Join("internal", "agent")
-
-// storeBoundImports are import paths, or prefixes of them, a store-neutral
-// package never imports.
 var storeBoundImports = []string{
 	modulePath + "/internal/core/sqlguard",
 	modulePath + "/internal/platform/postgres",
@@ -31,22 +39,48 @@ var storeBoundImports = []string{
 	"github.com/jackc/pgconn",
 }
 
-// storeBoundIdent matches an identifier that names a Postgres catalog
-// thing: an OID, an attribute number, a pg_ name.
-var storeBoundIdent = regexp.MustCompile(`OID|Oid|Attnum|attnum|pg_`)
+// agentStoreRule holds internal/agent to its store's ports.
+var agentStoreRule = storeRule{
+	dir:     filepath.Join("internal", "agent"),
+	imports: storeBoundImports,
+	ident:   regexp.MustCompile(`OID|Oid|Attnum|attnum|pg_`),
+	text:    regexp.MustCompile(`\$[0-9]|pg_`),
+	allowed: map[string]string{},
+}
 
-// storeBoundText matches a string literal that holds a $n placeholder or a
-// pg_ catalog name.
-var storeBoundText = regexp.MustCompile(`\$[0-9]|pg_`)
+// revertStoreRule holds internal/revert to its store's ports: it decides on
+// the store's typed refusals, never on the guard's codes, details or
+// SQLSTATEs.
+var revertStoreRule = storeRule{
+	dir:     filepath.Join("internal", "revert"),
+	imports: storeBoundImports,
+	ident:   regexp.MustCompile(`SQLState|OID|Oid|xmin|pg_`),
+	text:    regexp.MustCompile(`pg_|xmin`),
+	selectors: map[string]*regexp.Regexp{
+		modulePath + "/internal/core/guidance":   regexp.MustCompile(`^(LedgerCode|StoreDetail|ScopeRefusal|TimedOut)$`),
+		modulePath + "/internal/core/guardmodel": regexp.MustCompile(`^(Code.*|Scope.*|.*Refused)$`),
+		modulePath + "/internal/core/action":     regexp.MustCompile(`^StoreError$`),
+	},
+	allowed: map[string]string{
+		"revert_steps.go: identifier SQLState": "the timeout answer's toolresult.ToolError still names the store's code " +
+			"SQLState; renaming ToolError's field removes this entry",
+	},
+}
 
-// storeNeutralAllowed are the findings the rule lets pass, as
-// "file: finding", each with the reason it may stay. An entry no finding
-// uses fails the test, so the list cannot go stale.
-var storeNeutralAllowed = map[string]string{}
+// importName is the name a file refers to the import s by.
+func importName(s *ast.ImportSpec) string {
+	if s.Name != nil {
+		return s.Name.Name
+	}
+	p := importPath(s)
+	name := path.Base(p)
+	if len(name) > 1 && name[0] == 'v' && strings.Trim(name[1:], "0123456789") == "" {
+		name = path.Base(path.Dir(p))
+	}
+	return name
+}
 
-// storeNeutralFindings parses the non-test Go files of dir and returns what
-// breaks the rule, as "file: finding", and how many files it read.
-func storeNeutralFindings(dir string) ([]string, int, error) {
+func storeNeutralFindings(dir string, rule storeRule) ([]string, int, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, 0, err
@@ -65,25 +99,35 @@ func storeNeutralFindings(dir string) ([]string, int, error) {
 		}
 		files++
 		add := func(what string) { out = append(out, n+": "+what) }
+		banned := map[string]*regexp.Regexp{}
 		for _, s := range f.Imports {
 			p := importPath(s)
-			if slices.ContainsFunc(storeBoundImports, func(b string) bool { return p == b || strings.HasPrefix(p, b+"/") }) {
+			if slices.ContainsFunc(rule.imports, func(b string) bool { return p == b || strings.HasPrefix(p, b+"/") }) {
 				add("import " + p)
+			}
+			if re, ok := rule.selectors[p]; ok {
+				banned[importName(s)] = re
 			}
 		}
 		ast.Inspect(f, func(node ast.Node) bool {
 			switch x := node.(type) {
 			case *ast.ImportSpec:
 				return false // checked above
+			case *ast.SelectorExpr:
+				if pkg, ok := x.X.(*ast.Ident); ok {
+					if re, ok := banned[pkg.Name]; ok && re.MatchString(x.Sel.Name) {
+						add("selector " + pkg.Name + "." + x.Sel.Name)
+					}
+				}
 			case *ast.Ident:
-				if storeBoundIdent.MatchString(x.Name) {
+				if rule.ident.MatchString(x.Name) {
 					add("identifier " + x.Name)
 				}
 			case *ast.BasicLit:
 				if x.Kind != token.STRING {
 					break
 				}
-				if v, err := strconv.Unquote(x.Value); err == nil && storeBoundText.MatchString(v) {
+				if v, err := strconv.Unquote(x.Value); err == nil && rule.text.MatchString(v) {
 					add("text " + x.Value)
 				}
 			}
@@ -94,9 +138,6 @@ func storeNeutralFindings(dir string) ([]string, int, error) {
 	return slices.Compact(out), files, nil
 }
 
-// checkStoreNeutral is the rule over findings: every finding not allowed
-// with a reason fails, as does an allowed entry without a reason or no
-// finding uses.
 func checkStoreNeutral(findings []string, allowed map[string]string) []string {
 	var out []string
 	for _, f := range findings {
@@ -116,22 +157,35 @@ func checkStoreNeutral(findings []string, allowed map[string]string) []string {
 	return out
 }
 
-func TestAgentDomainIsStoreNeutral(t *testing.T) {
-	dir := filepath.Join(moduleRoot(t), storeNeutralDir)
-	findings, files, err := storeNeutralFindings(dir)
+// requireStoreNeutral checks rule on the module's tree: it fails when it
+// scans no file, on a finding the allowlist does not name, and on an
+// allowlist entry with no reason or no finding.
+func requireStoreNeutral(t *testing.T, rule storeRule, hint string) {
+	t.Helper()
+	dir := filepath.Join(moduleRoot(t), rule.dir)
+	findings, files, err := storeNeutralFindings(dir, rule)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if files == 0 {
-		t.Fatalf("scanned no Go file in %s: the rule checks nothing", storeNeutralDir)
+		t.Fatalf("scanned no Go file in %s: the rule checks nothing", rule.dir)
 	}
-	for _, p := range checkStoreNeutral(findings, storeNeutralAllowed) {
-		t.Errorf("%s: %s\n\tthe agent domain reaches its store only through its ports; put store code in an adapter (internal/agent/out/...) or the wiring", storeNeutralDir, p)
+	for _, p := range checkStoreNeutral(findings, rule.allowed) {
+		t.Errorf("%s: %s\n\t%s", rule.dir, p, hint)
 	}
 }
 
-// TestStoreNeutralRuleCatchesViolations runs the rule on a fixture: each
-// kind of finding is caught, and the allowlist's own checks bite.
+func TestAgentDomainIsStoreNeutral(t *testing.T) {
+	requireStoreNeutral(t, agentStoreRule,
+		"the agent domain reaches its store only through its ports; put store code in an adapter (internal/agent/out/...) or the wiring")
+}
+
+func TestRevertDomainIsStoreNeutral(t *testing.T) {
+	requireStoreNeutral(t, revertStoreRule,
+		"the revert domain reaches its store only through Records, Undo and Proofs and decides on action.RevertRefusalError; "+
+			"map the store's answers in its adapter (for Postgres, internal/platform/postgres/store/revert.go)")
+}
+
 func TestStoreNeutralRuleCatchesViolations(t *testing.T) {
 	dir := fixture(t, map[string]string{
 		"a.go": `package a
@@ -154,7 +208,7 @@ const fine = "costs $ 5"
 const ignored = "$1 pg_class"
 `,
 	})
-	findings, files, err := storeNeutralFindings(dir)
+	findings, files, err := storeNeutralFindings(dir, agentStoreRule)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,5 +245,69 @@ const ignored = "$1 pg_class"
 	}
 	if !slices.Equal(got, wantProblems) {
 		t.Errorf("problems:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(wantProblems, "\n"))
+	}
+}
+
+// The revert rule reads the shared packages' selectors through the file's
+// imports, an alias too, and leaves the revert's own names alone: its
+// refusal reasons, its scopes, and the guard's outcome and limit names.
+func TestRevertStoreRuleCatchesViolations(t *testing.T) {
+	dir := fixture(t, map[string]string{
+		"a.go": `package a
+
+import (
+	"` + modulePath + `/internal/core/action"
+	gm "` + modulePath + `/internal/core/guardmodel"
+	"` + modulePath + `/internal/core/guidance"
+	"` + modulePath + `/internal/core/revert"
+	"` + modulePath + `/internal/core/toolresult"
+	"github.com/jackc/pgx/v5/pgconn"
+)
+
+var (
+	_ = gm.CodeScopeRefused
+	_ = gm.ScopeShape
+	_ = gm.RevertWidenRefused
+	_ = guidance.LedgerCode
+	_ = guidance.TimedOut
+	_ *action.StoreError
+	_ *pgconn.PgError
+	_ = toolresult.ToolError{SQLState: "57014"}
+	_ = "SELECT xmin FROM t"
+
+	// Allowed: the revert's own names.
+	_ = guidance.CodeNotFound
+	_ = gm.OutcomePending
+	_ = gm.MaxRejectNote
+	_ = action.RevertTimedOut
+	_ = action.RevertWidenRefused
+	_ = revert.ScopeRun
+	_ *action.RevertRefusalError
+)
+
+func scopeRefused() {}
+func widenRefused() {}
+`,
+	})
+	findings, files, err := storeNeutralFindings(dir, revertStoreRule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files != 1 {
+		t.Fatalf("scanned %d files, want 1", files)
+	}
+	want := []string{
+		`a.go: identifier SQLState`,
+		`a.go: import github.com/jackc/pgx/v5/pgconn`,
+		`a.go: selector action.StoreError`,
+		`a.go: selector gm.CodeScopeRefused`,
+		`a.go: selector gm.RevertWidenRefused`,
+		`a.go: selector gm.ScopeShape`,
+		`a.go: selector guidance.LedgerCode`,
+		`a.go: selector guidance.TimedOut`,
+		`a.go: text "SELECT xmin FROM t"`,
+	}
+	if !slices.Equal(findings, want) {
+		t.Errorf("findings:\n%s\nwant:\n%s", strings.Join(findings, "\n"), strings.Join(want, "\n"))
 	}
 }

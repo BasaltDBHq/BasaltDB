@@ -2,7 +2,7 @@
   "body": {
     "code": "INVALID_ARGUMENT",
     "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
-    "message": "the revert filter names work that is not yours, nothing was prepared: public.ghost has no change of yours in this scope. runs lists only your own runs in the task, and resources only tables you wrote in this scope; run_history shows them",
+    "message": "the revert filter names work that is not yours, nothing was prepared: public.ghost has no change of yours in this scope. runs lists only your own runs in the task, and resources only resources you wrote in this scope; run_history shows them",
     "nextSteps": [
       {
         "action": "REVISE_CALL",

@@ -98,3 +98,23 @@ func TestColumnsFillsKindKeysAndDomains(t *testing.T) {
 	}
 	require.Equal(t, want, got)
 }
+
+// TestColumnsReadsADottedSchemaByItsOwnName: a schema name with a dot and a
+// mixed-case table are matched by their own names, never split.
+func TestColumnsReadsADottedSchemaByItsOwnName(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t)
+	d.Exec(t, `CREATE DOMAIN public.mail AS text;
+		CREATE SCHEMA "app.v2";
+		CREATE TABLE "app.v2"."People" (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, email public.mail)`)
+	listed := []piistore.Column{
+		{Namespace: "app.v2", Resource: "People", Name: "id", DataType: "bigint"},
+		{Namespace: "app.v2", Resource: "People", Name: "email", DataType: "public.mail"},
+	}
+	got, err := pgpii.Columns(context.Background(), pgquerier.Neutralize(d.Admin), listed)
+	require.NoError(t, err)
+	require.Equal(t, []piistore.Column{
+		{Namespace: "app.v2", Resource: "People", Name: "id", DataType: "bigint", Kind: piistore.KindInt, Key: true, Generated: true},
+		{Namespace: "app.v2", Resource: "People", Name: "email", DataType: "public.mail", Kind: piistore.KindText},
+	}, got)
+}

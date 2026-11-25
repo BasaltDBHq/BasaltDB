@@ -64,7 +64,9 @@ type Backend interface {
 	// PIIColumns fills the listed columns (by namespace, resource, name and
 	// data type) with their Kind, Key and Generated from the store's
 	// catalog. It always returns len(listed) columns with a Kind; a failed
-	// catalog read leaves Key and Generated unset and is the error.
+	// catalog read leaves Key and Generated unset and a domain's base type
+	// unread (so a domain over text gets its own type's kind and goes
+	// unsampled), and is the error.
 	PIIColumns(ctx context.Context, conn *pgx.Conn, listed []piistore.Column) ([]piistore.Column, error)
 	// PIISampler reads a column's sample on conn: each read in a read-only
 	// transaction under timeout, each value cut to maxChars characters.

@@ -230,7 +230,10 @@ func (s *Store) revealRevertRowsRaw(ctx context.Context, id uuid.UUID, proof pas
 // returned as MapError made it.
 
 // revertNotFoundDetail is the guard's detail for a revert the calling role
-// did not prepare, or none (_revert_lock_pending).
+// did not prepare, or none (_revert_lock_pending). The guard gives it no
+// typed detail: _revert_invalid raises the sentence itself, unlike the
+// details of applyReasons, WIDEN_REFUSED and REVEAL_REFUSED. So the match
+// is on the exact sentence until a guard version gives it a code.
 const revertNotFoundDetail = "no such revert"
 
 // scopeReasons are the revert reasons of the guard's SCOPE_REFUSED details

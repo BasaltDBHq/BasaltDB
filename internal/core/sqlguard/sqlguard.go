@@ -32,7 +32,9 @@ const (
 
 // Op is the statement's operation: READ (a SELECT), INSERT, UPDATE, DELETE,
 // MERGE, or the parse node name of anything else. READ is Basalt's op; the
-// SQL word for it is SELECT (sqlWord).
+// SQL word for it is SELECT (sqlWord). A statement outside the four ops
+// READ, INSERT, UPDATE and DELETE (MERGE included) carries its name here
+// and is recorded as OTHER (action.OpOther).
 type Op string
 
 // sqlWord is the SQL command for op, as a refusal's detail names it.

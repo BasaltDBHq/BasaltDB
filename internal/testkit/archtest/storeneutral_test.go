@@ -347,7 +347,7 @@ func requireNoStoreDeps(t *testing.T, rule storeRule) {
 // The store-neutral domains reach no store package, directly or through
 // another package.
 func TestStoreNeutralDomainsLinkNoStorePackage(t *testing.T) {
-	for _, rule := range storeRules {
+	for _, rule := range slices.Concat(storeRules, storeDepRules) {
 		t.Run(filepath.Base(rule.dir), func(t *testing.T) { requireNoStoreDeps(t, rule) })
 	}
 }

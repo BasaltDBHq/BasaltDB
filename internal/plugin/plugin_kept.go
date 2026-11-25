@@ -709,7 +709,10 @@ func (s *KeptPlugins) EndDisabled(ctx context.Context) {
 // Approve is PLUGIN_APPROVE: a relay. Each database is asked in parallel,
 // through its agents in name order, for the agent that opened the approval
 // (the one whose row carries the binding text), and the signature is
-// submitted with that agent's credential: the guard verifies it.
+// submitted with that agent's credential: the guard verifies it. The
+// submit's error is returned as is: a pluginmodel.StoreError when the store
+// answered (its code and message as the store gave them, which callers may
+// print), the driver's error when it did not.
 func (s *KeptPlugins) Approve(ctx context.Context, p PluginApproveParams) (PluginApproveResult, error) {
 	byDB := map[string][]string{}
 	for _, name := range slices.Sorted(maps.Keys(s.agents)) {

@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -404,7 +403,7 @@ func (rc *Service) prepareTimeout(tool string, scope action.Scope, sqlState stri
 	te := &toolresult.ToolError{Code: guidance.CodeQueryTimeout, Reason: guidance.ReasonTimeLimit, SQLState: sqlState, Message: fmt.Sprintf(
 		"preparing the revert of %s %s took longer than the %d seconds an MCP call may take; nothing was prepared. "+
 			"A narrower revert, with runs or tables, may fit.",
-		strings.ToLower(string(scope.Kind)), scope.ID, int(guardmodel.MCPPrepareTimeout.Seconds()))}
+		strings.ToLower(string(scope.Kind)), scope.ID, int(rc.store.Limits.Prepare.Seconds()))}
 	what := "prepare"
 	if tool == guidance.ToolPreviewRevert {
 		what = "preview"
@@ -444,7 +443,7 @@ func (rc *Service) nothingToRevert(ctx context.Context, tool string, scope actio
 	if strings.Contains(detail, "changed no rows") {
 		return rc.nothingToRevertError(ctx, tool, scope, guidance.ReasonReadsOnly, detail)
 	}
-	pv, perr := rc.deps.Store.PreviewRevert(ctx, scope, "", 1)
+	pv, perr := rc.store.Undo.PreviewRevert(ctx, scope, "", 1)
 	if perr != nil {
 		pv = action.PreviewPage{}
 	}
@@ -466,7 +465,7 @@ func (rc *Service) nothingToRevertError(ctx context.Context, tool string, scope 
 		te.PersonMessage = fmt.Sprintf("Nothing to revert for %s: it only read data (or inserted rows it deleted again).", what)
 		b.Stop("There is nothing to revert; do not retry.")
 	case guidance.ReasonAlreadyReverted:
-		by, err := rc.deps.Store.RevertedBy(ctx, scope)
+		by, err := rc.store.Records.RevertedBy(ctx, scope)
 		if err != nil {
 			rc.core.Log.Error("find the revert of a reverted scope", "scope", what, "err", err)
 		}

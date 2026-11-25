@@ -128,3 +128,21 @@ func TestNotOwnScopeBeforeAnyGuardCall(t *testing.T) {
 	}
 	require.Zero(t, calls, "no guard call for a scope that is not the agent's")
 }
+
+// A store set with a nil port is refused when the service is built: the
+// service reads the store only through the three ports.
+func TestNewRefusesAStoreSetWithANilPort(t *testing.T) {
+	t.Parallel()
+	for name, breakIt := range map[string]func(*StoreSet){
+		"Records": func(s *StoreSet) { s.Records = nil },
+		"Undo":    func(s *StoreSet) { s.Undo = nil },
+		"Proofs":  func(s *StoreSet) { s.Proofs = nil },
+	} {
+		set := storeSet(struct{ Store }{})
+		breakIt(&set)
+		require.PanicsWithValue(t, "revert: store set missing ports: "+name, func() {
+			New(Core{}, set, &Deps{}, nil, nil, nil, nil)
+		}, name)
+	}
+	require.NotPanics(t, func() { New(Core{}, storeSet(struct{ Store }{}), &Deps{}, nil, nil, nil, nil) })
+}

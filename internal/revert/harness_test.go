@@ -13,6 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -28,6 +29,7 @@ import (
 // case's own core and deps, and the delivery use case it sits on.
 type settings struct {
 	core     Core
+	store    Store
 	deps     Deps
 	links    linksvc.Core
 	delivery linksvc.Deps
@@ -45,7 +47,7 @@ func pagesOrigin(origin string) option { return func(s *settings) { s.links.Page
 func linkBudget(n int) option { return func(s *settings) { s.core.LinkBudget = n } }
 
 // withStore binds the revert store.
-func withStore(st Store) option { return func(s *settings) { s.deps.Store = st } }
+func withStore(st Store) option { return func(s *settings) { s.store = st } }
 
 // withRuns binds the finder of the agent's runs.
 func withRuns(r RunFinder) option { return func(s *settings) { s.runs = r } }
@@ -98,9 +100,10 @@ func newService(t *testing.T, goos, configPath string, opts ...option) *Service 
 	}
 	cmds := guidance.NewCommands("bot", configPath, config.DefaultPath(goos), goos, testManager())
 	st := settings{
-		core: Core{Name: "bot", Log: slog.New(slog.DiscardHandler), Now: time.Now, Commands: cmds, Errors: testErrors()},
+		core:  Core{Name: "bot", Log: slog.New(slog.DiscardHandler), Now: time.Now, Commands: cmds, Errors: testErrors()},
+		store: struct{ Store }{},
 		deps: Deps{
-			Store: struct{ Store }{}, ErrNotFound: ledger.ErrRevertNotFound,
+			ErrNotFound: ledger.ErrRevertNotFound,
 			AfterAnswer: vault.AfterAnswer, RotateSession: vault.RotateSession,
 		},
 		runs: foundRuns{},
@@ -120,7 +123,15 @@ func newService(t *testing.T, goos, configPath string, opts ...option) *Service 
 		return st.core.Errors.ToolError(err)
 	}
 	delivery := linksvc.New(st.links, &st.delivery, noApprovals{}, failure)
-	return New(st.core, &st.deps, st.runs, delivery, describing{st.timeout}, admitted{})
+	return New(st.core, storeSet(st.store), &st.deps, st.runs, delivery, describing{st.timeout}, admitted{})
+}
+
+// storeSet is a Postgres store set over st, as the wiring builds it.
+func storeSet(st Store) StoreSet {
+	return StoreSet{
+		Kind: action.StorePostgres, Capabilities: action.Capabilities{InStoreSignatureCheck: true},
+		Limits: Limits{Prepare: guardmodel.MCPPrepareTimeout}, Records: st, Undo: st, Proofs: st,
+	}
 }
 
 // noApprovals is the approvals the delivery use case reads: none.

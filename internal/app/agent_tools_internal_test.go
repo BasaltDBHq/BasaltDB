@@ -15,7 +15,9 @@ type postgresStore struct{ SQLStore }
 
 func (postgresStore) Kind() action.StoreKind { return action.StorePostgres }
 
-func (postgresStore) Capabilities() action.Capabilities { return action.Capabilities{} }
+func (postgresStore) Capabilities() action.Capabilities {
+	return action.Capabilities{InStoreSignatureCheck: true}
+}
 
 // TestServedToolsMatchTheContracts is the contract test for the served tool
 // list (CONTRACT.md): every served tool has a contract, every IMPLEMENTED
@@ -56,7 +58,9 @@ type driveStore struct{ SQLStore }
 
 func (driveStore) Kind() action.StoreKind { return action.StoreDrive }
 
-func (driveStore) Capabilities() action.Capabilities { return action.Capabilities{} }
+func (driveStore) Capabilities() action.Capabilities {
+	return action.Capabilities{InStoreSignatureCheck: true}
+}
 
 // TestServedToolListOrderWithoutSQL pins the tool list of a store that does
 // not speak SQL: the same order, without query and write.

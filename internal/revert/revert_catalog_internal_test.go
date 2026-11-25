@@ -78,9 +78,9 @@ func plainFunc(f func() error) func(*testing.T, *testService) error {
 
 func nothingToRevert(tool string, lines []string, detail string, by uuid.UUID) func(*testing.T, *testService) error {
 	return func(t *testing.T, s *testService) error {
-		s.deps.Store = catalogReverts{lines: lines, by: by}
+		svc := s.with(withStore(catalogReverts{lines: lines, by: by}))
 		scope := action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}
-		return s.nothingToRevert(context.Background(), tool, scope, store.MapError(&pgconn.PgError{Code: "BS009", Message: "NOTHING_TO_REVERT", Detail: detail}))
+		return svc.nothingToRevert(context.Background(), tool, scope, store.MapError(&pgconn.PgError{Code: "BS009", Message: "NOTHING_TO_REVERT", Detail: detail}))
 	}
 }
 

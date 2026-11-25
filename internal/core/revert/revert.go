@@ -1,5 +1,5 @@
 // Package revert encodes and checks the codes of a revert authorisation
-// (CONTRACT.md, Revert): the binding text Postgres builds, the revert lines
+// (CONTRACT.md, Revert): the binding text the store builds, the revert lines
 // it covers, the request in the revert link, and the response code the
 // revert page outputs. It reuses the approval mechanism (owner decision D6):
 // the same fragment encoding, rowsHash and challenge, and the same passkey
@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/textrule"
 )
 
 // KindRevert is the binding kind of a revert authorisation.
@@ -57,17 +58,17 @@ func Invalid(format string, args ...any) error {
 
 // Select is a revert's scope descriptor as the binding carries it
 // (CONTRACT.md, Revert, The scope descriptor): a scope narrowed to some
-// agents, runs and tables, nil for all. Postgres normalizes it; clients
-// never re-serialize it.
+// agents (agent:<name>), runs and resources, nil for all. The store
+// normalizes it; clients never re-serialize it.
 type Select struct {
-	Scope   Scope       `json:"scope"`
-	ScopeID uuid.UUID   `json:"scopeId"`
-	Agents  []string    `json:"agents"`
-	Runs    []uuid.UUID `json:"runs"`
-	Tables  []string    `json:"tables"`
+	Scope     Scope       `json:"scope"`
+	ScopeID   uuid.UUID   `json:"scopeId"`
+	Agents    []string    `json:"agents"`
+	Runs      []uuid.UUID `json:"runs"`
+	Resources []string    `json:"resources"`
 }
 
-// MaxFilter is the most runs, and the most tables, a descriptor lists
+// MaxFilter is the most runs, and the most resources, a descriptor lists
 // (owner, Q10).
 const MaxFilter = 20
 
@@ -83,33 +84,37 @@ func (s Select) check(name string) error {
 	if s.Agents != nil && len(s.Agents) == 0 {
 		return Invalid("binding %s names no agents", name)
 	}
+	if slices.ContainsFunc(s.Agents, func(a string) bool { return !approval.IsAgentName(a) }) {
+		return Invalid("binding %s names an agent that is not agent:<name>", name)
+	}
 	if s.Runs != nil && s.Scope != ScopeTask {
 		return Invalid("binding %s lists runs for a %s scope", name, s.Scope)
 	}
-	if len(s.Runs) > MaxFilter || len(s.Tables) > MaxFilter {
-		return Invalid("binding %s lists more than %d runs or tables", name, MaxFilter)
+	if len(s.Runs) > MaxFilter || len(s.Resources) > MaxFilter {
+		return Invalid("binding %s lists more than %d runs or resources", name, MaxFilter)
 	}
 	return nil
 }
 
-// widenedFor reports whether s covers changes not made by role: every
-// agent (Agents nil) or another role.
-func (s Select) widenedFor(role string) bool {
-	return s.Agents == nil || slices.ContainsFunc(s.Agents, func(a string) bool { return a != role })
+// widenedFor reports whether s covers changes not made by agent: every
+// agent (Agents nil) or another one.
+func (s Select) widenedFor(agent string) bool {
+	return s.Agents == nil || slices.ContainsFunc(s.Agents, func(a string) bool { return a != agent })
 }
 
 // Binding is the parsed binding text. The text itself, not this struct, is
 // what the passkey signs: never re-serialize it.
 type Binding struct {
-	Kind     string    `json:"kind"`
-	RevertID uuid.UUID `json:"revertId"`
-	Database string    `json:"database"`
+	Kind     string                `json:"kind"`
+	RevertID uuid.UUID             `json:"revertId"`
+	Store    approval.BindingStore `json:"store"`
 	// Select is the scope the person signs; Proposed what the agent asked
 	// for, set only when a rescope changed it.
 	Select   Select  `json:"select"`
 	Proposed *Select `json:"proposed,omitempty"`
 	// Widened is set when Select covers changes not made by RequestedBy;
-	// AgentRows (lines per agent role) is present exactly then.
+	// AgentRows (lines per agent, keyed agent:<name>) is present exactly
+	// then. RequestedBy is agent:<name> too.
 	Widened     bool           `json:"widened"`
 	AgentRows   map[string]int `json:"agentRows,omitempty"`
 	Intent      string         `json:"intent"`
@@ -141,11 +146,19 @@ func (b Binding) checkScope() error {
 			return err
 		}
 	}
+	if !approval.IsAgentName(b.RequestedBy) {
+		return Invalid("binding requestedBy %q is not agent:<name>", b.RequestedBy)
+	}
 	if b.Widened != b.Select.widenedFor(b.RequestedBy) {
 		return Invalid("binding widened %t does not match its select and requestedBy", b.Widened)
 	}
 	if b.Widened != (b.AgentRows != nil) {
 		return Invalid("binding agentRows goes with widened, and only with it")
+	}
+	for agent, n := range b.AgentRows {
+		if !approval.IsAgentName(agent) || n < 0 {
+			return Invalid("binding agentRows key %q is not agent:<name>", agent)
+		}
 	}
 	return nil
 }
@@ -155,8 +168,12 @@ func (b Binding) Lines() int {
 	return b.Rows + b.Skipped
 }
 
-// ParseBinding parses binding text for display and checks.
+// ParseBinding parses binding text for display and checks: the text rules,
+// then the binding's keys and values.
 func ParseBinding(text string) (Binding, error) {
+	if err := textrule.Check(text); err != nil {
+		return Binding{}, Invalid("binding: %v", err)
+	}
 	var b Binding
 	dec := json.NewDecoder(strings.NewReader(text))
 	dec.DisallowUnknownFields()
@@ -165,6 +182,12 @@ func ParseBinding(text string) (Binding, error) {
 	}
 	if b.Kind != KindRevert {
 		return Binding{}, Invalid("binding kind %q", b.Kind)
+	}
+	if err := approval.CheckStore(b.Store); err != nil {
+		return Binding{}, err
+	}
+	if err := checkIntegers(text); err != nil {
+		return Binding{}, err
 	}
 	if err := b.checkScope(); err != nil {
 		return Binding{}, err
@@ -202,6 +225,26 @@ func (b Binding) checkBatched() error {
 	return nil
 }
 
+// checkIntegers checks the binding's expiresAt and Basalt's own integers:
+// rows, skipped and every value of agentRows in plain digits.
+func checkIntegers(text string) error {
+	if err := approval.CheckBasaltFields(text, "rows", "skipped"); err != nil {
+		return err
+	}
+	var b struct {
+		AgentRows map[string]json.RawMessage `json:"agentRows"`
+	}
+	if err := json.Unmarshal([]byte(text), &b); err != nil {
+		return Invalid("binding: %v", err)
+	}
+	for agent, raw := range b.AgentRows {
+		if !textrule.PlainInteger(raw) {
+			return Invalid("binding agentRows %q is not a plain integer", agent)
+		}
+	}
+	return nil
+}
+
 func isDigest(s string) bool {
 	_, err := hex.DecodeString(s)
 	return err == nil && len(s) == sha256.Size*2
@@ -223,7 +266,7 @@ func SampleCounts(skipped, rows int) (skips, restores int) {
 }
 
 // Request is the revert request: what the engine's local pages serve, and
-// what a format 1 link carries.
+// what a format 2 link expands to.
 type Request struct {
 	RevertID uuid.UUID `json:"revertId"`
 	Binding  string    `json:"binding"`
@@ -316,7 +359,12 @@ func (r Request) checkSample(b Binding) error {
 // Fragment returns the link fragment (without '#') in format 2, as for
 // approvals: the binding and the lines in compact form, then the
 // database's credential ids, and no separate revert id.
+// The engine relays only texts that follow the text rules (CONTRACT.md,
+// Stores, Text rules): it refuses any other.
 func (r Request) Fragment() (string, error) {
+	if err := approval.CheckTexts(r.Binding, r.Lines...); err != nil {
+		return "", err
+	}
 	return linkcodec.EncodeRequest(r.Binding, r.Lines, r.CredentialIDs)
 }
 

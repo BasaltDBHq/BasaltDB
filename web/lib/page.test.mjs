@@ -48,7 +48,9 @@ test("a revert link cut short says so and says to ask the agent for a new link",
 });
 
 test("a link that decodes but is wrong is not called cut short", async () => {
-  const err = await failure(parseApprovalRequest, "#2." + approvalFragment.slice(2));
+  // A revert's link on the approval page decodes, but its binding is a
+  // revert's.
+  const err = await failure(parseApprovalRequest, "#" + revertFragment);
   assert.ok(err instanceof CodeError);
   assert.ok(!(err instanceof TruncatedLinkError));
   assert.equal(linkFailure(err, "approval", APPROVE_REOPEN), `This approval link cannot be used: ${err.message}`);

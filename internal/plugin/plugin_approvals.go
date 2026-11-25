@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
@@ -189,15 +190,21 @@ func sameIsolation(a, b *guardmodel.PluginIsolation) bool {
 
 // PluginApprovalDetail is the detail basalt plugin opens a plugin approval
 // with for verified copy v of entry k (verified with
-// RequireApproval(true)), naming roles. It is built by the same code
+// RequireApproval(true)), naming agents by their names in engine.json,
+// which the binding writes agent:<name> (CONTRACT.md, Stores, Agent
+// names). It is built by the same code
 // the engine derives the matched fields with at start (pluginDetail,
 // withSigner, in same-user mode: the engine runs an entry that requires
 // approval itself, as its own child, in either mode), so an honest approval
 // always matches what the engine serves.
-func PluginApprovalDetail(k pluginmodel.EntryKey, v pluginmodel.Verified, roles []string) guardmodel.PluginApprovalDetail {
+func PluginApprovalDetail(k pluginmodel.EntryKey, v pluginmodel.Verified, agents []string) guardmodel.PluginApprovalDetail {
 	d := withSigner(pluginDetail(k, v, pluginmodel.ModeSameUser, runtime.GOOS, nil), v)
+	names := make([]string, 0, len(agents))
+	for _, a := range agents {
+		names = append(names, approval.AgentName(a))
+	}
 	return guardmodel.PluginApprovalDetail{
-		Agents: slices.Clone(roles), Name: d.Name, Instance: d.Instance, Version: d.Version,
+		Agents: names, Name: d.Name, Instance: d.Instance, Version: d.Version,
 		ManifestSHA256: d.ManifestSHA256, Hooks: d.Hooks, Roles: d.Roles, Egress: d.Egress,
 		Endpoint: d.Endpoint, Isolation: d.Isolation, Signer: d.Signer, SignerKeyID: d.SignerKeyID,
 	}

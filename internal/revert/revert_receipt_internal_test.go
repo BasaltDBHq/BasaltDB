@@ -1,7 +1,6 @@
 package revert
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel/channeltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/textrule/textruletest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 )
@@ -33,14 +33,14 @@ func signedRevert(t *testing.T, status string, widened bool) action.Revert {
 	t.Helper()
 	id, run, change := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
 	b := revert.Binding{
-		Kind: "REVERT", RevertID: id, Database: "app",
-		Select: revert.Select{Scope: revert.ScopeRun, ScopeID: run, Agents: []string{"bot"}},
-		Intent: "Undo", Rows: 1500, RowsHash: strings.Repeat("cd", 32), RequestedBy: "bot",
+		Kind: "REVERT", RevertID: id, Store: postgresApp,
+		Select: revert.Select{Scope: revert.ScopeRun, ScopeID: run, Agents: []string{"agent:bot"}},
+		Intent: "Undo", Rows: 1500, RowsHash: strings.Repeat("cd", 32), RequestedBy: "agent:bot",
 		ExpiresAt: time.Date(2026, 11, 14, 10, 0, 0, 0, time.UTC), Batched: true, SampleHash: strings.Repeat("ef", 32),
 	}
-	text, err := json.Marshal(b)
+	text, err := textruletest.Text(b)
 	require.NoError(t, err)
-	r := action.Revert{ID: id, Status: status, Rows: 1500, BindingText: string(text), ChangeID: &change, Batched: true}
+	r := action.Revert{ID: id, Status: status, Rows: 1500, BindingText: text, ChangeID: &change, Batched: true}
 	if widened {
 		r.Widened, r.BindingText = true, ""
 	}

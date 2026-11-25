@@ -46,7 +46,7 @@ func (wc *Service) hold(ctx context.Context, in action.Intent, p WriteParams, st
 	if te := approvalsvc.HoldTooLarge(lines, nil); te != nil {
 		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.Request, start, te)
 	}
-	held, err := wc.approvals.Hold(ctx, in, action.HoldRequest{Statement: p.Request.Text, Params: p.Request.Params, Assigned: assigned, Lines: lines})
+	held, err := wc.approvals.Hold(ctx, in, action.HoldRequest{Verb: string(stmt.Op), Statement: p.Request.Text, Params: p.Request.Params, Assigned: assigned, Lines: lines})
 	if err != nil {
 		if te := approvalsvc.HoldTooLarge(lines, err); te != nil {
 			return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.Request, start, te)

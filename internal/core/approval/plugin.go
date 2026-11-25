@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/textrule"
 )
 
 // Plugin approvals (CONTRACT.md, Plugins, What a plugin approval binds and
@@ -34,7 +36,7 @@ const (
 type PluginBinding struct {
 	Kind           string          `json:"kind"`
 	ApprovalID     uuid.UUID       `json:"approvalId"`
-	Database       string          `json:"database"`
+	Store          BindingStore    `json:"store"`
 	ExpiresAt      time.Time       `json:"expiresAt"`
 	RequestedBy    string          `json:"requestedBy"`
 	Agents         []string        `json:"agents"`
@@ -53,9 +55,13 @@ type PluginBinding struct {
 	Change         json.RawMessage `json:"change,omitempty"`
 }
 
-// ParsePluginBinding parses a plugin approval's binding text: kind PLUGIN,
-// no unknown key, an approval id, and both hashes lowercase sha256 hex.
+// ParsePluginBinding parses a plugin approval's binding text: the text
+// rules, kind PLUGIN, no unknown key, an approval id, the store, every
+// agent agent:<name>, and both hashes lowercase sha256 hex.
 func ParsePluginBinding(text string) (PluginBinding, error) {
+	if err := textrule.Check(text); err != nil {
+		return PluginBinding{}, Invalid("plugin binding: %v", err)
+	}
 	var b PluginBinding
 	dec := json.NewDecoder(strings.NewReader(text))
 	dec.DisallowUnknownFields()
@@ -73,6 +79,15 @@ func ParsePluginBinding(text string) (PluginBinding, error) {
 	}
 	if !isSHA256Hex(b.ManifestSHA256) || !isSHA256Hex(b.SettingsSHA256) {
 		return PluginBinding{}, Invalid("plugin binding manifestSha256 and settingsSha256 must be lowercase sha256 hex")
+	}
+	if err := CheckStore(b.Store); err != nil {
+		return PluginBinding{}, err
+	}
+	if err := CheckBasaltFields(text); err != nil {
+		return PluginBinding{}, err
+	}
+	if !IsAgentName(b.RequestedBy) || len(b.Agents) == 0 || slices.ContainsFunc(b.Agents, func(a string) bool { return !IsAgentName(a) }) {
+		return PluginBinding{}, Invalid("plugin binding names an agent that is not agent:<name>")
 	}
 	return b, nil
 }
@@ -117,13 +132,21 @@ func (r PluginRequest) Check() (PluginBinding, error) {
 	if SettingsHash(r.Settings) != b.SettingsSHA256 {
 		return PluginBinding{}, Invalid("the settings text does not match the binding's settingsSha256")
 	}
+	if err := textrule.Check(r.Settings); err != nil {
+		return PluginBinding{}, Invalid("plugin settings: %v", err)
+	}
 	return b, nil
 }
 
 // Fragment returns the link fragment (without '#') in format 2: exactly two
 // texts, the binding and then the settings, and the database's credential
 // ids (CONTRACT.md, Format 2).
+// The engine relays only texts that follow the text rules (CONTRACT.md,
+// Stores, Text rules): it refuses any other.
 func (r PluginRequest) Fragment() (string, error) {
+	if err := CheckTexts(r.Binding, []string{r.Settings}...); err != nil {
+		return "", err
+	}
 	return linkcodec.EncodeRequest(r.Binding, []string{r.Settings}, r.CredentialIDs)
 }
 
@@ -144,12 +167,8 @@ func (r PluginRequest) URL(base string) (string, error) {
 const pluginTexts = 2
 
 // ParsePluginRequest decodes a plugin approval link fragment, with or
-// without '#', and checks it (Check). Only format 2 is read: a plugin
-// approval link was never written in format 1.
+// without '#', and checks it (Check).
 func ParsePluginRequest(fragment string) (PluginRequest, PluginBinding, error) {
-	if strings.HasPrefix(strings.TrimPrefix(fragment, "#"), linkcodec.Format1) {
-		return PluginRequest{}, PluginBinding{}, Invalid("a plugin approval link is format %q only", linkcodec.Format2)
-	}
 	r, err := linkcodec.DecodeRequest(fragment, pluginTexts-1, func(binding string, lines []string, ids []passkey.Bytes) PluginRequest {
 		out := PluginRequest{Binding: binding, Settings: lines[0], CredentialIDs: ids}
 		if b, err := ParsePluginBinding(binding); err == nil {

@@ -17,14 +17,18 @@ CREATE TABLE IF NOT EXISTS basalt_meta.agent_names (
 REVOKE ALL ON basalt_meta.agent_names FROM PUBLIC;
 
 -- The agents set up before this version: each member of {{agents}} named
--- by this install's own rule, <prefix>_agent_<name>. A role that does not
+-- by this install's own rule, <prefix>_agent_<name>. As the plugin agent
+-- check does, a superuser (a member of every role) and a non-inheriting
+-- member (USAGE, not MEMBER: the admin that created the roles) are not
+-- agents. A role that does not
 -- follow it gets no name and its texts are refused until basalt init sets
 -- it up again.
 INSERT INTO basalt_meta.agent_names (role, name)
 SELECT r.rolname, substr(r.rolname, octet_length(left('{{agents}}', -1)) + 2)
   FROM pg_catalog.pg_roles r
  WHERE r.rolname <> '{{agents}}'
-   AND pg_catalog.pg_has_role(r.oid, '{{agents}}', 'MEMBER')
+   AND NOT r.rolsuper
+   AND pg_catalog.pg_has_role(r.oid, '{{agents}}', 'USAGE')
    AND starts_with(r.rolname::text, left('{{agents}}', -1) || '_')
    AND substr(r.rolname, octet_length(left('{{agents}}', -1)) + 2) ~ '^[a-z][a-z0-9_]*$'
 ON CONFLICT DO NOTHING;
@@ -81,15 +85,18 @@ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, pg_temp AS $$
 $$;
 
 -- Every ledger row, in the store-neutral form: op is Basalt's (READ for a
--- read) and verb the store's word for it, derived here from op since every
--- caller passes Basalt's op: INSERT, UPDATE and DELETE are Postgres's own
--- commands, a read is SELECT. verb is NULL in exactly two cases with an
--- op: REVERT, Basalt's own action, which no store command names; and
--- OTHER (DDL), whose command tag the guard has only from an event trigger
--- (TG_TAG), and the guard has none. Kinds with no op have no verb.
-CREATE OR REPLACE FUNCTION basalt_meta._append(
+-- read) and verb the store's word for it. A caller that knows the
+-- request's own command passes it as p_verb (finish_change and hold_action:
+-- an INSERT ... ON CONFLICT whose rows all update has op UPDATE and verb
+-- INSERT). Otherwise verb is derived from op: INSERT, UPDATE and DELETE
+-- are Postgres's own commands, a read is SELECT. verb is NULL in exactly
+-- two cases with an op: REVERT, Basalt's own action, which no store
+-- command names; and OTHER (DDL), whose command tag the guard has only
+-- from an event trigger (TG_TAG), and the guard has none. Kinds with no op
+-- have no verb.
+CREATE OR REPLACE FUNCTION basalt_meta._append_verb(
     p_agent name, p_change_id uuid, p_kind text, p_table regclass, p_op text,
-    p_key jsonb, p_old jsonb, p_new jsonb, p_depth int, p_detail jsonb
+    p_key jsonb, p_old jsonb, p_new jsonb, p_depth int, p_detail jsonb, p_verb text
 ) RETURNS bigint
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
@@ -107,7 +114,8 @@ BEGIN
     l.table_name := p_table::text;
     l.table_oid := p_table::oid;
     l.op := p_op;
-    l.verb := CASE WHEN p_op IN ('INSERT', 'UPDATE', 'DELETE') THEN p_op WHEN p_op = 'READ' THEN 'SELECT' END;
+    l.verb := CASE WHEN p_op IN ('INSERT', 'UPDATE', 'DELETE') THEN coalesce(p_verb, p_op)
+                   WHEN p_op = 'READ' THEN 'SELECT' END;
     l.row_key := p_key;
     l.old_row := p_old;
     l.new_row := p_new;
@@ -121,6 +129,16 @@ BEGIN
     UPDATE basalt_meta.chain_head SET seq = l.seq, hash = l.hash WHERE id;
     RETURN l.seq;
 END $$;
+
+-- _append with verb derived from op: every caller that does not know the
+-- request's own command.
+CREATE OR REPLACE FUNCTION basalt_meta._append(
+    p_agent name, p_change_id uuid, p_kind text, p_table regclass, p_op text,
+    p_key jsonb, p_old jsonb, p_new jsonb, p_depth int, p_detail jsonb
+) RETURNS bigint
+LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+    SELECT basalt_meta._append_verb(p_agent, p_change_id, p_kind, p_table, p_op, p_key, p_old, p_new, p_depth, p_detail, NULL)
+$$;
 
 -- One read the engine ran: a READ change record (the store's verb SELECT), a READ ledger row with
 -- the versions it saw, and for a run the run's known version of each row.
@@ -273,10 +291,12 @@ BEGIN
                 CASE WHEN current_setting('basalt.mode', true) = 'PREVIEW' THEN 'PREVIEW' ELSE 'APPLIED' END)
         RETURNING * INTO c;
     END IF;
-    PERFORM basalt_meta._append(session_user, c.change_id, 'CHANGE', NULL, c.op, NULL, NULL, NULL, NULL,
+    -- verb is the request's own command (p_op), not the first row's op.
+    PERFORM basalt_meta._append_verb(session_user, c.change_id, 'CHANGE', NULL, c.op, NULL, NULL, NULL, NULL,
         jsonb_build_object('runId', c.run_id, 'taskId', c.task_id, 'intent', c.intent, 'statement', c.statement,
                            'resource', c.table_name, 'rows', c.rows, 'cascadedRows', c.cascaded_rows,
-                           'durationMs', c.duration_ms, 'status', c.status));
+                           'durationMs', c.duration_ms, 'status', c.status),
+        CASE WHEN p_op IN ('INSERT', 'UPDATE', 'DELETE') THEN p_op END);
     RETURN c.change_id;
 END $$;
 
@@ -363,4 +383,5 @@ CREATE OR REPLACE VIEW basalt_meta.agent_ledger WITH (security_barrier = true) A
      WHERE l.agent = session_user;
 
 REVOKE ALL ON FUNCTION basalt_meta._agent_text(name), basalt_meta._agent_role(text), basalt_meta.agent_name() FROM PUBLIC;
+REVOKE ALL ON FUNCTION basalt_meta._append_verb(name, uuid, text, regclass, text, jsonb, jsonb, jsonb, int, jsonb, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION basalt_meta.agent_name() TO {{agents}};

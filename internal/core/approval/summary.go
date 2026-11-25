@@ -6,11 +6,11 @@ import (
 	"strings"
 )
 
-// Group is the rows of one table and operation in a held write.
+// Group is the rows of one resource and operation in a held write.
 type Group struct {
-	Table string
-	Op    string
-	Rows  int
+	Resource string
+	Op       string
+	Rows     int
 	// Hidden is set when the lines are redacted: the counts are exact, the
 	// values are not shown.
 	Hidden bool
@@ -22,7 +22,7 @@ type Group struct {
 type Summary struct {
 	// Direct groups in the order of the lines.
 	Direct []Group
-	// Cascaded groups, most rows first, then by table and operation.
+	// Cascaded groups, most rows first, then by resource and operation.
 	Cascaded []Group
 }
 
@@ -41,8 +41,8 @@ func Summarize(lines []Line) Summary {
 		if a.Rows != b.Rows {
 			return a.Rows > b.Rows
 		}
-		if a.Table != b.Table {
-			return a.Table < b.Table
+		if a.Resource != b.Resource {
+			return a.Resource < b.Resource
 		}
 		return a.Op < b.Op
 	})
@@ -64,13 +64,13 @@ func SummarizeText(texts []string) (Summary, error) {
 
 func addRow(groups []Group, l Line) []Group {
 	for i := range groups {
-		if groups[i].Table == l.Table && groups[i].Op == l.Op {
+		if groups[i].Resource == l.Resource && groups[i].Op == l.Op {
 			groups[i].Rows++
 			groups[i].Hidden = groups[i].Hidden || l.Redacted
 			return groups
 		}
 	}
-	return append(groups, Group{Table: l.Table, Op: l.Op, Rows: 1, Hidden: l.Redacted})
+	return append(groups, Group{Resource: l.Resource, Op: l.Op, Rows: 1, Hidden: l.Redacted})
 }
 
 // CascadedRows is the number of rows changed by cascade.
@@ -98,7 +98,7 @@ const hiddenMark = " [values hidden]"
 func (s Summary) Headline() string {
 	parts := make([]string, 0, len(s.Direct))
 	for _, g := range s.Direct {
-		parts = append(parts, fmt.Sprintf("%s %s in %s%s", verbs[g.Op], plural(g.Rows, "row"), g.Table, hidden(g)))
+		parts = append(parts, fmt.Sprintf("%s %s in %s%s", verbs[g.Op], plural(g.Rows, "row"), g.Resource, hidden(g)))
 	}
 	text := capitalize(strings.Join(parts, ", "))
 	if len(s.Cascaded) == 0 {
@@ -110,7 +110,7 @@ func (s Summary) Headline() string {
 	}
 	entries := make([]string, 0, len(s.Cascaded))
 	for _, g := range s.Cascaded {
-		entry := fmt.Sprintf("%s %d", g.Table, g.Rows)
+		entry := fmt.Sprintf("%s %d", g.Resource, g.Rows)
 		if g.Op != mainOp {
 			entry += " " + pastVerbs[g.Op]
 		}

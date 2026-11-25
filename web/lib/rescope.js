@@ -11,6 +11,7 @@
 //   new secret lives in the page's memory and that one body; it is never
 //   shown, put in the address or sent anywhere else.
 import { b64urlDecode, b64urlEncode, checkRevertRequest, CodeError, hex, sha256, utf8 } from "./codec.js";
+import { quote } from "./compact.js";
 import { postResponse, revertPaths } from "./local.js";
 
 const RESCOPE_PREFIX = "basalt-rescope.1";
@@ -36,24 +37,26 @@ function normList(list, lower = false) {
   return [...new Set(items)].sort(compareText);
 }
 
-// selectText is a scope descriptor as Postgres normalizes it
-// (basalt_meta._revert_select_norm, then jsonb's text): keys in jsonb's
-// order (shorter first), lists sorted by their bytes and deduplicated, ids
-// lowercase, ", " and ": " between items. The widen proof signs this text,
-// so it must be the guard's byte for byte (shared fixtures).
+// selectText is a scope descriptor as the store normalizes it (in
+// Postgres basalt_meta._revert_select_norm, then jsonb's text), by the text
+// rules (CONTRACT.md, Stores, Text rules): keys shorter first, then
+// bytewise; lists sorted by their bytes and deduplicated, ids lowercase,
+// ", " and ": " between items. The widen proof signs this text, so it must
+// be the guard's byte for byte (shared fixtures).
 export function selectText(select) {
   const value = {
     runs: normList(select.runs, true),
     scope: select.scope,
     agents: normList(select.agents),
-    tables: normList(select.tables),
     scopeId: select.scopeId.toLowerCase(),
+    resources: normList(select.resources),
   };
-  return "{" + Object.entries(value).map(([k, v]) => `${JSON.stringify(k)}: ${jsonText(v)}`).join(", ") + "}";
+  return "{" + Object.entries(value).map(([k, v]) => `${quote(k)}: ${jsonText(v)}`).join(", ") + "}";
 }
 
 function jsonText(v) {
-  if (Array.isArray(v)) return "[" + v.map((s) => JSON.stringify(s)).join(", ") + "]";
+  if (Array.isArray(v)) return "[" + v.map((s) => quote(s)).join(", ") + "]";
+  if (typeof v === "string") return quote(v);
   return JSON.stringify(v);
 }
 
@@ -82,7 +85,7 @@ export async function widenChallenge(revertId, nonce, key, text) {
 // widenSelect is what "Include other agents' changes" asks for: every
 // agent, run and table of the scope. The person narrows from there.
 export function widenSelect(binding) {
-  return { scope: binding.select.scope, scopeId: binding.select.scopeId, agents: null, runs: null, tables: null };
+  return { scope: binding.select.scope, scopeId: binding.select.scopeId, agents: null, runs: null, resources: null };
 }
 
 // canWiden: the page offers the widen for a task (a run or a change is one
@@ -129,15 +132,17 @@ function strictItems(list, what, keys, check) {
 
 const count = (n) => Number.isInteger(n) && n >= 0;
 const name = (s) => typeof s === "string" && s !== "";
+// agent is an agent as every text names it, agent:<name>.
+const agent = (s) => typeof s === "string" && /^agent:[a-z][a-z0-9_]*$/.test(s);
 
 // changeAgents checks the catalog's change id to agent map (basalt_meta
 // version 32) and returns it as a Map.
 function changeAgents(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw catalogError("change map");
   const out = new Map();
-  for (const [id, agent] of Object.entries(value)) {
-    if (!UUID.test(id) || !name(agent)) throw catalogError("change map");
-    out.set(id, agent);
+  for (const [id, who] of Object.entries(value)) {
+    if (!UUID.test(id) || !agent(who)) throw catalogError("change map");
+    out.set(id, who);
   }
   return out;
 }
@@ -147,14 +152,14 @@ function changeAgents(value) {
 export function parseCatalog(value) {
   if (value === undefined || value === null) return null;
   const keys = typeof value === "object" ? Object.keys(value).sort().join() : "";
-  if (keys !== "agents,runs,tables" && keys !== "agents,changeAgents,runs,tables") throw catalogError("shape");
+  if (keys !== "agents,resources,runs" && keys !== "agents,changeAgents,resources,runs") throw catalogError("shape");
   return {
-    changeAgents: keys === "agents,runs,tables" ? null : changeAgents(value.changeAgents),
-    agents: strictItems(value.agents, "agent", ["agent", "changes"], (a) => name(a.agent) && count(a.changes)),
+    changeAgents: keys === "agents,resources,runs" ? null : changeAgents(value.changeAgents),
+    agents: strictItems(value.agents, "agent", ["agent", "changes"], (a) => agent(a.agent) && count(a.changes)),
     runs: strictItems(value.runs, "run", ["runId", "agent", "startedAt", "changes"], (r) =>
-      UUID.test(r.runId) && name(r.agent) && count(r.changes) && !Number.isNaN(Date.parse(r.startedAt)),
+      UUID.test(r.runId) && agent(r.agent) && count(r.changes) && !Number.isNaN(Date.parse(r.startedAt)),
     ).map((r) => ({ ...r, startedAt: new Date(r.startedAt) })),
-    tables: strictItems(value.tables, "table", ["table", "rows"], (t) => name(t.table) && count(t.rows)),
+    resources: strictItems(value.resources, "resource", ["resource", "rows"], (t) => name(t.resource) && count(t.rows)),
   };
 }
 

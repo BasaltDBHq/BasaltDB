@@ -24,6 +24,7 @@ import {
   parsePluginRequest,
   pluginResponseJSON,
   relyingParty,
+  storeText,
   visibleText,
 } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, RelayError, relayPaths } from "./local.js";
@@ -287,7 +288,7 @@ function render(req, view) {
   $("item-id").title = req.approvalId;
   $("plugin").textContent = `${b.name} ${b.version}`;
   $("instance").textContent = b.instance;
-  $("database").textContent = visibleText(b.database);
+  $("store").textContent = visibleText(storeText(b.store));
   $("expires").textContent = b.expiresAt.toLocaleString();
   if (view.change !== null) {
     const [lead, ...rest] = view.change;

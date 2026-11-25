@@ -109,7 +109,7 @@ func TestApplyRevertDeletesInsertsAndCascades(t *testing.T) {
 	require.Equal(t, tags, tableDigest(t, d, "public.note_tags"), "cascaded tags restored")
 	require.Equal(t, owners, tableDigest(t, d, "public.lead_owner"), "SET NULL undone")
 	require.Zero(t, count(t, a.Conn, `SELECT count(change_id)::int FROM basalt_meta.agent_changes
-		WHERE run_id = $1 AND op <> 'SELECT' AND status <> 'REVERTED'`, in.RunID), "every change fully reverted")
+		WHERE run_id = $1 AND op <> 'READ' AND status <> 'REVERTED'`, in.RunID), "every change fully reverted")
 	require.Nil(t, guardVerify(t, d))
 }
 

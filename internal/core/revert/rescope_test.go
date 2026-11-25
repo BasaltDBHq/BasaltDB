@@ -26,9 +26,9 @@ func TestRescopeKeyAndChallenge(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "029a6cf1bb359476e15fe9ae985592076f33d9db6103a7698e4575352a185ab8", hex.EncodeToString(key))
 
-	sel := `{"runs": null, "scope": "TASK", "agents": null, "tables": null, "scopeId": "0193a3f0-0000-7000-8000-000000000002"}`
+	sel := `{"runs": null, "scope": "TASK", "agents": null, "scopeId": "0193a3f0-0000-7000-8000-000000000002", "resources": null}`
 	got := reverttest.RescopeChallenge(uuid.MustParse("0193a3f0-0000-7000-8000-000000000001"), nonce, key, sel)
-	require.Equal(t, "2612f0488e47569d425ecf45b54e4f088b80c4cdb4740901f9c2f0d437c6b0ad", hex.EncodeToString(got))
+	require.Equal(t, "2419c501eab714f810ca1cede5149693aef27bcbe9479a694339af986f81adf6", hex.EncodeToString(got))
 
 	other, err := revert.RescopeKey(append([]byte{1}, secret[1:]...))
 	require.NoError(t, err)

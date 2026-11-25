@@ -11,20 +11,20 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 )
 
-func deleteLine(table string, id int, cascaded bool) string {
-	return fmt.Sprintf(`{"op": "DELETE", "key": {"id": %d}, "old": {"id": %d}, "set": null, "table": %q, "cascaded": %t}`, id, id, table, cascaded)
+func deleteLine(resource string, id int, cascaded bool) string {
+	return fmt.Sprintf(`{"op": "DELETE", "key": {"id": %d}, "old": {"id": %d}, "set": null, "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "DELETE"}, "cascaded": %t, "resource": %q}`, id, id, cascaded, resource)
 }
 
-func redactedLine(op, table string, cascaded bool) string {
-	return fmt.Sprintf(`{"op": %q, "table": %q, "rowHash": %q, "cascaded": %t, "redacted": true}`, op, table, strings.Repeat("cd", sha256.Size), cascaded)
+func redactedLine(op, resource string, cascaded bool) string {
+	return fmt.Sprintf(`{"op": %q, "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": %q}, "rowHash": %q, "cascaded": %t, "redacted": true, "resource": %q}`, op, op, strings.Repeat("cd", sha256.Size), cascaded, resource)
 }
 
-func updateLine(table string, id int, cascaded bool) string {
-	return fmt.Sprintf(`{"op": "UPDATE", "key": {"id": %d}, "old": {"id": %d, "lead_id": 3}, "set": null, "table": %q, "cascaded": %t}`, id, id, table, cascaded)
+func updateLine(resource string, id int, cascaded bool) string {
+	return fmt.Sprintf(`{"op": "UPDATE", "key": {"id": %d}, "old": {"id": %d, "lead_id": 3}, "set": null, "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "UPDATE"}, "cascaded": %t, "resource": %q}`, id, id, cascaded, resource)
 }
 
-func insertLine(table string) string {
-	return fmt.Sprintf(`{"op": "INSERT", "key": null, "old": null, "set": {"name": "x"}, "table": %q, "cascaded": false}`, table)
+func insertLine(resource string) string {
+	return fmt.Sprintf(`{"op": "INSERT", "key": null, "old": null, "set": {"name": "x"}, "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "INSERT"}, "cascaded": false, "resource": %q}`, resource)
 }
 
 func repeatLine(n int, line func(i int) string) []string {

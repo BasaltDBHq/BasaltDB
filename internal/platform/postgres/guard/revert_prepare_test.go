@@ -74,7 +74,7 @@ func TestPreviewConstraintConflict(t *testing.T) {
 	lines := previewRevert(t, a.Conn, revert.ScopeRun, in.RunID)
 	require.Len(t, lines, 1)
 	require.Equal(t, revert.ConflictConstraint, conflictOf(lines[0]))
-	require.Equal(t, "23505", *lines[0].SQLState)
+	require.Equal(t, "23505", *lines[0].Store.Code)
 }
 
 // A tree deleted by an FK cascade on itself comes back whole: the retry
@@ -119,10 +119,10 @@ func TestPreviewDependentRowSkipped(t *testing.T) {
 	lines := previewRevert(t, a.Conn, revert.ScopeRun, in.RunID)
 	team := lineFor(t, lines, "public.teams", `{"id":1}`)
 	require.Equal(t, revert.ConflictConstraint, conflictOf(team))
-	require.Equal(t, "23505", *team.SQLState)
+	require.Equal(t, "23505", *team.Store.Code)
 	member := lineFor(t, lines, "public.members", `{"id":10}`)
 	require.Equal(t, revert.ConflictConstraint, conflictOf(member))
-	require.Equal(t, "23503", *member.SQLState)
+	require.Equal(t, "23503", *member.Store.Code)
 }
 
 func TestPrepareRevertStoresBinding(t *testing.T) {
@@ -213,7 +213,7 @@ func TestRevertRLSWithoutGuardPolicySkipped(t *testing.T) {
 	require.NoError(t, guardtest.Guarded(context.Background(), a.Conn, in, `UPDATE public.leads SET status = 'won' WHERE id = 85`))
 	lines := previewRevert(t, a.Conn, revert.ScopeRun, in.RunID)
 	require.Len(t, lines, 1)
-	require.Equal(t, revert.ConflictRowGone, conflictOf(lines[0]))
+	require.Equal(t, revert.ConflictTargetGone, conflictOf(lines[0]))
 	uncovered, err := guard.UncoveredTables(context.Background(), a.Conn)
 	require.NoError(t, err)
 	require.Len(t, uncovered, 1)

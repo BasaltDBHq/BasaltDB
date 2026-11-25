@@ -141,7 +141,7 @@ A codec function is a function of a decision package that only decodes, parses o
 | Package | Area | Kind | Admitted by | Extra imports | Codec functions |
 |---|---|---|---|---|---|
 | `sqlguard` | SQL policy | decision | 1 | - | - |
-| `approval` | approvals | decision | 1 | - | `DecodeResponse`, `DecodePluginResponse` |
+| `approval` | approvals | decision | 1 | - | `DecodeResponse`, `DecodePluginResponse`, `CheckTexts` |
 | `revert` | reverts | decision | 1 | - | `ParseBinding`, `DecodeResponse` |
 | `passkey` | approvals and reverts | decision | 1 | - | `PublicKeyFromXY` |
 | `pii` | PII handling | decision | 1 | - | `CheckDictionarySize`, `OpenDictionary`, `NewKeys` |
@@ -154,6 +154,7 @@ A codec function is a function of a decision package that only decodes, parses o
 | `channel` | Vault channel | codec | 3 | `crypto/rand` | - |
 | `links` | links | codec | 3 | - | - |
 | `linkcodec` | links | codec | 3 | - | - |
+| `textrule` | signed texts | codec | 3 | - | - |
 | `setupcode` | setup | codec | 3 | `crypto/rand`, `net` | - |
 | `pluginproto` | plugins | codec | 3 | - | - |
 | `largevalue` | large values | codec | 3 | - | - |

@@ -25,16 +25,18 @@ import {
   registrationResponseJson,
   relyingParty,
   rowsHash,
+  signingRefusal,
+  storeName,
+  storeText,
   utf8,
 } from "./codec.js";
+import { blocked, restoreNote } from "./revert.js";
+import { linesNote } from "./approve.js";
 
 const fixtures = JSON.parse(
   readFileSync(new URL("../../internal/core/approval/testdata/fixtures.json", import.meta.url), "utf8"),
 );
 
-function requestFragment(obj) {
-  return "1." + b64urlEncode(deflateRawSync(Buffer.from(JSON.stringify(obj))));
-}
 
 test("approval request from Go decodes and checks", async () => {
   const f = fixtures.request;
@@ -42,7 +44,9 @@ test("approval request from Go decodes and checks", async () => {
   assert.equal(req.approvalId, f.approvalId);
   assert.equal(req.bindingText, f.binding);
   assert.equal(req.binding.rows, 3);
-  assert.equal(req.binding.statement, "DELETE FROM public.leads WHERE id = $1");
+  assert.equal(req.binding.request.statement, "DELETE FROM public.leads WHERE id = $1");
+  assert.equal(req.binding.agent, "agent:bot");
+  assert.equal(req.lines[0].resource, "public.leads");
   assert.equal(req.binding.expiresAt.toISOString(), "2026-11-12T06:02:11.123Z");
   assert.equal(b64urlEncode(req.challenge), f.challenge);
   assert.deepEqual(req.credentialIds.map(b64urlEncode), f.credentialIds);
@@ -70,19 +74,22 @@ test("approval request refuses anything that does not match the binding", async 
     ["binding kind", { ...base, binding: f.binding.replace("APPROVE", "REVERT") }, /kind/],
   ];
   for (const [name, obj, want] of cases) {
-    await assert.rejects(parseApprovalRequest(requestFragment(obj)), (err) => {
+    await assert.rejects(checkApprovalRequest(obj), (err) => {
       assert.ok(err instanceof CodeError, name);
       assert.match(err.message, want, name);
       return true;
     });
   }
   await assert.rejects(parseApprovalRequest("3." + f.fragment.slice(2)), /must start with/);
-  await assert.rejects(parseApprovalRequest("1." + b64urlEncode(utf8("plain"))), /deflate-raw/);
-  await assert.rejects(parseApprovalRequest("1.@@"), /base64url/);
+  await assert.rejects(parseApprovalRequest("2." + b64urlEncode(utf8("plain"))), /deflate-raw/);
+  await assert.rejects(parseApprovalRequest("2.@@"), /base64url/);
+  // Format 1 is no longer read (clean state).
+  const format1 = "1." + b64urlEncode(deflateRawSync(Buffer.from(JSON.stringify(base))));
+  await assert.rejects(parseApprovalRequest(format1), /must start with "2\."/);
 });
 
 test("approval request refuses an inflation bomb", async () => {
-  const bomb = "1." + b64urlEncode(deflateRawSync(Buffer.alloc(2 << 20, 0x20)));
+  const bomb = "2." + b64urlEncode(deflateRawSync(Buffer.alloc(2 << 20, 0x20)));
   await assert.rejects(parseApprovalRequest(bomb), /inflates too far/);
 });
 
@@ -160,10 +167,17 @@ test("base64url is strict", () => {
 
 test("binding and lines", () => {
   assert.throws(() => parseBinding(fixtures.request.binding.replace('"rows": 3', '"rows": 51')), /out of 1..50/);
-  assert.throws(() => parseLine('{"op": "MERGE", "key": null, "old": null, "set": null, "table": "t", "cascaded": false}'), /op/);
-  assert.throws(() => parseLine('{"op": "DELETE", "table": "t", "cascaded": false}'), /missing/);
-  const insert = parseLine('{"op": "INSERT", "key": null, "old": null, "set": {"name": "x"}, "table": "public.leads", "cascaded": false}');
+  const store = '"shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "INSERT"}';
+  assert.throws(() => parseLine(`{"op": "MERGE", "key": null, "old": null, "set": null, ${store}, "cascaded": false, "resource": "t"}`), /op/);
+  assert.throws(() => parseLine(`{"op": "DELETE", ${store}, "cascaded": false, "resource": "t"}`), /missing/);
+  assert.throws(() => parseLine('{"op": "INSERT", "key": null, "old": null, "set": {"name": "x"}, "table": "public.leads", "cascaded": false}'), /unknown field "table"/, "the old form is not read");
+  assert.throws(() => parseLine(`{"op": "INSERT", "key": null, "old": null, "set": null, "shape": "RECORD", "store": {"kind": "POSTGRES"}, "cascaded": false, "resource": "t"}`), /missing "verb"/);
+  const insert = parseLine(`{"op": "INSERT", "key": null, "old": null, "set": {"name": "x"}, ${store}, "cascaded": false, "resource": "public.leads"}`);
   assert.deepEqual(insert.set, { name: "x" });
+  assert.equal(insert.resource, "public.leads");
+  assert.deepEqual(insert.store, { kind: "POSTGRES", verb: "INSERT" });
+  assert.throws(() => parseBinding(fixtures.request.binding.replace('"agent": "agent:bot"', '"agent": "basalt_agent_bot"')), /agent/);
+  assert.throws(() => parseBinding(fixtures.request.binding.replace('.123456Z"', '.123456+00:00"')), /expiresAt/);
 });
 
 test("relying party", () => {
@@ -282,10 +296,60 @@ test("the engine's request may carry the column order, for display only, each na
   await assert.rejects(checkApprovalRequest({ ...req, agentName: "bot" }), CodeError, "no agentName: the page derives it from the signed role");
 });
 
-test("a long link carries no columns, not even empty ones", async () => {
-  const { approvalId, binding, lines } = fixtures.request;
-  await parseApprovalRequest(requestFragment({ approvalId, binding, lines }));
-  for (const columns of [{ "public.leads": ["id"] }, {}, null, []]) {
-    await assert.rejects(parseApprovalRequest(requestFragment({ approvalId, binding, lines, columns })), CodeError, JSON.stringify(columns));
+test("a long link carries no columns: format 2 has no place for them", async () => {
+  const req = await parseApprovalRequest(fixtures.request.fragment);
+  assert.equal(req.columns.size, 0);
+});
+
+// rehashed is the fixture's approval request with its lines and binding
+// edited, the binding's rowsHash recomputed so every other check passes.
+async function rehashed(editLine, editBinding = (b) => b) {
+  const f = fixtures.request;
+  const lines = f.lines.map(editLine);
+  const binding = editBinding(f.binding.replace(f.rowsHash, await rowsHash(lines)));
+  return checkApprovalRequest({ approvalId: f.approvalId, binding, lines });
+}
+
+test("a page draws RECORD rows and SQL requests and signs them", async () => {
+  const req = await rehashed((l) => l);
+  assert.equal(signingRefusal(req), null);
+});
+
+test("a row of shape OBJECT, or of a shape the page does not know, is not offered for signing", async () => {
+  for (const shape of ["OBJECT", "GRAPH"]) {
+    const req = await rehashed((l, i) => (i === 0 ? l.replace('"shape": "RECORD"', `"shape": "${shape}"`) : l));
+    assert.equal(req.lines[0].shape, shape, "the page reads it");
+    assert.match(signingRefusal(req), new RegExp(`cannot show rows of shape ${shape}, so it cannot offer them for signing`));
   }
+});
+
+test("a request of a family the page has no view for is not offered for signing", async () => {
+  const req = await rehashed((l) => l, (b) => b.replace(/"request": \{"kind": "SQL", [^}]*\}/, '"request": {"kind": "DOCUMENT", "filter": {"_id": 3}}'));
+  assert.equal(req.binding.request.kind, "DOCUMENT");
+  assert.match(signingRefusal(req), /cannot show a DOCUMENT request, so it cannot offer it for signing/);
+});
+
+test("store.kind is a label only: a store the page has never heard of still signs, and names itself", async () => {
+  const req = await rehashed(
+    (l) => l.replaceAll('"kind": "POSTGRES"', '"kind": "MONGO_DB"'),
+    (b) => b.replace('"kind": "POSTGRES"', '"kind": "MONGO_DB"'),
+  );
+  assert.equal(signingRefusal(req), null);
+  assert.equal(storeName("POSTGRES"), "Postgres");
+  assert.equal(storeName("MONGO_DB"), "Mongo db");
+  assert.equal(storeText(req.binding.store), "Mongo db \u00b7 app");
+  assert.match(linesNote("MONGO_DB"), /Mongo db checks these exact rows again/);
+  assert.match(linesNote("POSTGRES"), /Postgres checks these exact rows again/);
+  assert.match(restoreNote("POSTGRES"), /Postgres checks these exact rows again before the revert runs/);
+});
+
+test("the revert page keeps Sign off for a row it cannot draw", async () => {
+  const revert = JSON.parse(readFileSync(new URL("../../internal/core/revert/testdata/fixtures.json", import.meta.url), "utf8")).request;
+  const { checkRevertRequest } = await import("./codec.js");
+  const lines = revert.lines.map((l, i) => (i === 2 ? l.replace('"shape": "RECORD"', '"shape": "OBJECT"') : l));
+  const binding = revert.binding.replace(revert.rowsHash, await rowsHash(lines));
+  const req = await checkRevertRequest({ revertId: revert.revertId, binding, lines });
+  assert.match(blocked(req), /cannot show rows of shape OBJECT/);
+  const ok = await checkRevertRequest({ revertId: revert.revertId, binding: revert.binding, lines: revert.lines });
+  assert.equal(blocked(ok), null);
 });

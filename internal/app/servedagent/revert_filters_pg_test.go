@@ -152,9 +152,9 @@ func TestRevertFiltersNarrowTheProposal(t *testing.T) {
 		_, b, err := reverttest.ParseRequest(link[strings.Index(link, "#")+1:])
 		require.NoError(t, err)
 		require.Equal(t, tc.scope, b.Select.Scope)
-		require.Equal(t, []string{env.a.Role}, b.Select.Agents)
+		require.Equal(t, []string{env.a.Name}, b.Select.Agents)
 		require.Equal(t, tc.runs, b.Select.Runs, "the page shows the agent's runs filter as its proposal")
-		require.Equal(t, tc.tables, b.Select.Tables, "the page shows the agent's tables filter as its proposal")
+		require.Equal(t, tc.tables, b.Select.Resources, "the page shows the agent's tables filter as its proposal")
 		require.Nil(t, b.Proposed, "a proposal nobody rescoped carries no separate proposed")
 		require.True(t, strings.HasPrefix(str(t, body["personMessage"]), tc.message), "the chat names the filters as the page does: %s", body["personMessage"])
 	}

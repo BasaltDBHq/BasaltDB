@@ -773,6 +773,22 @@ END $$;
 -- The reverts the calling role prepared, with their status (REJECTED
 -- included), the selection and widened. A revert widened beyond the role's
 -- own work shows the role no binding, selection, agents or lines (RS-5).
+-- The agents of a stored selection (roles) as texts write them,
+-- agent:<name>, sorted; null stays null (every agent). A role with no
+-- recorded name is refused (_agent_text: BS007 UNKNOWN_AGENT), never
+-- dropped from the list. Granted to agents: agent_reverts runs it as its
+-- caller, and an agent name says no more than the role pg_roles lists.
+CREATE OR REPLACE FUNCTION basalt_meta._selection_agents(p_agents jsonb) RETURNS jsonb
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+    SELECT CASE WHEN pg_catalog.jsonb_typeof(p_agents) = 'array'
+                THEN (SELECT pg_catalog.to_jsonb(pg_catalog.array_agg(t ORDER BY t COLLATE "C"))
+                        FROM (SELECT basalt_meta._agent_text(a::name) AS t
+                                FROM pg_catalog.jsonb_array_elements_text(p_agents) a) x)
+                ELSE 'null'::jsonb END
+$$;
+REVOKE ALL ON FUNCTION basalt_meta._selection_agents(jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION basalt_meta._selection_agents(jsonb) TO {{agents}};
+
 CREATE OR REPLACE VIEW basalt_meta.agent_reverts WITH (security_barrier = true) AS
     SELECT r.revert_id, r.scope, r.scope_id, CASE WHEN r.widened THEN NULL ELSE r.agents END AS agents,
            r.intent, r.rows, r.skipped,
@@ -790,11 +806,7 @@ CREATE OR REPLACE VIEW basalt_meta.agent_reverts WITH (security_barrier = true) 
                 ELSE pg_catalog.jsonb_build_object(
                     'scope', r.selection -> 'scope', 'scopeId', r.selection -> 'scopeId', 'runs', r.selection -> 'runs',
                     'resources', r.selection -> 'tables',
-                    'agents', CASE WHEN pg_catalog.jsonb_typeof(r.selection -> 'agents') = 'array'
-                                   THEN (SELECT pg_catalog.to_jsonb(pg_catalog.array_agg('agent:' || n.name ORDER BY ('agent:' || n.name) COLLATE "C"))
-                                           FROM pg_catalog.jsonb_array_elements_text(r.selection -> 'agents') a
-                                           JOIN basalt_meta.agent_names n ON n.role::text = a)
-                                   ELSE 'null'::jsonb END) END AS selection,
+                    'agents', basalt_meta._selection_agents(r.selection -> 'agents')) END AS selection,
            r.widened, r.rejected_at, r.reject_note
       FROM basalt_meta.reverts r
       -- Inline, not _revert_progress: a view runs functions as its caller.

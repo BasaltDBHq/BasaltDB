@@ -1,177 +1,1159 @@
 {
-  "description": "Shared cases for CONTRACT.md, Approvals, Format 2. valid: fragment decodes to payload (the inflated JSON) and rebuilds to binding and lines exactly; kind is the binding's kind (APPROVE for the approval page, REVERT for the revert page). invalid: the page of that kind refuses the fragment, by the format's rules or by the checks every request gets (rowsHash, kind). Go's internal/core/linkcodec tests write this file (go test ./internal/core/linkcodec -update) and run it; the pages' tests run it too. Pending: every case below is marked \"pending\": true in place of its fragment and texts until the engine's codec writes the store-neutral texts and format 2's object entries (CONTRACT.md, Stores, Text rules; Approvals, Format 2); go test ./internal/core/linkcodec -update then rewrites this file. A test that reads a pending case fails.",
+  "description": "Shared cases for CONTRACT.md, Approvals, Format 2. valid: fragment decodes to payload (the inflated JSON) and rebuilds to binding and lines exactly; kind is the binding's kind (APPROVE for the approval page, REVERT for the revert page). invalid: the page of that kind refuses the fragment, by the format's rules or by the checks every request gets (rowsHash, kind). Go's internal/core/linkcodec tests write this file (go test ./internal/core/linkcodec -update) and run it; the pages' tests run it too.",
   "valid": [
     {
       "name": "an approval: the pages' fixture",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.rJPPattMFMVfZbh8y3GYP5H9KdBFSJSmkOJUCS1UmHA1c5WIyJKqGSXtLu_QQqEEuuqi0Lfom2SRdR-hjK00cSmtobUX9qBzf-fMmVGWZXBe1hY4dM2lAw54SrUPy75-YoFn4HzTUfgz6GqcE8xmHMraL6Ue3flS29Grnpx_oG6xw3ngOo-e5mEgzAazfXRnwIFet2VHbjuQsG275gKrQAN0rjytye6VVFkHM55B0y7Q9Cb8lDagMmgqOyyHcEuz3i2cHAWwO8OWfrWbC-ryhc6gM2hp0QS5pu8MrWnZ-GBZEdqT5fN_4rnGeNdcDh2ugCwa_xNzxrNMcNg-PEynzxPgejjnrbwJSYWMNW4aNZpYSaOJ0TiKCyFG4scnV8DhcHp0_DhNjpYHBRxSmjcXxPwZMdfinIUO1sIZDRyOnh0Az_SMw25ykBwnbC-dPmVtn1el2Qgox17sJ2nCSssesf8kcNBCoxrneTQu9CZqE-cFSm0nuRKRsWYs_49iVBPUcZFLESssSKOKc23iiZqIgFBCjUdSjqQ6FuMtobak3JBKb0bjl2tFRwk8C4XKu9yhTs1hB4uvn9nN9du7GpqWauB1X1Uc0mRnmu6udng3XWDliMPDjYdboO4VEY-W94xF7ObqHbt9_-n2-gv79vHDVTD_s4Xv-lWHk0Bb2Oh71W8RgPnffYcUK1FCihOPp-FVnX0PAAD__w",
+      "payload": [
+        [
+          [
+            "kind",
+            "rows",
+            "agent",
+            "runId",
+            [
+              "store",
+              [
+                "kind",
+                "name"
+              ]
+            ],
+            "intent",
+            "taskId",
+            [
+              "request",
+              [
+                "kind",
+                "params",
+                "statement"
+              ]
+            ],
+            "rowsHash",
+            "expiresAt",
+            "approvalId",
+            "assignedFields"
+          ],
+          [
+            "op",
+            [
+              "key",
+              [
+                "id"
+              ]
+            ],
+            [
+              "old",
+              [
+                "id",
+                "name",
+                "status"
+              ]
+            ],
+            "set",
+            "shape",
+            [
+              "store",
+              [
+                "kind",
+                "verb"
+              ]
+            ],
+            "cascaded",
+            "resource"
+          ],
+          [
+            "op",
+            [
+              "key",
+              [
+                "id"
+              ]
+            ],
+            [
+              "old",
+              [
+                "id",
+                "note",
+                "lead_id"
+              ]
+            ],
+            "set",
+            "shape",
+            [
+              "store",
+              [
+                "kind",
+                "verb"
+              ]
+            ],
+            "cascaded",
+            "resource"
+          ],
+          [
+            "op",
+            "shape",
+            [
+              "store",
+              [
+                "kind",
+                "verb"
+              ]
+            ],
+            "rowHash",
+            "cascaded",
+            "redacted",
+            "resource"
+          ]
+        ],
+        [
+          [
+            0,
+            "APPROVE",
+            3,
+            "agent:bot",
+            "0193a4c2-7d1e-7c3a-9f00-0000000000b2",
+            "POSTGRES",
+            "app",
+            "Remove the spam lead",
+            "0193a4c2-7d1e-7c3a-9f00-0000000000c3",
+            "SQL",
+            [
+              3
+            ],
+            "DELETE FROM public.leads WHERE id = $1",
+            "303a26bb56f34a3c9bfa13d7b205cdc61859a27a39fb1092afe3a29b3c972701",
+            "2026-11-12T06:02:11.123456Z",
+            "0193a4c2-7d1e-7c3a-9f00-0000000000a1",
+            []
+          ],
+          [
+            1,
+            "DELETE",
+            3,
+            3,
+            "Café ✓ lead",
+            "open",
+            null,
+            "RECORD",
+            "POSTGRES",
+            "DELETE",
+            false,
+            "public.leads"
+          ],
+          [
+            2,
+            "DELETE",
+            5,
+            5,
+            "note 5 — 日本 🚀",
+            3,
+            null,
+            "RECORD",
+            "POSTGRES",
+            "DELETE",
+            true,
+            "public.lead_notes"
+          ],
+          [
+            3,
+            "DELETE",
+            "RECORD",
+            "POSTGRES",
+            "DELETE",
+            "abababababababababababababababababababababababababababababababab",
+            true,
+            true,
+            "public.note_tags"
+          ]
+        ]
+      ],
+      "binding": "{\"kind\": \"APPROVE\", \"rows\": 3, \"agent\": \"agent:bot\", \"runId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000b2\", \"store\": {\"kind\": \"POSTGRES\", \"name\": \"app\"}, \"intent\": \"Remove the spam lead\", \"taskId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000c3\", \"request\": {\"kind\": \"SQL\", \"params\": [3], \"statement\": \"DELETE FROM public.leads WHERE id = $1\"}, \"rowsHash\": \"303a26bb56f34a3c9bfa13d7b205cdc61859a27a39fb1092afe3a29b3c972701\", \"expiresAt\": \"2026-11-12T06:02:11.123456Z\", \"approvalId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000a1\", \"assignedFields\": []}",
+      "lines": [
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 3}, \"old\": {\"id\": 3, \"name\": \"Café ✓ lead\", \"status\": \"open\"}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 5}, \"old\": {\"id\": 5, \"note\": \"note 5 — 日本 🚀\", \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.lead_notes\"}",
+        "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"abababababababababababababababababababababababababababababababab\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.note_tags\"}"
+      ]
     },
     {
       "name": "a revert: the pages' fixture",
       "kind": "REVERT",
-      "pending": true
+      "fragment": "2.tJTNbts4EMdfRZgzHYiUZNm5eWNtYmyQBLazhxWMgCLHthCH0op03NzyDi1QoAjQUw8F-hZ9kxxy7iMUpCzno03rtKgNSMRw-J_ffFBpmsJ5riQQqIqVBpKCNkWFdrG2K36BMJkQyJVBZZwLLlC4VbVUGghoUZQIBPgMldkYBk4WdbGsBGqnoc_zskRrX-USFdYel1iZQcNwwPUcCOCrMq9Q94zz-H-J2qD86womJIWitCHmvMRHwKKQFmLNfYlV5mJyYfJC1eprccG14NJFF4WaLnJRh5FcGHxIbR3mXM1wIPUmdArneGVfuXQBVLGqq2LWRmsy9uwCuTxbe72c9znK7dHShi3fdJKANtwsdb39iPnp9h9GnpA09QkMk3-T4RhIQODkeDTeHyYjO0ml7fGpkoVn5uhlXHoXWM0QiFouFgSGp0eWxw3cblYYmBDwaTfgoWCtWFJsxSLgre7U91v-5pex9XlKpnyhcZszMgQCGc9kFHTZtN3pYnsaSCmYz0Q37IbtUASMTTtROxB-xHnIOyELqY8xlSGi6AQ86gIB5rN2i9IWpWM_3vXZLqU7lAVh1P6vuTnrRFJKoJ8cJuMEbHn2jof9Ju0HFXrgMRofD-2KZ7_3B2KqJdah3ArKZbbIxY4d5zPDZ-4D8fOSIXXdZQQGRyPX3KgWjeqb4UXe7fUb7-7th7ubT96X9--uXfufTbVRuU_1nrNBdFfNir-MMSBwetLv2UIGlmGPTz9_9G5vXntWEAi4qZPw3b2iRPWjFjXK99z11H0Dvj3zNhOL7GlqMYkJJDI3KL3syuNeiZV2F3ZlnzGBQ-TSi1-S0-ifwUmTEOwd9I72k_5Z7-9xMoRfys1CTyZfAwAA__8",
+      "payload": [
+        [
+          [
+            "kind",
+            "rows",
+            [
+              "store",
+              [
+                "kind",
+                "name"
+              ]
+            ],
+            "intent",
+            [
+              "select",
+              [
+                "runs",
+                "scope",
+                "agents",
+                "scopeId",
+                "resources"
+              ]
+            ],
+            "skipped",
+            "widened",
+            "revertId",
+            "rowsHash",
+            "expiresAt",
+            "requestedBy"
+          ],
+          [
+            "op",
+            "shape",
+            [
+              "store",
+              [
+                "code",
+                "kind",
+                "verb"
+              ]
+            ],
+            "action",
+            "rowHash",
+            "cascaded",
+            "conflict",
+            "redacted",
+            "resource",
+            "changeIds"
+          ],
+          [
+            "op",
+            [
+              "key",
+              [
+                "id"
+              ]
+            ],
+            "now",
+            [
+              "set",
+              [
+                "id",
+                "note",
+                "lead_id"
+              ]
+            ],
+            "shape",
+            [
+              "store",
+              [
+                "code",
+                "kind",
+                "verb"
+              ]
+            ],
+            "action",
+            "cascaded",
+            "conflict",
+            "resource",
+            "changeIds"
+          ],
+          [
+            "op",
+            [
+              "key",
+              [
+                "id"
+              ]
+            ],
+            [
+              "now",
+              [
+                "id",
+                "name",
+                "status"
+              ]
+            ],
+            [
+              "set",
+              [
+                "id",
+                "name",
+                "status"
+              ]
+            ],
+            "shape",
+            [
+              "store",
+              [
+                "code",
+                "kind",
+                "verb"
+              ]
+            ],
+            "action",
+            "cascaded",
+            "conflict",
+            "resource",
+            "changeIds"
+          ]
+        ],
+        [
+          [
+            0,
+            "REVERT",
+            3,
+            "POSTGRES",
+            "app",
+            "Undo the bad merge",
+            null,
+            "RUN",
+            [
+              "agent:bot"
+            ],
+            "0193a4c2-7d1e-7c3a-9f00-0000000000b2",
+            null,
+            1,
+            false,
+            "0193a4c2-7d1e-7c3a-9f00-0000000000d4",
+            "babd5392f689e6f3ddc202c949464c322f8563c05aa4a842410e71d4eec83a59",
+            "2026-11-11T07:02:11.123456Z",
+            "agent:bot"
+          ],
+          [
+            1,
+            "DELETE",
+            "RECORD",
+            null,
+            "POSTGRES",
+            "DELETE",
+            "RESTORE",
+            "abababababababababababababababababababababababababababababababab",
+            true,
+            null,
+            true,
+            "public.note_tags",
+            [
+              "0193a4c2-7d1e-7c3a-9f00-0000000000e1"
+            ]
+          ],
+          [
+            2,
+            "INSERT",
+            5,
+            null,
+            5,
+            "note 5 — 日本 🚀",
+            3,
+            "RECORD",
+            null,
+            "POSTGRES",
+            "INSERT",
+            "RESTORE",
+            true,
+            null,
+            "public.lead_notes",
+            [
+              "0193a4c2-7d1e-7c3a-9f00-0000000000e1"
+            ]
+          ],
+          [
+            3,
+            "UPDATE",
+            3,
+            3,
+            "Café ✓ lead",
+            "merged",
+            3,
+            "Café ✓ lead",
+            "open",
+            "RECORD",
+            null,
+            "POSTGRES",
+            "UPDATE",
+            "RESTORE",
+            false,
+            null,
+            "public.leads",
+            [
+              "0193a4c2-7d1e-7c3a-9f00-0000000000e1",
+              "0193a4c2-7d1e-7c3a-9f00-0000000000e2"
+            ]
+          ],
+          [
+            3,
+            "UPDATE",
+            7,
+            7,
+            "Edited by a person",
+            "won",
+            7,
+            "Lead 7",
+            "open",
+            "RECORD",
+            null,
+            "POSTGRES",
+            "UPDATE",
+            "SKIP",
+            false,
+            "CHANGED_AFTER",
+            "public.leads",
+            [
+              "0193a4c2-7d1e-7c3a-9f00-0000000000e2"
+            ]
+          ]
+        ]
+      ],
+      "binding": "{\"kind\": \"REVERT\", \"rows\": 3, \"store\": {\"kind\": \"POSTGRES\", \"name\": \"app\"}, \"intent\": \"Undo the bad merge\", \"select\": {\"runs\": null, \"scope\": \"RUN\", \"agents\": [\"agent:bot\"], \"scopeId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000b2\", \"resources\": null}, \"skipped\": 1, \"widened\": false, \"revertId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000d4\", \"rowsHash\": \"babd5392f689e6f3ddc202c949464c322f8563c05aa4a842410e71d4eec83a59\", \"expiresAt\": \"2026-11-11T07:02:11.123456Z\", \"requestedBy\": \"agent:bot\"}",
+      "lines": [
+        "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"code\": null, \"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"action\": \"RESTORE\", \"rowHash\": \"abababababababababababababababababababababababababababababababab\", \"cascaded\": true, \"conflict\": null, \"redacted\": true, \"resource\": \"public.note_tags\", \"changeIds\": [\"0193a4c2-7d1e-7c3a-9f00-0000000000e1\"]}",
+        "{\"op\": \"INSERT\", \"key\": {\"id\": 5}, \"now\": null, \"set\": {\"id\": 5, \"note\": \"note 5 — 日本 🚀\", \"lead_id\": 3}, \"shape\": \"RECORD\", \"store\": {\"code\": null, \"kind\": \"POSTGRES\", \"verb\": \"INSERT\"}, \"action\": \"RESTORE\", \"cascaded\": true, \"conflict\": null, \"resource\": \"public.lead_notes\", \"changeIds\": [\"0193a4c2-7d1e-7c3a-9f00-0000000000e1\"]}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 3}, \"now\": {\"id\": 3, \"name\": \"Café ✓ lead\", \"status\": \"merged\"}, \"set\": {\"id\": 3, \"name\": \"Café ✓ lead\", \"status\": \"open\"}, \"shape\": \"RECORD\", \"store\": {\"code\": null, \"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"action\": \"RESTORE\", \"cascaded\": false, \"conflict\": null, \"resource\": \"public.leads\", \"changeIds\": [\"0193a4c2-7d1e-7c3a-9f00-0000000000e1\", \"0193a4c2-7d1e-7c3a-9f00-0000000000e2\"]}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 7}, \"now\": {\"id\": 7, \"name\": \"Edited by a person\", \"status\": \"won\"}, \"set\": {\"id\": 7, \"name\": \"Lead 7\", \"status\": \"open\"}, \"shape\": \"RECORD\", \"store\": {\"code\": null, \"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"action\": \"SKIP\", \"cascaded\": false, \"conflict\": \"CHANGED_AFTER\", \"resource\": \"public.leads\", \"changeIds\": [\"0193a4c2-7d1e-7c3a-9f00-0000000000e2\"]}"
+      ]
     },
     {
-      "name": "every kind of value, and a line that travels as its text",
+      "name": "every kind of value",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPBattKFP2V4fJ4q2szM5JlyzSF0ChNoDSu7bZQSYuRdG0Ly5KikRKHYOhfFEqhqy4K_Yv-S9b9hDKWlSaQRak2mpHOPfecc2d834d1mieAUBXXGhDUkvLabJv8PAH0QddFRWZxwOVqQxCGCGlet9Ba6XWLreiyIV0_QJeqUhvDq2tV08YUmFrT7EzpFSDQtkwr0seGSZVlVVypzLCB0jpd5pScppQlGkL0oSgBYU03gFBkrToy3QylXqmSnhJ8RVW0bxorHauE9mZJF00V0z2r39L6kCYG63f8qUFH6RIQkiI29smsF5kyr7yoaR_A0lgsqzSmtrqV9efLv6oL0fc5wvFkMr145wHKw4DGUWHy4sK1lB3L3jAR1BvGluq5C857_P6JJCBMLmbzl1Nv1iYMCKfplj3bi9PP2f_M2NCAeZNlCLM3rwD9W6jUNYxB9jmHHcIWQoS3k5PjucfKJsrSuJ_WtNFs5s3Znokdsf8Ee3_mTT2WJuyIuYDgRAsZO2pAI2doW8qyXD605HDk2EJagqxEWYk1SGgwkMJ1RqPRKBkJW9iklJAOKUCQXDo9IXpCzrkz5nIsRF9Iyx44H_4qASUeTcIXCOevZ950fjDcup56Ly6mJ4-z6mALlWlCONimTVnfmHMju0AAXXSxS8zlfChcVw7soc1d14Ld_a_bAFQAY-YLZDJEFkBktkbBDnbYsyXWVUPmQEVBvaKKWACXTVFTEgCLVLwOAp0pvWJBwzkX7Od3dvfp292XH-zX188fjc8tINy0N6LrKvoD_kBEN9GnHHd-HjveDxrCMPwdAAD__w",
+      "payload": [
+        [
+          [
+            "kind",
+            "rows",
+            "agent",
+            "runId",
+            [
+              "store",
+              [
+                "kind",
+                "name"
+              ]
+            ],
+            "intent",
+            "taskId",
+            [
+              "request",
+              [
+                "kind",
+                "params",
+                "statement"
+              ]
+            ],
+            "rowsHash",
+            "expiresAt",
+            "approvalId",
+            "assignedFields"
+          ],
+          [
+            "op",
+            "key",
+            "old",
+            [
+              "set",
+              []
+            ],
+            "shape",
+            [
+              "store",
+              [
+                "kind",
+                "verb"
+              ]
+            ],
+            "cascaded",
+            "resource"
+          ],
+          [
+            "op",
+            [
+              "key",
+              [
+                "id"
+              ]
+            ],
+            [
+              "old",
+              [
+                "id",
+                "big",
+                "doc",
+                "neg",
+                "flag",
+                "note",
+                "tags",
+                "price"
+              ]
+            ],
+            [
+              "set",
+              [
+                "price"
+              ]
+            ],
+            "shape",
+            [
+              "store",
+              [
+                "kind",
+                "verb"
+              ]
+            ],
+            "cascaded",
+            "resource"
+          ]
+        ],
+        [
+          [
+            0,
+            "APPROVE",
+            2,
+            "agent:bot",
+            "0193a4c2-7d1e-7c3a-9f00-0000000000b2",
+            "POSTGRES",
+            "app",
+            "Fix \u003cprices\u003e \u0026 notes",
+            null,
+            "SQL",
+            [
+              {
+                "raw": "2.00"
+              },
+              "x"
+            ],
+            "UPDATE public.items SET price = $1 WHERE id = 9",
+            "6bf2c6a5e86743a339073278641231e3da3d35de5521968888d81414eaa126ea",
+            "2026-11-12T06:02:11.123456Z",
+            "0193a4c2-7d1e-7c3a-9f00-0000000000a1",
+            [
+              "price"
+            ]
+          ],
+          [
+            1,
+            "INSERT",
+            null,
+            null,
+            "RECORD",
+            "POSTGRES",
+            "INSERT",
+            false,
+            "public.empty"
+          ],
+          [
+            2,
+            "UPDATE",
+            9,
+            9,
+            {
+              "raw": "9007199254740993"
+            },
+            {
+              "raw": "{\"a\": [1, 2], \"b\": null}"
+            },
+            -42,
+            true,
+            "tab\there \"quoted\" back\\slash \u0001 é 日本 🚀",
+            [
+              "x",
+              "y",
+              []
+            ],
+            {
+              "raw": "1.50"
+            },
+            {
+              "raw": "2.00"
+            },
+            "RECORD",
+            "POSTGRES",
+            "UPDATE",
+            false,
+            "public.items"
+          ]
+        ]
+      ],
+      "binding": "{\"kind\": \"APPROVE\", \"rows\": 2, \"agent\": \"agent:bot\", \"runId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000b2\", \"store\": {\"kind\": \"POSTGRES\", \"name\": \"app\"}, \"intent\": \"Fix \u003cprices\u003e \u0026 notes\", \"taskId\": null, \"request\": {\"kind\": \"SQL\", \"params\": [2.00, \"x\"], \"statement\": \"UPDATE public.items SET price = $1 WHERE id = 9\"}, \"rowsHash\": \"6bf2c6a5e86743a339073278641231e3da3d35de5521968888d81414eaa126ea\", \"expiresAt\": \"2026-11-12T06:02:11.123456Z\", \"approvalId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000a1\", \"assignedFields\": [\"price\"]}",
+      "lines": [
+        "{\"op\": \"INSERT\", \"key\": null, \"old\": null, \"set\": {}, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"INSERT\"}, \"cascaded\": false, \"resource\": \"public.empty\"}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 9}, \"old\": {\"id\": 9, \"big\": 9007199254740993, \"doc\": {\"a\": [1, 2], \"b\": null}, \"neg\": -42, \"flag\": true, \"note\": \"tab\\there \\\"quoted\\\" back\\\\slash \\u0001 é 日本 🚀\", \"tags\": [\"x\", \"y\", []], \"price\": 1.50}, \"set\": {\"price\": 2.00}, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"cascaded\": false, \"resource\": \"public.items\"}"
+      ]
     },
     {
       "name": "an approval with the database's credential ids",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.rJPRatROFMZfZTj8L2dLZqbZ_afgxdqmtlDZNi0KhlBOMifb0GwSM5NW7_oOCoIUvPJC8C18k1702keQ2aS2q6ILmjAkQ875fd98M4njGM6LSgOHtr40wAHnVFk37ap9DTwGY-uW3MtQV-GCIEk4FJXtSy2a8762pZcdGfugusEWF45rLFpauAbX68T20JwBB3rVFC2ZqSNh07T1BZaOBmhMMa9I7xZUagMJj6Fulmh67R6FdqgY6lIP08FcL9aZpZIhBzZn2NCvVnNBbbqsy9BkqGmZBJm6azNaU7K2TrIk1Kf993-iuUZ7W18OGa6ANGb2B2bC49jjMD08jGbPQuBq2OettHZOPREo3MzkaKIFjSaZwlGQe97I-36lEjgczo5PnkThcb9RwCGiRX1BzJ4RMw0umMtgLVymgMPx0QHwWCUcdsKD8CRku9HsKWu6tCyyDYcy7PleGIWs0OwR-08AB-UplOM09ce52kSVBWmOQulJKj0_09lY_O8HKCeogjwVXiAxJ4UySFUWTOTEcwjpyfFIiJGQJ954y5NbQmwIqTb98Yu1rKMAHrtAxZ1vF6fisI35l0_s5vrNXQx1QxXwqitLDlG4PYt2VjO8686xNMTh4cLdKZD3FT73-3PGfHZz9Zbdvvt4e_2Zff3w_sqJ_1nCtt2qwqmjLWXUfdVvEYDp392DixUrzsWpxbnpf6vpUfj45wEcpvP97TUHJMm3AAAA__8",
+      "payload": [
+        [
+          [
+            "kind",
+            "rows",
+            "agent",
+            "runId",
+            [
+              "store",
+              [
+                "kind",
+                "name"
+              ]
+            ],
+            "intent",
+            "taskId",
+            [
+              "request",
+              [
+                "kind",
+                "params",
+                "statement"
+              ]
+            ],
+            "rowsHash",
+            "expiresAt",
+            "approvalId",
+            "assignedFields"
+          ],
+          [
+            "op",
+            [
+              "key",
+              [
+                "id"
+              ]
+            ],
+            [
+              "old",
+              [
+                "id",
+                "name",
+                "status"
+              ]
+            ],
+            "set",
+            "shape",
+            [
+              "store",
+              [
+                "kind",
+                "verb"
+              ]
+            ],
+            "cascaded",
+            "resource"
+          ],
+          [
+            "op",
+            [
+              "key",
+              [
+                "id"
+              ]
+            ],
+            [
+              "old",
+              [
+                "id",
+                "note",
+                "lead_id"
+              ]
+            ],
+            "set",
+            "shape",
+            [
+              "store",
+              [
+                "kind",
+                "verb"
+              ]
+            ],
+            "cascaded",
+            "resource"
+          ],
+          [
+            "op",
+            "shape",
+            [
+              "store",
+              [
+                "kind",
+                "verb"
+              ]
+            ],
+            "rowHash",
+            "cascaded",
+            "redacted",
+            "resource"
+          ]
+        ],
+        [
+          [
+            0,
+            "APPROVE",
+            3,
+            "agent:bot",
+            "0193a4c2-7d1e-7c3a-9f00-0000000000b2",
+            "POSTGRES",
+            "app",
+            "Remove the spam lead",
+            "0193a4c2-7d1e-7c3a-9f00-0000000000c3",
+            "SQL",
+            [
+              3
+            ],
+            "DELETE FROM public.leads WHERE id = $1",
+            "303a26bb56f34a3c9bfa13d7b205cdc61859a27a39fb1092afe3a29b3c972701",
+            "2026-11-12T06:02:11.123456Z",
+            "0193a4c2-7d1e-7c3a-9f00-0000000000a1",
+            []
+          ],
+          [
+            1,
+            "DELETE",
+            3,
+            3,
+            "Café ✓ lead",
+            "open",
+            null,
+            "RECORD",
+            "POSTGRES",
+            "DELETE",
+            false,
+            "public.leads"
+          ],
+          [
+            2,
+            "DELETE",
+            5,
+            5,
+            "note 5 — 日本 🚀",
+            3,
+            null,
+            "RECORD",
+            "POSTGRES",
+            "DELETE",
+            true,
+            "public.lead_notes"
+          ],
+          [
+            3,
+            "DELETE",
+            "RECORD",
+            "POSTGRES",
+            "DELETE",
+            "abababababababababababababababababababababababababababababababab",
+            true,
+            true,
+            "public.note_tags"
+          ]
+        ],
+        [
+          "AQEBAQEBAQEBAQEBAQEBAQ",
+          "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI"
+        ]
+      ],
+      "binding": "{\"kind\": \"APPROVE\", \"rows\": 3, \"agent\": \"agent:bot\", \"runId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000b2\", \"store\": {\"kind\": \"POSTGRES\", \"name\": \"app\"}, \"intent\": \"Remove the spam lead\", \"taskId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000c3\", \"request\": {\"kind\": \"SQL\", \"params\": [3], \"statement\": \"DELETE FROM public.leads WHERE id = $1\"}, \"rowsHash\": \"303a26bb56f34a3c9bfa13d7b205cdc61859a27a39fb1092afe3a29b3c972701\", \"expiresAt\": \"2026-11-12T06:02:11.123456Z\", \"approvalId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000a1\", \"assignedFields\": []}",
+      "lines": [
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 3}, \"old\": {\"id\": 3, \"name\": \"Café ✓ lead\", \"status\": \"open\"}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": false, \"resource\": \"public.leads\"}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 5}, \"old\": {\"id\": 5, \"note\": \"note 5 — 日本 🚀\", \"lead_id\": 3}, \"set\": null, \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"cascaded\": true, \"resource\": \"public.lead_notes\"}",
+        "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"rowHash\": \"abababababababababababababababababababababababababababababababab\", \"cascaded\": true, \"redacted\": true, \"resource\": \"public.note_tags\"}"
+      ],
+      "credentialIds": [
+        "AQEBAQEBAQEBAQEBAQEBAQ",
+        "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI"
+      ]
     },
     {
       "name": "a revert with the database's credential ids",
       "kind": "REVERT",
-      "pending": true
+      "fragment": "2.tJTdbtMwFMdfJTrX7pQ4SdPurqxhqxjb1HZcEFWTY5-20TonxO7K7vYOICGhSVxxgcRb8Ca72DWPgOwk3QcMOhCt2ljHx__zOx9OkiRwmkkBBMp8pYAkoHReolnUdsnOECYTApnUKLV1wQVyuyqXUgEBxfMCgQCbodRrw8DKosqXJUdlNdRpVhRo7KtMoMTK4xxLPWgY9piaAwF8W2Qlqp62Hm-WqDSKZxcwIQnkhQkxZwXeA-a5MBA19zmWqY3JuM5yWanX4pwpzoSNznM5XWS8CiMY13iX2jjMmZzhQKh16ARO8cI8MmEDyHxVVUXXRmPS5uwCmTipvZ7O-xjl5mhJw5atO0lAaaaXqtq-x_xw-z8jT0iSuASG8at4OAbiEzg6HI13h_HITFJhenwsRe7oOTopE84ZljMEIpeLBYHh8YHhsQO3neYaJgRcr-uzgNNWJDxsRdxnre7UdVvu-pPS-rxHpmyhcJMzIgACKUtF6HfptN3pYnvqC8GpS3k36AbtgPuUTjth2-duyFjAOgENPBcjTwSIvOOzsAsEqEvbLc9red7YjbZduu15Wx71g7D9urk5dSKJR6Af78fjGEx5dg6H_SbtOxW64zEaHw7NiqX_9gWiyyVWoewKimW6yPiWGecTzWb2BfHnkqFnu0sJDA5GtrlhJRpWN8MJnevL987Nh883V1-d758-Xtr2P5pqo3Kb6i1ng2ivmhF_GqNP4Pio3zOF9A3DDpt---JcX71zjCAQsFMn4Jd7eYHydy1qlG-5q6n7CXxz5k0mFunD1CISEYhFplE46YXDnAJLZS_syvxHBPaRCSd6Sk6jF4OjJiHY2esd7Mb9k97zcTyEv8rNQJtXUm_1sv_IDyaTHwEAAP__",
+      "payload": [
+        [
+          [
+            "kind",
+            "rows",
+            [
+              "store",
+              [
+                "kind",
+                "name"
+              ]
+            ],
+            "intent",
+            [
+              "select",
+              [
+                "runs",
+                "scope",
+                "agents",
+                "scopeId",
+                "resources"
+              ]
+            ],
+            "skipped",
+            "widened",
+            "revertId",
+            "rowsHash",
+            "expiresAt",
+            "requestedBy"
+          ],
+          [
+            "op",
+            "shape",
+            [
+              "store",
+              [
+                "code",
+                "kind",
+                "verb"
+              ]
+            ],
+            "action",
+            "rowHash",
+            "cascaded",
+            "conflict",
+            "redacted",
+            "resource",
+            "changeIds"
+          ],
+          [
+            "op",
+            [
+              "key",
+              [
+                "id"
+              ]
+            ],
+            "now",
+            [
+              "set",
+              [
+                "id",
+                "note",
+                "lead_id"
+              ]
+            ],
+            "shape",
+            [
+              "store",
+              [
+                "code",
+                "kind",
+                "verb"
+              ]
+            ],
+            "action",
+            "cascaded",
+            "conflict",
+            "resource",
+            "changeIds"
+          ],
+          [
+            "op",
+            [
+              "key",
+              [
+                "id"
+              ]
+            ],
+            [
+              "now",
+              [
+                "id",
+                "name",
+                "status"
+              ]
+            ],
+            [
+              "set",
+              [
+                "id",
+                "name",
+                "status"
+              ]
+            ],
+            "shape",
+            [
+              "store",
+              [
+                "code",
+                "kind",
+                "verb"
+              ]
+            ],
+            "action",
+            "cascaded",
+            "conflict",
+            "resource",
+            "changeIds"
+          ]
+        ],
+        [
+          [
+            0,
+            "REVERT",
+            3,
+            "POSTGRES",
+            "app",
+            "Undo the bad merge",
+            null,
+            "RUN",
+            [
+              "agent:bot"
+            ],
+            "0193a4c2-7d1e-7c3a-9f00-0000000000b2",
+            null,
+            1,
+            false,
+            "0193a4c2-7d1e-7c3a-9f00-0000000000d4",
+            "babd5392f689e6f3ddc202c949464c322f8563c05aa4a842410e71d4eec83a59",
+            "2026-11-11T07:02:11.123456Z",
+            "agent:bot"
+          ],
+          [
+            1,
+            "DELETE",
+            "RECORD",
+            null,
+            "POSTGRES",
+            "DELETE",
+            "RESTORE",
+            "abababababababababababababababababababababababababababababababab",
+            true,
+            null,
+            true,
+            "public.note_tags",
+            [
+              "0193a4c2-7d1e-7c3a-9f00-0000000000e1"
+            ]
+          ],
+          [
+            2,
+            "INSERT",
+            5,
+            null,
+            5,
+            "note 5 — 日本 🚀",
+            3,
+            "RECORD",
+            null,
+            "POSTGRES",
+            "INSERT",
+            "RESTORE",
+            true,
+            null,
+            "public.lead_notes",
+            [
+              "0193a4c2-7d1e-7c3a-9f00-0000000000e1"
+            ]
+          ],
+          [
+            3,
+            "UPDATE",
+            3,
+            3,
+            "Café ✓ lead",
+            "merged",
+            3,
+            "Café ✓ lead",
+            "open",
+            "RECORD",
+            null,
+            "POSTGRES",
+            "UPDATE",
+            "RESTORE",
+            false,
+            null,
+            "public.leads",
+            [
+              "0193a4c2-7d1e-7c3a-9f00-0000000000e1",
+              "0193a4c2-7d1e-7c3a-9f00-0000000000e2"
+            ]
+          ],
+          [
+            3,
+            "UPDATE",
+            7,
+            7,
+            "Edited by a person",
+            "won",
+            7,
+            "Lead 7",
+            "open",
+            "RECORD",
+            null,
+            "POSTGRES",
+            "UPDATE",
+            "SKIP",
+            false,
+            "CHANGED_AFTER",
+            "public.leads",
+            [
+              "0193a4c2-7d1e-7c3a-9f00-0000000000e2"
+            ]
+          ]
+        ],
+        [
+          "AwMDAwMDAwMDAwMDAwMDAwMDAwM"
+        ]
+      ],
+      "binding": "{\"kind\": \"REVERT\", \"rows\": 3, \"store\": {\"kind\": \"POSTGRES\", \"name\": \"app\"}, \"intent\": \"Undo the bad merge\", \"select\": {\"runs\": null, \"scope\": \"RUN\", \"agents\": [\"agent:bot\"], \"scopeId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000b2\", \"resources\": null}, \"skipped\": 1, \"widened\": false, \"revertId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000d4\", \"rowsHash\": \"babd5392f689e6f3ddc202c949464c322f8563c05aa4a842410e71d4eec83a59\", \"expiresAt\": \"2026-11-11T07:02:11.123456Z\", \"requestedBy\": \"agent:bot\"}",
+      "lines": [
+        "{\"op\": \"DELETE\", \"shape\": \"RECORD\", \"store\": {\"code\": null, \"kind\": \"POSTGRES\", \"verb\": \"DELETE\"}, \"action\": \"RESTORE\", \"rowHash\": \"abababababababababababababababababababababababababababababababab\", \"cascaded\": true, \"conflict\": null, \"redacted\": true, \"resource\": \"public.note_tags\", \"changeIds\": [\"0193a4c2-7d1e-7c3a-9f00-0000000000e1\"]}",
+        "{\"op\": \"INSERT\", \"key\": {\"id\": 5}, \"now\": null, \"set\": {\"id\": 5, \"note\": \"note 5 — 日本 🚀\", \"lead_id\": 3}, \"shape\": \"RECORD\", \"store\": {\"code\": null, \"kind\": \"POSTGRES\", \"verb\": \"INSERT\"}, \"action\": \"RESTORE\", \"cascaded\": true, \"conflict\": null, \"resource\": \"public.lead_notes\", \"changeIds\": [\"0193a4c2-7d1e-7c3a-9f00-0000000000e1\"]}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 3}, \"now\": {\"id\": 3, \"name\": \"Café ✓ lead\", \"status\": \"merged\"}, \"set\": {\"id\": 3, \"name\": \"Café ✓ lead\", \"status\": \"open\"}, \"shape\": \"RECORD\", \"store\": {\"code\": null, \"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"action\": \"RESTORE\", \"cascaded\": false, \"conflict\": null, \"resource\": \"public.leads\", \"changeIds\": [\"0193a4c2-7d1e-7c3a-9f00-0000000000e1\", \"0193a4c2-7d1e-7c3a-9f00-0000000000e2\"]}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 7}, \"now\": {\"id\": 7, \"name\": \"Edited by a person\", \"status\": \"won\"}, \"set\": {\"id\": 7, \"name\": \"Lead 7\", \"status\": \"open\"}, \"shape\": \"RECORD\", \"store\": {\"code\": null, \"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"action\": \"SKIP\", \"cascaded\": false, \"conflict\": \"CHANGED_AFTER\", \"resource\": \"public.leads\", \"changeIds\": [\"0193a4c2-7d1e-7c3a-9f00-0000000000e2\"]}"
+      ],
+      "credentialIds": [
+        "AwMDAwMDAwMDAwMDAwMDAwMDAwM"
+      ]
     }
   ],
   "invalid": [
     {
-      "name": "format 1 JSON after 2.",
+      "name": "the request JSON after 2.",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.rFPfats-FH4VIX78rpIgyY4Tm3VQVnctjDVLsg1W5UK2TxIRx3YtuUspgb3FYAx2tYvB3mLv0us9wpDktAnbRQfzRSIdnT_fd75zbrGoqrq8Fvl5hiNM2q_7h5_dhzs4kUUmiwWO8C3HK1lkHEeI4-PRaHzxJua4gziuy_fKmJm5iAUU2jnZY5SUunVrivM2nNDQE37KuoOMQneQeqIbzg-KJ8wFKV3WYIIOyo8uJtPn43jifAqxhrZiVXG8NTZZ6Hscp3KDnlS1TEE9Rf-jotSgXKQWauUwFU2eW5Bw1YDSv1WcvHrhQipRi7Wle8l6hBjThuOZwyo0rO_Lvh6dHE9jVDVJLtOe1LBWaBJPkUWCjtB_FL09i8cxkhk6QmEL3DTzTKilyxEkc5YGog_DYOB7wvNCMvDYYBj4lHkUvEx4mdfPoN9nNAyGw-EwG1Kf-iAEZQEIhxk2laxBHbfAGGFBl9IuZVMSRIRFlPYo8_x-8M75PwzKY-UStI1USi4KyE4l5JnrEseWMMezLe7gXBagcHRpxqmsXPrzl5N4PHUJVnCzL0eZH6ijwCljO6WWomp1H8fPLsYnj5-Ya6iTw9o2YypUKjKwIXORK3ATocqmTttKrZqwrvQNx4bRHhGn-AGRW46lzRdu9_g8WI0xkQt7JmRAw5D1_YFPwtAzT1mZtv7CNpN2ELOzluzaYtMWYDN0fbuC81zYq64by8AMvAOoRcK5XkINiHOOr5pSQ2ZOKBHpinPOVS7UEnHeEEIo-vEN3X38evf5O_r55dOH3c4sdsJunOXG_F3OLK5W6wjRXp9s9zXbezOL8-8k3HX9LyW0C2kknG1_BQAA__8"
     },
     {
       "name": "an empty credential id list",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPBattKFP2V4fJ4q2szM5JlyzSF0ChNoDSu7bZQSYuRdG0Ly5KikRKHYOhfFEqhqy4K_Yv-S9b9hDKWlSaQRak2mpHOPfecc2d834d1mieAUBXXGhDUkvLabJv8PAH0QddFRWZxwOVqQxCGCGlet9Ba6XWLreiyIV0_QJeqUhvDq2tV08YUmFrT7EzpFSDQtkwr0seGSZVlVVypzLCB0jpd5pScppQlGkL0oSgBYU03gFBkrToy3QylXqmSnhJ8RVW0bxorHauE9mZJF00V0z2r39L6kCYG63f8qUFH6RIQkiI29smsF5kyr7yoaR_A0lgsqzSmtrqV9efLv6oL0fc5wvFkMr145wHKw4DGUWHy4sK1lB3L3jAR1BvGluq5C857_P6JJCBMLmbzl1Nv1iYMCKfplj3bi9PP2f_M2NCAeZNlCLM3rwD9W6jUNYxB9jmHHcIWQoS3k5PjucfKJsrSuJ_WtNFs5s3Znokdsf8Ee3_mTT2WJuyIuYDgRAsZO2pAI2doW8qyXD605HDk2EJagqxEWYk1SGgwkMJ1RqPRKBkJW9iklJAOKUCQXDo9IXpCzrkz5nIsRF9Iyx44H_4qASUeTcIXCOevZ950fjDcup56Ly6mJ4-z6mALlWlCONimTVnfmHMju0AAXXSxS8zlfChcVw7soc1d14Ld_a_bAFQAY-YLZDJEFkBktkbBDnbYsyXWVUPmQEVBvaKKWACXTVFTEgCLVLwOAp0pvWJBwzkX7Od3dvfp292XH-zX188fjc8tINy0N6LrKvoD_kBEN9GnHHd-HjveD3qfXRj-DgAA__8"
     },
     {
       "name": "a credential id twice",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPBattAEP2VZSg9jc3uSpYt0xRMozSB0ji220IlHVbS2BaWJUUrJQ7B0L8olEJPPRT6F_2XnPsJZS07TSCHUl12V3rz5r03K9_3YZXmCSBUxbUGBLWgvDbHJj9LAH3QdVGR2exxuVoThCFCmtcttFZ61WIrumxI1w_QparU2vDqWtW0NgWm1jQ7VXoJCLQp04r0yDCpsqyKK5UZNlBap4uckpOUskRDiD4UJSCs6AYQiqxVR6abodRLVdJTgq-oinZNY6VjldDOLOmiqWK6Z_VbWh_SxGD9A39q0FG6AISkiI19Mvt5psySFzXtAlgYi2WVxtRWt7L-vvlfdSH6PkcYjceT8_ceoNwPaBgVJi8uXEvZsez0E0GdfmypjjvnvMPvn0gCwvh8Ons98aZtwoBwkm7Yi504_ZI9Z8aGBsybLEOYXrwB9G-hUtcwBNnlHLYIGwgR3o2PRzOPlU2UpXE3rWmt2dSbsR0TO2LPBPtw6k08libsiLmA4ERzGTuqRwOnb1vKslzet2R_4NhCWoKsRFmJ1Uuo15PCdQaDwSAZCFvYpJSQDilAkFw6HSE6Qs64M-RyKERXSMvuOR__KQElHk3CFwhnb6feZLY33LqeeK_OJ8ePszrA5irThLC3TeuyvjH3Rh4CAXTRxUNiLud94bqyZ_dt7roWbO8_3QagAhgyXyCTIbIAInM0CrawxY4tsa4aMhcqCuolVcQCuGyKmpIAWKTiVRDoTOklCxrOuWC_frC7z9_vvv5kv799-WR8bgDhpv0jDl1Ft8cfiDhM9CnHBz-PHe8G3d7r0cWZKdktYfgnAAD__w"
     },
     {
       "name": "a credential id that is not base64url",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPBattKFP2V4fJ4q2szM5Jlyzw_MI3SBErj2G4LlbQYSde2sCwpGilxCIb-RaEUuuqi0L_ov2TdTyhj2WkCWZR64xnp3HPPOffK931Yp3kCCFVxowFBLSmvzbXJzxNAH3RdVGQOB1yuNgRhiJDmdQutlV632IquGtL1I3SpKrUxvLpWNW1Mgak1zc6UXgECbcu0Ij02TKosq-JaZYYNlNbpMqfkNKUs0RCiD0UJCGu6BYQia9WR6WYo9UqV9Jzga6qifdNY6VgltDdLumiqmB5Y_ZbWhzQxWP_Inxp0lC4BISliY5_MeZEp85cXNe0DWBqLZZXG1Fa3sn4_-Vt1Ifo-RxhPJtOLtx6gPAxoGBUmLy5cS9mx7PQTQZ1-bKmOu-C8wx9-kQSEycVs_nLqzdqEAeE03bL_9uL0_-xfZmxowLzJMoTZ5StA_w4qdQNDkF3OYYewhRDhzeRkPPdY2URZGnfTmjaazbw52zOxEftHsHdn3tRjacJGzAUEJ1rI2FE9Gjh921KW5fK-JfsDxxbSEmQlykqsXkK9nhSuMxgMBslA2MImpYR0SAGC5NLpCNERcs6dIZdDIbpCWnbPef9HCSjxZBK-QDh_PfOm84Ph1vXUe3ExPXma1RG2UJkmhINt2pT1rdkbeQwE0EUXj4m5nPeF68qe3be561qwe3h1F4AKYMh8gUyGyAKIzNUo2MEOO7bEumrILFQU1CuqiAVw1RQ1JQGwSMXrINCZ0isWNJxzwX58Y_cfv95__s5-fvn0wfjcAsJt-0Ucu4pujz8ScZzoc46Pfp463g-63evx5WgEYfgrAAD__w"
     },
     {
       "name": "an empty credential id",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPBattMEH6VZfj5T2Ozu5JlyzSF0ChNoDSu7bZQSYeVNLaFZUnRSolDMPQtCqXQUw-FvkXfJec-QlnLShPIodQX70rffPN934x834d1mieAUBXXGhDUkvLaXJv8PAH0QddFReZwwOVqQxCGCGlet9Ba6XWLreiyIV0_QJeqUhvDq2tV08YUmFrT7EzpFSDQtkwr0seGSZVlVVypzLCB0jpd5pScppQlGkL0oSgBYU03gFBkrToy3QylXqmSnhJ8RVW0bxorHauE9mZJF00V0z2r39L6kCYG63f8qUFH6RIQkiI29smcF5kyf3lR0z6ApbFYVmlMbXUr68-Tf1UXou9zhOPJZHrxzgOUhwGNo8LkxYVrKTuWvWEiqDeMLdVzF5z3-P0vkoAwuZjNX069WZswIJymW_ZsL04_Z_8zY0MD5k2WIczevAL0b6FS1zAG2eccdghbCBHeTk6O5x4rmyhL435a00azmTdneyZ2xP4T7P2ZN_VYmrAj5gKCEy1k7KgBjZyhbSnLcvnQksORYwtpCbISZSXWIKHBQArXGY1Go2QkbGGTUkI6pABBcun0hOgJOefOmMuxEH0hLXvgfPirBJR4NAlfIJy_nnnT-cFw63rqvbiYnjzOqoMtVKYJ4WCbNmV9Y_ZGdoEAuuhil5jL-VC4rhzYQ5u7rgW7-1e3AagAxswXyGSILIDIXI2CHeywZ0usq4bMQkVBvaKKWACXTVFTEgCLVLwOAp0pvWJBwzkX7Od3dvfp292XH-zX188fjc8tINy0X0TXVfQH_IGIbqJPOe78PHa8H3S71xCGvwMAAP__"
     },
     {
       "name": "credential ids that are not a list",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPBattAEP2VZSg9jc3uSpYt0xRMozSB0ji220IlH1bS2BaWJUUrJQ7B0L8olEJPPRT6F_2XnPsJZS0rTSCHUl-8K715896bke_7sE6yGBDK_FoDglpSVplrnZ3FgD7oKi_JHA64TG0I5nOEJKsaaKX0usGWdFmTrh6gC1WqjeHVlapoYwpMrWl2qvQKEGhbJCXpkWFSRVHmVyo1bKC0TpYZxScJpbGGOfqQF4CwphtAyNNGHZluhlKvVEFPCb6iMtw3jZSOVEx7s6TzuozontVvaH1IYoP1W_7EoMNkCQhxHhn7ZM6LVJm_LK9oH8DSWCzKJKKmupH198n_qpuj73OE0Xg8OX_vAcrDgIZhbvLiwrWUHclOPxbU6UeW6rgLzjv8_hdKQBifT2evJ960SRgQTpIte7EXp1-y58zY0IBZnaYI04s3gP4tlOoahiC7nMMOYQtzhHfj49HMY0UdpknUTSraaDb1ZmzPxI7YM8E-nHoTjyUxO2IuIDjhQkaO6tHA6duWsiyX9y3ZHzi2kJYgK1ZWbPVi6vWkcJ3BYDCIB8IWNiklpEMKECSXTkeIjpAz7gy5HArRFdKye87Hf0pAiUeT8AXC2dupN5kdDDeuJ96r88nx46xa2EKlmhAOtmlTVDdmb2QbCKCLLraJuZz3hevKnt23uetasLt_dRuACmDIfIFMzpEFEJqrUbCDHXZsiVVZk1moMKhWVBIL4LLOK4oDYKGK1kGgU6VXLKg554L9-sHuPn-_-_qT_f725ZPxuQWEm-aLaLuKbo8_ENFO9CnHrZ_HjveD3u_o6OLsGOZ_AgAA__8"
     },
     {
       "name": "101 credential ids",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nNPLbuM2FAbgVyEOiq7oQKR8k9Ep4It8SRxf5Fsyshe0xDhCbMsjyjMJBgH6FgWKAl11UaBv0XeZdR-hoP84nQCzKJoNpXxHh-cc0mEY0kOyj4lTln4yxElt9D63r8d9LyYeksnTTNuHl7i92mlarTgl-xyhuTIPiM30h6M2-VfRB5Wpnc1rcpXrnf3Afms36ypzT5z04yHJtKnbTOpwyNKPamuzkTIm2ex13E70Nja04iGlB-L0oJ-IU7pFddruZlOae3XQ3yr4o87Wp00jZSIV61Oz2qTHLNKvWUOkDSmJbWx4zp_Y6HWyIU5xGtn2tX2-2yq77NNcnwawsS0esiTS-Bpl_fuf_1vdioehw6k-GgXDuU9cvhxQbZ3aeTnCc1UxkoVKLHShErmq4N05TsF5_VtL4jQaTqadwJ9gwsSpnTyyH07FmR_Z98y2YYjvj9stp8m4Tzz8TJn6RDWSF45Dz5weacVpNmrVpz47HNfbJLpIcr0zbOJP2SkTe8e-E2zR9QOfJTF7xzziVF7fyaisSrparhRd5bqeU3FlpVouCukK7cbKjd1SrEslKbxytVqtxlVRFEWtlJBlrYiTdGS5IERByKlTrjmyJsSFkG6xVH7_nyagxJuTCAWn3mDiB9OXhtF14DeHQevtrM5hd2prNKeXtvXukD_ZeyPPAyHucY-fJ-Y5TkV4niwVK0XH81x6fqXPS1JLqrFQcCZXnC1pbV9tBc_0zAtFyfPsqO2FWi_ze51ptqQPxzTX8ZLYWkUPy6XZKnPPlkfHcQT76w_25effv_z6J_v7t19-sn0-Eqcn_CLOu4qLkvNVEecT_VbH537ednw6aNzrer3eIE71MZYNlk-npQFrwBqwBqwJa8KasCasBWvBWrAWzIf5MB_mw9qwNqwNa8M6sA6sA-vAurAurAvrwnqwHqwH68EuYZewS9gl7Ap2BbuCXcH6sD6sD-vDrmHXsGvYNWwAG8AGsAFsCBvChrAhbAQbwUawEWwMG8PGsDEsgAWwABbAJrAJbAKbwKawKWwKm8JmsBlsBpvB5rA5bA6bwxawBWwBW8BuYDewG9gN7BZ2C7uF3cLeW1ut_gkAAP__"
     },
     {
       "name": "a fourth element",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPBattAEP2VZSg9jc3uSpYt0xRMozSB0ji220IlHVbS2BaWJUUrJQ7B0L8olEJPPRT6F_2XnPsJZS07TSCHUl-8K715896bke_7sErzBBCq4loDglpQXptrk58lgD7ouqjIHPa4XK0JwhAhzesWWiu9arEVXTak6wfoUlVqbXh1rWpamwJTa5qdKr0EBNqUaUV6ZJhUWVbFlcoMGyit00VOyUlKWaIhRB-KEhBWdAMIRdaqI9PNUOqlKukpwVdURbumsdKxSmhnlnTRVDHds_otrQ9pYrD-gT816ChdAEJSxMY-mfM8U-YvL2raBbAwFssqjamtbmX9ffK_6kL0fY4wGo8n5-89QLkf0DAqTF5cuJayY9npJ4I6_dhSHXfOeYff_yIJCOPz6ez1xJu2CQPCSbphL3bi9Ev2nBkbGjBvsgxhevEG0L-FSl3DEGSXc9gibCBEeDc-Hs08VjZRlsbdtKa1ZlNvxnZM7Ig9E-zDqTfxWJqwI-YCghPNZeyoHg2cvm0py3J535L9gWMLaQmyEmUlVi-hXk8K1xkMBoNkIGxhk1JCOqQAQXLpdIToCDnjzpDLoRBdIS2753z8pwSUeDQJXyCcvZ16k9necOt64r06nxw_zuoAm6tME8LeNq3L-sbsjTwEAuiii4fEXM77wnVlz-7b3HUt2N6_ug1ABTBkvkAmQ2QBROZqFGxhix1bYl01ZBYqCuolVcQCuGyKmpIAWKTiVRDoTOklCxrOuWC_frC7z9_vvv5kv799-WR8bgDhpv0iDl1Ft8cfiDhM9CnHBz-PHe8G3e716OLs2HgPwz8BAAD__w"
     },
     {
       "name": "an object instead of [shapes, texts]",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPNautGGH2V4aN09dnMjGTZMk0hNEoTKI1ruy1U0mIkfbaFZUnRjBKHYOhbFEqhqy4K9y3uu2R9H-Eykp0fyOJyvfGMdObMOec7eoQiL0nDNAw5wvlsNr_5LQCUCGpNpZkmlQEELnxHuakcjDNBg3HqqIG_4nzAn3-JBITZzWL54zxYAIKqa0C4zPfsu7rJU9Lfs29ZWRnSgGVbFAiLX34CDB-hUfcwBTnkHA4Ie4gRfp1dnC8DVrdJkafD3NBOs0WwZB0TO2PfCPb7VTAPWJ6xM-YDgpesZOqpEU28sesox_H52JHjiecK6QhyMuVkziij0UgK35tMJpNsIlzhklJCeqQAQXLpDYQYCLnk3pTLqRBDIR135P3xRQkoARhCJxHiGEOBcP3zIpgvj4Z71_Pgh5v5xdusTrCVKjQhHG3TrjYPEGMoT4EA-ujjKTGf87HwfTlyxy73fQcOz68eI1ARTFkokMkYWQSJ3VoFBzjgwJVompYQjEois6GGWAS3bWUoi4AlKt1GkS6U3rCo5ZwL9vF_9vTXf0__fGCf_v37T-tzDwgPgGEcP98qhiP-SsRpou85Pvl567gbtM0O9EbVfSlhm5cZIDTVvYZjKe22La8zq0ObqiG7OOJKtevih7w0PdQove2xDd22pM0rdK0atbO82ihDO3vAnrWXXSm9AQTa13lD-tz0nW6qO1VYNlBa5-uSssucikzbOUFlK7-lB0Coil4dmT6j3tF7gu-oSbpLU6VTlVFnlnTVNrZHR9awpw0hz7punfhzi07yNSBkVWrtk12vCmX_7OfWBbC2Fl-aeZT18uRr1cWHzwEAAP__"
     },
     {
       "name": "only the binding",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.jJFdi9QwFIb_SjiIV-mQjzZtB1cYsOsKwo4zo4KlF2eas2vYTluT1B0Q_7tkZxAvzVUC7_Ocl5y2beHJjRY4-Ok5AAd8pDGm5zJ-sMBbCHHylC7X3Igngq7j4MZ4iUYMT5espx8LhfhPekaPp-QNESOdEpDYNOwOw3fgQOfZeQqbZMJ59tNPHJINMAT3OJK9dTTYkLC2FRw22-3u_ksDXF3Lro9TYoWsNea9ykorKSt7jVn9IEQm_p6jAg7b-_3h_a7ZX6YBh1t3Zm9m73oKb9lrNk6RAvBxGQYO-08fgbe_wOMzrEGthIDfHM7Qcfi8fbc5NGxejoPrVy7SKbB9c2AvJnbDXkn29a7ZNcxZdsNq4GCOD6o3WFBlylyj1rUotSork0ulJWmL2urCUlEoWZuqqipbyVzmhCiVIQQOSiiTSZlJdRBmLdRaypVUOi_Mt__6AZRpNS8Voeu67k8AAAD__w"
     },
     {
       "name": "51 preview lines",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.7NLNattAEADgV1mG0tPa7K4t2zJNITROUyjEtd0WKumw0o5tEVlStFLiEgx9i0Ip9NRDoW_Rd8m5j1DWfyTQQ-8dX6S1Zmfnm9kgCOAqzQ1wqIpbCxz0AvPaLZv8lQEegK2LCt3LPi7XK4Qo4pDm9S601vZqF1vhdYO2fhBd6kqvXF5b6xpXboPb6w670HYJHHBdphXaU5dJl2VV3OjMZQNtbbrI0ZynmBkLEQ-gKLep8aN7pMalCqDIzH7JIU4XwMEUiSsU3fs80-6RFzVuS124YsoqTXC32-K23OM_YJe6xL_Bb7CKtxGJtok2uG0a2qKp9rkCweF0PJ5cvhsB9-S-l8O4cDQh_Y7uJqrVNxJb_aSjW_5ciJY4_mIFHMaX09nLyWi6awZwOE_X7Nm2OvucPWXOYYHnTZZxmL55DTy4g0rfwhBUWwjYcFhDxOHt-Ox0NmJlE2dp0k5rXFk2Hc3YNhM7YU8ke38xmoxYatgJ812j5ADjWOPcj6WSnul7nbnwtZBadHueN0hMZ4C-MdokXSP76ClP9RRqM5cDFas-cFBC9VpStqSaid5QqKGUbak6Xa_34Z86oOWjUQTy4ADuc58foL4Qfen7yuv2u8L3O7A5froLQYcwZIHkTEWchRC7pWvXBja81VW8rhp0FyEO6yVWyEK4booaTQgs1slVGNpM2yULGyGEZL9-sPvP3--__mS_v3355MpbAwd3_6LoeKpse-JBEYdBTEYvLidnj4d68Mx1ZpHDw_kAiUlMYhKTmMQkJjGJSUxiEpOYxCQmMYlJTGISk5jEJCYxiUlMYhKTmMQkJjGJSUxiEpOYxCQmMYlJTGISk5jE_404iv4EAAD__w"
     },
     {
       "name": "a shape index past the shapes",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPBattKFP2V4fJ4q2szM5JlyzSF0ChNoDSu7bZQSYuRdG0Ly5KikRKHYOhfFEqhqy4K_Yv-S9b9hDKWlSaQRak2mpHOPfecc2d834d1mieAUBXXGhDUkvLabJv8PAH0QddFRWZxwOVqQxCGCGlet9Ba6XWLreiyIV0_QJeqUhvDq2tV08YUmFrT7EzpFSDQtkwr0seGSZVlVVypzLCB0jpd5pScppQlGkL0oSgBYU03gFBkrToy3QylXqmSnhJ8RVW0bxorHauE9mZJF00V0z2r39L6kCYG63f8qUFH6RIQkiI29smsF5kyr7yoaR_A0lgsqzSmtrqV9efLv6oL0fc5wvFkMr145wHKw4DGUWHy4sK1lB3L3jAR1BvGluq5C857_P6JJCBMLmbzl1Nv1iYMCKfplj3bi9PP2f_M2NCAeZNlCLM3rwD9W6jUNYxB9jmHHcIWQoS3k5PjucfKJsrSuJ_WtNFs5s3Znokdsf8Ee3_mTT2WJuyIuYDgRAsZO2pAI2doW8qyXD605HDk2EJagqxEWYk1SGgwkMJ1RqPRKBkJW9iklJAOKUCQXDo9IXpCzrkz5nIsRF9Iyx44H_4qASUeTcIXCOevZ950fjDcup56Ly6mJ4-z6mALlWlCONimTVnfmHNjdYEAuuhil5jL-VC4rhzYQ5u7rgW7-1-3AagAxswXyGSILIDIbI2CHeywZ0usq4bMgYqCekUVsQAum6KmJAAWqXgdBDpTesWChnMu2M_v7O7Tt7svP9ivr58_Gp9bQLhpb0TXVfQH_IGIbqJPOe78PHa8HzSEYfg7AAD__w"
     },
     {
       "name": "a negative shape index",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPBattKFP2V4fJ4qyszM5JlyzSF0ChNoDSu7bZQSYuRdG0Ly5KikRKHYOhfFEqhqy4K_Yv-S9b9hDKWnSaQRak2mpHOPfecc2eCIIBVVqSAUJfXGhDUgorGbNviPAUMQDdlTWaxxxVqTRBFCFnRdNBG6VWHremyJd08QFeqVmvDqxvV0NoUmFrT7EzpJSDQpspq0seGSVVVXV6p3LCB0jpbFJSeZpSnGiIMoKwAYUU3gFDmnToy3QylXqqKnhJ8RXW8a5oonaiUdmZJl22d0D1r0NEGkKUGGxz4M4OOswUgpGVi7JNZz3NlXkXZ0C6AhbFY1VlCXXUn68-Xf1UXYRBwhOPxeHLxzgeU-wGN4tLkxYVnKyeR1iAVZA0SW1nenHOL3z-xBITxxXT2cuJPu4QB4TTbsGc7cfo5-58ZGxqwaPMcYfrmFWBwC7W6hhHIHuewRdhAhPB2fHI881nVxnmW9LKG1ppN_RnbMbEj9p9g78_8ic-ylB0xDxDceC4TV_Vp6A4cW9m2xwe2HAxdR0hbkJ0qO7X7KfX7UnjucDgcpkPhCIeUEtIlBQiSS9cSwhJyxt0RlyMhekLaTt_98FcJKPFoEoFAOH899SezveHO9cR_cTE5eZzVATZXuSaEvW1aV82NOTeWOCQC6KGHh8g8zgfC82TfGTjc82zY3v-6DUGFMGKBQCYjZCHEZmskbGGLliOxqVsyJyoOmyXVxEK4bMuG0hBYrJJVGOpc6SULW865YD-_s7tP3-6-_GC_vn7-aIxuAOGmuxKHrqLX5w9EHEb6lOWDn8eWd5OGKIp-BwAA__8"
     },
     {
       "name": "one value too few",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPBattKFP2V4fJ4q2szM5Jlybw8CI3SBErj2m4LlbQYSde2sCwpGilxCIb-RaEUuuqi0L_ov2TdTyhj2WlSsijVRjPSueeec-5MEASwyooUEOryWgOCWlDRmG1bnKeAAeimrMks9rhCrQmiCCErmg7aKL3qsDVdtqSbB-hK1WpteHWjGlqbAlNrmp0pvQQE2lRZTfrYMKmqqssrlRs2UFpni4LS04zyVEOEAZQVIKzoBhDKvFNHppuh1EtV0VOCr6iOd00TpROV0s4s6bKtE7pnDTraALLUYIMDf2bQcbYAhLRMjH0y63muzKsoG9oFsDAWqzpLqKvuZP368rfqIgwCjnA8Hk8u3viAcj-gUVyavLjwLGUnsjdMBfWGiaV63pzzHr9_YgkI44vp7PnEn3YJA8JptmH_7cTp_9m_zNjQgEWb5wjTVy8Ag1uo1TWMQPY5hy3CBiKE1-OT45nPqjbOs6SfNbTWbOrP2I6JHbF_BHt75k98lqXsiHmA4MRzmThqQK4ztC1lWR4fWnLoOraQliArVVZqDVIaDKTwHNd13dQVtrBJKSEdUoAguXR6QvSEnHFnxOVIiL6Qlj1w3v1RAko8mkQgEM5fTv3JbG-4cz3xn11MTh5ndYDNVa4JYW-b1lVzY86NRA89PATlcT4UnicH9tDmnmfB9v7XbQgqhBELBDIZIQshNlvTeAtb7NkSm7olc47isFlSTSyEy7ZsKA2BxSpZhaHOlV6ysOWcC_b9K7v78OXu0zf24_PH98beBhBuuotw6Cr6A_5AxGGQTxnt5vq70d18IYqinwEAAP__"
     },
     {
       "name": "one value too many",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPBattKFP2V4fJ4q2szM5JlyzSF0ChNoDSu7bZQSYuRdG0Ly5KikRKHYOhfFEqhqy4K_Yv-S9b9hDKWlSaQRak2mpHOPfecc2d834d1mieAUBXXGhDUkvLabJv8PAH0QddFRWZxwOVqQxCGCGlet9Ba6XWLreiyIV0_QJeqUhvDq2tV08YUmFrT7EzpFSDQtkwr0seGSZVlVVypzLCB0jpd5pScppQlGkL0oSgBYU03gFBkrToy3QylXqmSnhJ8RVW0bxorHauE9mZJF00V0z2r39L6kCYG63f8qUFH6RIQkiI29smsF5kyr7yoaR_A0lgsqzSmtrqV9efLv6oL0fc5wvFkMr145wHKw4DGUWHy4sK1lB3L3jAR1BvGluq5C857_P6JJCBMLmbzl1Nv1iYMCKfplj3bi9PP2f_M2NCAeZNlCLM3rwD9W6jUNYxB9jmHHcIWQoS3k5PjucfKJsrSuJ_WtNFs5s3Znokdsf8Ee3_mTT2WJuyIuYDgRAsZO2pAI2doW8qyXD605HDk2EJagqxEWYk1SGgwkMJ1RqPRKBkJW9iklJAOKUCQXDo9IXpCzrkz5nIsRF9Iyx44H_4qASUeTcIXCOevZ950fjDcup56Ly6mJ4-z6mALlWlCONimTVnfmHMju0AAXXSxS8zlfChcVw7soc1d14Ld_a_bAFQAY-YLZDJEFkBktkbBDnbYsyXWVUPmQEVBvaKKWACXTVFTEgCLVLwOAp0pvWJBwzkX7Od3dvfp292XH-zX188fjc8tINy0N6LrKvoD_kBEN9GnHHd-HjveDxpQhGH4OwAA__8"
     },
     {
       "name": "an unused shape",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.pFPNattKFH6V4XC5q2MzM5Jly9xcCDfKTaA0ru22UMmLkebYFpYlRSPlh2DoWxRKoasuCn2LvkvWfYQykp0mkEWh2mhG-s53vu87M2EYwibNNSBUxbUBBLWivLbbJj_XgCGYuqjILva4XG0JFguENK87aK3MpsNWdNmQqR-hS1WpreU1tappawtsrW12pswaEOimTCsyx5ZJlWVVXKnMsoEyJl3lpE9TyrSBBYZQlICwoVtAKLJOHdlultKsVUnPCb6iKm6bJsokSlNrlkzRVAk9sIYdbQipttjwwJ9adJyuAEEXibVPdr3MlH3lRU1tACtrsazShLrqTtavL3-g7qZlDDnC8WQyvXgTAMr9mMZxYVPjwneUm8jeUAvqDRNH9fwl5z3-8MQSECYXs_n_02DW5QwIp-kN-6eVaP5lfzNrxgDmTZYhzF69AAzvoFLXMAbZ5xx2aLUgvJ6cHM8DVjZxlib9tKatYbNgzlomdsT-EuztWTANWKrZEfMBwYuXMvHUgEbe0HWU4_h86MjhyHOFdAQ5WjnaGWgaDKTwvdFoNNIj4QqXlBLSIwUIkkuvJ0RPyDn3xlyOhegL6bgD791vJaDEk3mEAuH85SyYzveGO9fT4L-L6cnTrA6wpcoMIext07asb-185CEQQB99PCTmcz4Uvi8H7tDlvu_A7uHXXQQqgjELBTK5QBZBbLdWwQ522HMl1lVD9ljFUb2milgEl01Rk46AxSrZRJHJlFmzqOGcC_b9K7v_8OX-0zf24_PH99CeGYTb7l4cuor-gD8ScZjoc44Pfp46bgcNi8XiZwAAAP__"
     },
     {
       "name": "a shape with no entries",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.jJLPattKFMZfZThc7urIzIz-m5sL4Ua5CZTGtd0WKmkxkk5iYVlSNFLiEAx9i0IpdNVFoW_Rd8m6j1DGf0ICWdQrD_rmO9_vOxPHMSzLugCErrnVgKCuqO7NcajPC8AYdN90ZP7sdbVaEaQpQln3O2mv9HKn7eh6IN0_UbeqUyvjq3vV08pcMHfNsDOlF4BA67bsSB8bJ9W2XXOjKuMGSuvyqqbitKSq0JBiDE0LCEu6A4Sm2qUjM81Y6oVq6aXAN9Rl26G50rkqaAtLuhm6nIxrmmIcc4TjyWR68S4ClPsWxlljQnER2srJpeUXgiw_t5UVXnJu8cdfJgFhcjGb_z-NZjsMQDgt1-yftitz0v-yv1nd9KQB66GqEGZvXgHG99CpWxiDHHEOG4Q1pAhvJyfH84i1Q1aV-ajsaaXZLJqzrRM7Yn8J9v4smkasLNgRCwHByy5l7imXAs93bGXbIfdt6QeeI6QtyC6UXdhuQa4rRegFQRAUgXCEQ0oJ6ZECBMmlZwlhCTnn3pjLsRAjIW3H9T78UQNKmMK3EU3VsUA4fz2LpvM98I56Gv13MT153tVBdqkqTQh7bFq1_Z1ZjjwUAhhiiIfGQs59EYbSdXyHh6ENm8dP9wmoBMYsFshkiiyBzBxNgg1s0HIk9t1A5tlmSb-gjlgC10PTU5EAy1S-TBJdKb1gycA5F-znd_bw6dvDlx_s19fPHw3nGhDuds_uMFWMXP4kxGGjLxEfeJ4TbxcNaZr-DgAA__8"
     },
     {
       "name": "a fraction as a value",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPNattMFH2V4fLxra7NzOjHlmkKoVGaQGlc222hkhYj6doWliVFIyUOwdC3KJRCV10U-hZ9l6z7CGUsO00gi1JtNCOde-45584EQQCrrEgBoS6vNSCoBRWN2bbFeQoYgG7KmsxijyvUmiCKELKi6aCN0qsOW9NlS7p5gK5UrdaGVzeqobUpMLWm2ZnSS0CgTZXVpI8Nk6qqurxSuWEDpXW2KCg9zShPNUQYQFkBwopuAKHMO3VkuhlKvVQVPSX4iup41zRROlEp7cySLts6oXvWoKMNIEsNNjjwZwYdZwtASMvE2CeznufKvIqyoV0AC2OxqrOEuupO1p8v_6ouwiDgCMfj8eTinQ8o9wMaxaXJiwvPUnYie4NUUG-QWKrnzTnv8fsnloAwvpjOXk78aZcwIJxmG_ZsJ04_Z_8zY0MDFm2eI0zfvAIMbqFW1zAC2ecctggbiBDejk-OZz6r2jjPkn7W0FqzqT9jOyZ2xP4T7P2ZP_FZlrIj5gGCG89l4iqHhu7AtpRleXxgycHQtYW0BFmpslLLSclxpPDc4XA4TIfCFjYpJaRLChAkl25PiJ6QM-6OuBwJ0RfSsh33w18loMSjSQQC4fz11J_M9oY71xP_xcXk5HFWB9hc5ZoQ9rZpXTU35tzIQyCAHoq-g4fMPM4HwvOkYw9s7nkWbO9_3YagQhixQCCTEbIQYrM1GrawxZ4tsalbMkcqDpsl1cRCuGzLhtIQWKySVRjqXOklC1vOuWA_v7O7T9_uvvxgv75-_micbgDhprsTh66i7_AHIg4zfcrzwdFjz7tRQxRFvwMAAP__"
     },
     {
       "name": "an integer past 2^53 - 1",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPBattKFP2V4fJ4q2szM5Jly7w8CI3SBErj2m4LlbQYSde2sCwpGilxCIb-RaEUuuqi0L_ov2TdTyhjWWlSsijVRjOac88959yR7_uwTvMEEKriWgOCWlJem22TnyeAPui6qMgsDrhcbQjCECHN6xZaK71usRVdNqTrB-hSVWpjeHWtatqYAlNrmp0pvQIE2pZpRfrYMKmyrIorlRk2UFqny5yS05SyREOIPhQlIKzpBhCKrFVHppuh1CtV0lOCr6iK9k1jpWOV0N4s6aKpYrpn9VtaH9LEYP2OPzXoKF0CQlLExj6Z9SJT5pUXNe0DWBqLZZXG1Fa3sn59-Vt1Ifo-RzieTKYXbzxAeRjQOCpMXly4lrJj2RsmgnrD2FI9d8F5j98_kQSEycVs_nzqzdqEAeE03bL_9uL0_-xfZmxowLzJMoTZqxeA_i1U6hrGIPucww5hCyHC68nJ8dxjZRNladxPa9poNvPmbM_Ejtg_gr0986YeSxN2xFxAcKKFjB01oJEztC1lWS4fWnI4cmwhLUFWoqzEGiQ0GEjhOqPRaJSMhC1sUkpIhxQgSC6dnhA9IefcGXM5FqIvpGUPnHd_lIASjybhC4TzlzNvOj8Ybl1PvWcX05PHWXWwhco0IRxs06asb8y9kV0ggC66nA-F68qBPbS560rsAvztwILd_dFtACqAMfMFMhkiCyAyWyNoBzvs2RLrqiFzv6KgXlFFLIDLpqgpCYBFKl4Hgc6UXrGg4ZwL9v0ru_vw5e7TN_bj88f3xvYWEG7aH6TrKvoD_kBEN-CnAujsPQ5gP3cIw_BnAAAA__8"
     },
     {
       "name": "negative zero",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPBattKFP2V4fJ4qyszM5JlyzSF0ChNoDSu7bZQSYuRdG0Ly5KikRKHYOhfFEqhqy4K_Yv-S9b9hDKWnSaQRak2mpHOPfecc2eCIIBVVqSAUJfXGhDUgorGbNviPAUMQDdlTWaxxxVqTRBFCFnRdNBG6VWHremyJd08QFeqVmvDqxvV0NoUmFrT7EzpJSDQpspq0seGSVVVXV6p3LCB0jpbFJSeZpSnGiIMoKwAYUU3gFDmnToy3QylXqqKnhJ8RXW8a5oonaiUdmZJl22d0D1r0NEGkKUGGxz4M4OOswUgpGVi7JNZz3NlXkXZ0C6AhbFY1VlCXXUn68-Xf1UXYRBwhOPxeHLxzgeU-wGN4tLkxYVnKyeR1iAVZA0SW1nenHOL3z-xBITxxXT2cuJPu4QB4TTbsGc7cfo5-58ZGxqwaPMcYfrmFWBwC7W6hhHIHuewRdhAhPB2fHI881nVxnmW9LKG1ppN_RnbMbEj9p9g78_8ic-ylB0xDxDceC4TV_Vp6A4cW9m2xwe2HAxdR0hbkJ0qO7X7KfX7UnjucDgcpkPhCIeUEtIlBQiSS9cSwhJyxt0RlyMhekLaTt_98FcJKPFoEoFAOH899SezveHO9cR_cTE5eZzVATZXuSaEvW1aV82NOTfyEAighxbHQ2Qe5wPhebLvDBzueTZs73_dhqBCGLFAIJMRshBiszUStrBFy5HY1C2ZExWHzZJqYiFctmVDaQgsVskqDHWu9JKFLedcsJ_f2d2nb3dffrBfXz9_NEY3gHDTXYlDV9Hr8wciDiN9yvLB0GPLu0lDFEW_AwAA__8"
     },
     {
       "name": "an object value other than raw",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPRattIFP2V4bLs07WZGcmyZTYLYaNsAsvGa3tbqKSHkXRtC8uSohklDsHQvyiUQp_6UOhf9F_y3E8oY9lpAnko1YtmpHPPPefcmTAMYZ2XGSA01a0GBLWk0thtW15mgCFoUzVkFwdcqTYEcYyQl6aDGqXXHbah65a0eYKuVaM2llcbZWhjC2ytbXah9AoQaFvnDelTy6TquqluVGHZQGmdL0vKznMqMg0xhlDVgLCmO0Coik4d2W6WUq9UTS8JvqEm2TdNlU5VRnuzpKu2SemRNexoQ8gziw2P_LlFJ_kSELIqtfbJrheFsq-yMrQPYGkt1k2eUlfdyfrx5VfVxRiGHOF0MplevQoA5WFA46SyeXHhO8pNZW-YCeoNU0f1_AXnPf74JBIQJlez-d_TYNYlDAjn-Zb9sRen_2S_M2tDA5ZtUSDM_vsHMLyHRt3CGGSfc9ghbCFG-H9ydjoPWN0mRZ72c0MbzWbBnO2Z2An7TbDXF8E0YHnGTpgPCF6ykKmnBjTyhq6jHMfnQ0cOR54rpCPIyZSTOYOMBgMpfG80Go2ykXCFS0oJ6ZECBMml1xOiJ-Sce2Mux0L0hXTcgffmpxJQ4tkkQoFw-e8smM4PhjvX0-Cvq-nZ86yOsIUqNCEcbNOmNnf23MhjIIA-3oOhrYExCNjhMTyf86HwfTlwhy73fefJr_sIVARjFgpkMkYWQWK3VswOdthzJZqmJXu2ksisqCEWwXVbGcoiYIlK11GkC6VXLGo554J9_cwe3n16-PCFffv4_q21vAWEu-5yHLuK_oA_EXEc7kvmj9aem9_PHOI4_h4AAP__"
     },
     {
       "name": "arrays nested 33 deep",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPBattKFP2V4fJ4q2szM5Jly7w8CC_KS6A0ru22UEmLkXRtC8uSopESh2DoXxRKoasuCv2L_kvW_YQylpUmEEjpbDQjnXvuOWeufN-HdZongFAV1xoQ1JLy2hyb_DwB9EHXRUVmc8DlakMQhghpXrfQWul1i63osiFdP0CXqlIbw6trVdPGFJha0-xM6RUg0LZMK9LHhkmVZVVcqcywgdI6XeaUnKaUJRpC9KEoAWFNN4BQZK06Mt0MpV6pkp4SfEVVtG8aKx2rhPZmSRdNFdM9q9_S-pAmBut3_KlBR-kSEJIiNvbJ7BeZMo-8qGkfwNJYLKs0pra6lfXrzZ-qC9H3OcLxZDK9eOMBysMFjaPC5MWFayk7lr1hIqg3jC3Vcxec9_j9iiQgTC5m8_-n3qxNGBBO0y37Zy9O_8v-ZsaGBsybLEOYvXoB6N9Cpa5hDLLPOewQthAivJ6cHM89VjZRlsb9tKaNZjNvzvZM7Ij9JdjbM2_qsTRhR8wFBCdayNhRAxo5Q9tSluXyoSWHI8cW0hJkJcpKrEFCg4EUrjMajUbJSNjCJqWEdEgBguTS6QnRE3LOnTGXYyH6Qlr2wHn3Wwko8egmfIFw_nLmTecHw63rqfffxfTkcVYdbKEyTQgH27Qp6xszN7ILBNBF_7kVPrewi9zlfChcVw7soc1d14Ld_afbAFQAY-YLZDJEFkBkjsbCDnbYsyXWVUNmIqOgXlFFLIDLpqgpCYBFKl4Hgc6UXrGg4ZwL9v0ru_vw5e7TN_bj88f3JqgtINy0v1TXVfQH_IGIbiSeiqwL5HFk-0mBMAx_BgAA__8"
     },
     {
       "name": "texts that rebuild past 1 MiB",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.7MQhEcBAEAQwL4cPtHp21kL9w1p49CgBSTIfAAAAAAAAAAAAAAAAAAAAAAAAAABXTLvJs2_Xx7d_AAAA__8"
     },
     {
       "name": "bytes after the deflate stream",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPBattKFP2V4fKW12ZmJMuWIYvworwEHo1ruy1U0mIkXdvCsqRopMQhGPoXhVLoqotC_6L_knU_oYxkpQlkUaqNZkbnnnvOuSPf92Gb5gkgVMWtBgS1prw22ya_TAB90HVRkVkccbnaEYQhQprXHbRWetthK7puSNdP0KWq1M7w6lrVtDMFptY0u1B6Awi0L9OK9KlhUmVZFTcqM2ygtE7XOSXnKWWJhhB9KEpA2NIdIBRZp45MN0OpN6qklwTfUBW1TWOlY5VQa5Z00VQxPbL6Ha0PaWKwfs-fGnSUrgEhKWJjn8x6lSnzyoua2gDWxmJZpTF11Z2s3yd_qy5E3-cIp7PZ_OqtByiPA5pGhcmLC9dSdiwH40TQYBxbauCuOB_wxyeSgDC7Wiz_m3uLLmFAOE_3LGg4t-JWoW7X1B5JhxlXGjBvsgxh8fp_QP8eKnULU5BDzuGAsIcQ4c3s7HTpsbKJsjQepjXtNFt4S9ZyshP2j2DvLry5x9KEnTAXEJxoJWNHjWjijG1LWZbLx5YcTxxbSEuQlSgrsUYJjUZSuM5kMpkkE2ELm5QS0iEFCJJLZyDEQMgld6ZcToUYCmnZI-f9HwWixLPB-ALh8tXCmy-PhjvXc-_fq_nZ8-h62EplmhCOtmlX1nfmGsk-EEAXXewTczkfC9eVI3tsc9e14PD46T4AFcCU-QKZDJEFEJmtUXCAAw5siXXVkLlfUVBvqCIWwHVT1JQEwCIVb4NAZ0pv2sFxwX58Yw8fvz58_s5-fvn0wfjcA8Jd94P0XcVwxJ-I6Cf6kuPez3PH7aAhDMNfAQAA__94"
     },
     {
       "name": "JSON after the request",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPBattKFP2V4fKW12ZmJMuWIYvworwEHo1ruy1U0mIkXdvCsqRopMQhGPoXhVLoqotC_6L_knU_oYxkpQlkUaqNZkbnnnvOuSPf92Gb5gkgVMWtBgS1prw22ya_TAB90HVRkVkccbnaEYQhQprXHbRWetthK7puSNdP0KWq1M7w6lrVtDMFptY0u1B6Awi0L9OK9KlhUmVZFTcqM2ygtE7XOSXnKWWJhhB9KEpA2NIdIBRZp45MN0OpN6qklwTfUBW1TWOlY5VQa5Z00VQxPbL6Ha0PaWKwfs-fGnSUrgEhKWJjn8x6lSnzyoua2gDWxmJZpTF11Z2s3yd_qy5E3-cIp7PZ_OqtByiPA5pGhcmLC9dSdiwH40TQYBxbauCuOB_wxyeSgDC7Wiz_m3uLLmFAOE_3LGg4t-JWoW7X1B5JhxlXGjBvsgxh8fp_QP8eKnULU5BDzuGAsIcQ4c3s7HTpsbKJsjQepjXtNFt4S9ZyshP2j2DvLry5x9KEnTAXEJxoJWNHjWjijG1LWZbLx5YcTxxbSEuQlSgrsUYJjUZSuM5kMpkkE2ELm5QS0iEFCJJLZyDEQMgld6ZcToUYCmnZI-f9HwWixLPB-ALh8tXCmy-PhjvXc-_fq_nZ8-h62EplmhCOtmlX1nfmGsk-EEAXXewTczkfC9eVI3tsc9e14PD46T4AFcCU-QKZDJEFEJmtUXCAAw5siXXVkLlfUVBvqCIWwHVT1JQEwCIVb4NAZ0pv2sFxwX58Yw8fvz58_s5-fvn0wfjcA8Jd94P0XcVwxJ-I6Cf6kuPez3PH7aAhDEPmh78CAAD__w"
     },
     {
       "name": "not UTF-8",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.io6O1VGIVvqvFBsLCAAA__8"
     },
     {
       "name": "a line break in the base64url",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.\nnFPBattKFP2V4fJ4q2szM5JlyzSF0ChNoDSu7bZQSYuRdG0Ly5KikRKHYOhfFEqhqy4K_Yv-S9b9hDKWlSaQRak2mpHOPfecc2d834d1mieAUBXXGhDUkvLabJv8PAH0QddFRWZxwOVqQxCGCGlet9Ba6XWLreiyIV0_QJeqUhvDq2tV08YUmFrT7EzpFSDQtkwr0seGSZVlVVypzLCB0jpd5pScppQlGkL0oSgBYU03gFBkrToy3QylXqmSnhJ8RVW0bxorHauE9mZJF00V0z2r39L6kCYG63f8qUFH6RIQkiI29smsF5kyr7yoaR_A0lgsqzSmtrqV9efLv6oL0fc5wvFkMr145wHKw4DGUWHy4sK1lB3L3jAR1BvGluq5C857_P6JJCBMLmbzl1Nv1iYMCKfplj3bi9PP2f_M2NCAeZNlCLM3rwD9W6jUNYxB9jmHHcIWQoS3k5PjucfKJsrSuJ_WtNFs5s3Znokdsf8Ee3_mTT2WJuyIuYDgRAsZO2pAI2doW8qyXD605HDk2EJagqxEWYk1SGgwkMJ1RqPRKBkJW9iklJAOKUCQXDo9IXpCzrkz5nIsRF9Iyx44H_4qASUeTcIXCOevZ950fjDcup56Ly6mJ4-z6mALlWlCONimTVnfmHMju0AAXXSxS8zlfChcVw7soc1d14Ld_a_bAFQAY-YLZDJEFkBktkbBDnbYsyXWVUPmQEVBvaKKWACXTVFTEgCLVLwOAp0pvWJBwzkX7Od3dvfp292XH-zX188fjc8tINy0N6LrKvoD_kBEN9GnHHd-HjveDxrCMPwdAAD__w"
     },
     {
       "name": "a value changed, so rowsHash differs",
       "kind": "APPROVE",
-      "pending": true
+      "fragment": "2.nFPBattKFP2V4fJ4q2szM5Jlybw8CC_KSyA0ru22UEmLkXRtC8uSopESh2DoXxRKoasuCv2L_kvW_YQylp0mJYtSbTQjnXvuOefOBEEAq6xIAaEubzQgqAUVjdm2xXkKGIBuyprMYo8r1JogihCyoumgjdKrDlvTVUu6eYSuVK3Whlc3qqG1KTC1ptmZ0ktAoE2V1aSPDZOqqrq8VrlhA6V1tigoPc0oTzVEGEBZAcKKbgGhzDt1ZLoZSr1UFT0n-JrqeNc0UTpRKe3Mki7bOqEH1qCjDSBLDTY48GcGHWcLQEjLxNgns57nyryKsqFdAAtjsaqzhLrqTtbPL3-qLsIg4AjH4_Hk8rUPKPcDGsWlyYsLz1J2InvDVFBvmFiq58057_GHJ5aAML6czv6f-NMuYUA4zTbsn504_S_7mxkbGrBo8xxh-vICMLiDWt3ACGSfc9gibCBCeDU-OZ75rGrjPEv6WUNrzab-jO2Y2BH7S7A3Z_7EZ1nKjpgHCE48l4mjBuQ6Q9tSluXxoSWHrmMLaQmyUmWl1iClwUAKz3Fd101dYQublBLSIQUIkkunJ0RPyBl3RlyOhOgLadkD5-1vJaDEk0kEAuH8xdSfzPaGO9cT_7_LycnTrA6wuco1Iext07pqbs25kQgn_oU_8wE99PCQmMf5UHieHNhDm3ueBduHX3chqBBGLBDIZIQshNhsjYItbLFnS2zqlsyBisNmSTWxEK7asqE0BBarZBWGOld6ycKWcy7Yty_s_v3n-49f2fdPH94ZnxtAuO1uxKGr6A_4IxGHiT7nuBvwr453g4Yoin4EAAD__w"
     },
     {
       "name": "an approval on the revert page",
       "kind": "REVERT",
-      "pending": true
+      "fragment": "2.rJPPattMFMVfZbh8y3GYP5H9KdBFSJSmkOJUCS1UmHA1c5WIyJKqGSXtLu_QQqEEuuqi0Lfom2SRdR-hjK00cSmtobUX9qBzf-fMmVGWZXBe1hY4dM2lAw54SrUPy75-YoFn4HzTUfgz6GqcE8xmHMraL6Ue3flS29Grnpx_oG6xw3ngOo-e5mEgzAazfXRnwIFet2VHbjuQsG275gKrQAN0rjytye6VVFkHM55B0y7Q9Cb8lDagMmgqOyyHcEuz3i2cHAWwO8OWfrWbC-ryhc6gM2hp0QS5pu8MrWnZ-GBZEdqT5fN_4rnGeNdcDh2ugCwa_xNzxrNMcNg-PEynzxPgejjnrbwJSYWMNW4aNZpYSaOJ0TiKCyFG4scnV8DhcHp0_DhNjpYHBRxSmjcXxPwZMdfinIUO1sIZDRyOnh0Az_SMw25ykBwnbC-dPmVtn1el2Qgox17sJ2nCSssesf8kcNBCoxrneTQu9CZqE-cFSm0nuRKRsWYs_49iVBPUcZFLESssSKOKc23iiZqIgFBCjUdSjqQ6FuMtobak3JBKb0bjl2tFRwk8C4XKu9yhTs1hB4uvn9nN9du7GpqWauB1X1Uc0mRnmu6udng3XWDliMPDjYdboO4VEY-W94xF7ObqHbt9_-n2-gv79vHDVTD_s4Xv-lWHk0Bb2Oh71W8RgPnffYcUK1FCihOPp-FVnX0PAAD__w"
     }
   ]
 }

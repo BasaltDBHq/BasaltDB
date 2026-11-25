@@ -91,7 +91,7 @@ func held(reason string, url string) func(*testing.T, *testService) error {
 
 // tooLargeHeads are the heads of a held write's lines an agent's read left
 // out (ledger.withRequest).
-var tooLargeHeads = []string{`{"op": "DELETE", "table": "public.leads", "cascaded": false}`}
+var tooLargeHeads = []string{`{"op": "DELETE", "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "DELETE"}, "cascaded": false, "resource": "public.leads"}`}
 
 // tooLargeNotice is the notice of a held write whose request no link this
 // engine has can carry: no local pages, no Vault.

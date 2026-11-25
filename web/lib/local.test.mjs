@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { approvalResponseJSON, b64urlDecode, checkApprovalRequest, parseApprovalRequest } from "./codec.js";
+import { approvalResponseJSON, checkApprovalRequest, parseApprovalRequest } from "./codec.js";
 import { REQUEST_ATTEMPTS, REQUEST_RETRY_MS, RelayError, SECRET_HEADER, fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths, revertDone, shortLinkId } from "./local.js";
 import { sameOriginSession } from "./transport.js";
 import { linkFailure, personText, APPROVE_REOPEN } from "./page.js";
@@ -28,10 +28,10 @@ function fakeEngine(routes) {
 }
 
 // The request object the engine serves is the JSON the long link carries.
+// requestObject is the request JSON the engine serves for the fixture.
 async function requestObject() {
-  const { inflateRawSync } = await import("node:zlib");
-  const bytes = b64urlDecode(fixtures.request.fragment.slice(2));
-  return JSON.parse(inflateRawSync(bytes).toString("utf8"));
+  const { approvalId, binding, lines, credentialIds } = fixtures.request;
+  return { approvalId, binding, lines, credentialIds };
 }
 
 test("a short link's id comes from its path", () => {

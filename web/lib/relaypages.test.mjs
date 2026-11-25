@@ -6,9 +6,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { inflateRawSync } from "node:zlib";
 
-import { b64urlDecode, checkApprovalRequest, parseApprovalRequest } from "./codec.js";
+import { checkApprovalRequest, parseApprovalRequest } from "./codec.js";
 import { fetchRequest, postResponse, relayPaths } from "./local.js";
 import { APPROVE_REOPEN, linkFailure, personText, REVERT_REOPEN } from "./page.js";
 import { relayTransport } from "./relay.js";
@@ -20,7 +19,8 @@ const SECRET = "oo3hsfnTW0SXS80SkQL_vQ";
 const ENGINE = "R68WFYxAcGgIjMENS5Oqrw";
 
 function requestObject() {
-  return JSON.parse(inflateRawSync(b64urlDecode(fixtures.request.fragment.slice(2))).toString("utf8"));
+  const { approvalId, binding, lines, credentialIds } = fixtures.request;
+  return { approvalId, binding, lines, credentialIds };
 }
 
 // both runs call(session) over a same-origin session and a RELAY session

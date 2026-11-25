@@ -11,19 +11,20 @@ import { lineGroups as approvalGroups } from "./approve.js";
 import { lineGroups as revertGroups } from "./revert.js";
 
 const BINDING =
-  '{"kind": "APPROVE", "rows": 1, "agent": "basalt_agent_bot", "runId": "0190a3f2-7c1e-7000-8000-000000000003", ' +
-  '"intent": "fix", "params": [9007199254740993, 1e400, "0001\u202e", {"n": 12345678901234567891}], ' +
-  '"database": "app", "rowsHash": "14caa48f26bad4a8e9febd038704ee65a3922fad6a0a1b5f30d16a49cb27db80", ' +
-  '"expiresAt": "2026-11-11T07:02:11.123456Z", "statement": "UPDATE t SET a = $1", ' +
-  '"approvalId": "0190a3f2-7c1e-7000-8000-000000000001", "assignedColumns": ["a"]}';
+  '{"kind": "APPROVE", "rows": 1, "agent": "agent:bot", "runId": "0190a3f2-7c1e-7000-8000-000000000003", ' +
+  '"store": {"kind": "POSTGRES", "name": "app"}, "intent": "fix", ' +
+  '"request": {"kind": "SQL", "params": [9007199254740993, 1e400, "0001\u202e", {"n": 12345678901234567891}], "statement": "UPDATE t SET a = $1"}, ' +
+  '"rowsHash": "14caa48f26bad4a8e9febd038704ee65a3922fad6a0a1b5f30d16a49cb27db80", ' +
+  '"expiresAt": "2026-11-11T07:02:11.123456Z", ' +
+  '"approvalId": "0190a3f2-7c1e-7000-8000-000000000001", "assignedFields": ["a"]}';
 
 test("params show as the signed text, not as JSON.parse rounds them", () => {
   const b = parseBinding(BINDING);
-  assert.equal(JSON.stringify(b.params[0]), "9007199254740992", "JSON.parse rounds past 2^53");
-  assert.equal(JSON.stringify(b.params[1]), "null", "and turns 1e400 into Infinity, printed as null");
+  assert.equal(JSON.stringify(b.request.params[0]), "9007199254740992", "JSON.parse rounds past 2^53");
+  assert.equal(JSON.stringify(b.request.params[1]), "null", "and turns 1e400 into Infinity, printed as null");
   const shown = visibleText(paramsText(BINDING));
   assert.equal(shown, '[9007199254740993, 1e400, "0001<U+202E>", {"n": 12345678901234567891}]');
-  assert.equal(paramsText('{"kind": "APPROVE", "params": []}'), "[]");
+  assert.equal(paramsText('{"kind": "APPROVE", "request": {"kind": "SQL", "params": []}}'), "[]");
 });
 
 test("visibleText escapes bidi, invisible and C1 characters and keeps the rest", () => {
@@ -97,7 +98,7 @@ test("the approval page shows hidden characters in values and columns as escapes
   globalThis.document = { createElement: fakeElement };
   const line = parseLine(
     '{"op": "UPDATE", "key": {"id": 9007199254740993}, "old": {"code": "1000", "n": 1e400}, ' +
-      '"set": {"code": "0001\u202e\u200b\u009b", "n\u202e": 9007199254740993}, "table": "public.leads", "cascaded": false}',
+      '"set": {"code": "0001\u202e\u200b\u009b", "n\u202e": 9007199254740993}, "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "UPDATE"}, "cascaded": false, "resource": "public.leads"}',
   );
   assert.deepEqual(cells(approvalGroups([line])), [
     ["", "id", "code", "n", "n<U+202E>"],
@@ -109,8 +110,9 @@ test("the approval page shows hidden characters in values and columns as escapes
 test("the revert page shows hidden characters in values as escapes", () => {
   globalThis.document = { createElement: fakeElement };
   const line = parseRevertLine(
-    '{"op": "UPDATE", "key": {"id": 1}, "now": {"code": "1000"}, "set": {"code": "0001\u202e"}, "table": "public.leads", ' +
-      '"action": "RESTORE", "cascaded": false, "conflict": null, "sqlState": null, "changeIds": ["0190a3f2-7c1e-7000-8000-000000000002"]}',
+    '{"op": "UPDATE", "key": {"id": 1}, "now": {"code": "1000"}, "set": {"code": "0001\u202e"}, "shape": "RECORD", ' +
+      '"store": {"code": null, "kind": "POSTGRES", "verb": "UPDATE"}, "action": "RESTORE", "cascaded": false, "conflict": null, ' +
+      '"resource": "public.leads", "changeIds": ["0190a3f2-7c1e-7000-8000-000000000002"]}',
   );
   assert.deepEqual(cells(revertGroups([{ line, index: 0 }])), [
     ["", "id", "code"],

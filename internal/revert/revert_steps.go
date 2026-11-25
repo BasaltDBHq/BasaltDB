@@ -165,7 +165,7 @@ func proposalOf(r action.Revert) action.Scope {
 		// scope alone, and the page shows the person what a new request holds.
 		return scope
 	}
-	scope.Runs, scope.Tables = b.Select.Runs, b.Select.Tables
+	scope.Runs, scope.Tables = b.Select.Runs, b.Select.Resources
 	return scope
 }
 

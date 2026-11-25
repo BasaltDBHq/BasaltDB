@@ -20,18 +20,13 @@ func fromCompact(binding string, lines []string, ids []passkey.Bytes) approval.R
 	return r
 }
 
-// ParseRequest decodes an approval link fragment of either format, with or
-// without '#', and checks it (Check).
+// ParseRequest decodes an approval link fragment, with or without '#', and
+// checks it (Check). A format 2 link carries only texts and credential
+// ids, never the engine's revealNonce or columns.
 func ParseRequest(fragment string) (approval.Request, approval.Binding, error) {
 	r, err := linkcodec.DecodeRequest(fragment, approval.MaxRows, fromCompact)
 	if err != nil {
 		return approval.Request{}, approval.Binding{}, approval.Invalid("approval request %v", err)
-	}
-	if r.RevealNonce != nil {
-		return approval.Request{}, approval.Binding{}, approval.Invalid("a link carries no revealNonce: only the engine serves it")
-	}
-	if r.Columns != nil {
-		return approval.Request{}, approval.Binding{}, approval.Invalid("a link carries no columns: only the engine serves them")
 	}
 	b, err := r.Check()
 	if err != nil {

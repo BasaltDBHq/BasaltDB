@@ -21,6 +21,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/child"
@@ -177,7 +178,7 @@ func TestApprovedPluginStartsWithoutRestart(t *testing.T) {
 	f.writeConfig()
 	v, err := Verify(f.root, p.Key(), p.ManifestSHA256, f.trust, pluginmodel.ModeSameUser, RequireApproval(true))
 	require.NoError(t, err)
-	a := l.open(t, "product_a", PluginApprovalDetail(p.Key(), v, []string{l.roles["product_a"]}), p.ApprovalSettings())
+	a := l.open(t, "product_a", PluginApprovalDetail(p.Key(), v, []string{"product_a"}), p.ApprovalSettings())
 	require.Eventually(t, func() bool {
 		probs := ep.pluginProblems("product_a")
 		return len(probs) == 1 && probs[0].Code == problemPluginAwaitingApproval
@@ -287,7 +288,7 @@ func TestChangedEntryRunsOnceItsApprovalIsSigned(t *testing.T) {
 	require.Equal(t, problemPluginApprovalMismatch, problemFor(t, lp.ep, "product_a").Code)
 	v, err := Verify(f.root, p.Key(), next.ManifestSHA256, f.trust, pluginmodel.ModeSameUser, RequireApproval(true))
 	require.NoError(t, err)
-	a := l.open(t, "product_a", PluginApprovalDetail(p.Key(), v, []string{l.roles["product_a"]}), f.cfg.Plugins[0].ApprovalSettings())
+	a := l.open(t, "product_a", PluginApprovalDetail(p.Key(), v, []string{"product_a"}), f.cfg.Plugins[0].ApprovalSettings())
 	lp.poll()
 	require.Empty(t, servedTo(lp.ep, p.Key()), "withheld while the new approval waits")
 	require.Equal(t, problemPluginAwaitingApproval, problemFor(t, lp.ep, "product_a").Code)
@@ -322,7 +323,7 @@ func TestMismatchWhileRunningStopsPlugin(t *testing.T) {
 	lp.requireServing(p.Key(), "client_x", "product_a")
 
 	// A newer approval for product_a, signed, for another version.
-	d := honestDetail(p, l.roles["product_a"])
+	d := honestDetail(p, approval.AgentName("product_a"))
 	d.Version = "9.9.9"
 	l.sign(t, pk, "product_a", l.open(t, "product_a", d, p.ApprovalSettings()))
 	lp.poll()

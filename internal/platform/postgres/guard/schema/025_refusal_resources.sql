@@ -2,14 +2,18 @@
 -- resources the refused statement names, qualified by the engine in the
 -- agent's own session (CONTRACT.md, basalt_meta), and records the first on
 -- the change record and all of them in the REFUSED ledger row's detail, as
--- record_read does for a read. The nine-argument form is dropped: the
+-- record_read does for a read. A refusal is always recorded: names it cannot
+-- keep are left out, never raised on. The nine-argument form is dropped: the
 -- engine of this version calls the new one only.
 
 DROP FUNCTION IF EXISTS basalt_meta.record_refusal(uuid, uuid, text, text, text, jsonb, text, text, int);
 
 -- A refused action: the engine refused it, or the guard raised and the
 -- transaction rolled back. Written in a new transaction. p_resources are
--- the resources the statement names, empty or NULL when it did not parse.
+-- the resources the statement names, a write's target first, empty or NULL
+-- when it did not parse. The first 100 that are neither empty nor over 1000
+-- bytes are kept, in order; the rest are left out, so no name can keep the
+-- refusal out of the ledger.
 CREATE OR REPLACE FUNCTION basalt_meta.record_refusal(
     p_run_id uuid, p_task_id uuid, p_intent text, p_op text, p_statement text, p_params jsonb,
     p_code text, p_reason text, p_duration_ms int, p_resources text[]
@@ -17,8 +21,9 @@ CREATE OR REPLACE FUNCTION basalt_meta.record_refusal(
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
     c_max_resources constant int := 100;
-    v_task uuid;
-    v_id   uuid;
+    v_task      uuid;
+    v_id        uuid;
+    v_resources text[];
 BEGIN
     PERFORM basalt_meta._require_agent();
     PERFORM basalt_meta._check_text('intent', p_intent, 2000, false);
@@ -34,19 +39,18 @@ BEGIN
     IF p_duration_ms IS NOT NULL AND p_duration_ms < 0 THEN
         PERFORM basalt_meta._invalid('duration must be zero or more');
     END IF;
-    IF coalesce(cardinality(p_resources), 0) > c_max_resources
-       OR EXISTS (SELECT 1 FROM unnest(p_resources) t WHERE coalesce(t, '') = '' OR octet_length(t) > 1000) THEN
-        PERFORM basalt_meta._invalid(format('resources: at most %s names', c_max_resources));
-    END IF;
+    v_resources := ARRAY(SELECT u.t FROM unnest(p_resources) WITH ORDINALITY AS u(t, i)
+                          WHERE coalesce(u.t, '') <> '' AND octet_length(u.t) <= 1000
+                          ORDER BY u.i LIMIT c_max_resources);
     v_task := basalt_meta._run_task(p_run_id, p_task_id);
     INSERT INTO basalt_meta.changes (tx, stmt_ts, agent, run_id, task_id, intent, op, table_name, statement, params,
                                      duration_ms, status, code, reason)
     VALUES (pg_current_xact_id(), statement_timestamp(), session_user, p_run_id, v_task, nullif(p_intent, ''),
-            p_op, p_resources[1], p_statement, p_params, p_duration_ms, 'REFUSED', p_code, p_reason)
+            p_op, v_resources[1], p_statement, p_params, p_duration_ms, 'REFUSED', p_code, p_reason)
     RETURNING change_id INTO v_id;
     PERFORM basalt_meta._append(session_user, v_id, 'REFUSED', NULL, p_op, NULL, NULL, NULL, NULL,
         jsonb_build_object('runId', p_run_id, 'taskId', v_task, 'intent', p_intent, 'statement', p_statement,
-                           'resources', to_jsonb(coalesce(p_resources, '{}'::text[])),
+                           'resources', to_jsonb(v_resources),
                            'code', p_code, 'reason', p_reason));
     RETURN v_id;
 END $$;

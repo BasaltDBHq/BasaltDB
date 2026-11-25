@@ -149,17 +149,29 @@ type Refusal struct {
 // its refused attempt out of the ledger. Op is Basalt's (READ for a read,
 // CONTRACT.md, Stores, Operations); the guard records SELECT as the verb.
 // The resources are qualified in q's session, as the agent's statement
-// would have resolved them.
+// would have resolved them; when the call fails with them, it is made once
+// more without them, so no name can keep the refusal out of the ledger.
 func RecordRefusal(ctx context.Context, q Querier, r Refusal) (uuid.UUID, error) {
 	params, err := paramsJSON(r.Params)
 	if err != nil {
 		return uuid.Nil, err
 	}
-	return returnUUID(ctx, q, sq.Expr(
-		"basalt_meta.record_refusal(?::uuid, ?::uuid, ?, ?, ?, nullif(?::jsonb, 'null'), ?, ?, ?::int, ?)",
-		nullUUID(r.Intent.RunID), nullUUID(r.Intent.TaskID), storableText(r.Intent.Text), storableText(r.Op),
-		storableText(r.Statement), params, storableText(r.Code), storableText(r.Reason), r.Duration.Milliseconds(),
-		qualifiedResources(storableTexts(r.Resources))))
+	call := func(resources []string) (uuid.UUID, error) {
+		return returnUUID(ctx, q, sq.Expr(
+			"basalt_meta.record_refusal(?::uuid, ?::uuid, ?, ?, ?, nullif(?::jsonb, 'null'), ?, ?, ?::int, ?)",
+			nullUUID(r.Intent.RunID), nullUUID(r.Intent.TaskID), storableText(r.Intent.Text), storableText(r.Op),
+			storableText(r.Statement), params, storableText(r.Code), storableText(r.Reason), r.Duration.Milliseconds(),
+			qualifiedResources(storableTexts(resources))))
+	}
+	id, err := call(r.Resources)
+	if err != nil && len(r.Resources) > 0 {
+		// The refusal must reach the ledger whatever its names do: once
+		// more, naming none.
+		if id, retryErr := call(nil); retryErr == nil {
+			return id, nil
+		}
+	}
+	return id, err
 }
 
 // EventKind is an engine event record_event accepts.

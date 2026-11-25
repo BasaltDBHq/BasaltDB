@@ -93,6 +93,23 @@ func TestClassify(t *testing.T) {
 	}
 }
 
+// Target is the relation a write writes, as written; another table the
+// statement names never is.
+func TestTarget(t *testing.T) {
+	t.Parallel()
+	for sql, want := range map[string]string{
+		"UPDATE payroll SET amount = 0 FROM audit_log a WHERE a.id = payroll.id": "payroll",
+		"DELETE FROM public.leads USING archive WHERE archive.id = leads.id":     "public.leads",
+		"INSERT INTO leads (id) SELECT id FROM a_import":                         "leads",
+		`UPDATE "Old Leads" SET id = 1`:                                          "Old Leads",
+		"SELECT * FROM leads":                                                    "",
+		"DROP TABLE leads":                                                       "",
+	} {
+		stmt, _ := sqlguard.Classify(sql)
+		require.Equal(t, want, stmt.Target, sql)
+	}
+}
+
 func TestCheckTool(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

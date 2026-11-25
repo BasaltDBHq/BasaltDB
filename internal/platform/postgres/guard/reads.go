@@ -76,15 +76,26 @@ func RecordRead(ctx context.Context, q Querier, r Read) (uuid.UUID, error) {
 // use and raises nothing. A qualified name needs no lookup, so a schema the
 // agent cannot use cannot keep a refusal out of the ledger. A name that
 // does not resolve, or does not split into at most two parts, is kept as
-// written. Sorted, duplicates once.
-const qualifiedResourcesSQL = `ARRAY(SELECT DISTINCT r FROM (
-    SELECT CASE WHEN n.nsp <> '' THEN pg_catalog.format('%I.%I', n.nsp, n.rel)
+// written. In the order given, each resource once (its first place).
+//
+// Every function and operator is pg_catalog's: this runs under the agent's
+// search_path, where a function or operator it created could otherwise
+// win. The CASE keeps to_regclass from ever seeing an empty name (which
+// raises before Postgres 16), whatever order the planner picks. ROWS FROM
+// zips the three arrays; the multi-argument unnest is FROM-clause sugar
+// for it with no pg_catalog function to qualify.
+const qualifiedResourcesSQL = `ARRAY(SELECT x.r FROM (
+    SELECT CASE WHEN n.nsp OPERATOR(pg_catalog.<>) '' THEN pg_catalog.format('%I.%I', n.nsp, n.rel)
                 ELSE coalesce((SELECT pg_catalog.format('%I.%I', s.nspname, c.relname)
                                  FROM pg_catalog.pg_class c
-                                 JOIN pg_catalog.pg_namespace s ON s.oid = c.relnamespace
-                                WHERE n.rel <> '' AND c.oid = pg_catalog.to_regclass(pg_catalog.quote_ident(n.rel))),
-                              n.name) END AS r
-      FROM pg_catalog.unnest(?::text[], ?::text[], ?::text[]) AS n(name, nsp, rel)) x ORDER BY r)`
+                                 JOIN pg_catalog.pg_namespace s ON s.oid OPERATOR(pg_catalog.=) c.relnamespace
+                                WHERE c.oid OPERATOR(pg_catalog.=) (CASE WHEN n.rel OPERATOR(pg_catalog.<>) ''
+                                      THEN pg_catalog.to_regclass(pg_catalog.quote_ident(n.rel)) END)::pg_catalog.oid),
+                              n.name) END AS r,
+           n.i
+      FROM ROWS FROM (pg_catalog.unnest(?::text[]), pg_catalog.unnest(?::text[]), pg_catalog.unnest(?::text[]))
+           WITH ORDINALITY AS n(name, nsp, rel, i)) x
+  GROUP BY x.r ORDER BY pg_catalog.min(x.i))`
 
 // qualifiedResources is names, the relations a statement names as
 // written, qualified when recorded (qualifiedResourcesSQL).
@@ -95,9 +106,12 @@ func qualifiedResources(names []string) sq.Sqlizer {
 
 // nameParts splits each name as the SQL check writes it (parser-folded,
 // unquoted, schema.table or table) into its schema and relation; a name of
-// more parts has neither and is recorded as written. A quoted identifier
-// that holds a dot splits wrongly, the same limit as every name the engine
-// takes as schema.table.
+// more parts has neither and is recorded as written. Known limit: a quoted
+// identifier that holds a dot splits wrongly, so "public.payroll" (one
+// relation in the search path) is recorded as the table payroll in schema
+// public, with no lookup; every name the engine takes as schema.table has
+// the same limit. It changes only which name a refusal records, never what
+// the guard allows.
 func nameParts(names []string) (written, schemas, rels []string) {
 	written = make([]string, 0, len(names))
 	schemas = make([]string, 0, len(names))

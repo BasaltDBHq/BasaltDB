@@ -87,6 +87,9 @@ type Statement struct {
 	// (schema-qualified when the agent qualified them), sorted. CTE names are
 	// left out.
 	Tables []string
+	// Target is the relation an INSERT, UPDATE or DELETE writes, as
+	// written like Tables; "" for any other statement.
+	Target string
 	// Functions are the functions the statement calls, as written, sorted.
 	Functions []string
 	// ParamCount is the highest $n placeholder used, 0 when none.
@@ -165,6 +168,7 @@ func Classify(sql string) (Statement, error) {
 
 	slices.Sort(stmt.Functions) // non-nil, so an empty list is [] and not null
 
+	stmt.Target = targetOf(node)
 	var reason Reason
 	stmt.Kind, stmt.Op, reason = classifyNode(node)
 	if reason != "" {
@@ -182,6 +186,24 @@ func Classify(sql string) (Statement, error) {
 		}
 	}
 	return stmt, nil
+}
+
+// targetOf is the relation an INSERT, UPDATE or DELETE writes, as written;
+// "" for any other statement.
+func targetOf(stmt *pganalyze.Node) string {
+	var rel *pganalyze.RangeVar
+	switch n := stmt.GetNode().(type) {
+	case *pganalyze.Node_InsertStmt:
+		rel = n.InsertStmt.GetRelation()
+	case *pganalyze.Node_UpdateStmt:
+		rel = n.UpdateStmt.GetRelation()
+	case *pganalyze.Node_DeleteStmt:
+		rel = n.DeleteStmt.GetRelation()
+	}
+	if rel == nil {
+		return ""
+	}
+	return qualifiedName(rel.GetSchemaname(), rel.GetRelname())
 }
 
 func classifyNode(stmt *pganalyze.Node) (Kind, Op, Reason) {

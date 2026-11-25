@@ -3,6 +3,8 @@ package guard_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -266,17 +268,31 @@ func TestRecordRefusalNamesItsResources(t *testing.T) {
 		return name
 	}
 
+	// The order given is kept: the engine puts a write's target first, and
+	// the change record names the first.
 	id := refuse("secret.keys", "leads", "missing")
-	require.Equal(t, []any{"missing", "public.leads", "secret.keys"}, refusalResources(t, d, id))
-	require.Equal(t, "missing", *tableName(id), "the change record names the first")
+	require.Equal(t, []any{"secret.keys", "public.leads", "missing"}, refusalResources(t, d, id))
+	require.Equal(t, "secret.keys", *tableName(id))
 
 	// An unparseable statement names none.
 	id = refuse()
 	require.Empty(t, refusalResources(t, d, id))
 	require.Nil(t, tableName(id))
 
-	_, err := guard.RecordRefusal(ctx, a.Conn, guard.Refusal{Intent: in, Op: "OTHER", Code: "X", Resources: []string{""}})
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	// No name keeps a refusal out of the ledger: an empty or over-long name
+	// is left out, and past 100 names the rest are.
+	id = refuse("", strings.Repeat("x", 1001), "leads")
+	require.Equal(t, []any{"public.leads"}, refusalResources(t, d, id))
+	many := make([]string, 0, 101)
+	for i := range 101 {
+		many = append(many, fmt.Sprintf("missing_%03d", i))
+	}
+	id = refuse(many...)
+	got := refusalResources(t, d, id)
+	require.Len(t, got, 100)
+	require.Equal(t, "missing_000", got[0])
+	require.Equal(t, "missing_099", got[99])
+	require.Equal(t, "missing_000", *tableName(id))
 	requireIntact(t, a.Conn)
 }
 

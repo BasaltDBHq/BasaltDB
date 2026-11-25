@@ -132,12 +132,31 @@ func (wc *Service) refused(ctx context.Context, in action.Intent, stmt action.St
 	r := action.Refusal{
 		Intent: in, Op: refusalOp(op), Statement: req.Text, Params: req.Params,
 		Code: te.Code, Reason: truncate(te.Message, maxReasonBytes), Duration: wc.core.Now().Sub(start),
-		Resources: stmt.Tables,
+		Resources: refusalResources(stmt),
 	}
 	if recErr := wc.store.Ledger.RecordRefusal(context.WithoutCancel(ctx), r); recErr != nil {
 		wc.core.Log.Error("record refusal", "code", te.Code, "err", recErr)
 	}
 	return err
+}
+
+// refusalResources are the resources a refusal records: a write's target
+// first, as a write's own record names it, then the statement's other
+// relations as the check lists them. The order matters: the change record
+// names the first, so a write cannot pick its refusal's resource by naming
+// another table that sorts earlier.
+func refusalResources(stmt action.Statement) []string {
+	if stmt.Target == "" {
+		return stmt.Tables
+	}
+	out := make([]string, 0, len(stmt.Tables)+1)
+	out = append(out, stmt.Target)
+	for _, t := range stmt.Tables {
+		if t != stmt.Target {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // truncate cuts s to at most n bytes on a rune boundary.

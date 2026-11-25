@@ -127,6 +127,6 @@ A refused action names the resources its statement names, as a read does, so a s
 
 | Object | Change |
 |---|---|
-| `record_refusal(…, duration_ms int, resources text[])` | Replaces the nine-argument form, which is dropped (`SECURITY DEFINER` and `SET search_path = pg_catalog, pg_temp` kept; `EXECUTE` for `<prefix>_agents`). `resources` are validated as `record_read`'s `tables` (at most 100, none empty or over 1000 bytes); the change record's `table_name` is the first, the `REFUSED` ledger row's detail gains `resources` (`[]` when none) |
+| `record_refusal(…, duration_ms int, resources text[])` | Replaces the nine-argument form, which is dropped (`SECURITY DEFINER` and `SET search_path = pg_catalog, pg_temp` kept; `EXECUTE` for `<prefix>_agents`). `resources` are kept in order, a write's target first: the first 100 that are neither empty nor over 1000 bytes, the rest left out rather than refused, so no name keeps a refusal out of the ledger. The change record's `table_name` is the first, the `REFUSED` ledger row's detail gains `resources` (`[]` when none) |
 
 The engine passes a read's `tables` and a refusal's `resources` qualified in the agent's own session ([`record_read`](basalt-meta.md#functions-an-agent-role-may-call)); no guard function changes for reads.

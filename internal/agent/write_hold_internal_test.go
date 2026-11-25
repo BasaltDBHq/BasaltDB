@@ -121,7 +121,10 @@ func TestRefusedRecordsTheStatementsResources(t *testing.T) {
 		want []string
 	}{
 		{"a refused read", action.Statement{Op: action.OpRead, Tables: []string{"leads"}}, refusal, []string{"leads"}},
-		{"a refused write", action.Statement{Op: action.OpDelete, Tables: []string{"leads", "sales.orders"}}, refusal, []string{"leads", "sales.orders"}},
+		{"a refused write", action.Statement{Op: action.OpDelete, Tables: []string{"leads", "sales.orders"}, Target: "leads"}, refusal, []string{"leads", "sales.orders"}},
+		// The target first, as a write's own record names it: another table
+		// that sorts earlier cannot become the refusal's resource.
+		{"a refused write with another table", action.Statement{Op: action.OpUpdate, Tables: []string{"audit_log", "payroll"}, Target: "payroll"}, refusal, []string{"payroll", "audit_log"}},
 		{"an unparseable statement", action.Statement{}, parse, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

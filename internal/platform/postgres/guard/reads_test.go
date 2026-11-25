@@ -221,7 +221,8 @@ func TestRecordReadWritesAChangeAndALedgerRow(t *testing.T) {
 
 // A read records each resource it names as the ledger names a written
 // table: schema.table, quoted where needed, resolved with the agent's own
-// search_path. A name that resolves to nothing is kept as written.
+// search_path, in the order given. A name that resolves to nothing is kept
+// as written.
 func TestRecordReadQualifiesItsResources(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
@@ -246,8 +247,8 @@ func TestRecordReadQualifiesItsResources(t *testing.T) {
 		Tables: []string{"leads", "public.leads", "Old Leads", "sales.leads", "missing", "a.b.c"},
 	})
 	require.NoError(t, err)
-	require.Equal(t, []any{"a.b.c", "missing", `public."Old Leads"`, "public.leads", "sales.leads"}, resources(change),
-		"leads and public.leads are one resource; sorted")
+	require.Equal(t, []any{"public.leads", `public."Old Leads"`, "sales.leads", "missing", "a.b.c"}, resources(change),
+		"leads and public.leads are one resource, at its first place; the order given is kept")
 
 	// The agent's own search_path decides what an unqualified name is.
 	tx, err := a.Conn.Begin(ctx)

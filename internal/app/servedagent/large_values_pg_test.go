@@ -155,7 +155,7 @@ func TestRunHistoryMarksLargeValues(t *testing.T) {
 	require.Equal(t, map[string]any{"id": json.Number("1")}, body["after"], "body is absent, never null")
 	require.Equal(t, map[string]any{"id": json.Number("1"), "body": "small"}, body["before"])
 	require.Equal(t, []map[string]any{{
-		"in": "AFTER", "column": "body", "bytes": json.Number(fmt.Sprint(bigValue)), "sha256": sum256(strings.Repeat("x", bigValue)),
+		"in": "AFTER", "field": "body", "bytes": json.Number(fmt.Sprint(bigValue)), "sha256": sum256(strings.Repeat("x", bigValue)),
 	}}, entries(t, body["largeValues"]))
 	require.NotContains(t, records[0], "largeValues", "the statement and params are small")
 
@@ -248,7 +248,7 @@ func TestPreviewRevertMarksLargeValues(t *testing.T) {
 	docs := byTable["public.docs"]
 	require.Equal(t, map[string]any{"id": json.Number("1")}, docs["now"], "now's body is absent")
 	require.Equal(t, []map[string]any{{
-		"in": "NOW", "column": "body", "bytes": json.Number(fmt.Sprint(bigValue)), "sha256": sum256(strings.Repeat("x", bigValue)),
+		"in": "NOW", "field": "body", "bytes": json.Number(fmt.Sprint(bigValue)), "sha256": sum256(strings.Repeat("x", bigValue)),
 	}}, entries(t, docs["largeValues"]))
 	wide := byTable["public.wide"]
 	require.Contains(t, wide, "now")
@@ -320,7 +320,7 @@ func TestRevertPlanPagesPastALargeLineAndRestoresIt(t *testing.T) {
 			set, ok := plan["set"].(map[string]any)
 			require.True(t, ok, "the rest of set is kept: %v", plan)
 			require.NotContains(t, set, "v", "v is absent from set, never null")
-			require.Equal(t, []map[string]any{{"in": "SET", "column": "v", "bytes": json.Number(fmt.Sprint(bigValue)), "sha256": sum256(big)}},
+			require.Equal(t, []map[string]any{{"in": "SET", "field": "v", "bytes": json.Number(fmt.Sprint(bigValue)), "sha256": sum256(big)}},
 				entries(t, marks))
 			found = true
 			continue

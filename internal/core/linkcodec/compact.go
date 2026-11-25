@@ -244,9 +244,9 @@ func (s Shape) slots() int {
 	return n
 }
 
-// build writes the line in the contract's text rules (CONTRACT.md, Approvals): `{"k": v, ...}`,
-// object entries as `{"c": v, ...}`. It stops once the text passes budget
-// bytes.
+// build writes the line in the contract's text rules (CONTRACT.md,
+// Approvals): `{"k": v, ...}`, object entries as `{"c": v, ...}`. It stops
+// once the text passes budget bytes.
 func (s Shape) build(values []json.RawMessage, budget int) (string, error) {
 	if len(values) != s.slots() {
 		return "", fmt.Errorf("has %d values, its shape %d", len(values), s.slots())

@@ -20,6 +20,9 @@ import {
   relyingParty,
   revertResponseJSON,
   revertShown,
+  signingRefusal,
+  storeName,
+  storeText,
   visibleText,
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
@@ -55,7 +58,7 @@ const SCOPES = { CHANGE: "One change", RUN: "One run", TASK: "One task" };
 // Why a row is left alone, in words (CONTRACT.md, Revert, Conflicts).
 const CONFLICTS = {
   CHANGED_AFTER: "Changed after the agent. Kept as it is now.",
-  ROW_GONE: "No longer there, or not visible to the revert.",
+  TARGET_GONE: "No longer there, or not visible to the revert.",
   KEY_TAKEN: "Another row now has this key.",
   ALREADY_REVERTED: "Already reverted.",
   VALUES_PRUNED: "Older than 30 days: the old values are gone.",
@@ -113,9 +116,12 @@ export function signedText(req) {
   return `You sign sha256:${h.slice(0, 4)}\u2026${h.slice(-4)} over this revert of ${plural(req.binding.rows, "row")}.`;
 }
 
-const RESTORE_NOTE =
-  "Struck-through values are the row now; highlighted values are what it goes back to, as before the agent. " +
-  "Postgres checks these exact rows again before the revert runs; if any changed, nothing is written.";
+// restoreNote is the note above the rows; the store that checks them again
+// is named from store.kind.
+export function restoreNote(storeKind) {
+  return "Struck-through values are the row now; highlighted values are what it goes back to, as before the agent. " +
+    `${storeName(storeKind)} checks these exact rows again before the revert runs; if any changed, nothing is written.`;
+}
 
 // EXPIRY_TICK_MS is how often the top bar's time left is redrawn.
 const EXPIRY_TICK_MS = 30000;
@@ -123,8 +129,8 @@ const EXPIRY_TICK_MS = 30000;
 function renderSummary(req) {
   const b = req.binding;
   $("scope").textContent = `${SCOPES[b.select.scope]} (${b.select.scopeId})`;
-  $("agents").textContent = visibleText((b.select.agents ?? Object.keys(b.agentRows)).join(", "));
-  $("database").textContent = visibleText(b.database);
+  $("agents").textContent = visibleText((b.select.agents ?? Object.keys(b.agentRows)).map(agentName).join(", "));
+  $("store").textContent = visibleText(storeText(b.store));
   $("intent").textContent = visibleText(b.intent);
   $("rows").textContent = plural(b.rows, "row");
   $("skipped").textContent = plural(b.skipped, "row");
@@ -133,7 +139,7 @@ function renderSummary(req) {
     $("plan").textContent = `${plural(b.rows + b.skipped, "row")}, all shown below, restored in one step when you sign.`;
     $("restore-title").textContent = "What goes back";
     $("skip-title").textContent = "Rows left as they are";
-    $("restore-note").textContent = RESTORE_NOTE;
+    $("restore-note").textContent = restoreNote(b.store.kind);
     return;
   }
   // A large plan (decisions N12-1 to N12-4, RSS-1): the link carries a
@@ -184,7 +190,7 @@ export function lineGroups(items, who = null, shown = new Map(), longLink = fals
     why: (line) => {
       if (line.action !== "SKIP") return null;
       const reason = CONFLICTS[line.conflict];
-      return line.sqlState ? `${reason} (SQLSTATE ${visibleText(line.sqlState)})` : reason;
+      return line.storeCode ? `${reason} (${storeName(line.store.kind)} code ${visibleText(line.storeCode)})` : reason;
     },
     // Only the columns whose value changes are highlighted.
     highlights: (v, col) => rawText(v.line, "now", col) !== rawText(v.line, "set", col),
@@ -263,7 +269,7 @@ async function sign(rp, state) {
       state.req.binding,
     );
   } catch (err) {
-    $("sign").disabled = nothingToSign(state.req.binding) !== null || state.expired;
+    $("sign").disabled = blocked(state.req) !== null || state.expired;
     $("status").textContent = webauthnError(err, state.req.credentialIds.length);
   }
 }
@@ -337,7 +343,8 @@ function render(state) {
   const agents = lineAgents(req.binding, state.catalog);
   const longLink = state.relay === null;
   const shown = state.valuesHidden ? new Map() : state.shown;
-  const items = req.lines.map((line, index) => ({ line, index }));
+  // Lines in a shape the page cannot draw are not drawn as records.
+  const items = signingRefusal(req) === null ? req.lines.map((line, index) => ({ line, index })) : [];
   const restore = items.filter((i) => i.line.action !== "SKIP");
   $("restore").replaceChildren(...lineGroups(restore, who, shown, longLink, req.columns, agents));
   $("skip").replaceChildren(...lineGroups(items.filter((i) => i.line.action === "SKIP"), who, shown, longLink, req.columns, agents));
@@ -348,12 +355,19 @@ function render(state) {
   renderScope(state);
   // Sign and Reject wait while a scope change is in flight, and stay off
   // on a revert that had expired when the page loaded.
-  const nothing = nothingToSign(req.binding);
+  const nothing = blocked(req);
   // N is the rows the revert writes.
   $("sign").textContent = `Sign with your passkey: ${plural(req.binding.rows, "row")}`;
   $("sign").disabled = nothing !== null || state.busy || state.expired || longLink;
   $("reject").disabled = state.busy || state.expired;
   $("status").textContent = state.expired ? EXPIRED : longLink ? NO_CARRIER : (nothing ?? "");
+}
+
+// blocked is why Sign stays off whatever the scope: a text the page cannot
+// draw (signingRefusal), or nothing to restore (nothingToSign); null when
+// neither.
+export function blocked(req) {
+  return signingRefusal(req) ?? nothingToSign(req.binding);
 }
 
 const EXPIRED = "This revert link expired. Nothing was reverted; ask the agent to request the revert again.";
@@ -392,7 +406,7 @@ function renderScope(state) {
   const editable = state.relay !== null;
   $("included-hint").textContent = editable ? "tap to leave out" : "";
   $("agent-chips").replaceChildren(...choices.agents.map((c) => chip(c, "agents", state)));
-  $("table-chips").replaceChildren(...choices.tables.map((c) => chip(c, "tables", state)));
+  $("table-chips").replaceChildren(...choices.resources.map((c) => chip(c, "resources", state)));
   $("runs-section").hidden = choices.runs === null;
   if (choices.runs !== null) {
     $("runs-count").textContent = String(choices.runs.length);

@@ -180,15 +180,13 @@ func TestNewServiceRefusesAStoreWithoutSignatureCheck(t *testing.T) {
 	require.PanicsWithValue(t, "agent: required dependencies missing: Approval.SignatureCheck, Revert.SignatureCheck", func() { NewService(d) })
 }
 
-// The approval's store set carries the agent store's kind and capabilities
-// and the approval store in each of its ports.
+// The approval's store set carries the approval store in each of its
+// ports.
 func TestApprovalStoreSetIsBuiltFromTheStores(t *testing.T) {
 	t.Parallel()
 	d := deps()
 	s := NewService(d)
 	set := s.approvalStoreSet()
-	require.Equal(t, action.StorePostgres, set.Kind)
-	require.True(t, set.Capabilities.InStoreSignatureCheck)
 	require.Equal(t, approvalsvc.Records(d.Approval.Store), set.Records)
 	require.Equal(t, approvalsvc.Holds(d.Approval.Store), set.Holds)
 	require.Equal(t, approvalsvc.Proofs(d.Approval.Store), set.Proofs)

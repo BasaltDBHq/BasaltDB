@@ -66,6 +66,36 @@ var revertStoreRule = storeRule{
 	allowed: map[string]string{},
 }
 
+// approvalStoreRule holds internal/approval to its store's ports: it
+// decides on the store's typed refusals (action.ApprovalRefusalError), never
+// on the guard's codes or details, and passes the held request on unread,
+// so it never names the SQL family or its sql argument. CodeStoreError,
+// which the service answers for a write that changes no rows now, stays:
+// the selectors match exact names.
+var approvalStoreRule = storeRule{
+	dir:     filepath.Join("internal", "approval"),
+	imports: storeBoundImports,
+	ident:   regexp.MustCompile(`SQLState|OID|pg_`),
+	text:    regexp.MustCompile(`pg_|^(?i:sql)$`),
+	selectors: map[string]*regexp.Regexp{
+		modulePath + "/internal/core/guidance":   regexp.MustCompile(`^(LedgerCode|StoreDetail|StoreError)$`),
+		modulePath + "/internal/core/guardmodel": regexp.MustCompile(`^(Code.*|.*Refused|Reveal.*)$`),
+		modulePath + "/internal/core/approval":   regexp.MustCompile(`^RequestSQL$`),
+		modulePath + "/internal/core/action":     regexp.MustCompile(`^StoreError$`),
+	},
+	allowed: map[string]string{},
+}
+
+// approvalMCPStoreRule is approvalStoreRule on the approval tools: the
+// held request's family comes from the held write, never a constant.
+var approvalMCPStoreRule = approvalStoreRule.in(filepath.Join("internal", "approval", "in", "approvalmcp"))
+
+// in is rule r on the package in dir, with no allowlist of its own.
+func (r storeRule) in(dir string) storeRule {
+	r.dir, r.allowed = dir, map[string]string{}
+	return r
+}
+
 // importName is the name a file refers to the import s by.
 func importName(s *ast.ImportSpec) string {
 	if s.Name != nil {
@@ -183,6 +213,13 @@ func TestRevertDomainIsStoreNeutral(t *testing.T) {
 	requireStoreNeutral(t, revertStoreRule,
 		"the revert domain reaches its store only through Records, Undo and Proofs and decides on action.RevertRefusalError; "+
 			"map the store's answers in its adapter (for Postgres, internal/platform/postgres/store/revert.go)")
+}
+
+func TestApprovalDomainIsStoreNeutral(t *testing.T) {
+	const hint = "the approval domain reaches its store only through Records, Holds and Proofs, decides on action.ApprovalRefusalError " +
+		"and passes the held request on unread; map the store's answers in its adapter (for Postgres, internal/platform/postgres/store/approvals.go)"
+	requireStoreNeutral(t, approvalStoreRule, hint)
+	requireStoreNeutral(t, approvalMCPStoreRule, hint)
 }
 
 func TestStoreNeutralRuleCatchesViolations(t *testing.T) {
@@ -314,5 +351,87 @@ func widenRefused() {}
 	}
 	if !slices.Equal(findings, want) {
 		t.Errorf("findings:\n%s\nwant:\n%s", strings.Join(findings, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// The approval rule catches each ban, through an alias too, and matches
+// names exactly: guidance.CodeStoreError, guardmodel.MaxHeldLinesBytes, the
+// approval's own refusal reasons and a word that only contains sql pass.
+func TestApprovalStoreRuleCatchesViolations(t *testing.T) {
+	dir := fixture(t, map[string]string{
+		"a.go": `package a
+
+import (
+	"` + modulePath + `/internal/core/action"
+	"` + modulePath + `/internal/core/approval"
+	gm "` + modulePath + `/internal/core/guardmodel"
+	g "` + modulePath + `/internal/core/guidance"
+	"` + modulePath + `/internal/core/toolresult"
+	_ "` + modulePath + `/internal/core/sqlguard"
+	_ "` + modulePath + `/internal/platform/postgres/ledger"
+	_ "github.com/jackc/pgconn"
+	_ "github.com/jackc/pgx/v5"
+)
+
+var (
+	_ = g.LedgerCode
+	_ = g.StoreDetail
+	_ = g.StoreError
+	_ = gm.CodeApprovalInvalid
+	_ = gm.HoldRefused
+	_ = gm.RevealRowsChanged
+	_ = approval.RequestSQL
+	_ *action.StoreError
+	_ = toolresult.ToolError{SQLState: "57014"}
+	_ = map[string]any{"sql": 1}
+	_ = "SQL"
+	_ = "pg_catalog"
+
+	// Allowed: the approval's own names, and Basalt's cap.
+	_ = g.CodeStoreError
+	_ = gm.MaxHeldLinesBytes
+	_ = action.ApprovalRevealRefused
+	_ *action.ApprovalRefusalError
+	_ = approval.ParseBinding
+	_ = "sqlite"
+	_ = "the held request"
+)
+
+type ref struct{ TableOID uint32 }
+
+func RevealHeld() {}
+`,
+	})
+	findings, files, err := storeNeutralFindings(dir, approvalStoreRule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files != 1 {
+		t.Fatalf("scanned %d files, want 1", files)
+	}
+	want := []string{
+		`a.go: identifier SQLState`,
+		`a.go: identifier TableOID`,
+		`a.go: import ` + modulePath + `/internal/core/sqlguard`,
+		`a.go: import ` + modulePath + `/internal/platform/postgres/ledger`,
+		`a.go: import github.com/jackc/pgconn`,
+		`a.go: import github.com/jackc/pgx/v5`,
+		`a.go: selector action.StoreError`,
+		`a.go: selector approval.RequestSQL`,
+		`a.go: selector g.LedgerCode`,
+		`a.go: selector g.StoreDetail`,
+		`a.go: selector g.StoreError`,
+		`a.go: selector gm.CodeApprovalInvalid`,
+		`a.go: selector gm.HoldRefused`,
+		`a.go: selector gm.RevealRowsChanged`,
+		`a.go: text "SQL"`,
+		`a.go: text "pg_catalog"`,
+		`a.go: text "sql"`,
+	}
+	if !slices.Equal(findings, want) {
+		t.Errorf("findings:\n%s\nwant:\n%s", strings.Join(findings, "\n"), strings.Join(want, "\n"))
+	}
+	if mcp := approvalMCPStoreRule; mcp.dir == approvalStoreRule.dir || mcp.text != approvalStoreRule.text || len(mcp.selectors) != len(approvalStoreRule.selectors) {
+		t.Errorf("the approval tools' rule is not the approval rule on approvalmcp: %+v", mcp)
 	}
 }

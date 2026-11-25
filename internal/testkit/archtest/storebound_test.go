@@ -51,10 +51,10 @@ var pgxImports = []string{"github.com/jackc/pgx", "github.com/jackc/pgconn"}
 var pgxAllowed = map[string]string{
 	"pkg/trustprofile/pgconn.go: import github.com/jackc/pgx/v5/pgconn": "Trust and Explain take a *pgconn.Config as part of the public API " +
 		"(the same named edge the driver-free rule skips)",
-	"internal/platform/cli/host.go: import github.com/jackc/pgx/v5": "the CLI core dials the database for setup and repair commands; " +
-		"an inbound adapter that holds a pgx handle declares the type itself",
-	"internal/platform/cli/io.go: import github.com/jackc/pgx/v5": "the CLI's querier type over the pgx handle its backend wraps " +
-		"(an inbound package may not import an outbound one)",
+	"internal/platform/cli/host.go: import github.com/jackc/pgx/v5": "the CLI shell's Host opens the database connections its commands use " +
+		"(Connect returns the *pgx.Conn), filled by internal/app",
+	"internal/platform/cli/io.go: import github.com/jackc/pgx/v5": "the CLI's querier type and IO.Dial over the pgx handle " +
+		"(an inbound package declares the type itself; it may not import an outbound one)",
 	"internal/platform/cli/io.go: import github.com/jackc/pgx/v5/pgconn":    "the CLI's querier type returns a pgconn.CommandTag",
 	"internal/platform/cli/trust.go: import github.com/jackc/pgx/v5":        "the CLI connects with the trust profile applied (cli.Connect)",
 	"internal/platform/cli/trust.go: import github.com/jackc/pgx/v5/pgconn": "the trust profile is applied to a parsed *pgconn.Config",
@@ -118,7 +118,17 @@ func isSQLState(s string) bool {
 }
 
 // sqlstateInText is a SQLSTATE named in a sentence: "(SQLSTATE 42P01)".
-var sqlstateInText = regexp.MustCompile(`(?i)\bsqlstate\b\W*[0-9A-Z]{5}\b`)
+var sqlstateInText = regexp.MustCompile(`(?i)\bsqlstate\b\W*([0-9A-Z]{5})\b`)
+
+// namesSQLState reports whether sentence s names a SQLSTATE after the word.
+func namesSQLState(s string) bool {
+	for _, m := range sqlstateInText.FindAllStringSubmatch(s, -1) {
+		if isSQLState(m[1]) {
+			return true
+		}
+	}
+	return false
+}
 
 // codeWord is a name that says its value is a code or a state.
 var codeWord = regexp.MustCompile(`(?i)code|state`)
@@ -151,11 +161,9 @@ func sqlstateFindings(root string) ([]string, int, error) {
 				if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING {
 					if v, err := strconv.Unquote(lit.Value); err == nil {
 						switch {
-						case sqlstateInText.MatchString(v) && slices.ContainsFunc(strings.Fields(v), func(w string) bool {
-							return isSQLState(strings.Trim(w, "()[]:;,.'\""))
-						}):
+						case namesSQLState(v):
 							out = append(out, relFile(rel, f.name)+": text "+lit.Value)
-						case isSQLState(v) && nextToCodeWord(stack):
+						case isSQLState(v) && nextToCodeWord(lit, stack):
 							out = append(out, relFile(rel, f.name)+": code "+lit.Value)
 						}
 					}
@@ -169,10 +177,10 @@ func sqlstateFindings(root string) ([]string, int, error) {
 	return slices.Compact(out), files, nil
 }
 
-// nextToCodeWord reports whether a literal whose parents are stack (the
-// nearest last) stands next to a name that says code or state, looking up
-// to the enclosing function or declaration.
-func nextToCodeWord(stack []ast.Node) bool {
+// nextToCodeWord reports whether lit, whose parents are stack (the nearest
+// last), stands next to a name that says code or state, looking up to the
+// enclosing function or declaration.
+func nextToCodeWord(lit *ast.BasicLit, stack []ast.Node) bool {
 	var names []string
 	collect := func(nodes ...ast.Node) {
 		for _, n := range nodes {
@@ -196,13 +204,16 @@ func nextToCodeWord(stack []ast.Node) bool {
 		case *ast.BinaryExpr:
 			collect(x)
 		case *ast.CaseClause:
-			for j := i - 1; j >= 0; j-- {
-				if sw, ok := stack[j].(*ast.SwitchStmt); ok {
-					if sw.Tag != nil {
-						collect(sw.Tag)
-					}
-					break
-				}
+			// Only a case's own values are compared with the switch's tag,
+			// not the strings in its body. Its parents are the switch's
+			// body and the switch itself.
+			var child ast.Node = lit
+			if i+1 < len(stack) {
+				child = stack[i+1]
+			}
+			inList := slices.ContainsFunc(x.List, func(e ast.Expr) bool { return ast.Node(e) == child })
+			if sw, ok := stack[max(i-2, 0)].(*ast.SwitchStmt); ok && inList && sw.Tag != nil {
+				collect(sw.Tag)
 			}
 		case *ast.ValueSpec:
 			for _, n := range x.Names {
@@ -255,6 +266,7 @@ var (
 	_ = answer{Code: "P0001"}
 	_ = errors.New("relation missing (SQLSTATE 42P01)")
 	_ = "a refused write (sqlstate: BS007)"
+	_ = "failed (SQLSTATE=40P01)"
 
 	_ = "READY"
 	_ = "MERGE"
@@ -277,7 +289,12 @@ func classify(err error, state string) string {
 	}
 	switch state {
 	case "READY":
-		return state
+		return "ES256"
+	}
+	switch pg.Code {
+	case "XX001":
+	default:
+		return "XX002"
 	}
 	errCode := "3F000"
 	return errCode
@@ -355,7 +372,9 @@ import _ "github.com/jackc/pgconn"
 		`internal/a/a.go: code "57014"`,
 		`internal/a/a.go: code "P0001"`,
 		`internal/a/a.go: code "XX000"`,
+		`internal/a/a.go: code "XX001"`,
 		`internal/a/a.go: text "a refused write (sqlstate: BS007)"`,
+		`internal/a/a.go: text "failed (SQLSTATE=40P01)"`,
 		`internal/a/a.go: text "relation missing (SQLSTATE 42P01)"`,
 		`internal/app/app.go: code "42P01"`,
 	}

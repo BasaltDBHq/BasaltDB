@@ -18,8 +18,9 @@ import (
 var ErrBroken = errors.New("text does not follow the text rules")
 
 // maxDepth caps how deep objects and arrays nest, so a crafted text cannot
-// exhaust the stack.
-const maxDepth = 64
+// exhaust the stack: encoding/json's own limit, well past any value a
+// person's row holds that the engine also parses.
+const maxDepth = 10000
 
 // shortEscapeLen is the length of a two-character escape such as `\n`.
 const shortEscapeLen = 2

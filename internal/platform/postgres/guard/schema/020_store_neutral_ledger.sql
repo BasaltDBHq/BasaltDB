@@ -383,4 +383,5 @@ CREATE OR REPLACE VIEW basalt_meta.agent_ledger WITH (security_barrier = true) A
      WHERE l.agent = session_user;
 
 REVOKE ALL ON FUNCTION basalt_meta._agent_text(name), basalt_meta._agent_role(text), basalt_meta.agent_name() FROM PUBLIC;
+REVOKE ALL ON FUNCTION basalt_meta._append_verb(name, uuid, text, regclass, text, jsonb, jsonb, jsonb, int, jsonb, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION basalt_meta.agent_name() TO {{agents}};

@@ -141,6 +141,7 @@ BEGIN
     expires_at := v_expires;
     RETURN NEXT;
 END $$;
+REVOKE ALL ON FUNCTION basalt_meta.hold_action(text, text, jsonb, text[], text[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION basalt_meta.hold_action(text, text, jsonb, text[], text[]) TO {{agents}};
 
 -- Relay of the approval page's reveal, second transaction: in the PREVIEW

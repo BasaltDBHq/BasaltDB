@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -126,14 +128,80 @@ func TestStoreNeutralUpgradeNamesTheAgents(t *testing.T) {
 	before := count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger`)
 	requireIntact(t, a.Conn)
 
+	// A superuser is a member of every role, so naming it by the rule
+	// would make it an agent: the migration leaves it out.
+	root := d.Names.AgentPrefix() + "root"
+	d.Exec(t, "CREATE ROLE "+pgx.Identifier{root}.Sanitize()+" SUPERUSER")
+	t.Cleanup(func() { d.Exec(t, "DROP ROLE IF EXISTS "+pgx.Identifier{root}.Sanitize()) })
+
 	restore()
 	// Version 10's SQL alone, so the names come from the migration and not
 	// from basalt init setting the agent up again.
 	d.Exec(t, "BEGIN; SET LOCAL ROLE "+d.Names.Guard()+"; SET LOCAL search_path = pg_catalog, pg_temp;"+guard.StoreNeutralSQL(d.Names)+"COMMIT;")
 	require.Equal(t, "bot", scalarOf[string](t, d.Admin, `SELECT name FROM basalt_meta.agent_names WHERE role = $1`, a.Role),
 		"the migration records the agents set up before it")
+	require.Zero(t, count(t, d.Admin, `SELECT count(role)::int FROM basalt_meta.agent_names WHERE role = $1`, root),
+		"a superuser is never named an agent")
 	require.Equal(t, before, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger`), "no row is written or rewritten")
 	st, err := guard.VerifyChain(ctx, a.Conn)
 	require.NoError(t, err)
 	require.False(t, st.Intact, "rows hashed before the upgrade do not verify in the new form")
+}
+
+// verb is the request's own command, not the first row's op: an INSERT ...
+// ON CONFLICT whose rows all update is op UPDATE and verb INSERT, on its
+// CHANGE row and on a held write's APPROVAL_PENDING row.
+func TestStoreNeutralVerbIsTheRequestsCommand(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", leads, leads)
+	in := newRun(t, a, "Upsert a lead")
+	upsert := `INSERT INTO public.leads (id, name) VALUES (5, 'five') ON CONFLICT (id) DO UPDATE SET name = excluded.name`
+	var change uuid.UUID
+	require.NoError(t, pgx.BeginFunc(ctx, a.Conn, func(tx pgx.Tx) error {
+		if err := guard.BeginGuarded(ctx, tx, in, guardtest.Timeout); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, upsert); err != nil {
+			return err
+		}
+		var err error
+		change, err = guard.FinishChange(ctx, tx, guard.Finish{Op: "INSERT", Statement: upsert})
+		return err
+	}))
+	require.Equal(t, "UPDATE INSERT", scalarOf[string](t, d.Admin,
+		`SELECT op || ' ' || verb FROM basalt_meta.ledger WHERE kind = 'CHANGE' AND change_id = $1`, change))
+	requireIntact(t, a.Conn)
+
+	tx, err := a.Conn.Begin(ctx)
+	require.NoError(t, err)
+	require.NoError(t, guard.BeginPreview(ctx, tx, in, guardtest.Timeout))
+	_, err = tx.Exec(ctx, upsert)
+	require.NoError(t, err)
+	lines, err := guard.PreviewLines(ctx, tx, []string{"id", "name"})
+	require.NoError(t, err)
+	require.NoError(t, tx.Rollback(ctx))
+	held, err := guard.Hold(ctx, a.Conn, in, guardtest.Timeout, guard.HoldRequest{Verb: "INSERT", Statement: upsert, Assigned: []string{"id", "name"}, Lines: lines})
+	require.NoError(t, err)
+	require.Equal(t, "UPDATE INSERT", scalarOf[string](t, d.Admin,
+		`SELECT op || ' ' || verb FROM basalt_meta.ledger WHERE kind = 'APPROVAL_PENDING' AND detail ->> 'approvalId' = $1`, held.ApprovalID.String()))
+}
+
+// agent_reverts never leaves out a selected agent it cannot name: a role
+// with no recorded name is refused (UNKNOWN_AGENT).
+func TestAgentRevertsRefusesAnUnnamedAgent(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", leads, leads)
+	in := newRun(t, a, "Mark a lead")
+	require.NoError(t, guardtest.Guarded(context.Background(), a.Conn, in, `UPDATE public.leads SET status = 'm' WHERE id = 3`))
+	prep, err := guard.PrepareRevert(context.Background(), a.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo it")
+	require.NoError(t, err)
+
+	d.Exec(t, `DELETE FROM basalt_meta.agent_names WHERE role = '`+a.Role+`'`)
+	var selection []byte
+	err = a.Conn.QueryRow(context.Background(), `SELECT selection FROM basalt_meta.agent_reverts WHERE revert_id = $1`, prep.RevertID).Scan(&selection)
+	require.Error(t, err, "a selection that names an agent with no name is refused, never shortened")
+	require.Equal(t, "BS007", guardtest.SQLState(err))
 }

@@ -1,6 +1,7 @@
 package textrule_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,6 +17,7 @@ func TestCheckAcceptsTheRulesLayout(t *testing.T) {
 		`{"\n": 2, "A": 1}`,
 		`{"a": [], "b": [1, -2, 1.50, 0, 1e5, 2.5E-3, true, false, null], "c": "tab\there \"q\" back\\slash \u0001 \b\f\r é 日本 🚀 /"}`,
 		`{"x": {}}`,
+		`{"deep": ` + strings.Repeat("[", 200) + strings.Repeat("]", 200) + `}`,
 	} {
 		require.NoError(t, textrule.Check(text), text)
 	}

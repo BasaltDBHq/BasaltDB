@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 )
 
 func TestSplitName(t *testing.T) {
@@ -28,33 +29,33 @@ func TestMatchName(t *testing.T) {
 	type hit struct{ class, entity string }
 	for _, tc := range []struct {
 		name string
-		k    kind
+		k    piistore.Kind
 		want *hit
 	}{
-		{"customerEmail", kindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityEmail}},
-		{"email_address", kindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityEmail}},
-		{"mail_count", kindInt, nil},
-		{"email_verified", kindBool, nil},
-		{"encrypted_password", kindText, &hit{guardmodel.ClassSecret, ""}},
-		{"password_changed_at", kindDate, nil},
-		{"password_hash", kindOther, &hit{guardmodel.ClassSecret, ""}},
-		{"mobile", kindInt, &hit{guardmodel.ClassIdentifier, guardmodel.EntityPhone}},
-		{"name", kindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityPersonName}},
-		{"first_name", kindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityPersonName}},
-		{"contact_name", kindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityPersonName}},
-		{"table_name", kindText, nil},
-		{"product_name", kindText, nil},
-		{"file_name", kindText, nil},
-		{"company_name", kindText, nil},
-		{"street_name", kindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityAddress}},
-		{"zip", kindInt, &hit{guardmodel.ClassIdentifier, guardmodel.EntityAddress}},
-		{"address", kindInt, nil},
-		{"ip_address", kindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityOther}},
-		{"date_of_birth", kindDate, &hit{guardmodel.ClassIdentifier, guardmodel.EntityOther}},
-		{"iban", kindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityOther}},
-		{"notes", kindText, &hit{guardmodel.ClassFreeText, ""}},
-		{"order_number", kindInt, nil},
-		{"status", kindText, nil},
+		{"customerEmail", piistore.KindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityEmail}},
+		{"email_address", piistore.KindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityEmail}},
+		{"mail_count", piistore.KindInt, nil},
+		{"email_verified", piistore.KindBool, nil},
+		{"encrypted_password", piistore.KindText, &hit{guardmodel.ClassSecret, ""}},
+		{"password_changed_at", piistore.KindDate, nil},
+		{"password_hash", piistore.KindOther, &hit{guardmodel.ClassSecret, ""}},
+		{"mobile", piistore.KindInt, &hit{guardmodel.ClassIdentifier, guardmodel.EntityPhone}},
+		{"name", piistore.KindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityPersonName}},
+		{"first_name", piistore.KindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityPersonName}},
+		{"contact_name", piistore.KindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityPersonName}},
+		{"table_name", piistore.KindText, nil},
+		{"product_name", piistore.KindText, nil},
+		{"file_name", piistore.KindText, nil},
+		{"company_name", piistore.KindText, nil},
+		{"street_name", piistore.KindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityAddress}},
+		{"zip", piistore.KindInt, &hit{guardmodel.ClassIdentifier, guardmodel.EntityAddress}},
+		{"address", piistore.KindInt, nil},
+		{"ip_address", piistore.KindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityOther}},
+		{"date_of_birth", piistore.KindDate, &hit{guardmodel.ClassIdentifier, guardmodel.EntityOther}},
+		{"iban", piistore.KindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityOther}},
+		{"notes", piistore.KindText, &hit{guardmodel.ClassFreeText, ""}},
+		{"order_number", piistore.KindInt, nil},
+		{"status", piistore.KindText, nil},
 	} {
 		got, ok := matchName(tc.name, tc.k)
 		if tc.want == nil {
@@ -66,29 +67,18 @@ func TestMatchName(t *testing.T) {
 	}
 	// A qualifier keeps the name only as a floor, marked qualified.
 	for _, name := range []string{"email_count", "token_type", "mobile_updated"} {
-		got, ok := matchName(name, kindText)
+		got, ok := matchName(name, piistore.KindText)
 		require.True(t, ok, name)
 		require.True(t, got.qualified, name)
 	}
 	for _, name := range []string{"pin", "otp", "cvc", "cvv", "passcode", "security_code", "card_pin"} {
-		got, ok := matchName(name, kindText)
+		got, ok := matchName(name, piistore.KindText)
 		require.True(t, ok, name)
 		require.Equal(t, guardmodel.ClassSecret, got.class, name)
 	}
-	got, ok := matchName("email_address", kindText)
+	got, ok := matchName("email_address", piistore.KindText)
 	require.True(t, ok)
 	require.False(t, got.qualified)
-}
-
-func TestKindOf(t *testing.T) {
-	t.Parallel()
-	for in, want := range map[string]kind{
-		"text": kindText, "character varying": kindText, "extensions.citext": kindText, "jsonb": kindText,
-		"text[]": kindText, "integer[]": kindOther, "bigint": kindInt, "numeric": kindNumeric,
-		"timestamp with time zone": kindDate, "boolean": kindBool, "uuid": kindOther, "bytea": kindOther,
-	} {
-		require.Equal(t, want, kindOf(in), in)
-	}
 }
 
 func TestValidators(t *testing.T) {
@@ -140,7 +130,12 @@ func TestPhoneShape(t *testing.T) {
 
 func TestSuggestShapes(t *testing.T) {
 	t.Parallel()
-	col := func(name, typ string) Column { return Column{Schema: "public", Table: "t", Name: name, DataType: typ} }
+	kinds := map[string]piistore.Kind{"bigint": piistore.KindInt, "numeric": piistore.KindNumeric, "text": piistore.KindText, "uuid": piistore.KindOther}
+	col := func(name, typ string) Column {
+		k, ok := kinds[typ]
+		require.True(t, ok, typ)
+		return Column{Namespace: "public", Resource: "t", Name: name, Kind: k, DataType: typ}
+	}
 	seq := make([]string, 0, 50)
 	ambiguous := make([]string, 0, 50)
 	for i := range 50 {
@@ -158,10 +153,10 @@ func TestSuggestShapes(t *testing.T) {
 		{col("ref", "bigint"), ambiguous, review},
 		{col("price", "numeric"), []string{"1.50", "2.00", "-3.10"}, Suggestion{Class: guardmodel.ClassPublic, Reason: reasonDecimals}},
 		{col("ref", "text"), nil, review},
-		{Column{Name: "id", DataType: "bigint", Key: true}, nil, Suggestion{Class: guardmodel.ClassPublic, Reason: reasonKey}},
-		{Column{Name: "id", DataType: "bigint", Key: true}, ambiguous, review},
-		{Column{Name: "id", DataType: "bigint", Key: true, Generated: true}, ambiguous, review},
-		{Column{Name: "id", DataType: "bigint", Key: true, Generated: true}, seq, Suggestion{Class: guardmodel.ClassPublic, Reason: reasonSequential}},
+		{Column{Name: "id", Kind: piistore.KindInt, DataType: "bigint", Key: true}, nil, Suggestion{Class: guardmodel.ClassPublic, Reason: reasonKey}},
+		{Column{Name: "id", Kind: piistore.KindInt, DataType: "bigint", Key: true}, ambiguous, review},
+		{Column{Name: "id", Kind: piistore.KindInt, DataType: "bigint", Key: true, Generated: true}, ambiguous, review},
+		{Column{Name: "id", Kind: piistore.KindInt, DataType: "bigint", Key: true, Generated: true}, seq, Suggestion{Class: guardmodel.ClassPublic, Reason: reasonSequential}},
 		{col("id", "uuid"), nil, Suggestion{Class: guardmodel.ClassPublic, Reason: "TYPE:uuid"}},
 		{col("secret_email", "text"), []string{"a@example.com"}, Suggestion{Class: guardmodel.ClassSecret}},
 		{

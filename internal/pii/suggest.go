@@ -7,12 +7,11 @@ import (
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 )
 
 // Thresholds of the M5.1 plan, section 3.
 const (
-	// SampleRows is how many non-null values are sampled per column.
-	SampleRows = 1000
 	// sampleShare is the share of sampled values (percent) a validator must
 	// pass to win.
 	sampleShare = 80
@@ -48,57 +47,18 @@ const (
 	reasonNoValues   = "SAMPLE:no values"
 )
 
-// Column is a column the agents can read.
-type Column struct {
-	Schema, Table, Name string
-	// DataType is format_type without the modifier.
-	DataType string
-	// BaseType is the type a domain column is built on ("" when the type
-	// is no domain): the column is judged by it.
-	BaseType string
-	// Key is true when the column is part of a primary or foreign key.
-	Key bool
-	// Generated is true for an identity column or one filled by a
-	// sequence (a serial's nextval default).
-	Generated bool
-}
-
 // internalID reports whether a column is an id the database makes: an
 // identity or serial column, or an integer key whose values all have fewer
 // than minPhoneDigits digits. Any other key (a text key, a foreign key
 // holding phone numbers, a long integer key) is judged like any column.
-func internalID(col Column, k kind, values []string) bool {
+func internalID(col Column, k piistore.Kind, values []string) bool {
 	if col.Generated {
 		return true
 	}
-	if !col.Key || k != kindInt {
+	if !col.Key || k != piistore.KindInt {
 		return false
 	}
 	return !slices.ContainsFunc(values, func(v string) bool { return len(strings.TrimLeft(strings.TrimSpace(v), "-")) >= minPhoneDigits })
-}
-
-// SampleType is the type the column is judged by: the domain's base type,
-// else its data type.
-func (c Column) SampleType() string {
-	if c.BaseType != "" {
-		return c.BaseType
-	}
-	return c.DataType
-}
-
-// QualifiedTable is schema.table.
-func (c Column) QualifiedTable() string { return c.Schema + "." + c.Table }
-
-// FullName is schema.table.column.
-func (c Column) FullName() string { return c.QualifiedTable() + "." + c.Name }
-
-// Sample is what reading a column's values gave.
-type Sample struct {
-	// Values are up to SampleRows non-null values as text.
-	Values []string
-	// Unavailable says why no sample could be read ("" when one was):
-	// it timed out, or the admin may not read it.
-	Unavailable string
 }
 
 // Suggestion is the class suggested for a column and why.
@@ -134,10 +94,10 @@ func Rank(class string) int {
 // name rules; then keys and the shape of numbers. Ambiguous numbers come out
 // IDENTIFIER OTHER for review, never PUBLIC.
 func Suggest(col Column, s Sample, opts Options) Suggestion {
-	k := kindOf(col.SampleType())
+	k := col.Kind
 	hit, named := matchName(col.Name, k)
 	switch {
-	case !Sampled(col.SampleType()):
+	case !Sampled(k):
 		if named {
 			return fromName(hit)
 		}
@@ -179,7 +139,7 @@ func unsampled(hit nameHit, named bool, reason string) Suggestion {
 }
 
 // validate runs the sample validators in order, the most protective first.
-func validate(k kind, values []string, hit nameHit, named bool, opts Options) (Suggestion, bool) {
+func validate(k piistore.Kind, values []string, hit nameHit, named bool, opts Options) (Suggestion, bool) {
 	n := len(values)
 	enough := func(c int) bool { return c*percent >= sampleShare*n }
 	count := func(f func(string) bool) int {
@@ -233,7 +193,7 @@ func validate(k kind, values []string, hit nameHit, named bool, opts Options) (S
 	if c := count(validIMEI); enough(c) {
 		return withName(Suggestion{Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityOther, Reason: sampled("IMEI", c)}, hit, named), true
 	}
-	if k != kindText {
+	if k != piistore.KindText {
 		return Suggestion{}, false
 	}
 	if c := count(startsWithFirstName); c*percent >= nameShare*n {
@@ -301,7 +261,7 @@ func byName(hit nameHit, values []string, opts Options) Suggestion {
 // byShape judges a column no validator and no name rule claimed: integers
 // that run in sequence are ids, decimals and mixed lengths are amounts and
 // counts, and unique numbers of one length are an identifier to review.
-func byShape(col Column, k kind, values []string, opts Options) Suggestion {
+func byShape(col Column, k piistore.Kind, values []string, opts Options) Suggestion {
 	n := len(values)
 	public := func(reason string) Suggestion { return Suggestion{Class: guardmodel.ClassPublic, Reason: reason} }
 	allDigits := !slices.ContainsFunc(values, func(v string) bool { return !allASCIIDigits(strings.TrimSpace(v)) })

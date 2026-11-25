@@ -13,11 +13,13 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/demo"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgpii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
@@ -113,6 +115,16 @@ func (Backend) AgentUnlabeled(ctx context.Context, tx pgx.Tx, n guardmodel.Names
 
 func (Backend) WriteAgentLabels(ctx context.Context, tx pgx.Tx, n guardmodel.Names, role string, changes []guardmodel.LabelChange, restPublic bool, at time.Time) (int, error) {
 	return guard.WriteAgentLabels(ctx, tx, n, role, changes, restPublic, at)
+}
+
+// The classifier's reads.
+
+func (Backend) PIIColumns(ctx context.Context, conn *pgx.Conn, listed []piistore.Column) ([]piistore.Column, error) {
+	return pgpii.Columns(ctx, pgquerier.Neutralize(conn), listed)
+}
+
+func (Backend) PIISampler(conn *pgx.Conn, timeout time.Duration, maxChars int) func(context.Context, piistore.Column) (piistore.Sample, error) {
+	return pgpii.Sampler{ReadOnly: pgquerier.ReadOnlyTx(conn), Timeout: timeout, MaxChars: maxChars}.Sample
 }
 
 // Passkeys.

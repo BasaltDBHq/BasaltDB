@@ -156,6 +156,34 @@ func TestFixJobsTakeOnlyTheirOwnFields(t *testing.T) {
 	refusal(t, err, localsetup.CodeTargetMismatch)
 }
 
+// TestLabelsCheckSuggestsForADottedSchema: a schema whose name holds a dot
+// and a mixed-case table are read by their own names, so a domain over text
+// in them is sampled and gets a suggestion.
+func TestLabelsCheckSuggestsForADottedSchema(t *testing.T) {
+	t.Parallel()
+	f, svc := installed(t)
+	ctx := context.Background()
+	role := pgx.Identifier{f.agentRole(t)}.Sanitize()
+	f.db.Exec(t, `CREATE DOMAIN public.mail AS text;
+		CREATE SCHEMA "app.v2";
+		CREATE TABLE "app.v2"."People" (id bigint PRIMARY KEY, email public.mail);
+		INSERT INTO "app.v2"."People" SELECT i, 'person' || i || '@example.com' FROM generate_series(1, 20) i;
+		GRANT USAGE ON SCHEMA "app.v2" TO `+role+`;
+		GRANT SELECT ON "app.v2"."People" TO `+role)
+
+	checked, err := svc.Check(ctx, f.fix(localsetup.JobLabels))
+	require.NoError(t, err)
+	var email *localsetup.ColumnInfo
+	for i, c := range checked.Columns {
+		if c.Table == "app.v2.People" && c.Column == "email" {
+			email = &checked.Columns[i]
+		}
+	}
+	require.NotNil(t, email)
+	require.Equal(t, guardmodel.ClassIdentifier, email.SuggestedClass, email.Reason)
+	require.Equal(t, guardmodel.EntityEmail, email.SuggestedEntityType, email.Reason)
+}
+
 // (b) A column added after the install shows in doctor and in the LABELS
 // check, and the LABELS run writes it; a stale was is CLASSES_CHANGED.
 func TestLabelsFixLabelsAColumnAddedAfterTheInstall(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -58,6 +59,18 @@ type Backend interface {
 	WriteLabels(ctx context.Context, tx pgx.Tx, n guardmodel.Names, tables []string, changes []guardmodel.LabelChange, restPublic bool, at time.Time) (int, error)
 	AgentUnlabeled(ctx context.Context, tx pgx.Tx, n guardmodel.Names, role string) ([]guardmodel.AgentColumn, error)
 	WriteAgentLabels(ctx context.Context, tx pgx.Tx, n guardmodel.Names, role string, changes []guardmodel.LabelChange, restPublic bool, at time.Time) (int, error)
+
+	// The classifier's reads.
+	// PIIColumns fills the listed columns (by namespace, resource, name and
+	// data type) with their Kind, Key and Generated from the store's
+	// catalog. It always returns len(listed) columns with a Kind; a failed
+	// catalog read leaves Key and Generated unset and a domain's base type
+	// unread (so a domain over text gets its own type's kind and goes
+	// unsampled), and is the error.
+	PIIColumns(ctx context.Context, conn *pgx.Conn, listed []piistore.Column) ([]piistore.Column, error)
+	// PIISampler reads a column's sample on conn: each read in a read-only
+	// transaction under timeout, each value cut to maxChars characters.
+	PIISampler(conn *pgx.Conn, timeout time.Duration, maxChars int) func(ctx context.Context, col piistore.Column) (piistore.Sample, error)
 
 	// Passkeys.
 	ActivePasskeys(ctx context.Context, q setup.Querier) ([]guardmodel.RegisteredPasskey, error)

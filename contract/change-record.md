@@ -30,7 +30,7 @@ One record per action an agent asks for, whether applied, held or refused. It ha
 | `op` | Basalt's ([Operations](stores.md#operations)): `READ`, `INSERT`, `UPDATE`, `DELETE`, `OTHER` (a refused request that is none of these), `REVERT` (M3: a person's revert) |
 | `store` | `{kind, verb}`: the store's kind and its own word for the operation (in Postgres the command, `SELECT` for a read); `verb` is absent when the request did not parse |
 | `request` | The request by family ([Request families](stores.md#request-families)): for `SQL`, `{kind, params, statement}` |
-| `resource`, `shape`, `key` | What the action targets: the statement's own resource, the shape, and the key when it wrote exactly one row. `key` is absent otherwise, and `resource` when the action named none |
+| `resource`, `shape`, `key` | What the action targets: the request's own resource and its shape, and, optionally, `key`, the target's identity fields. `resource` is absent when the action named none |
 | `actor.kind` | `AGENT`, `PERSON` |
 | `policy.decision` | `ALLOW`, `HOLD`, `REFUSE` |
 

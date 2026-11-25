@@ -22,38 +22,22 @@ import (
 )
 
 // hold turns a write the guard held into a held action (decision M2-1):
-// refuse it when it is not repeatable, preview it in a transaction that
-// rolls back, store it with its lines, notify the person, and answer
-// APPROVAL_REQUIRED with the approval link. It returns the held write's
-// approval id and expiry with the APPROVAL_REQUIRED error, or uuid.Nil and
-// the error that kept it from being held.
+// the approval use case refuses it when it is not repeatable, previews it in
+// a transaction that rolls back and stores it with its lines; then the
+// person is notified and the answer is APPROVAL_REQUIRED with the approval
+// link. A refusal of the hold is recorded as a refused write. It returns the
+// held write's approval id and expiry with the APPROVAL_REQUIRED error, or
+// uuid.Nil and the error that kept it from being held.
 func (wc *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stmt action.Statement, start time.Time) (uuid.UUID, time.Time, error) {
-	assigned, err := wc.approvals.HoldColumns(ctx, p.Request)
-	var notRepeatable *action.RefusalError
-	if errors.As(err, &notRepeatable) {
-		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.Request, start, err)
+	held, err := wc.approvals.Hold(ctx, in, p.Request, stmt.Op)
+	var refusal *approvalsvc.HoldRefusalError
+	if errors.As(err, &refusal) {
+		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.Request, start, refusal.Err)
 	}
 	if err != nil {
 		return uuid.Nil, time.Time{}, err
 	}
-	lines, err := wc.approvals.Preview(ctx, in, p.Request, assigned)
-	if err != nil {
-		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.Request, start, err)
-	}
-	if len(lines) == 0 {
-		// The rows went away between the attempt and the preview.
-		return uuid.Nil, time.Time{}, &toolresult.ToolError{Code: guidance.CodeStoreError, Reason: guidance.ReasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
-	}
-	if te := approvalsvc.HoldTooLarge(lines, nil); te != nil {
-		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.Request, start, te)
-	}
-	held, err := wc.approvals.Hold(ctx, in, action.HoldRequest{Verb: string(stmt.Op), Statement: p.Request.Text, Params: p.Request.Params, Assigned: assigned, Lines: lines})
-	if err != nil {
-		if te := approvalsvc.HoldTooLarge(lines, err); te != nil {
-			return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.Request, start, te)
-		}
-		return uuid.Nil, time.Time{}, err
-	}
+	lines := held.Lines
 	req := linksvc.SizedRequest{Binding: held.BindingText, Lines: lines, Cost: linksvc.TextsCost(lines)}
 	notice, err := wc.approvals.ApprovalNotice(ctx, held.ApprovalID, in.RunID, req, held.ExpiresAt, linksvc.IssueLink)
 	if err != nil {
@@ -168,9 +152,12 @@ func (wc *Service) sameAsHeld(a action.Approval, p WriteParams) error {
 func (wc *Service) heldArgs(a action.Approval) map[string]any {
 	req := agentstore.Request{Text: a.Request.Text}
 	if len(a.Request.Params) > 0 {
-		var params []any
-		if json.Unmarshal(a.Request.Params, &params) == nil {
-			req.Params = params
+		// Numbers stay exact (json.Number): 9007199254740993 must reach the
+		// step as it was held, not rounded through float64.
+		if v, ok := decodeExact(a.Request.Params); ok {
+			if params, ok := v.([]any); ok {
+				req.Params = params
+			}
 		}
 	}
 	return wc.store.Language.Args(req)

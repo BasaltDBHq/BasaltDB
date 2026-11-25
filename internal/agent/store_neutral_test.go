@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/agent"
+	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -362,28 +363,21 @@ func (a *docApprovals) ApprovalNotice(_ context.Context, id, _ uuid.UUID, req li
 	}, nil
 }
 
-func (a *docApprovals) HoldColumns(context.Context, agentstore.Request) ([]string, error) {
-	return nil, nil
-}
-
-func (a *docApprovals) Preview(_ context.Context, _ action.Intent, req agentstore.Request, _ []string) ([]string, error) {
-	return a.preview(req), nil
-}
-
-func (a *docApprovals) Hold(_ context.Context, in action.Intent, r action.HoldRequest) (action.Held, error) {
+func (a *docApprovals) Hold(_ context.Context, in action.Intent, req agentstore.Request, _ action.Op) (approvalsvc.HeldWrite, error) {
+	lines := a.preview(req)
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	params, err := json.Marshal(r.Params)
+	params, err := json.Marshal(req.Params)
 	if err != nil {
-		return action.Held{}, err
+		return approvalsvc.HeldWrite{}, err
 	}
 	id := uuid.Must(uuid.NewV7())
 	expires := time.Now().Add(time.Hour)
 	a.approvals[id] = action.Approval{
-		ID: id, RunID: in.RunID, Intent: in.Text, Request: action.HeldRequest{Kind: docRequestKind, Text: r.Statement, Params: params}, Rows: len(r.Lines),
-		Status: action.ApprovalPending, ExpiresAt: expires, Lines: r.Lines, BindingText: "binding",
+		ID: id, RunID: in.RunID, Intent: in.Text, Request: action.HeldRequest{Kind: docRequestKind, Text: req.Text, Params: params}, Rows: len(lines),
+		Status: action.ApprovalPending, ExpiresAt: expires, Lines: lines, BindingText: "binding",
 	}
-	return action.Held{ApprovalID: id, BindingText: "binding", ExpiresAt: expires}, nil
+	return approvalsvc.HeldWrite{Held: action.Held{ApprovalID: id, BindingText: "binding", ExpiresAt: expires}, Lines: lines}, nil
 }
 
 func (a *docApprovals) FindApproval(_ context.Context, id uuid.UUID) (action.Approval, error) {

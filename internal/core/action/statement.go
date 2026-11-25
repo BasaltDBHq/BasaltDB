@@ -28,3 +28,11 @@ type Statement struct {
 	// none.
 	Handle any
 }
+
+// Request is one request in the store's language: its text and its
+// parameters (agentstore.Request is the same type). Services pass it on and
+// record it, and never read Text. Postgres: SQL text with $n parameters.
+type Request struct {
+	Text   string
+	Params []any
+}

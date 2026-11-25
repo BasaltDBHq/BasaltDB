@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -170,9 +171,9 @@ type Delivery interface {
 // hold a write and to read it back.
 type Approvals interface {
 	ApprovalNotice(ctx context.Context, id, runID uuid.UUID, req linksvc.SizedRequest, expires time.Time, issue bool) (linksvc.HeldAnswer, error)
-	HoldColumns(ctx context.Context, req agentstore.Request) ([]string, error)
-	Preview(ctx context.Context, in action.Intent, req agentstore.Request, assigned []string) ([]string, error)
-	Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error)
+	// Hold holds a write for the person's approval; a refusal to record
+	// as a refused write comes as an *approvalsvc.HoldRefusalError.
+	Hold(ctx context.Context, in action.Intent, req agentstore.Request, op action.Op) (approvalsvc.HeldWrite, error)
 	FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error)
 	// NotFound is the ledger's answer for an approval the role does not hold.
 	NotFound() error

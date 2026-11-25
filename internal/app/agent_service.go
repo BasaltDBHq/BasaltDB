@@ -140,7 +140,7 @@ func (s *Service) wire() {
 	s.approval.SetReverts(s.revert)
 	s.plugin = pluginsvc.NewService(s.pluginCore(), &s.deps.Plugin, s.delivery, s.status, s)
 	s.ledger = ledgersvc.NewReads(s.deps.Core.Store)
-	s.agent.SetPorts(s.delivery, agentApprovals{s.approval}, s.status, s, s)
+	s.agent.SetPorts(s.delivery, s.approval, s.status, s, s)
 }
 
 // agentCore is the part of the shared settings the agent use cases read.

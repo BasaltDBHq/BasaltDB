@@ -24,11 +24,11 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgpii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
@@ -93,7 +93,7 @@ func describeDBWithUpdate(t *testing.T, update func() *status.ReleaseNotice) des
 
 	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
 		d.Agent.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
-		d.Agent.Classes = app.NewAgentClasses(pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool)))
+		d.Agent.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pgpii.Classes(pool))
 		d.Status.Update = update
 	})).Svc
 	return describeHarness{harness: harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(svc)...)}, db: d, role: a.Role}
@@ -333,7 +333,7 @@ func TestDescribeSearchScale(t *testing.T) {
 
 	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
 		d.Agent.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
-		d.Agent.Classes = app.NewAgentClasses(pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool)))
+		d.Agent.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pgpii.Classes(pool))
 	})).Svc
 	h := harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(svc)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map
@@ -380,7 +380,7 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 
 	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
 		d.Agent.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
-		d.Agent.Classes = app.NewAgentClasses(pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool)))
+		d.Agent.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pgpii.Classes(pool))
 	})).Svc
 	h := harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(svc)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map

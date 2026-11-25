@@ -1,6 +1,10 @@
 package pii
 
-import "context"
+import (
+	"context"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
+)
 
 // Store maps the store's errors to contract errors.
 type Store interface {
@@ -16,13 +20,13 @@ type StoreClasses struct {
 }
 
 // Resolve is the classes of refs.
-func (m StoreClasses) Resolve(ctx context.Context, refs []ColumnRef) ([]Class, error) {
+func (m StoreClasses) Resolve(ctx context.Context, refs []agentstore.FieldRef) ([]Class, error) {
 	c, err := m.BoundMap.Resolve(ctx, refs)
 	return c, m.Store.MapError(err)
 }
 
-// Secrets is the columns classed secret.
-func (m StoreClasses) Secrets(ctx context.Context) ([]ColumnRef, error) {
+// Secrets is the fields classed secret.
+func (m StoreClasses) Secrets(ctx context.Context) ([]agentstore.FieldRef, error) {
 	s, err := m.BoundMap.Secrets(ctx)
 	return s, m.Store.MapError(err)
 }

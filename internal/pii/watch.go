@@ -7,8 +7,6 @@ import (
 	"log/slog"
 	"strings"
 	"time"
-
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // maxLoggedNames bounds the column names one log line lists.
@@ -20,21 +18,21 @@ const TickTimeout = time.Minute
 
 // Watch is one agent's hourly classification check, run by its upkeep tick
 // (and so also at start): it reloads the map when the fingerprint or the
-// catalog moved, and logs the columns pii_unclassified() reports.
+// catalog moved, and logs the fields the store reports unclassified.
 type Watch struct {
 	agent   string
 	classes *Map
-	db      PiidictQuerier
+	store   Classes
 	log     *slog.Logger
 }
 
-// NewWatch returns the check for agent's map on db. It panics on a missing
-// dependency.
-func NewWatch(agent string, classes *Map, db PiidictQuerier, log *slog.Logger) *Watch {
-	if agent == "" || classes == nil || db == nil || log == nil {
-		panic("piidict: agent, classes, db and logger required")
+// NewWatch returns the check for agent's map on store. It panics on a
+// missing dependency.
+func NewWatch(agent string, classes *Map, store Classes, log *slog.Logger) *Watch {
+	if agent == "" || classes == nil || store == nil || log == nil {
+		panic("piidict: agent, classes, store and logger required")
 	}
-	return &Watch{agent: agent, classes: classes, db: db, log: log}
+	return &Watch{agent: agent, classes: classes, store: store, log: log}
 }
 
 // Tick reloads the map when needed and warns about unclassified columns
@@ -43,24 +41,24 @@ func (w *Watch) Tick(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, TickTimeout)
 	defer cancel()
 	var errs []error
-	reloaded, err := w.classes.Tick(ctx, w.db)
+	reloaded, err := w.classes.Tick(ctx, w.store)
 	switch {
 	case err != nil:
 		errs = append(errs, err)
 	case reloaded:
 		w.log.Info("pii: classification loaded", "agent", w.agent)
 	}
-	cols, err := unclassified(ctx, w.db)
+	cols, err := w.store.Unclassified(ctx)
 	if err != nil {
 		return errors.Join(append(errs, fmt.Errorf("pii_unclassified: %w", err))...)
 	}
 	var unclassified, changed []string
 	for _, c := range cols {
-		if c.Unclassified() {
-			unclassified = append(unclassified, c.Name())
+		if !c.Changed {
+			unclassified = append(unclassified, c.Name)
 			continue
 		}
-		changed = append(changed, c.Name())
+		changed = append(changed, c.Name)
 	}
 	if len(unclassified) > 0 {
 		w.log.Warn(fmt.Sprintf("pii: %d columns unclassified: %s", len(unclassified), nameList(unclassified)),
@@ -79,23 +77,4 @@ func nameList(names []string) string {
 		return strings.Join(names, ", ")
 	}
 	return strings.Join(names[:maxLoggedNames], ", ") + ", …"
-}
-
-// unclassified reads basalt_meta.pii_unclassified() as the login role.
-func unclassified(ctx context.Context, db PiidictQuerier) ([]guardmodel.UnclassifiedColumn, error) {
-	rows, err := db.Query(ctx, "SELECT table_schema, table_name, column_name, data_type, why FROM basalt_meta.pii_unclassified()")
-	if err != nil {
-		return nil, err
-	}
-	// Collected as pgx.CollectRows does: an empty answer is an empty slice,
-	// and any error drops what was read.
-	out := []guardmodel.UnclassifiedColumn{}
-	var c guardmodel.UnclassifiedColumn
-	if err := forEachRow(rows, []any{&c.Schema, &c.Table, &c.Column, &c.DataType, &c.Why}, func() error {
-		out = append(out, c)
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	return out, nil
 }

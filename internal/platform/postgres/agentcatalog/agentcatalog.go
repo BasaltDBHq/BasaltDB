@@ -1,4 +1,9 @@
-package app
+// Package agentcatalog is the Postgres catalog as the agent reads it. The
+// agent's describe is written in core/agentstore's types; this adapter
+// renders pgcatalog's answers into them (refs from OIDs and attribute
+// numbers, the index, foreign key, default and stats content the agent sees)
+// and reads the refs back. pgcatalog itself does not know the agent.
+package agentcatalog
 
 import (
 	"context"
@@ -7,19 +12,11 @@ import (
 	"strings"
 	"time"
 
-	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
 	"github.com/basaltdbhq/basaltdb/internal/agent/out/sqllang"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
-	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgcatalog"
 )
-
-// The Postgres catalog as the agent reads it. The agent's describe is
-// written in core/agentstore's types; this wiring renders pgcatalog's
-// answers into them (refs from OIDs and attribute numbers, the index,
-// foreign key, default and stats content the agent sees) and reads the refs
-// back. pgcatalog itself does not know the agent.
 
 // Postgres's feature groups and flags in describe's answer.
 const (
@@ -29,8 +26,8 @@ const (
 	pgFlagRLS          = "rls"
 )
 
-// pgCatalog is the store's catalog in pgcatalog's types (*postgres.Catalog).
-type pgCatalog interface {
+// Postgres is the store's catalog in pgcatalog's types (*postgres.Catalog).
+type Postgres interface {
 	Relations(ctx context.Context) ([]pgcatalog.Relation, int, error)
 	Find(ctx context.Context, schema, name string) (pgcatalog.Relation, bool, error)
 	Describe(ctx context.Context, oid uint32) (pgcatalog.Detail, error)
@@ -41,14 +38,17 @@ type pgCatalog interface {
 	Host() string
 }
 
-// agentCatalog is the store's catalog as the agent reads it. lang prints the
+// Catalog is the store's catalog as the agent reads it. lang prints the
 // names of the other tables of foreign keys; its zero value does.
-type agentCatalog struct {
-	pg   pgCatalog
+type Catalog struct {
+	pg   Postgres
 	lang sqllang.Language
 }
 
-func (c agentCatalog) Resources(ctx context.Context) ([]agentstore.Resource, int, error) {
+// New is the store's catalog pg as the agent reads it.
+func New(pg Postgres) Catalog { return Catalog{pg: pg} }
+
+func (c Catalog) Resources(ctx context.Context) ([]agentstore.Resource, int, error) {
 	rs, n, err := c.pg.Relations(ctx)
 	if err != nil {
 		return nil, 0, err
@@ -60,7 +60,7 @@ func (c agentCatalog) Resources(ctx context.Context) ([]agentstore.Resource, int
 	return out, n, nil
 }
 
-func (c agentCatalog) Find(ctx context.Context, namespace, name string) (agentstore.Resource, bool, error) {
+func (c Catalog) Find(ctx context.Context, namespace, name string) (agentstore.Resource, bool, error) {
 	r, ok, err := c.pg.Find(ctx, namespace, name)
 	if err != nil || !ok {
 		return agentstore.Resource{}, false, err
@@ -68,7 +68,7 @@ func (c agentCatalog) Find(ctx context.Context, namespace, name string) (agentst
 	return pgResource(r), true, nil
 }
 
-func (c agentCatalog) Describe(ctx context.Context, ref agentstore.ResourceRef) (agentstore.Detail, error) {
+func (c Catalog) Describe(ctx context.Context, ref agentstore.ResourceRef) (agentstore.Detail, error) {
 	oid, err := pgOID(ref)
 	if err != nil {
 		return agentstore.Detail{}, err
@@ -80,7 +80,7 @@ func (c agentCatalog) Describe(ctx context.Context, ref agentstore.ResourceRef) 
 	return pgDetail(d, c.lang), nil
 }
 
-func (c agentCatalog) Guarded(ctx context.Context, ref agentstore.ResourceRef) (bool, error) {
+func (c Catalog) Guarded(ctx context.Context, ref agentstore.ResourceRef) (bool, error) {
 	oid, err := pgOID(ref)
 	if err != nil {
 		return false, err
@@ -88,14 +88,14 @@ func (c agentCatalog) Guarded(ctx context.Context, ref agentstore.ResourceRef) (
 	return c.pg.Guarded(ctx, oid)
 }
 
-func (c agentCatalog) Search(ctx context.Context, q string, exclude []agentstore.FieldRef, after *agentstore.Cursor, limit int) ([]agentstore.Match, error) {
+func (c Catalog) Search(ctx context.Context, q string, exclude []agentstore.FieldRef, after *agentstore.Cursor, limit int) ([]agentstore.Match, error) {
 	ex := make([]pgcatalog.ColumnKey, len(exclude))
 	for i, ref := range exclude {
-		col, err := pgColumn(ref)
+		col, err := ParseFieldRef(ref)
 		if err != nil {
 			return nil, err
 		}
-		ex[i] = pgcatalog.ColumnKey{OID: col.TableOID, Attnum: col.Attnum}
+		ex[i] = col
 	}
 	var cur *pgcatalog.SearchCursor
 	if after != nil {
@@ -112,19 +112,19 @@ func (c agentCatalog) Search(ctx context.Context, q string, exclude []agentstore
 	return out, nil
 }
 
-func (c agentCatalog) Structure(ctx context.Context) ([]string, error) { return c.pg.Structure(ctx) }
+func (c Catalog) Structure(ctx context.Context) ([]string, error) { return c.pg.Structure(ctx) }
 
-func (c agentCatalog) Database() string { return c.pg.Database() }
+func (c Catalog) Database() string { return c.pg.Database() }
 
-func (c agentCatalog) Host() string { return c.pg.Host() }
+func (c Catalog) Host() string { return c.pg.Host() }
 
 // pgResourceRef is a table's ref: its OID.
 func pgResourceRef(oid uint32) agentstore.ResourceRef {
 	return agentstore.ResourceRef(strconv.FormatUint(uint64(oid), 10))
 }
 
-// pgFieldRef is a column's ref: its table's OID and its attribute number.
-func pgFieldRef(oid uint32, attnum int16) agentstore.FieldRef {
+// FieldRef is a column's ref: its table's OID and its attribute number.
+func FieldRef(oid uint32, attnum int16) agentstore.FieldRef {
 	return agentstore.FieldRef(strconv.FormatUint(uint64(oid), 10) + "/" + strconv.Itoa(int(attnum)))
 }
 
@@ -134,12 +134,12 @@ func pgFieldRefs(oid uint32, attnums []int16) []agentstore.FieldRef {
 	}
 	out := make([]agentstore.FieldRef, len(attnums))
 	for i, n := range attnums {
-		out[i] = pgFieldRef(oid, n)
+		out[i] = FieldRef(oid, n)
 	}
 	return out
 }
 
-// pgOID reads a resource ref back. A ref this wiring did not write is an
+// pgOID reads a resource ref back. A ref this adapter did not write is an
 // engine defect, never a guess.
 func pgOID(ref agentstore.ResourceRef) (uint32, error) {
 	oid, err := strconv.ParseUint(string(ref), 10, 32)
@@ -149,23 +149,23 @@ func pgOID(ref agentstore.ResourceRef) (uint32, error) {
 	return uint32(oid), nil
 }
 
-// pgColumn reads a field ref back, as the column ref the PII classes use. A
-// ref this wiring did not write is an engine defect, never a guess.
-func pgColumn(ref agentstore.FieldRef) (pii.ColumnRef, error) {
+// ParseFieldRef reads a field ref back, as the column the PII classes use. A
+// ref this adapter did not write is an engine defect, never a guess.
+func ParseFieldRef(ref agentstore.FieldRef) (pgcatalog.ColumnKey, error) {
 	bad := fmt.Errorf("describe: %q is not a Postgres field ref", ref)
 	table, col, ok := strings.Cut(string(ref), "/")
 	if !ok {
-		return pii.ColumnRef{}, bad
+		return pgcatalog.ColumnKey{}, bad
 	}
 	oid, err := strconv.ParseUint(table, 10, 32)
 	if err != nil {
-		return pii.ColumnRef{}, bad
+		return pgcatalog.ColumnKey{}, bad
 	}
 	attnum, err := strconv.ParseInt(col, 10, 16)
-	if err != nil || pgFieldRef(uint32(oid), int16(attnum)) != ref {
-		return pii.ColumnRef{}, bad
+	if err != nil || FieldRef(uint32(oid), int16(attnum)) != ref {
+		return pgcatalog.ColumnKey{}, bad
 	}
-	return pii.ColumnRef{TableOID: uint32(oid), Attnum: int16(attnum)}, nil
+	return pgcatalog.ColumnKey{OID: uint32(oid), Attnum: int16(attnum)}, nil
 }
 
 func pgResource(r pgcatalog.Relation) agentstore.Resource {
@@ -260,7 +260,7 @@ func pgField(oid uint32, c pgcatalog.Column) agentstore.Field {
 		shown.Default = &def
 	}
 	return agentstore.Field{
-		Ref: pgFieldRef(oid, c.Attnum), Name: c.Name, Type: c.Type, Nullable: c.Nullable, Comment: c.Comment,
+		Ref: FieldRef(oid, c.Attnum), Name: c.Name, Type: c.Type, Nullable: c.Nullable, Comment: c.Comment,
 		Readable: c.Selectable, ReadsFrom: pgFieldRefs(oid, c.DefaultAttnums),
 		Display: shown, Masked: pgFieldDisplay{Generated: c.Generated},
 	}
@@ -293,45 +293,4 @@ func pgStats(d pgcatalog.Detail) pgStatsDisplay {
 		st.LastAnalyzed = &at
 	}
 	return st
-}
-
-// pgClasses are the agent's PII classes by column (pii.StoreClasses).
-type pgClasses interface {
-	Resolve(ctx context.Context, refs []pii.ColumnRef) ([]pii.Class, error)
-	Secrets(ctx context.Context) ([]pii.ColumnRef, error)
-	CatalogFingerprint(ctx context.Context) (string, error)
-}
-
-// agentClasses are the PII classes as the agent reads them, by field ref.
-type agentClasses struct{ pg pgClasses }
-
-// NewAgentClasses are the PII classes c as the agent reads them.
-func NewAgentClasses(c pgClasses) agentsvc.ClassResolver { return agentClasses{pg: c} }
-
-func (c agentClasses) Resolve(ctx context.Context, refs []agentstore.FieldRef) ([]pii.Class, error) {
-	cols := make([]pii.ColumnRef, len(refs))
-	for i, ref := range refs {
-		col, err := pgColumn(ref)
-		if err != nil {
-			return nil, err
-		}
-		cols[i] = col
-	}
-	return c.pg.Resolve(ctx, cols)
-}
-
-func (c agentClasses) Secrets(ctx context.Context) ([]agentstore.FieldRef, error) {
-	cols, err := c.pg.Secrets(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]agentstore.FieldRef, len(cols))
-	for i, col := range cols {
-		out[i] = pgFieldRef(col.TableOID, col.Attnum)
-	}
-	return out, nil
-}
-
-func (c agentClasses) CatalogFingerprint(ctx context.Context) (string, error) {
-	return c.pg.CatalogFingerprint(ctx)
 }

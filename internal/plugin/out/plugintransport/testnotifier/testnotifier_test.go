@@ -135,7 +135,7 @@ func TestOKRecordsWhatItReceived(t *testing.T) {
 	r := s.records(t)
 	require.Len(t, r, 2)
 	require.Equal(t, tn.Record{
-		Hook: tn.HookFeedObserve, Agent: "product_a", Mode: tn.ModeOK,
+		Hook: tn.HookFeedObserve, Agent: "agent:product_a", Mode: tn.ModeOK,
 		Events: []json.RawMessage{json.RawMessage(adaptertest.FeedEvent(3)), json.RawMessage(adaptertest.FeedEvent(8))},
 	}, r[0])
 	require.Contains(t, string(r[0].Events[0]), "a<b&c>", "recorded unescaped")

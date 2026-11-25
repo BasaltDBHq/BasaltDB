@@ -362,7 +362,7 @@ func TestDeliveryReachesEngineKeptEntries(t *testing.T) {
 	time.Sleep(3 * fastDeliver.tries[3])
 	got = reportedNotices(t, r.report, sch)
 	require.Len(t, got, 1, "one notice: nothing from before the approval, nothing of product_a")
-	require.Equal(t, "product_b", got[0].Agent)
+	require.Equal(t, "agent:product_b", got[0].Agent)
 	require.Equal(t, localShort, got[0].Event.Data["link"])
 	install, err := guard.InstallID(context.Background(), f.d.Admin)
 	require.NoError(t, err)

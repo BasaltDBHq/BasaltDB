@@ -732,6 +732,16 @@ type feedKindCase struct {
 
 // feedKindCases are one row per ledger kind the guard writes, each written
 // as its function writes it: what is an event, and what is not.
+// pgStore is an event's store part as JSON decodes it: Postgres, with the
+// store's verb when it gave one.
+func pgStore(verb string) map[string]any {
+	s := map[string]any{"kind": "POSTGRES"}
+	if verb != "" {
+		s["verb"] = verb
+	}
+	return s
+}
+
 func feedKindCases(run, task, approvalID, revertID uuid.UUID) []feedKindCase {
 	held := map[string]any{
 		"approvalId": approvalID, "runId": run, "taskId": task, "intent": "free text", "statement": "DELETE FROM x",
@@ -740,24 +750,24 @@ func feedKindCases(run, task, approvalID, revertID uuid.UUID) []feedKindCase {
 	return []feedKindCase{
 		{
 			kind: "CHANGE", op: "DELETE", change: true, typ: "dev.basaltdb.write.applied",
-			detail: map[string]any{"runId": run, "taskId": task, "intent": "i", "statement": "s", "table": "public.leads", "rows": 3, "cascadedRows": 2, "durationMs": 1, "status": "APPLIED"},
-			data:   map[string]any{"runId": run.String(), "taskId": task.String(), "op": "DELETE", "table": "public.leads", "rows": float64(3), "cascadedRows": float64(2)},
+			detail: map[string]any{"runId": run, "taskId": task, "intent": "i", "statement": "s", "resource": "public.leads", "rows": 3, "cascadedRows": 2, "durationMs": 1, "status": "APPLIED"},
+			data:   map[string]any{"runId": run.String(), "taskId": task.String(), "op": "DELETE", "store": pgStore("DELETE"), "resource": "public.leads", "rows": float64(3), "cascadedRows": float64(2)},
 		},
 		{kind: "CHANGE", op: "UPDATE", change: true, detail: map[string]any{"runId": run, "status": "PREVIEW", "rows": 1}},
 		{
 			kind: "REFUSED", op: "UPDATE", change: true, typ: "dev.basaltdb.write.refused",
 			detail: map[string]any{"runId": run, "taskId": nil, "intent": "i", "statement": "s", "code": "ROW_LIMIT_EXCEEDED", "reason": "too many"},
-			data:   map[string]any{"runId": run.String(), "op": "UPDATE", "reasonCode": "ROW_LIMIT_EXCEEDED"},
+			data:   map[string]any{"runId": run.String(), "op": "UPDATE", "store": pgStore("UPDATE"), "reasonCode": "ROW_LIMIT_EXCEEDED"},
 		},
 		{
 			kind: "REFUSED", op: "OTHER", change: true, typ: "dev.basaltdb.write.refused",
 			detail: map[string]any{"runId": nil, "code": "NOT_A_CONTRACT_CODE", "reason": "r"},
-			data:   map[string]any{"op": "OTHER"},
+			data:   map[string]any{"op": "OTHER", "store": pgStore("")},
 		},
-		{kind: "REFUSED", op: "SELECT", change: true, detail: map[string]any{"runId": run, "code": "QUERY_TIMEOUT"}},
+		{kind: "REFUSED", op: "READ", change: true, detail: map[string]any{"runId": run, "code": "QUERY_TIMEOUT"}},
 		{
 			kind: "APPROVAL_PENDING", op: "DELETE", change: true, typ: "dev.basaltdb.write.held", detail: held,
-			data: map[string]any{"approvalId": approvalID.String(), "runId": run.String(), "taskId": task.String(), "op": "DELETE", "rows": float64(3), "expiresAt": "2026-11-20T06:03:02.123456Z"},
+			data: map[string]any{"approvalId": approvalID.String(), "runId": run.String(), "taskId": task.String(), "op": "DELETE", "store": pgStore("DELETE"), "rows": float64(3), "expiresAt": "2026-11-20T06:03:02.123456Z"},
 		},
 		{
 			kind: "APPROVED", change: true, typ: "dev.basaltdb.approval.signed",
@@ -787,7 +797,7 @@ func feedKindCases(run, task, approvalID, revertID uuid.UUID) []feedKindCase {
 		{kind: "REVERT_BATCH", op: "REVERT", change: true, detail: map[string]any{"revertId": revertID}},
 		{kind: "REVERT_RESCOPED", detail: map[string]any{"revertId": revertID}},
 		{kind: "REVERT_RESET", detail: map[string]any{"revertId": revertID}},
-		{kind: "READ", op: "SELECT", change: true, detail: map[string]any{"runId": run}},
+		{kind: "READ", op: "READ", change: true, detail: map[string]any{"runId": run}},
 		{kind: "ROW_CHANGE", op: "UPDATE", change: true, detail: map[string]any{"xmin": "1"}},
 		{kind: "RUN_STARTED", detail: map[string]any{"runId": run}},
 		{kind: "PRUNED", detail: map[string]any{"rowsDeleted": 1}},
@@ -895,7 +905,7 @@ func TestOnlyEventKindsAreSent(t *testing.T) {
 			if c.typ == "" {
 				return
 			}
-			data := map[string]any{"installId": install.String(), "seq": float64(seq), "agent": "product_a"}
+			data := map[string]any{"installId": install.String(), "seq": float64(seq), "agent": "agent:product_a"}
 			for k, v := range c.data {
 				data[k] = v
 			}

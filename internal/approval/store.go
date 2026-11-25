@@ -56,8 +56,8 @@ type Proofs interface {
 	RevealHeld(ctx context.Context, id uuid.UUID, held HeldRun, proof passkey.Assertion, key []byte) ([]approval.RevealedRow, error)
 }
 
-// Store is a store with all three sides of a held write, as the wiring
-// builds a StoreSet from it.
+// Store is a store with all three sides of a held write, which a StoreSet
+// can take in each of its ports.
 type Store interface {
 	Records
 	Holds

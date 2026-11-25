@@ -32,16 +32,19 @@ func TestHeldStatementReadsTheBindingsRequest(t *testing.T) {
 }
 
 // A held statement the SQL policy no longer passes, or a parameter that
-// does not decode, keeps the error the reveal gave before.
+// does not decode, keeps the error the reveal gave before: RevealHeld's
+// mapping returns it as it is.
 func TestHeldStatementRefusals(t *testing.T) {
 	t.Parallel()
 	_, err := heldStatement(approval.HeldRequest{Kind: approval.RequestSQL, Statement: "DROP TABLE public.leads"})
 	require.ErrorContains(t, err, "the held statement no longer parses: ")
 	var re *action.RefusalError
 	require.ErrorAs(t, err, &re, "the policy's refusal is wrapped")
+	require.Same(t, err, revealApprovalRefusal(MapError(err)))
 
 	_, err = heldStatement(approval.HeldRequest{
 		Kind: approval.RequestSQL, Statement: "DELETE FROM public.leads WHERE id = $1", Params: []json.RawMessage{json.RawMessage(`{`)},
 	})
 	require.ErrorContains(t, err, "a held parameter: ")
+	require.Same(t, err, revealApprovalRefusal(MapError(err)))
 }

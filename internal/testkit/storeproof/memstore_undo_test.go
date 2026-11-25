@@ -71,23 +71,32 @@ type memRevert struct {
 // hint (022_store_neutral_reverts.sql), and the statement timeout. The
 // refusal the agent gets is the adapter's own mapping of them
 // (postgres.PrepareError), never a copy of it.
-var postgresRevertAnswers = map[action.RevertReason]*pgconn.PgError{
-	action.RevertFilterName: {Code: "BS011", Message: "SCOPE_REFUSED", Detail: "NAME", Hint: "leads is not a schema.table name"},
-	action.RevertFilter:     {Code: "BS011", Message: "SCOPE_REFUSED", Detail: "FILTER", Hint: "public.ghost has no change of yours in this scope"},
-	action.RevertNotOwnRun: {
+var postgresRevertAnswers = []postgresRevertAnswer{
+	{action.RevertFilterName, &pgconn.PgError{Code: "BS011", Message: "SCOPE_REFUSED", Detail: "NAME", Hint: "leads is not a schema.table name"}},
+	{action.RevertFilter, &pgconn.PgError{Code: "BS011", Message: "SCOPE_REFUSED", Detail: "FILTER", Hint: "public.ghost has no change of yours in this scope"}},
+	{action.RevertNotOwnRun, &pgconn.PgError{
 		Code: "BS011", Message: "SCOPE_REFUSED", Detail: "NOT_OWN_RUN",
 		Hint: "run 0193a4c2-7d1e-7c3a-9f00-0000000000ff is not one of your runs",
-	},
-	action.RevertTimedOut: {Code: "57014", Message: "canceling statement due to statement timeout"},
+	}},
+	{action.RevertTimedOut, &pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"}},
+}
+
+// postgresRevertAnswer is the guard's answer for one refusal reason.
+type postgresRevertAnswer struct {
+	reason action.RevertReason
+	answer *pgconn.PgError
 }
 
 // postgresRevertRefusal is the refusal the Postgres adapter maps the
 // guard's answer for reason to.
 func postgresRevertRefusal(reason action.RevertReason) *action.RevertRefusalError {
-	pe, ok := postgresRevertAnswers[reason]
-	if !ok {
+	i := slices.IndexFunc(postgresRevertAnswers, func(a postgresRevertAnswer) bool {
+		return a.reason == reason
+	})
+	if i < 0 {
 		panic("no Postgres answer for " + reason)
 	}
+	pe := postgresRevertAnswers[i].answer
 	var rr *action.RevertRefusalError
 	if !errors.As(postgres.PrepareError(pe), &rr) || rr.Reason != reason {
 		panic("the Postgres adapter does not map its answer to " + reason)

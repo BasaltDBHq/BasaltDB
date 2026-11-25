@@ -3,13 +3,11 @@ package guard
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
 
 // rescopeProof is the proof as rescope_revert reads it: base64url fields.
@@ -67,13 +65,13 @@ func RescopeOwn(ctx context.Context, q Querier, revertID uuid.UUID, s action.Sco
 	if err != nil {
 		return action.PreparedRevert{}, err
 	}
-	b, err := revert.ParseBinding(out.BindingText)
+	batched, err := bindingBatched(out.BindingText)
 	if err != nil {
-		return action.PreparedRevert{}, fmt.Errorf("guard returned a bad revert binding: %w", err)
+		return action.PreparedRevert{}, err
 	}
 	return action.PreparedRevert{
 		RevertID: out.RevertID, BindingText: out.BindingText, ExpiresAt: out.ExpiresAt, Lines: out.Lines,
-		Batched: b.Batched,
+		Batched: batched,
 	}, nil
 }
 

@@ -87,7 +87,7 @@ func TestPluginApprovalRoundTrip(t *testing.T) {
 	p := person(t, d)
 
 	settings := guardmodel.PluginSettings{Config: json.RawMessage(`{"threshold": 0.60, "max": 1e3}`), TimeoutMs: intPtr(300)}
-	opened, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(b.Role, a.Role), settings)
+	opened, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(b.Name, a.Name), settings)
 	require.NoError(t, err)
 	require.WithinDuration(t, time.Now().Add(24*time.Hour), opened.ExpiresAt, time.Minute)
 	require.Equal(t, `{"config": {"max": 1000, "threshold": 0.60}, "timeoutMs": 300}`, opened.SettingsText)
@@ -95,8 +95,8 @@ func TestPluginApprovalRoundTrip(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(opened.BindingText), &binding))
 	require.Equal(t, "PLUGIN", binding["kind"])
 	require.Equal(t, opened.ID.String(), binding["approvalId"])
-	require.Equal(t, a.Role, binding["requestedBy"])
-	require.Equal(t, []any{a.Role, b.Role}, binding["agents"], "sorted by the client, kept by Postgres")
+	require.Equal(t, a.Name, binding["requestedBy"])
+	require.Equal(t, []any{a.Name, b.Name}, binding["agents"], "sorted by the client, kept by Postgres")
 	sum := sha256.Sum256([]byte(opened.SettingsText))
 	require.Equal(t, hex.EncodeToString(sum[:]), binding["settingsSha256"])
 	require.NotContains(t, binding, "change", "no earlier signed approval")
@@ -188,7 +188,7 @@ func TestAgentCannotForgePluginApproved(t *testing.T) {
 	// A held write of the same agent, for the cross-kind case below.
 	held, _ := previewAndHold(t, a.Conn, newRun(t, a, "remove the spam lead"), `DELETE FROM public.leads WHERE id = $1`, []any{3}, []string{})
 	ctx := context.Background()
-	opened, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Role), guardmodel.PluginSettings{})
+	opened, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Name), guardmodel.PluginSettings{})
 	require.NoError(t, err)
 	approvedDetail := `{"approvalId": "` + opened.ID.String() + `", "credentialId": "AAAA", "bindingSha256": "` +
 		strings.Repeat("0", 64) + `", "name": "local-ner", "instance": "client_x", "version": "0.3.1", "manifestSha256": "` +
@@ -273,9 +273,9 @@ func TestPluginSignatureNotReplayable(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", leads, nil)
 	p := person(t, d)
-	one, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Role), guardmodel.PluginSettings{})
+	one, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Name), guardmodel.PluginSettings{})
 	require.NoError(t, err)
-	other := localApproval(a.Role)
+	other := localApproval(a.Name)
 	other.Instance = "default"
 	two, err := guard.OpenPluginApproval(ctx, a.Conn, other, guardmodel.PluginSettings{})
 	require.NoError(t, err)
@@ -299,16 +299,16 @@ func TestPluginApprovalPasskeyOfAnotherDatabase(t *testing.T) {
 	elsewhere := guardtest.New(t).WithDemo(t)
 	elsewhere.NewAgent(t, "bot", leads, nil)
 	p := person(t, elsewhere)
-	opened, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Role), guardmodel.PluginSettings{})
+	opened, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Name), guardmodel.PluginSettings{})
 	require.NoError(t, err)
 	_, err = guard.SubmitPluginApproval(ctx, a.Conn, signPlugin(t, p, opened))
 	requireInvalid(t, err, "unknown passkey")
 	require.Zero(t, ledgerKinds(t, d, a.Role, string(guardmodel.PluginApproved)))
 }
 
-// Every role in agents must be an agent role of this database: not a
-// missing role, the agents group, a superuser, the guard role, a plain
-// role or an agent of another database's guard.
+// Every agent in agents must name an agent role of this database: not an
+// unknown name, nor a role that is the agents group, a superuser, the
+// guard role, a plain role or an agent of another database's guard.
 func TestOpenRefusesUnknownAgent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -320,17 +320,22 @@ func TestOpenRefusesUnknownAgent(t *testing.T) {
 	d.Exec(t, `CREATE ROLE `+plain+` LOGIN`)
 	superuser := scalarOf[string](t, d.Admin, `SELECT current_user::text`)
 	require.True(t, scalarOf[bool](t, d.Admin, `SELECT rolsuper FROM pg_roles WHERE rolname = current_user`))
-	for _, role := range []string{
-		d.Names.Prefix + "_agent_nobody", d.Names.Agents(), superuser, d.Names.Guard(), plain, o.Role,
-	} {
-		_, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Role, role), guardmodel.PluginSettings{})
+	// Names are agent:<name>, mapped to roles from the guard's record: a
+	// name with no record, and a recorded name whose role is not an agent
+	// role of this database (here, of the agents group, a superuser, the
+	// guard role, a plain role, or an agent of another database's guard).
+	for i, role := range []string{d.Names.Agents(), superuser, d.Names.Guard(), plain, o.Role} {
+		d.Exec(t, `INSERT INTO basalt_meta.agent_names (role, name) VALUES ($1, $2)`, role, fmt.Sprintf("fake_%d", i))
+	}
+	for _, name := range []string{"agent:nobody", "agent:fake_0", "agent:fake_1", "agent:fake_2", "agent:fake_3", "agent:fake_4"} {
+		_, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Name, name), guardmodel.PluginSettings{})
 		requireGuardDetail(t, err, guardmodel.CodeNotAllowed, guardmodel.DetailUnknownAgent)
-		require.NotContains(t, err.Error(), role, "the refusal never names the role")
+		require.NotContains(t, err.Error(), name, "the refusal never names the agent")
 	}
 	require.Zero(t, count(t, d.Admin, `SELECT count(*)::int FROM basalt_meta.plugin_approvals`))
 	require.Zero(t, ledgerKinds(t, d, a.Role, string(guardmodel.PluginApprovalPending)))
 	// The admin is not an agent role and cannot open one.
-	_, err := guard.OpenPluginApproval(ctx, d.Admin, localApproval(a.Role), guardmodel.PluginSettings{})
+	_, err := guard.OpenPluginApproval(ctx, d.Admin, localApproval(a.Name), guardmodel.PluginSettings{})
 	requireCode(t, err, guardmodel.CodeNotAllowed)
 }
 
@@ -342,7 +347,7 @@ func TestOpenRefusesBadDetail(t *testing.T) {
 	a := d.NewAgent(t, "bot", leads, nil)
 	b := d.NewAgent(t, "helper", leads, nil)
 	base := func() map[string]any {
-		raw, err := json.Marshal(localApproval(a.Role))
+		raw, err := json.Marshal(localApproval(a.Name))
 		require.NoError(t, err)
 		var m map[string]any
 		require.NoError(t, json.Unmarshal(raw, &m))
@@ -350,8 +355,8 @@ func TestOpenRefusesBadDetail(t *testing.T) {
 	}
 	for name, mutate := range map[string]func(m map[string]any){
 		"no agents":             func(m map[string]any) { m["agents"] = []string{} },
-		"agents unsorted":       func(m map[string]any) { m["agents"] = []string{b.Role, a.Role} },
-		"agent twice":           func(m map[string]any) { m["agents"] = []string{a.Role, a.Role} },
+		"agents unsorted":       func(m map[string]any) { m["agents"] = []string{b.Name, a.Name} },
+		"agent twice":           func(m map[string]any) { m["agents"] = []string{a.Name, a.Name} },
 		"agent not a role name": func(m map[string]any) { m["agents"] = []string{"Bot One"} },
 		"no signer":             func(m map[string]any) { delete(m, "signer") },
 		"signer unknown value":  func(m map[string]any) { m["signer"] = "TRUSTED" },
@@ -428,14 +433,14 @@ func TestSecondPendingCancelsFirst(t *testing.T) {
 	a := d.NewAgent(t, "bot", leads, nil)
 	b := d.NewAgent(t, "helper", leads, nil)
 	p := person(t, d)
-	first, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Role), guardmodel.PluginSettings{})
+	first, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Name), guardmodel.PluginSettings{})
 	require.NoError(t, err)
-	other := localApproval(a.Role)
+	other := localApproval(a.Name)
 	other.Instance = "default"
 	otherOpened, err := guard.OpenPluginApproval(ctx, a.Conn, other, guardmodel.PluginSettings{})
 	require.NoError(t, err)
 	// Another agent of the database opens the same entry for itself.
-	second, err := guard.OpenPluginApproval(ctx, b.Conn, localApproval(b.Role), guardmodel.PluginSettings{})
+	second, err := guard.OpenPluginApproval(ctx, b.Conn, localApproval(b.Name), guardmodel.PluginSettings{})
 	require.NoError(t, err)
 
 	require.Equal(t, string(guardmodel.PluginApprovalStatusCancelled), approvalStatus(t, a.Conn, first.ID))
@@ -466,7 +471,7 @@ func TestPendingCap(t *testing.T) {
 	a := d.NewAgent(t, "bot", leads, nil)
 	p := person(t, d)
 	instance := func(i int) guardmodel.PluginApprovalDetail {
-		x := localApproval(a.Role)
+		x := localApproval(a.Name)
 		x.Instance = fmt.Sprintf("i%d", i)
 		return x
 	}
@@ -510,7 +515,7 @@ func TestPendingExpires(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", leads, nil)
 	p := person(t, d)
-	opened, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Role), guardmodel.PluginSettings{})
+	opened, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Name), guardmodel.PluginSettings{})
 	require.NoError(t, err)
 	require.Equal(t, 24*time.Hour, scalarOf[time.Duration](t, d.Admin,
 		`SELECT expires_at - opened_at FROM basalt_meta.plugin_approvals WHERE approval_id = $1`, opened.ID))
@@ -542,7 +547,7 @@ func TestDisableEndsApproval(t *testing.T) {
 		Endpoint:  guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointLocal},
 		Isolation: &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesNone, Network: guardmodel.PluginNetworkNotEnforced},
 	}
-	opened, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Role, b.Role), guardmodel.PluginSettings{})
+	opened, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Name, b.Name), guardmodel.PluginSettings{})
 	require.NoError(t, err)
 	// Disabled while pending: the signature afterwards is not ended.
 	require.NoError(t, guard.RecordPluginEntryEvent(ctx, a.Conn, guardmodel.PluginDisabled, entry))
@@ -607,9 +612,9 @@ func pluginVectors(t *testing.T) map[string]pluginVector {
 
 // The binding and settings texts open_plugin_approval returns are the
 // contract's vectors byte for byte, once the values only Postgres chooses
-// (the id, the expiry, the database's name and the role prefix) are
-// those of the vector. change is built from a real earlier signed
-// approval, and the settings go in as written in engine.json (1e3, 0.60).
+// (the id, the expiry and the database's name) are those of the vector.
+// change is built from a real earlier signed approval, and the settings go
+// in as written in engine.json (1e3, 0.60).
 func TestBindingBuiltByPostgres(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -621,7 +626,7 @@ func TestBindingBuiltByPostgres(t *testing.T) {
 	dbName := scalarOf[string](t, d.Admin, `SELECT current_database()::text`)
 	vectors := pluginVectors(t)
 
-	// asVector puts the vector's id, expiry, database and prefix into the
+	// asVector puts the vector's id, expiry and database into the
 	// texts Postgres returned, and compares.
 	asVector := func(t *testing.T, name string, o guardmodel.PluginApproval) {
 		t.Helper()
@@ -636,8 +641,7 @@ func TestBindingBuiltByPostgres(t *testing.T) {
 		text := strings.NewReplacer(
 			`"approvalId": "`+o.ID.String()+`"`, `"approvalId": "`+want.ApprovalID+`"`,
 			`"expiresAt": "`+got["expiresAt"].(string)+`"`, `"expiresAt": "`+want.ExpiresAt+`"`,
-			`"database": "`+dbName+`"`, `"database": "app"`,
-			d.Names.Prefix+"_agent_", "basalt_agent_",
+			`"store": {"kind": "POSTGRES", "name": "`+dbName+`"}`, `"store": {"kind": "POSTGRES", "name": "app"}`,
 		).Replace(o.BindingText)
 		require.Equal(t, v.Binding, text, name)
 		require.Equal(t, v.Settings, o.SettingsText, name)
@@ -654,7 +658,7 @@ func TestBindingBuiltByPostgres(t *testing.T) {
 
 	t.Run("level 1", func(t *testing.T) {
 		asVector(t, "level-1-known-local", open(t, a.Conn, guardmodel.PluginApprovalDetail{
-			Agents: []string{a.Role, b.Role}, Name: "slack-notify", Instance: "default", Version: "1.0.0",
+			Agents: []string{a.Name, b.Name}, Name: "slack-notify", Instance: "default", Version: "1.0.0",
 			ManifestSHA256: strings.Repeat("5e", 32), Hooks: []string{"approval.deliver", "feed.observe"},
 			Egress: []string{"slack.com:443"}, Endpoint: guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointLocal},
 			Isolation: &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesNone, Network: guardmodel.PluginNetworkNotEnforced},
@@ -662,7 +666,7 @@ func TestBindingBuiltByPostgres(t *testing.T) {
 		}, `{"timeoutMs": 2000, "config": {"channel": "ops-alerts"}}`))
 	})
 	acme := guardmodel.PluginApprovalDetail{
-		Agents: []string{a.Role}, Name: "acme-ner", Instance: "default", Version: "1.4.0",
+		Agents: []string{a.Name}, Name: "acme-ner", Instance: "default", Version: "1.4.0",
 		ManifestSHA256: strings.Repeat("3f", 32), Hooks: []string{"wire.detect"}, Roles: []string{"NAME_CUE", "VALUE"},
 		Egress: []string{"ner.acme.example:443"}, Endpoint: guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointRemote, Host: "ner.acme.example:443"},
 		Signer: guardmodel.PluginSignerUnknown,
@@ -676,17 +680,17 @@ func TestBindingBuiltByPostgres(t *testing.T) {
 		asVector(t, "change-turned-on-again", open(t, a.Conn, acme, acmeSettings))
 	})
 	t.Run("level 3, settings as engine.json holds them", func(t *testing.T) {
-		asVector(t, "level-3-unknown-local", open(t, b.Conn, localApproval(b.Role),
+		asVector(t, "level-3-unknown-local", open(t, b.Conn, localApproval(b.Name),
 			`{"minConfidence": 0.60, "timeoutMs": 300, "config": {"threshold": 0.60, "max": 1e3, "note": "tab\there é", "a": null}}`))
 	})
 	t.Run("a change", func(t *testing.T) {
-		before := localApproval(a.Role)
+		before := localApproval(a.Name)
 		before.Instance = "default"
 		earlier := open(t, a.Conn, before, `{"config": {"languages": ["en", "id"]}, "timeoutMs": 500}`)
 		_, err := guard.SubmitPluginApproval(ctx, a.Conn, signPlugin(t, p, earlier))
 		require.NoError(t, err)
 		after := before
-		after.Agents = []string{c.Role, a.Role}
+		after.Agents = []string{c.Name, a.Name}
 		after.Version, after.ManifestSHA256 = "0.4.0", strings.Repeat("b2", 32)
 		after.Roles = []string{"VALUE", "NAME_CUE"}
 		after.Egress = []string{"models.acme.example:443"}
@@ -696,13 +700,14 @@ func TestBindingBuiltByPostgres(t *testing.T) {
 
 // A guard at version 4 has no plugin approvals; the upgrade adds them and
 // keeps the chain. Version 5's SQL runs again over itself, PUBLIC can run
-// none of its functions, and agents keep exactly their grants.
+// none of its functions, and agents keep exactly their grants. Version 10
+// replaces some of them, so it runs again after, as an upgrade would.
 func TestPluginApprovalsMigration(t *testing.T) {
 	ctx := context.Background()
 	restore := guardtest.UpToVersion(t, 4)
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", leads, nil)
-	_, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Role), guardmodel.PluginSettings{})
+	_, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Name), guardmodel.PluginSettings{})
 	require.Error(t, err)
 	_, err = guard.ReadPluginApprovals(ctx, a.Conn)
 	require.Error(t, err, "no view before version 5")
@@ -714,10 +719,10 @@ func TestPluginApprovalsMigration(t *testing.T) {
 	d.NewAgent(t, "bot", leads, nil)
 	require.Equal(t, guard.LatestVersion(), scalarOf[int](t, d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
 	sql := guard.PluginApprovalsSQL(d.Names)
-	for range 2 {
-		d.Exec(t, "BEGIN; SET LOCAL ROLE "+d.Names.Guard()+"; SET LOCAL search_path = pg_catalog, pg_temp;"+sql+"COMMIT;")
+	for _, s := range []string{sql, sql, guard.StoreNeutralSQL(d.Names)} {
+		d.Exec(t, "BEGIN; SET LOCAL ROLE "+d.Names.Guard()+"; SET LOCAL search_path = pg_catalog, pg_temp;"+s+"COMMIT;")
 	}
-	_, err = guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Role), guardmodel.PluginSettings{})
+	_, err = guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Name), guardmodel.PluginSettings{})
 	require.NoError(t, err)
 	require.NoError(t, guard.RecordPluginEntryEvent(ctx, a.Conn, guardmodel.PluginEnabled, signed))
 
@@ -793,7 +798,7 @@ func TestPluginSettingsSHA256MatchesOpen(t *testing.T) {
 		{Config: json.RawMessage(`{"threshold": 0.60, "max": 1e3, "z": [1.50, "x"], "a": {"b": null}}`), TimeoutMs: intPtr(300), MinConfidence: &mc},
 		{MinConfidence: new(float64)},
 	} {
-		opened, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Role), s)
+		opened, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Name), s)
 		require.NoError(t, err)
 		rec, ok, err := guard.ReadPluginApproval(ctx, a.Conn, opened.ID)
 		require.NoError(t, err)

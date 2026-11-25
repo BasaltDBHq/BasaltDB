@@ -44,3 +44,8 @@ func PluginTrustRemovedSQL(n guardmodel.Names) string {
 func PluginApprovalsSQL(n guardmodel.Names) string {
 	return renderSQL(n, migrations[versionPluginApprovals-1].sql)
 }
+
+// StoreNeutralSQL is schema version 10's SQL as the install runs it.
+func StoreNeutralSQL(n guardmodel.Names) string {
+	return renderSQL(n, migrations[versionStoreNeutral-1].sql)
+}

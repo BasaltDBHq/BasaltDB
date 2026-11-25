@@ -307,7 +307,10 @@ func NextVersion(t *testing.T, nonBreaking bool) int {
 
 // Agent is a connected agent role.
 type Agent struct {
-	Role     string
+	Role string
+	// Name is the agent as texts name it, agent:<name> (CONTRACT.md,
+	// Stores, Agent names).
+	Name     string
 	Password string
 	URL      string
 	Conn     *pgx.Conn
@@ -323,7 +326,7 @@ func (d *DB) NewAgent(t *testing.T, name string, write, read []string) *Agent {
 	require.NoError(t, err)
 	dsn, err := guard.AgentConnString(d.URL, role, pw)
 	require.NoError(t, err)
-	return &Agent{Role: role, Password: pw, URL: dsn, Conn: d.connect(t, dsn)}
+	return &Agent{Role: role, Name: "agent:" + name, Password: pw, URL: dsn, Conn: d.connect(t, dsn)}
 }
 
 // Connect opens another connection as the agent.

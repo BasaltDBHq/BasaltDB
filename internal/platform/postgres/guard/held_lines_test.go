@@ -83,7 +83,7 @@ func TestHoldRefusesLinesOverTheCap(t *testing.T) {
 	require.NoError(t, tx.Rollback(ctx))
 
 	line := `{"op": "DELETE", "key": {"id": 1}, "old": {"id": 1, "body": "` + strings.Repeat("x", guardmodel.MaxHeldLinesBytes) +
-		`"}, "set": null, "table": "public.docs", "cascaded": false}`
+		`"}, "set": null, "resource": "public.docs", "cascaded": false}`
 	_, err = guard.Hold(ctx, a.Conn, in, bigRowTimeout, guard.HoldRequest{
 		Statement: `DELETE FROM public.docs WHERE id = $1`, Params: []any{1}, Assigned: []string{}, Lines: []string{line},
 	})

@@ -12,9 +12,9 @@
       "enum": ["KEY", "BEFORE", "AFTER", "NOW", "SET", "STATEMENT", "PARAMS"],
       "description": "Where the value was: a row image (KEY, BEFORE, AFTER on a change; KEY, NOW, SET on a revert line), the statement, or the parameters."
     },
-    "column": {
+    "field": {
       "type": "string",
-      "description": "The column left out of the image. Absent when the whole image (or the statement, or the whole parameter list) was left out."
+      "description": "The field left out of the image. Absent when the whole image (or the statement, or the whole parameter list) was left out."
     },
     "index": {
       "type": "integer",

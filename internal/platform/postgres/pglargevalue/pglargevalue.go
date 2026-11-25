@@ -117,7 +117,7 @@ const elideSQL = `lv_src AS MATERIALIZED (
 ), lv_large AS MATERIALIZED (
 	SELECT c.item, c.ord,
 		array_agg(c.col) FILTER (WHERE c.col IS NOT NULL) AS cols,
-		jsonb_agg(jsonb_strip_nulls(jsonb_build_object('column', c.col, 'index', c.idx, 'bytes', %[3]s, 'sha256', %[5]s))
+		jsonb_agg(jsonb_strip_nulls(jsonb_build_object('field', c.col, 'index', c.idx, 'bytes', %[3]s, 'sha256', %[5]s))
 			ORDER BY c.idx, c.col COLLATE "C") AS entries
 	FROM lv_cost c CROSS JOIN LATERAL (SELECT %[2]s AS txt OFFSET 0) t
 	WHERE c.cost > %[6]d GROUP BY c.item, c.ord

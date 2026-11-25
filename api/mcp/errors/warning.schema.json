@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/result-warning.v1.json",
   "title": "Result warning",
-  "description": "A warning on a successful result (its warnings array, absent when empty): the call worked, but something needs attention. RLS_HIDES_ROWS (query, write): row-level security hides every row of a table in the statement from the agent role, and the statement returned or changed 0 rows. GUARD_UPGRADE_AVAILABLE (run_start): only non-breaking guard migrations are missing; everything works, and basalt init's link adds them. See CONTRACT.md, Next steps.",
+  "description": "A warning on a successful result (its warnings array, absent when empty): the call worked, but something needs attention. RLS_HIDES_ROWS (query, write): row-level security hides every row of a resource in the statement from the agent role, and the statement returned or changed 0 rows. GUARD_UPGRADE_AVAILABLE (run_start): only non-breaking guard migrations are missing; everything works, and basalt init's link adds them. See CONTRACT.md, Next steps.",
   "type": "object",
   "additionalProperties": false,
   "required": ["code", "message", "nextSteps"],
@@ -15,9 +15,9 @@
       "type": "string",
       "description": "One line for the agent."
     },
-    "table": {
+    "resource": {
       "type": "string",
-      "description": "The table the warning is about, schema-qualified."
+      "description": "The resource the warning is about, as the store names it (Postgres: schema.table)."
     },
     "personMessage": {
       "type": "string",

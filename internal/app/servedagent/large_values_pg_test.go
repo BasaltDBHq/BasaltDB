@@ -164,7 +164,7 @@ func TestRunHistoryMarksLargeValues(t *testing.T) {
 	marks := entries(t, angles["largeValues"])
 	require.Len(t, marks, 7, "1,000,000 '<' are under 1 MiB of text but cost about 7 MB each")
 	for i, m := range marks {
-		require.Equal(t, fmt.Sprintf("c%d", i), m["column"])
+		require.Equal(t, fmt.Sprintf("c%d", i), m["field"])
 		require.Equal(t, json.Number("1000000"), m["bytes"])
 		require.Equal(t, sum256(strings.Repeat("<", 1000000)), m["sha256"])
 	}
@@ -177,7 +177,7 @@ func TestRunHistoryMarksLargeValues(t *testing.T) {
 	whole := entries(t, wide["largeValues"])
 	require.Len(t, whole, 1)
 	require.Equal(t, "AFTER", whole[0]["in"])
-	require.NotContains(t, whole[0], "column")
+	require.NotContains(t, whole[0], "field")
 
 	all := callFits(t, e.h, "run_history", map[string]any{"runId": e.run.String()})
 	require.Len(t, items(t, all), 3, "the whole run fits one page as well")

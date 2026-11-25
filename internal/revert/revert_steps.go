@@ -412,7 +412,7 @@ func (rc *Service) prepareTimeout(tool string, scope action.Scope, storeCode str
 			strings.ToLower(string(scope.Kind)), scope.ID, statementLimitText(rc.describe.StatementTimeout()))
 	}
 	te.PersonMessage = fmt.Sprintf("This revert is too large for the agent to %s in one call, so nothing was prepared. "+
-		"The agent can revert a part of it instead: only some runs or tables.", what)
+		"The agent can revert a part of it instead: only some runs or resources.", what)
 	steps, err := guidance.NewSteps().Stop("This revert is too large to prepare here: do not retry it as it is.").
 		AskPerson("Ask the person whether a narrower revert will do: request_revert with runs or resources.").
 		EndTurn(guidance.StepEndTurnPersonActsNext).Build()

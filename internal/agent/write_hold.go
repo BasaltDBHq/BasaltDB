@@ -81,7 +81,7 @@ func (wc *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutco
 	if a, err = wc.waitForSignature(ctx, a, p); err != nil {
 		return WriteOutcome{}, err
 	}
-	// The receipt is built from Postgres's record of the approval after the
+	// The receipt is built from the store's record of the approval after the
 	// signature (CONTRACT.md, Receipts), and handed over only once the write
 	// is applied.
 	if a, err = wc.approvals.FindApproval(ctx, a.ID); err != nil {

@@ -43,7 +43,7 @@ func DescribeTimeoutText(f Failure) string {
 	case f.Arg(ArgResource) != "":
 		return "The catalog was slow: call describe for this table once more, or search with a query for the columns you need."
 	}
-	return "The catalog was slow: call describe once more, or search with a query for the tables you need."
+	return "The catalog was slow: call describe once more, or search with a query for the resources you need."
 }
 
 // rowTooLargeTools are the tools whose own statement's rows the agent

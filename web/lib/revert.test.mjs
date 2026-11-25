@@ -357,7 +357,7 @@ test("every conflict kind shows the row now, or its key when it is gone, whateve
     KEY_TAKEN: "Another row now has this key.",
     ALREADY_REVERTED: "Already reverted.",
     VALUES_PRUNED: "Older than 30 days: the old values are gone.",
-    SCHEMA_CHANGED: "The table changed since the agent wrote it.",
+    SCHEMA_CHANGED: "The resource changed since the agent wrote it.",
     CASCADE: "Restoring it would change rows that are not part of this revert.",
     CONSTRAINT: "Restoring it would break a database constraint.",
   };

@@ -31,7 +31,7 @@ func (p ScopeProof) Assertion() passkey.Assertion {
 // The pages' reveal routes (CONTRACT.md, Approvals, Rows hidden from the
 // agent; Local pages, POST …/reveal): the person proves with their passkey
 // that they want to see the values of the lines the agent role cannot
-// read, and Postgres returns them for this one answer. The engine keeps
+// read, and the guard returns them for this one answer. The engine keeps
 // nothing: the reveal key, the ticket and the rows live for one request,
 // are never logged, and never reach the MCP channel.
 
@@ -42,8 +42,8 @@ type RevealRequest struct {
 	RevealSecret string     `json:"revealSecret"`
 }
 
-// revealKey is the key Postgres checks the proof against, derived from the
-// page's reveal secret, which never reaches Postgres.
+// revealKey is the key the guard checks the proof against, derived from the
+// page's reveal secret, which never reaches the guard.
 func (in RevealRequest) RevealKey() ([]byte, error) {
 	raw, err := links.DecodeSecret(in.RevealSecret)
 	if err != nil {

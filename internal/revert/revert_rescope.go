@@ -292,7 +292,7 @@ func (rc *Service) rescopeError(ctx context.Context, r action.Revert, err error)
 
 // widenRefused is every failed proof or token check (CONTRACT.md, check
 // order 3): one fixed answer, so the agent holding the link learns nothing
-// about other agents' runs or tables from it.
+// about other agents' runs or resources from it.
 func widenRefused() error {
 	return &guidance.PageError{ToolError: &toolresult.ToolError{
 		Code:    guidance.CodeRevertInvalid,
@@ -311,7 +311,7 @@ func rescopeTimeout(limit time.Duration) error {
 		Code: guidance.CodeQueryTimeout, Reason: guidance.ReasonTimeLimit,
 		Message: fmt.Sprintf("the scope change took longer than %d seconds and was stopped; nothing changed", seconds),
 		PersonMessage: fmt.Sprintf("Changing the scope took longer than %d seconds and was stopped. Nothing changed. "+
-			"Choose fewer agents, runs or tables, or try again.", seconds),
+			"Choose fewer agents, runs or resources, or try again.", seconds),
 	}}
 }
 

@@ -52,8 +52,8 @@ func (wc *Service) rlsWarning(dbName string) (toolresult.Warning, error) {
 		return toolresult.Warning{}, err
 	}
 	return toolresult.Warning{
-		Code:  toolresult.WarningRLSHidesRows,
-		Table: dbName,
+		Code:     toolresult.WarningRLSHidesRows,
+		Resource: dbName,
 		Message: fmt.Sprintf("row-level security hides every row of %s from this agent, so an empty result says nothing about its data; "+
 			"do not conclude the table is empty", table),
 		PersonMessage: person,

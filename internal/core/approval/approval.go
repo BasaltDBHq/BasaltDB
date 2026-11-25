@@ -2,7 +2,7 @@
 // the engine, the static approval page and whoever relays the signed result
 // (CONTRACT.md, Approvals): the binding text the store builds, the preview
 // lines it covers, the request in the approval link, and the response code
-// the page outputs. Nothing here decides whether an approval counts; Postgres
+// the page outputs. Nothing here decides whether an approval counts; the guard
 // does, in basalt_meta.submit_approval and the guard's commit check.
 package approval
 

@@ -127,7 +127,7 @@
         "type": "string",
         "maxLength": 4096,
         "pattern": "^basalt-receipt\\.1\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
-        "description": "with approvalId, the engine-signed receipt basalt-receipt.1.<payload>.<sig> of the approval this write applied (api/mcp/vault/receipt.schema.json), built from Postgres's record of it. Absent with noReceipt."
+        "description": "with approvalId, the engine-signed receipt basalt-receipt.1.<payload>.<sig> of the approval this write applied (api/mcp/vault/receipt.schema.json), built from the store's record of it. Absent with noReceipt."
       },
       "noReceipt": {
         "type": "string",

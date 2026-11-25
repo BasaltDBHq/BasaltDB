@@ -66,18 +66,6 @@ type Line struct {
 	// largevalue.MaxChangeIDs. A signed line never has them.
 	LargeValues   []largevalue.Entry `json:"largeValues,omitempty"`
 	MoreChangeIDs int                `json:"moreChangeIds,omitempty"`
-	// Marks summarize the large values of key, now (Before) and set
-	// (After) for the CLI's text output; set by ForDisplay, never on the wire.
-	Marks largevalue.Marks `json:"-"`
-}
-
-// imageMarks is largevalue.ImageMarks, none for an image that is not an object.
-func imageMarks(image json.RawMessage) map[string]string {
-	marks, err := largevalue.ImageMarks(image)
-	if err != nil {
-		return nil
-	}
-	return marks
 }
 
 // ParseLine parses one signed revert line for display: the text rules,
@@ -134,15 +122,12 @@ func ParseMarkedLine(text string) (Line, error) {
 }
 
 // ForDisplay returns the line with its row values as the wire format has
-// them: show turns a row image as the store wrote it into that form (for
-// Postgres, a timestamptz as RFC 3339 UTC); nil leaves it as written. The
-// signed text, which the passkey signature and the hashes cover, is never
-// changed: only what is shown.
-//
-// Marks are measured on the text as signed, before the values are shown
-// another way: they must match the agent's marker.
+// them: show turns a row image as the store wrote it into that form; nil
+// leaves it as written. The revert service passes the store set's ShowValues
+// (the Postgres wiring, wiretime.JSON, rewrites a timestamptz as RFC 3339
+// UTC). The signed text, which the passkey signature and the hashes cover,
+// is never changed: only what is shown.
 func (l Line) ForDisplay(show func(json.RawMessage) json.RawMessage) Line {
-	l.Marks = largevalue.Marks{Key: imageMarks(l.Key), Before: imageMarks(l.Now), After: imageMarks(l.Set)}
 	if show != nil {
 		l.Key, l.Now, l.Set = show(l.Key), show(l.Now), show(l.Set)
 	}

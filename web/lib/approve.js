@@ -237,7 +237,7 @@ function renderLines(state) {
 function wireReveal(rp, state) {
   const { req, relay } = state;
   if (!canReveal(req, relay)) return;
-  $("reveal-text").textContent = `${hiddenLines(req)} of these rows are in tables the agent cannot read. You can see their values with your passkey; the agent still cannot.`;
+  $("reveal-text").textContent = `${hiddenLines(req)} of these rows are in resources the agent cannot read. You can see their values with your passkey; the agent still cannot.`;
   $("reveal-box").hidden = false;
   $("reveal").addEventListener("click", async () => {
     $("reveal").disabled = true;

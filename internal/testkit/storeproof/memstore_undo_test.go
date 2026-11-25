@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
@@ -23,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/core/textrule/textruletest"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
+	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
 // The revert's ports: Records, Undo and Proofs, over the changes the
@@ -63,37 +65,41 @@ type memRevert struct {
 	lines []memLine
 }
 
-// postgresRevertRefusals are the refusals the Postgres adapter maps the
-// guard's answers to: the reason, the guard's text and the SQLSTATE.
-var postgresRevertRefusals = []postgresRefusal{
-	{reason: action.RevertNotFound},
-	{reason: action.RevertNotOwnRun, detail: "the run is not one of yours"},
-	{reason: action.RevertFilter, detail: "public.ghost has no change of yours in this scope"},
-	{reason: action.RevertFilterName, detail: "leads is not a schema.table name"},
-	{reason: action.RevertRowsChanged, detail: "rows changed since the preview; nothing was reverted, prepare the revert again"},
-	{reason: action.RevertTimedOut, code: "57014"},
+// postgresRevertAnswers are the Postgres guard's answers to
+// preview_revert and prepare_revert for the refusals the proof compares,
+// as Postgres raises them: SCOPE_REFUSED with its typed detail and its
+// hint (022_store_neutral_reverts.sql), and the statement timeout. The
+// refusal the agent gets is the adapter's own mapping of them
+// (postgres.PrepareError), never a copy of it.
+var postgresRevertAnswers = map[action.RevertReason]*pgconn.PgError{
+	action.RevertFilterName: {Code: "BS011", Message: "SCOPE_REFUSED", Detail: "NAME", Hint: "leads is not a schema.table name"},
+	action.RevertFilter:     {Code: "BS011", Message: "SCOPE_REFUSED", Detail: "FILTER", Hint: "public.ghost has no change of yours in this scope"},
+	action.RevertNotOwnRun: {
+		Code: "BS011", Message: "SCOPE_REFUSED", Detail: "NOT_OWN_RUN",
+		Hint: "run 0193a4c2-7d1e-7c3a-9f00-0000000000ff is not one of your runs",
+	},
+	action.RevertTimedOut: {Code: "57014", Message: "canceling statement due to statement timeout"},
 }
 
-type postgresRefusal struct {
-	reason       action.RevertReason
-	detail, code string
-}
-
-// postgresRefusalOf is the Postgres adapter's refusal for reason.
-func postgresRefusalOf(reason action.RevertReason) postgresRefusal {
-	i := slices.IndexFunc(postgresRevertRefusals, func(p postgresRefusal) bool { return p.reason == reason })
-	if i < 0 {
-		panic("no Postgres refusal for " + reason)
+// postgresRevertRefusal is the refusal the Postgres adapter maps the
+// guard's answer for reason to.
+func postgresRevertRefusal(reason action.RevertReason) *action.RevertRefusalError {
+	pe, ok := postgresRevertAnswers[reason]
+	if !ok {
+		panic("no Postgres answer for " + reason)
 	}
-	return postgresRevertRefusals[i]
+	var rr *action.RevertRefusalError
+	if !errors.As(postgres.PrepareError(pe), &rr) || rr.Reason != reason {
+		panic("the Postgres adapter does not map its answer to " + reason)
+	}
+	return rr
 }
 
 // refuseRevert is the store's refusal of a revert call for reason, with its
-// own text and code, or Postgres's.
+// own text and code, or the Postgres adapter's refusal for it.
 func (s *memStore) refuseRevert(reason action.RevertReason, detail, code string) error {
 	if s.asPostgres {
-		pg := postgresRefusalOf(reason)
-		detail, code = pg.detail, pg.code
+		return postgresRevertRefusal(reason)
 	}
 	return &action.RevertRefusalError{
 		Reason: reason, Detail: detail, StoreCode: code,

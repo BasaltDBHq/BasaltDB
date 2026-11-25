@@ -187,7 +187,9 @@ type memStore struct {
 
 	pii memPII
 	// returned observes a write's returned documents before the write
-	// commits, as the Postgres adapter's returned-rows hook does.
+	// commits. It stands in for the Postgres adapter's returned-rows hook
+	// (returnedPII in internal/app): no port asks a store for it, and the
+	// agent service observes only a read's rows. A pinned gap, not a port.
 	returned func(ctx context.Context, c pii.Classes, cols []action.Column, rows []map[string]any) error
 	// slowReads makes every read run into the store's time limit.
 	slowReads bool

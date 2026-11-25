@@ -206,7 +206,7 @@ func (s *Store) Passkeys(ctx context.Context) ([]passkey.Credential, error) {
 // for that, and is rolled back anyway.
 func (s *Store) PreviewRevert(ctx context.Context, scope action.Scope, after string, limit int) (action.PreviewPage, error) {
 	r0, err := s.previewRevertRaw(ctx, scope, after, limit)
-	return r0, prepareRefusal(MapError(err))
+	return r0, PrepareError(err)
 }
 
 // PrepareRevert stores a revert of scope for the person to sign
@@ -216,7 +216,7 @@ func (s *Store) PreviewRevert(ctx context.Context, scope action.Scope, after str
 // action.ErrEmptyProposal: through MCP it is NOTHING_TO_REVERT (RS-6).
 func (s *Store) PrepareRevert(ctx context.Context, scope action.Scope, intent string, timeout time.Duration) (action.PreparedRevert, error) {
 	r0, err := s.prepareRevertRaw(ctx, scope, intent, timeout)
-	return r0, prepareRefusal(MapError(err))
+	return r0, PrepareError(err)
 }
 
 // RescopeRevert changes the scope of a revert the agent's role prepared

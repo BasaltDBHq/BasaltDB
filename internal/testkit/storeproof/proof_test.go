@@ -41,9 +41,12 @@ const (
 	closeBatch  = "{\"update\":\"shop/orders\",\"filter\":{\"batch\":{\"$param\":0}},\"set\":{\"status\":\"closed\"}}"
 )
 
-// The binding gap: core/approval.ParseBinding reads only request.kind SQL,
-// so every service step that parses a held write's binding refuses a
-// held request of another family, before the store is asked.
+// bindingGap is a store-neutrality gap this proof pins: ParseBinding
+// (core/approval/approval.go:112) reads only request.kind SQL, so the
+// page's check, the reveal, the approval's receipt (on the relay) and the
+// apply each refuse a held request of another family before the store is
+// asked. A PR that opens the binding to other families flips these four
+// assertions into the person's signature, the reveal and the apply.
 const bindingGap = `binding request kind "DOCUMENT"`
 
 // flow is what the cross-domain flow saw, for the assertions after it.
@@ -88,8 +91,10 @@ func TestOneMemoryStoreRunsEveryDomain(t *testing.T) {
 		require.Equal(t, upgradeMany, b.Request.Statement, "the person signs the agent's own text")
 		item := items(t, f.pending)[0]["request"].(map[string]any)
 		require.Equal(t, upgradeMany, item["statement"], "list_pending hands back the agent's own text")
-		// No service parsed a request: every text the store got, it got as
-		// the agent sent it, and only its language read one.
+		// No service reads the text: memLanguage is the only code here that
+		// parses a request, every port above got the agent's bytes unchanged,
+		// and the domains' import guards (archtest) keep them from importing
+		// a store's parser. Every text any port got is one the agent sent.
 		for port, texts := range h.store.texts {
 			for _, text := range texts {
 				require.Contains(t, []string{findPro, upgradeOne, upgradeMany, upgradeTwo, closeBatch}, text, port)
@@ -419,14 +424,14 @@ func refusalCases() []refusalCase {
 		},
 		{
 			name: "request_revert: a resource name the store cannot use",
-			own:  memFilterNameDetail, pg: postgresRefusalOf(action.RevertFilterName).detail,
+			own:  memFilterNameDetail, pg: postgresRevertRefusal(action.RevertFilterName).Detail,
 			run: revertCall(guidance.ToolRequestRevert, func(h *harness) map[string]any {
 				return map[string]any{"runId": writtenRun(h).String(), "resources": []string{"public.customers"}}
 			}),
 		},
 		{
 			name: "preview_revert: a resource the agent did not write",
-			own:  "shop/orders has no change of yours in this run", pg: postgresRefusalOf(action.RevertFilter).detail,
+			own:  "shop/orders has no change of yours in this run", pg: postgresRevertRefusal(action.RevertFilter).Detail,
 			run: revertCall(guidance.ToolPreviewRevert, func(h *harness) map[string]any {
 				return map[string]any{"runId": writtenRun(h).String(), "resources": []string{colOrders}}
 			}),
@@ -438,7 +443,7 @@ func refusalCases() []refusalCase {
 			}),
 		},
 		{
-			name: "request_revert: the store's time limit", code: codeDeadline, pgCode: "57014",
+			name: "request_revert: the store's time limit", code: codeDeadline, pgCode: postgresRevertRefusal(action.RevertTimedOut).StoreCode,
 			run: revertCall(guidance.ToolRequestRevert, func(h *harness) map[string]any {
 				require.NoError(h.t, h.store.StartRun(context.Background(), action.Intent{RunID: slowRun, Text: "slow"}))
 				return map[string]any{"runId": slowRun.String()}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/agent/in/agentmcp"
+	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	"github.com/google/uuid"
@@ -170,13 +171,28 @@ type unsignedStore struct{ parts }
 func (unsignedStore) Capabilities() action.Capabilities { return action.Capabilities{} }
 
 // A store that does not check the person's signature itself is refused:
-// the revert service hands the person's proofs straight to the store.
+// the approval and revert services hand the person's proofs straight to the
+// store.
 func TestNewServiceRefusesAStoreWithoutSignatureCheck(t *testing.T) {
 	t.Parallel()
 	d := deps()
 	p, _ := d.Core.Store.(parts)
 	useStore(&d, unsignedStore{p})
-	require.PanicsWithValue(t, "agent: required dependencies missing: Revert.SignatureCheck", func() { NewService(d) })
+	require.PanicsWithValue(t, "agent: required dependencies missing: Approval.SignatureCheck, Revert.SignatureCheck", func() { NewService(d) })
+}
+
+// The approval's store set carries the agent store's kind and capabilities
+// and the approval store in each of its ports.
+func TestApprovalStoreSetIsBuiltFromTheStores(t *testing.T) {
+	t.Parallel()
+	d := deps()
+	s := NewService(d)
+	set := s.approvalStoreSet()
+	require.Equal(t, action.StorePostgres, set.Kind)
+	require.True(t, set.Capabilities.InStoreSignatureCheck)
+	require.Equal(t, approvalsvc.Records(d.Approval.Store), set.Records)
+	require.Equal(t, approvalsvc.Holds(d.Approval.Store), set.Holds)
+	require.Equal(t, approvalsvc.Proofs(d.Approval.Store), set.Proofs)
 }
 
 // An INTERNAL or UNAVAILABLE error carries a UUIDv7 errorId that the engine

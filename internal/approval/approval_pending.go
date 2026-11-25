@@ -77,7 +77,7 @@ func (ac *Service) ListPending(ctx context.Context, p PendingParams) (pagination
 	var entries []PendingEntry
 	more := false
 	if p.Kind != guidance.KindRevert && p.Status != action.RevertApplying {
-		page, err := ac.deps.Store.ListApprovals(ctx, action.ApprovalListParams{Params: p.Params, RunID: p.RunID, Status: p.Status})
+		page, err := ac.store.Records.ListApprovals(ctx, action.ApprovalListParams{Params: p.Params, RunID: p.RunID, Status: p.Status})
 		if err != nil {
 			return pagination.Page[PendingEntry]{}, err
 		}

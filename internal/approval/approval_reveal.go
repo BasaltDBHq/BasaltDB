@@ -38,12 +38,12 @@ func (ac *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret stri
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
-	ticket, err := ac.deps.Store.OpenReveal(ctx, id, in.Proof.Assertion(), key)
+	ticket, err := ac.store.Proofs.OpenReveal(ctx, id, in.Proof.Assertion(), key)
 	if err != nil {
 		return approval.RevealAnswer{}, ac.revealApprovalError(err, ac.delivery.PageLink(links.Approval, id, secret))
 	}
 	defer clear(ticket)
-	rows, err := ac.deps.Store.RevealPreview(ctx, held.intent, held.op, held.sql, held.params, id, ticket)
+	rows, err := ac.store.Proofs.RevealPreview(ctx, held.intent, held.op, held.sql, held.params, id, ticket)
 	if err != nil {
 		return approval.RevealAnswer{}, ac.revealApprovalError(err, ac.delivery.PageLink(links.Approval, id, secret))
 	}
@@ -88,7 +88,7 @@ func heldWrite(a action.Approval, check StatementChecker) (heldRun, error) {
 	return heldRun{intent: in, op: stmt.Op, sql: b.Request.Statement, params: params}, nil
 }
 
-// revealApprovalError is the page's answer to a reveal Postgres refused.
+// revealApprovalError is the page's answer to a reveal the store refused.
 func (ac *Service) revealApprovalError(err error, link string) error {
 	code, _ := guidance.LedgerCode(err)
 	detail := guidance.StoreDetail(err)

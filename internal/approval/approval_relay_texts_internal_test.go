@@ -46,7 +46,7 @@ func heldApproval(binding, line string) action.Approval {
 func TestApprovalRequestRefusesTextsOutOfTheRules(t *testing.T) {
 	t.Parallel()
 	ok := heldApproval(relayBinding, relayLine)
-	ac := newService(t, "linux", "", func(s *settings) { s.deps.Store = heldStore{a: ok} })
+	ac := newService(t, "linux", "", func(s *settings) { s.store = heldStore{a: ok} })
 	_, err := ac.ApprovalRequest(context.Background(), ok.ID)
 	require.NoError(t, err, "texts in the rules are relayed")
 
@@ -56,7 +56,7 @@ func TestApprovalRequestRefusesTextsOutOfTheRules(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			ac := newService(t, "linux", "", func(s *settings) { s.deps.Store = heldStore{a: a} })
+			ac := newService(t, "linux", "", func(s *settings) { s.store = heldStore{a: a} })
 			_, err := ac.ApprovalRequest(context.Background(), a.ID)
 			require.ErrorIs(t, err, approval.ErrInvalid)
 			require.ErrorContains(t, err, name)

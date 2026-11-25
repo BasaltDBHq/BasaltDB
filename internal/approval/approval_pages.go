@@ -29,7 +29,7 @@ func (ac *Service) ApprovalRequest(ctx context.Context, id uuid.UUID) (approval.
 	if err != nil {
 		return approval.Request{}, err
 	}
-	reveal, err := ac.deps.Store.RevealNonce(ctx, approval.KindApprove, id)
+	reveal, err := ac.store.Records.RevealNonce(ctx, approval.KindApprove, id)
 	if err != nil {
 		return approval.Request{}, err
 	}
@@ -45,11 +45,11 @@ func (ac *Service) RelayApproval(ctx context.Context, r approval.Response) (link
 	if _, err := ac.openApproval(ctx, r.ApprovalID); err != nil {
 		return linksvc.Receipt{}, err
 	}
-	if _, err := ac.deps.Store.SubmitApproval(ctx, r.ApprovalID, r.Assertion()); err != nil {
+	if _, err := ac.store.Proofs.SubmitApproval(ctx, r.ApprovalID, r.Assertion()); err != nil {
 		return linksvc.Receipt{}, err
 	}
-	// Postgres accepted the signature: the receipt names the approval as
-	// Postgres records it, never as the page sent it.
+	// The store accepted the signature: the receipt names the approval as
+	// the store records it, never as the page sent it.
 	return ac.delivery.ApprovalReceipt(ctx, r.ApprovalID)
 }
 
@@ -62,7 +62,7 @@ func (ac *Service) openApproval(ctx context.Context, id uuid.UUID) (action.Appro
 	if err := ac.admit.Admit(ctx); err != nil {
 		return action.Approval{}, err
 	}
-	a, err := ac.deps.Store.FindApproval(ctx, id)
+	a, err := ac.store.Records.FindApproval(ctx, id)
 	if guidance.Sentinel(err, ac.deps.ErrNotFound) {
 		return action.Approval{}, linksvc.ErrNotThisAgent
 	}

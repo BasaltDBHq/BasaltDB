@@ -191,7 +191,7 @@ func TestApprovalStoreSetIsBuiltFromTheStores(t *testing.T) {
 	require.True(t, set.Capabilities.InStoreSignatureCheck)
 	require.Equal(t, approvalsvc.Records(d.Approval.Store), set.Records)
 	require.Equal(t, approvalsvc.Holds(d.Approval.Store), set.Holds)
-	require.Equal(t, approvalsvc.Proofs(d.Approval.Store), set.Proofs)
+	require.Equal(t, approvalsvc.Proofs(approvalProofs{d.Approval.Store}), set.Proofs)
 }
 
 // An INTERNAL or UNAVAILABLE error carries a UUIDv7 errorId that the engine

@@ -5,7 +5,6 @@ import (
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
 	"github.com/basaltdbhq/basaltdb/internal/agent/out/sqllang"
-	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	"github.com/google/uuid"
@@ -51,7 +50,7 @@ type statementChecker interface {
 // SQLStore is a store that speaks SQL: the query and write tools run on it.
 type SQLStore interface {
 	agentStore
-	approvalsvc.Store
+	approvalAdapter
 	revertsvc.Store
 	statementChecker
 	// Read runs one read, with the versions of the rows of the statement's

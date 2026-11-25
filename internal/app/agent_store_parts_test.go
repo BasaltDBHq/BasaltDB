@@ -3,8 +3,6 @@ package app
 import (
 	"context"
 
-	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
-
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	"github.com/google/uuid"
@@ -39,7 +37,7 @@ type readRecorder interface {
 // approvalStore is the approvals part, with the Postgres store's catalog
 // read the parts' HoldColumns asks.
 type approvalStore interface {
-	approvalsvc.Store
+	approvalAdapter
 	TableColumns(ctx context.Context, table string) ([]string, error)
 	WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any) (action.WriteResult, error)
 }

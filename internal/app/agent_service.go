@@ -133,7 +133,7 @@ func (s *Service) wire() {
 	s.agent = agentsvc.New(s.agentCore(), s.agentStoreSet(), s.deps.Agent.PII, s.status.UpdateInfo)
 	// approval and delivery read each other: approval is built first and is
 	// given the delivery and revert use cases once they exist.
-	s.approval = approvalsvc.New(s.approvalCore(), s.approvalStoreSet(), &s.deps.Approval.Deps, liveChecker{&s.deps.Agent}, runChecker{s.deps.Core.Store}, s)
+	s.approval = approvalsvc.New(s.approvalCore(), s.approvalStoreSet(), &s.deps.Approval.Deps, runChecker{s.deps.Core.Store}, s)
 	s.delivery = linksvc.New(s.linksCore(), &s.deps.Delivery, s.approval, s.Failure)
 	s.revert = revertsvc.New(s.revertCore(), s.revertStoreSet(), &s.deps.Revert.Deps, s.deps.Core.Store, s.delivery, s.agent, s)
 	s.approval.SetDelivery(s.delivery)

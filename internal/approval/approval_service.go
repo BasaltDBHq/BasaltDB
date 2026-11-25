@@ -22,14 +22,13 @@ import (
 // the shared core group and to its own Deps, and a copy of the store set it
 // reads the store through. What it needs from the other use cases it names as
 // small ports of its own: the delivery of links and notices, the open
-// reverts, the store's statement check, and the call admission.
+// reverts, the run check, and the call admission.
 type Service struct {
 	core     Core
 	store    StoreSet
 	deps     *Deps
 	delivery Delivery
 	reverts  Reverts
-	writes   StatementChecker
 	runs     RunChecker
 	admit    Admitter
 }
@@ -62,12 +61,6 @@ type Admitter interface {
 	Admit(ctx context.Context) error
 }
 
-// StatementChecker checks a statement against the engine's SQL policy for a
-// tool, and returns it as the store will run it, or an *action.RefusalError.
-type StatementChecker interface {
-	Check(sql string, tool action.Tool) (action.Statement, error)
-}
-
 // RunChecker answers whether a run is one of the agent's: NOT_FOUND when not.
 type RunChecker interface {
 	CheckRun(ctx context.Context, id uuid.UUID) error
@@ -77,11 +70,11 @@ type RunChecker interface {
 // delivery and reverts are the other use cases it asks, and are set after
 // they exist (SetDelivery, SetReverts). It panics on a set with a nil port,
 // since the service reads the store only through them.
-func New(core Core, store StoreSet, deps *Deps, writes StatementChecker, runs RunChecker, admit Admitter) *Service {
+func New(core Core, store StoreSet, deps *Deps, runs RunChecker, admit Admitter) *Service {
 	if missing := store.missingPorts(); len(missing) > 0 {
 		panic("approval: store set missing ports: " + strings.Join(missing, ", "))
 	}
-	return &Service{core: core, store: store, deps: deps, writes: writes, runs: runs, admit: admit}
+	return &Service{core: core, store: store, deps: deps, runs: runs, admit: admit}
 }
 
 // SetDelivery gives the use case the delivery use case it asks.

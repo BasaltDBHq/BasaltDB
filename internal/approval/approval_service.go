@@ -2,6 +2,7 @@ package approval
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -12,8 +13,11 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
@@ -106,16 +110,52 @@ func (ac *Service) ColumnOrder(ctx context.Context, tables []string) (map[string
 	return ac.deps.Columns.ColumnOrder(ctx, tables)
 }
 
-// The calls the write use case makes to hold a write.
-
-func (ac *Service) HoldColumns(ctx context.Context, sql string, params []any) ([]string, error) {
-	return ac.store.Holds.HoldColumns(ctx, sql, params)
+// HeldWrite is a write held for the person's approval, with the preview
+// lines its notice is built from.
+type HeldWrite struct {
+	action.Held
+	Lines []string
 }
 
-func (ac *Service) Preview(ctx context.Context, in action.Intent, sql string, params []any, assigned []string) ([]string, error) {
-	return ac.store.Holds.Preview(ctx, in, sql, params, assigned)
+// HoldRefusalError is a write the hold refused, which the agent records as a
+// refused write: a write that cannot be run again the same way, an error of
+// its preview run, or preview lines over the cap. Err is the answer.
+type HoldRefusalError struct {
+	Err error
 }
 
-func (ac *Service) Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error) {
-	return ac.store.Holds.Hold(ctx, in, r)
+func (e *HoldRefusalError) Error() string { return e.Err.Error() }
+
+func (e *HoldRefusalError) Unwrap() error { return e.Err }
+
+// Hold holds a write for the person's approval (the write use case's one
+// call): the store previews it, Basalt checks the lines (some rows, within
+// the cap), and the store holds it with op, the request as the agent sent it
+// and the preview's bound fields and lines. The request is passed on
+// unread. A refusal the agent records comes as a *HoldRefusalError; any other
+// error, the agent answers without recording it.
+func (ac *Service) Hold(ctx context.Context, in action.Intent, req agentstore.Request, op action.Op) (HeldWrite, error) {
+	p, err := ac.store.Holds.Preview(ctx, in, req)
+	var notRepeatable *action.RefusalError
+	var previewFailed *action.PreviewFailedError
+	switch {
+	case errors.As(err, &previewFailed):
+		return HeldWrite{}, &HoldRefusalError{Err: previewFailed.Err}
+	case errors.As(err, &notRepeatable):
+		return HeldWrite{}, &HoldRefusalError{Err: err}
+	case err != nil:
+		return HeldWrite{}, err
+	}
+	if len(p.Lines) == 0 {
+		// The rows went away between the attempt and the preview.
+		return HeldWrite{}, &toolresult.ToolError{Code: guidance.CodeStoreError, Reason: guidance.ReasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
+	}
+	if te := HoldTooLarge(p.Lines); te != nil {
+		return HeldWrite{}, &HoldRefusalError{Err: te}
+	}
+	held, err := ac.store.Holds.Hold(ctx, in, action.HoldRequest{Op: op, Request: req, Assigned: p.Assigned, Lines: p.Lines})
+	if err != nil {
+		return HeldWrite{}, err
+	}
+	return HeldWrite{Held: held, Lines: p.Lines}, nil
 }

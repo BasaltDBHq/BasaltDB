@@ -80,9 +80,13 @@ func (s *Store) revealPreviewRaw(ctx context.Context, in action.Intent, op actio
 	return rows, nil
 }
 
-// holdRaw is Hold before MapError.
+// holdRaw is Hold before MapError. The guard's verb is Basalt's op: for
+// the three ops a write is held for (INSERT, UPDATE, DELETE) the word is
+// the same.
 func (s *Store) holdRaw(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error) {
-	h, err := guard.Hold(ctx, s.db, guardIntent(in), s.limits.StatementTimeout, guard.HoldRequest(r))
+	h, err := guard.Hold(ctx, s.db, guardIntent(in), s.limits.StatementTimeout, guard.HoldRequest{
+		Verb: string(r.Op), Statement: r.Request.Text, Params: r.Request.Params, Assigned: r.Assigned, Lines: r.Lines,
+	})
 	return action.Held(h), err
 }
 

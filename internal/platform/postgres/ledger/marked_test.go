@@ -193,9 +193,10 @@ func TestListOpenApprovalsReadsAHeldWrite(t *testing.T) {
 	ctx := context.Background()
 	sql := "DELETE FROM public.leads WHERE id = $1"
 	store := postgres.NewStore(a.Conn, sqlguard.DefaultLimits(), time.Now)
-	lines, err := store.Preview(ctx, action.Intent(in), sql, []any{1}, nil)
+	req := action.Request{Text: sql, Params: []any{1}}
+	p, err := store.Preview(ctx, action.Intent(in), req)
 	require.NoError(t, err)
-	_, err = store.Hold(ctx, action.Intent(in), action.HoldRequest{Statement: sql, Params: []any{1}, Lines: lines})
+	_, err = store.Hold(ctx, action.Intent(in), action.HoldRequest{Op: action.OpDelete, Request: req, Assigned: p.Assigned, Lines: p.Lines})
 	require.NoError(t, err)
 	page, err := ledger.ListOpenApprovals(ctx, a.Conn, action.ApprovalListParams{Params: pagination.Params{Limit: 1}})
 	require.NoError(t, err)

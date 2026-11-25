@@ -39,14 +39,14 @@ var (
 // UTF-8 bytes.
 func previewLines() []string {
 	return []string{
-		`{"op": "DELETE", "key": {"id": 3}, "old": {"id": 3, "name": "Café ✓ lead", "status": "open"}, "set": null, "table": "public.leads", "cascaded": false}`,
-		`{"op": "DELETE", "key": {"id": 5}, "old": {"id": 5, "note": "note 5 — 日本 🚀", "lead_id": 3}, "set": null, "table": "public.lead_notes", "cascaded": true}`,
-		`{"op": "DELETE", "table": "public.note_tags", "rowHash": "` + strings.Repeat("ab", sha256.Size) + `", "cascaded": true, "redacted": true}`,
+		`{"op": "DELETE", "key": {"id": 3}, "old": {"id": 3, "name": "Café ✓ lead", "status": "open"}, "set": null, "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "DELETE"}, "cascaded": false, "resource": "public.leads"}`,
+		`{"op": "DELETE", "key": {"id": 5}, "old": {"id": 5, "note": "note 5 — 日本 🚀", "lead_id": 3}, "set": null, "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "DELETE"}, "cascaded": true, "resource": "public.lead_notes"}`,
+		`{"op": "DELETE", "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "DELETE"}, "rowHash": "` + strings.Repeat("ab", sha256.Size) + `", "cascaded": true, "redacted": true, "resource": "public.note_tags"}`,
 	}
 }
 
 func bindingText(lines []string) string {
-	return fmt.Sprintf(`{"kind": "APPROVE", "rows": %d, "agent": "basalt_agent_bot", "runId": %q, "intent": "Remove the spam lead", "params": [3], "taskId": %q, "database": "app", "rowsHash": %q, "expiresAt": "2026-11-12T06:02:11.123456Z", "statement": "DELETE FROM public.leads WHERE id = $1", "approvalId": %q, "assignedColumns": []}`,
+	return fmt.Sprintf(`{"kind": "APPROVE", "rows": %d, "agent": "agent:bot", "runId": %q, "store": {"kind": "POSTGRES", "name": "app"}, "intent": "Remove the spam lead", "taskId": %q, "request": {"kind": "SQL", "params": [3], "statement": "DELETE FROM public.leads WHERE id = $1"}, "rowsHash": %q, "expiresAt": "2026-11-12T06:02:11.123456Z", "approvalId": %q, "assignedFields": []}`,
 		len(lines), runID.String(), taskID.String(), approval.RowsHash(lines), approvalID.String())
 }
 
@@ -103,9 +103,7 @@ func buildFixtures(t *testing.T) fixtures {
 	lines := previewLines()
 	binding := bindingText(lines)
 	req := approval.Request{ApprovalID: approvalID, Binding: binding, Lines: lines, CredentialIDs: []passkey.Bytes{seq(16, 1)}}
-	// The page's fixtures keep format 1, which the pages still read; format 2
-	// has its shared vectors in api/mcp/links/compact-request.json.
-	frag, err := linkcodectest.Encode(linkcodec.Format1, req)
+	frag, err := req.Fragment()
 	require.NoError(t, err)
 	f.Request.ApprovalID = approvalID.String()
 	f.Request.Binding = binding
@@ -189,7 +187,17 @@ func TestPreviewLinesAreInCOrder(t *testing.T) {
 	require.True(t, redacted.Redacted)
 	require.Empty(t, redacted.Old)
 
-	for _, bad := range []string{`{"op": "MERGE", "table": "t", "cascaded": false}`, `{"op": "DELETE", "cascaded": false}`, `{"op": "DELETE", "table": "t", "cascaded": false, "extra": 1}`, `[]`} {
+	for _, bad := range []string{
+		strings.Replace(lines[0], `"op": "DELETE"`, `"op": "MERGE"`, 1),
+		strings.Replace(lines[0], `"resource": "public.leads"`, `"resource": ""`, 1),
+		strings.Replace(lines[0], `"shape": "RECORD"`, `"shape": "TABLE"`, 1),
+		strings.Replace(lines[0], `"verb": "DELETE"`, `"verb": ""`, 1),
+		strings.Replace(lines[0], `"resource": "public.leads"}`, `"resource": "public.leads", "extraneous": 1}`, 1),
+		strings.Replace(lines[0], `"cascaded": false, "resource": "public.leads"`, `"resource": "public.leads", "cascaded": false`, 1),
+		strings.Replace(lines[0], `, "set": null`, `,"set": null`, 1),
+		`{"op": "DELETE", "cascaded": false, "resource": "public.t"}`,
+		`[]`,
+	} {
 		_, err := approval.ParseLine(bad)
 		require.ErrorIs(t, err, approval.ErrInvalid, bad)
 	}
@@ -212,15 +220,17 @@ func TestRequestRoundTrip(t *testing.T) {
 	require.Equal(t, taskID, *b.TaskID)
 	require.Equal(t, 3, b.Rows)
 	require.Equal(t, "2026-11-12T06:02:11.123456Z", b.ExpiresAt.UTC().Format("2006-01-02T15:04:05.000000Z"))
-	require.JSONEq(t, `3`, string(b.Params[0]))
+	require.JSONEq(t, `3`, string(b.Request.Params[0]))
 }
 
 func TestRequestRefusesMismatch(t *testing.T) {
 	t.Parallel()
 	lines := previewLines()
 	binding := bindingText(lines)
+	// The engine refuses to encode a request that fails Check, so the test
+	// encodes as a forged link would.
 	encode := func(r approval.Request) string {
-		frag, err := r.Fragment()
+		frag, err := linkcodec.EncodeRequest(r.Binding, r.Lines, r.CredentialIDs)
 		require.NoError(t, err)
 		return frag
 	}
@@ -233,13 +243,14 @@ func TestRequestRefusesMismatch(t *testing.T) {
 		{"a line changed after signing", encode(approval.Request{ApprovalID: approvalID, Binding: binding, Lines: changed}), "rowsHash"},
 		{"a line dropped", encode(approval.Request{ApprovalID: approvalID, Binding: binding, Lines: lines[:2]}), "2 lines, binding 3"},
 		{"lines reordered", encode(approval.Request{ApprovalID: approvalID, Binding: binding, Lines: []string{lines[1], lines[0], lines[2]}}), "rowsHash"},
-		{"another approval id (format 1)", encodeV1(t, approval.Request{ApprovalID: runID, Binding: binding, Lines: lines}), "binding for"},
 		{"binding kind", encode(approval.Request{ApprovalID: approvalID, Binding: strings.Replace(binding, "APPROVE", "REVERT", 1), Lines: lines}), "kind"},
 		{"binding unknown field", encode(approval.Request{ApprovalID: approvalID, Binding: strings.Replace(binding, `{"kind"`, `{"x": 1, "kind"`, 1), Lines: lines}), "unknown field"},
 		{"wrong version", "3." + strings.TrimPrefix(encode(approval.Request{ApprovalID: approvalID, Binding: binding, Lines: lines}), "2."), "must start with"},
 		{"not deflate", "2." + passkey.Bytes("plain json").String(), "deflate"},
 		{"not base64url", "2.@@@", "base64url"},
-		{"format 1 not deflate", "1." + passkey.Bytes("plain json").String(), "deflate"},
+		{"format 1", "1." + passkey.Bytes("plain json").String(), "must start with"},
+		{"binding out of the text rules", encode(approval.Request{ApprovalID: approvalID, Binding: strings.Replace(binding, `"rows": 3, `, `"rows":3, `, 1), Lines: lines}), "text rules"},
+		{"binding agent is a login", encode(approval.Request{ApprovalID: approvalID, Binding: strings.Replace(binding, `"agent:bot"`, `"basalt_agent_bot"`, 1), Lines: lines}), "agent:<name>"},
 		{"too many lines", encode(approval.Request{ApprovalID: approvalID, Binding: binding, Lines: make([]string, approval.MaxRows+1)}), "at most 50"},
 	}
 	for _, tc := range cases {
@@ -251,33 +262,14 @@ func TestRequestRefusesMismatch(t *testing.T) {
 	}
 }
 
-// encodeV1 encodes r in format 1, which carries the approval id apart from
-// the binding.
-func encodeV1(t *testing.T, r approval.Request) string {
-	t.Helper()
-	frag, err := linkcodectest.Encode(linkcodec.Format1, r)
-	require.NoError(t, err)
-	return frag
-}
-
-func TestRequestReadsFormat1(t *testing.T) {
-	t.Parallel()
-	f := buildFixtures(t)
-	require.True(t, strings.HasPrefix(f.Request.Fragment, "1."))
-	req, _, err := approvaltest.ParseRequest("#" + f.Request.Fragment)
-	require.NoError(t, err)
-	require.Equal(t, f.Request.Lines, req.Lines)
-	require.Len(t, req.CredentialIDs, 1, "format 1 still carries credential ids")
-}
-
 func TestFormat2IsShorter(t *testing.T) {
 	t.Parallel()
 	req := approval.Request{ApprovalID: approvalID, Binding: bindingText(previewLines()), Lines: previewLines(), CredentialIDs: []passkey.Bytes{seq(16, 1)}}
-	v1, err := linkcodectest.Encode(linkcodec.Format1, req)
+	plain, err := linkcodectest.Encode(linkcodec.Format2, req)
 	require.NoError(t, err)
 	v2, err := req.Fragment()
 	require.NoError(t, err)
-	require.Less(t, len(v2), len(v1))
+	require.Less(t, len(v2), len(plain), "the compact form is shorter than the request JSON deflated")
 	got, _, err := approvaltest.ParseRequest(v2)
 	require.NoError(t, err)
 	require.Equal(t, req.Lines, got.Lines)
@@ -289,11 +281,8 @@ func TestFormat2IsShorter(t *testing.T) {
 func FuzzParseRequest(f *testing.F) {
 	lines := previewLines()
 	req := approval.Request{ApprovalID: approvalID, Binding: bindingText(lines), Lines: lines}
-	v1, err := linkcodectest.Encode(linkcodec.Format1, req)
-	require.NoError(f, err)
 	v2, err := req.Fragment()
 	require.NoError(f, err)
-	f.Add(v1)
 	f.Add(v2)
 	f.Add("#2.")
 	f.Add("2.@@@")
@@ -312,7 +301,7 @@ func FuzzParseRequest(f *testing.F) {
 // the compact request itself, as a forged link would.
 func TestRequestRefusesInflationBomb(t *testing.T) {
 	t.Parallel()
-	_, err := approval.Request{ApprovalID: approvalID, Binding: strings.Repeat(" ", 2<<20), Lines: previewLines()}.Fragment()
+	_, err := linkcodec.EncodeRequest(strings.Repeat(" ", 2<<20), previewLines(), nil)
 	require.ErrorIs(t, err, linkcodec.ErrRequestTooLarge)
 	frag, err := linkcodectest.Encode(linkcodec.Format2, linkcodec.Compact(append([]string{strings.Repeat(" ", 2<<20)}, previewLines()...)))
 	require.NoError(t, err)
@@ -388,4 +377,25 @@ func TestChallengeHashesUTF8Bytes(t *testing.T) {
 	t.Parallel()
 	want := sha256.Sum256([]byte("é"))
 	require.True(t, bytes.Equal(want[:], approval.Challenge("é")))
+}
+
+// The engine relays only texts that follow the text rules: Fragment, and
+// so URL, refuses a binding or a line that breaks them before encoding.
+func TestFragmentRefusesTextsOutOfTheRules(t *testing.T) {
+	t.Parallel()
+	lines := previewLines()
+	binding := bindingText(lines)
+	broken := []string{lines[0], strings.Replace(lines[1], `"cascaded": true`, `"cascaded":true`, 1), lines[2]}
+	for name, req := range map[string]approval.Request{
+		"binding": {ApprovalID: approvalID, Binding: strings.Replace(binding, `"rows": 3, `, `"rows":3, `, 1), Lines: lines},
+		"line":    {ApprovalID: approvalID, Binding: binding, Lines: broken},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := req.Fragment()
+			require.ErrorIs(t, err, approval.ErrInvalid)
+			require.ErrorContains(t, err, name)
+			_, err = req.URL(links.DefaultLocal + "/")
+			require.ErrorIs(t, err, approval.ErrInvalid)
+		})
+	}
 }

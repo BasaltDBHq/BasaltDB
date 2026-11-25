@@ -102,6 +102,6 @@ func TestQueryWithholdsRowsTheDictionaryCannotTake(t *testing.T) {
 	requireToolError(t, body, isError, guidance.CodeInternal, "", "")
 	require.NotContains(t, body, "rows")
 	var reads int
-	require.NoError(t, d.Admin.QueryRow(context.Background(), `SELECT count(change_id) FROM basalt_meta.changes WHERE op = 'SELECT'`).Scan(&reads))
+	require.NoError(t, d.Admin.QueryRow(context.Background(), `SELECT count(change_id) FROM basalt_meta.changes WHERE op = 'READ'`).Scan(&reads))
 	require.Zero(t, reads, "a read the agent did not get is not recorded as one")
 }

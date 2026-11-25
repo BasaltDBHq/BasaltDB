@@ -2,20 +2,21 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/revert-line.v1.json",
   "title": "Revert line",
-  "description": "One row of a revert, as jsonb text from basalt_meta.preview_revert or prepare_revert. RESTORE lines are written; SKIP lines are left as they are and named. Lines are ordered COLLATE \"C\". See CONTRACT.md, Revert.",
+  "description": "One row of a revert, as basalt_meta.preview_revert or prepare_revert writes it, in the text rules of CONTRACT.md, Stores, Text rules. RESTORE lines are written; SKIP lines are left as they are and named. Lines are ordered bytewise (COLLATE \"C\"). See CONTRACT.md, Revert.",
   "oneOf": [
     {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "op",
+        "shape",
+        "store",
         "key",
         "now",
         "set",
-        "table",
+        "resource",
         "action",
         "conflict",
-        "sqlState",
         "cascaded",
         "changeIds"
       ],
@@ -29,9 +30,47 @@
           ],
           "description": "The inverse write the revert runs: DELETE undoes an INSERT, INSERT re-inserts a deleted row, UPDATE restores old values."
         },
+        "shape": {
+          "type": "string",
+          "enum": [
+            "RECORD",
+            "OBJECT"
+          ],
+          "description": "The kind of data the values describe (CONTRACT.md, Stores, Shapes). RECORD: fields and values. OBJECT is reserved: a page refuses to offer signing for it, and for a shape it does not know."
+        },
+        "store": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "kind",
+            "verb"
+          ],
+          "properties": {
+            "code": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The store's error code for a line it could not restore (CONSTRAINT; in Postgres the SQLSTATE the trial write raised, 5 characters); null otherwise."
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "POSTGRES"
+              ],
+              "description": "The store's kind (CONTRACT.md, Stores). A page uses it as a label only."
+            },
+            "verb": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The store's own word for this line's own op, the inverse write (CONTRACT.md, Stores, Operations): in Postgres INSERT, UPDATE or DELETE."
+            }
+          }
+        },
         "key": {
           "type": "object",
-          "description": "Primary key the inverse write targets: the row's current key, or the key it is re-inserted with."
+          "description": "The identity fields the inverse write targets (the primary key in Postgres): the row's current key, or the key it is re-inserted with."
         },
         "now": {
           "type": [
@@ -47,9 +86,10 @@
           ],
           "description": "The values the revert writes (the row before the first in-scope change, generated columns left out); null for DELETE."
         },
-        "table": {
+        "resource": {
           "type": "string",
-          "description": "Schema-qualified table name."
+          "minLength": 1,
+          "description": "What the row belongs to, in the store's form: schema.table in Postgres. Untrusted plain text on a page."
         },
         "action": {
           "type": "string",
@@ -67,7 +107,7 @@
               "type": "string",
               "enum": [
                 "CHANGED_AFTER",
-                "ROW_GONE",
+                "TARGET_GONE",
                 "KEY_TAKEN",
                 "ALREADY_REVERTED",
                 "VALUES_PRUNED",
@@ -78,14 +118,6 @@
             }
           ],
           "description": "Why the row is skipped; null for RESTORE. See CONTRACT.md, Revert, Conflicts."
-        },
-        "sqlState": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "pattern": "^[0-9A-Z]{5}$",
-          "description": "Set only for CONSTRAINT: the SQLSTATE the trial write raised."
         },
         "cascaded": {
           "type": "boolean",
@@ -107,7 +139,9 @@
       "additionalProperties": false,
       "required": [
         "op",
-        "table",
+        "shape",
+        "store",
+        "resource",
         "action",
         "rowHash",
         "conflict",
@@ -125,8 +159,48 @@
           ],
           "description": "The inverse write the revert runs: DELETE undoes an INSERT, INSERT re-inserts a deleted row, UPDATE restores old values."
         },
-        "table": {
-          "type": "string"
+        "shape": {
+          "type": "string",
+          "enum": [
+            "RECORD",
+            "OBJECT"
+          ],
+          "description": "The kind of data the values describe (CONTRACT.md, Stores, Shapes). RECORD: fields and values. OBJECT is reserved: a page refuses to offer signing for it, and for a shape it does not know."
+        },
+        "store": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "kind",
+            "verb"
+          ],
+          "properties": {
+            "code": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The store's error code for a line it could not restore (CONSTRAINT; in Postgres the SQLSTATE the trial write raised, 5 characters); null otherwise."
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "POSTGRES"
+              ],
+              "description": "The store's kind (CONTRACT.md, Stores). A page uses it as a label only."
+            },
+            "verb": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The store's own word for this line's own op, the inverse write (CONTRACT.md, Stores, Operations): in Postgres INSERT, UPDATE or DELETE."
+            }
+          }
+        },
+        "resource": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What the row belongs to, in the store's form: schema.table in Postgres. Untrusted plain text on a page."
         },
         "action": {
           "type": "string",
@@ -138,7 +212,7 @@
         "rowHash": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$",
-          "description": "Lowercase hex sha256 of jsonb_build_array(key, now, set)::text."
+          "description": "Lowercase hex sha256 of [key, now, set] written by the text rules (in Postgres jsonb_build_array(key, now, set)::text)."
         },
         "conflict": {
           "oneOf": [
@@ -149,7 +223,7 @@
               "type": "string",
               "enum": [
                 "CHANGED_AFTER",
-                "ROW_GONE",
+                "TARGET_GONE",
                 "KEY_TAKEN",
                 "ALREADY_REVERTED",
                 "VALUES_PRUNED",
@@ -166,7 +240,7 @@
         },
         "redacted": {
           "const": true,
-          "description": "The role that prepared the revert cannot SELECT this table, so key and values are hidden."
+          "description": "The role that prepared the revert cannot read this row (in Postgres, cannot SELECT its table), so key and values are hidden."
         },
         "changeIds": {
           "type": "array",

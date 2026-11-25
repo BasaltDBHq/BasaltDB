@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/revert-select.v1.json",
   "title": "Revert scope descriptor",
-  "description": "From basalt_meta version 20 (owner decisions RS-1 to RS-4). What a revert covers: the binding's select and proposed, the select of POST /api/v1/reverts/{revertId}/scope, and the select that tool results show the agent. Postgres normalizes it before storing or signing it: every key present, lists sorted by their text COLLATE \"C\" and deduplicated, null for all, written as the jsonb text Postgres returns (jsonb fixes the key order), so the same choice always gives the same text. The key store is reserved for multi-database work (RS-4): absent today, and Postgres refuses a descriptor that carries it (INVALID_ARGUMENT). See CONTRACT.md, Revert, The scope descriptor.",
+  "description": "From basalt_meta version 20 (owner decisions RS-1 to RS-4). What a revert covers: the binding's select and proposed, the select of POST /api/v1/reverts/{revertId}/scope, and the select that tool results show the agent. Postgres normalizes it before storing or signing it: every key present, lists sorted by their text COLLATE \"C\" and deduplicated, null for all, written by the text rules (CONTRACT.md, Stores, Text rules; Postgres's jsonb text follows them), so the same choice always gives the same text. The key store is reserved for multi-store work (RS-4): absent today, and Postgres refuses a descriptor that carries it (INVALID_ARGUMENT). See CONTRACT.md, Revert, The scope descriptor.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -10,7 +10,7 @@
     "scopeId",
     "agents",
     "runs",
-    "tables"
+    "resources"
   ],
   "if": {
     "properties": {
@@ -53,9 +53,10 @@
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "minLength": 1
+        "pattern": "^agent:[a-z][a-z0-9_]*$",
+        "maxLength": 69
       },
-      "description": "Agent roles whose changes are in the selection, sorted. An agent's proposal names exactly one: the requesting role. null (only in a person's widen request) means every agent with changes in the scope; Postgres stores and signs it as given, and the binding's agentRows then names each one."
+      "description": "Agents whose changes are in the selection, each agent:<name> (CONTRACT.md, Stores, Agent names), sorted; the guard maps each to its role. An agent's proposal names exactly one: the requesting agent. null (only in a person's widen request) means every agent with changes in the scope; Postgres stores and signs it as given, and the binding's agentRows then names each one."
     },
     "runs": {
       "type": [
@@ -71,7 +72,7 @@
       },
       "description": "null: every run of the selected agents in the scope. Otherwise run ids, sorted, each inside the scope and of a selected agent. Only with scope TASK (a CHANGE or RUN is one run already)."
     },
-    "tables": {
+    "resources": {
       "type": [
         "array",
         "null"
@@ -83,7 +84,7 @@
         "type": "string",
         "pattern": "^[^.\\s]+\\.[^.\\s]+$"
       },
-      "description": "null: every table. Otherwise schema.table names, sorted, each a guarded table written in the scope by a selected agent. Filters lines, not changes: a change that wrote two tables can be half selected."
+      "description": "null: every resource. Otherwise resource names in the store's form, sorted, each written in the scope by a selected agent; in Postgres schema.table names, each a guarded table. Filters lines, not changes: a change that wrote two tables can be half selected."
     }
   }
 }

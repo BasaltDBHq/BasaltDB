@@ -210,8 +210,10 @@ type CatalogRun struct {
 	Changes   int       `json:"changes"`
 }
 
+// CatalogTable is one resource in a catalog: its name in the store's form
+// and the rows written there.
 type CatalogTable struct {
-	Table string `json:"table"`
+	Table string `json:"resource"`
 	Rows  int    `json:"rows"`
 }
 
@@ -221,7 +223,7 @@ type CatalogTable struct {
 type RevertCatalog struct {
 	Agents       []CatalogAgent       `json:"agents"`
 	Runs         []CatalogRun         `json:"runs"`
-	Tables       []CatalogTable       `json:"tables"`
+	Tables       []CatalogTable       `json:"resources"`
 	ChangeAgents map[uuid.UUID]string `json:"changeAgents,omitempty"`
 }
 

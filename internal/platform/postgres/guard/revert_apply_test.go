@@ -82,7 +82,7 @@ func TestApplyRevertRestoresAndSkips(t *testing.T) {
 	require.Equal(t, 5, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger WHERE change_id = $1 AND kind = 'ROW_CHANGE'
 		AND detail -> 'revertOf' ? $2`, out.ChangeID, original.String()))
 	skipped := scalarOf[string](t, d.Admin, `SELECT detail -> 'skipped' ->> 0 FROM basalt_meta.ledger WHERE kind = 'REVERTED'`)
-	require.JSONEq(t, `{"table": "public.leads", "key": {"id": 93}, "conflict": "CHANGED_AFTER"}`, skipped)
+	require.JSONEq(t, `{"resource": "public.leads", "key": {"id": 93}, "conflict": "CHANGED_AFTER"}`, skipped)
 	require.Equal(t, "APPLIED", scalarOf[string](t, a.Conn, `SELECT status FROM basalt_meta.agent_reverts`))
 	require.Nil(t, guardVerify(t, d))
 }
@@ -109,7 +109,7 @@ func TestApplyRevertDeletesInsertsAndCascades(t *testing.T) {
 	require.Equal(t, tags, tableDigest(t, d, "public.note_tags"), "cascaded tags restored")
 	require.Equal(t, owners, tableDigest(t, d, "public.lead_owner"), "SET NULL undone")
 	require.Zero(t, count(t, a.Conn, `SELECT count(change_id)::int FROM basalt_meta.agent_changes
-		WHERE run_id = $1 AND op <> 'SELECT' AND status <> 'REVERTED'`, in.RunID), "every change fully reverted")
+		WHERE run_id = $1 AND op <> 'READ' AND status <> 'REVERTED'`, in.RunID), "every change fully reverted")
 	require.Nil(t, guardVerify(t, d))
 }
 

@@ -58,10 +58,10 @@ export function tableGroups(items) {
   const groups = [];
   const byKey = new Map();
   for (const item of items) {
-    const k = JSON.stringify([item.line.table, item.line.cascaded]);
+    const k = JSON.stringify([item.line.resource, item.line.cascaded]);
     let g = byKey.get(k);
     if (g === undefined) {
-      g = { table: item.line.table, cascaded: item.line.cascaded, items: [] };
+      g = { resource: item.line.resource, cascaded: item.line.cascaded, items: [] };
       byKey.set(k, g);
       groups.push(g);
     }
@@ -69,7 +69,7 @@ export function tableGroups(items) {
   }
   // The approval and the revert page list the same rows in the same order:
   // the table's own rows first, then cascaded ones, each by table name.
-  return groups.sort((a, b) => Number(a.cascaded) - Number(b.cascaded) || compareText(a.table, b.table));
+  return groups.sort((a, b) => Number(a.cascaded) - Number(b.cascaded) || compareText(a.resource, b.resource));
 }
 
 function compareText(a, b) {
@@ -262,7 +262,7 @@ export function changeGroups(items, opts) {
       .map((r) => r.view);
     const box = el("div", "group");
     const head = el("div", "group-head");
-    head.append(el("span", "table-name", visibleText(g.table)));
+    head.append(el("span", "table-name", visibleText(g.resource)));
     head.append(el("span", "count", plural(g.items.length, "row")));
     if (g.cascaded) head.append(el("span", "tag", "cascaded"));
     const redacted = g.items.some(({ line }) => line.redacted);
@@ -272,7 +272,7 @@ export function changeGroups(items, opts) {
     box.append(head);
     if (hidden && opts.longLink) box.append(el("p", "group-note", OPEN_FROM_ENGINE));
     const scroll = el("div", "scroll");
-    scroll.append(groupTable(views, { ...opts, order: opts.columns?.get(g.table) ?? [] }));
+    scroll.append(groupTable(views, { ...opts, order: opts.columns?.get(g.resource) ?? [] }));
     box.append(scroll);
     for (const text of opts.notes(g.items.map((i) => i.line))) box.append(el("p", "group-note", text));
     for (const v of views) {

@@ -434,7 +434,9 @@ func TestRelayWaitThatRunsOutPointsBackToTheShortLink(t *testing.T) {
 	}
 	held, isError := e.call(t, "write", args)
 	require.True(t, isError)
-	id, _ := portalLink(t, held["approval"].(map[string]any)["approvalUrl"].(string), "approvals")
+	approval, ok := held["approval"].(map[string]any)
+	require.True(t, ok, "%v", held)
+	id, _ := portalLink(t, approval["approvalUrl"].(string), "approvals")
 
 	args["approvalId"], args["waitForApproval"] = id, 1
 	ended, isError := e.call(t, "write", args)

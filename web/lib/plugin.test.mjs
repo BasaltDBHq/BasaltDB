@@ -164,7 +164,7 @@ for (const v of vectors.filter((x) => x.expect.settingsMatch === true)) {
     assert.equal(page.$("settings").textContent, v.settings);
     const b = JSON.parse(v.binding);
     assert.equal(page.$("plugin").textContent, `${b.name} ${b.version}`);
-    assert.equal(page.$("database").textContent, b.database);
+    assert.equal(page.$("store").textContent, `Postgres \u00b7 ${b.store.name}`);
     if ("change" in b) {
       assert.equal(page.$("change").hidden, false, "a change leads with what changes");
       assert.equal(shown(page.nodes)[0], v.expect.sentences[0]);
@@ -294,7 +294,7 @@ const MUTATIONS = {
   "an unknown key in isolation": ["level-3-unknown-local", (b) => { b.isolation.sandbox = true; }],
   "a missing key": ["level-3-unknown-local", (b) => { delete b.requestedBy; }],
   "no agents": ["level-3-unknown-local", (b) => { b.agents = []; }],
-  "an agent twice": ["level-3-unknown-local", (b) => { b.agents = ["basalt_agent_a", "basalt_agent_a"]; }],
+  "an agent twice": ["level-3-unknown-local", (b) => { b.agents = ["agent:a", "agent:a"]; }],
   "a version that is not semantic": ["level-3-unknown-local", (b) => { b.version = "latest"; }],
   "an unknown change key": ["change-unknown-local", (b) => { b.change.trustChanged = true; }],
   "settingsChanged false": ["change-unknown-local", (b) => { b.change.settingsChanged = false; }],
@@ -409,9 +409,9 @@ test("the engine's request may carry nothing the contract does not list", async 
 // The branches the vectors do not reach, from bindings built here.
 function binding(over) {
   return {
-    kind: "PLUGIN", name: "p", hooks: ["feed.observe"], agents: ["basalt_agent_a"], egress: [], signer: "UNKNOWN",
-    version: "2.0.0", database: "app", endpoint: { kind: "LOCAL" }, instance: "default", expiresAt: new Date(),
-    isolation: { files: "NONE", network: "NOT_ENFORCED" }, approvalId: "x", requestedBy: "basalt_agent_a",
+    kind: "PLUGIN", name: "p", hooks: ["feed.observe"], agents: ["agent:a"], egress: [], signer: "UNKNOWN",
+    version: "2.0.0", store: { kind: "POSTGRES", name: "app" }, endpoint: { kind: "LOCAL" }, instance: "default", expiresAt: new Date(),
+    isolation: { files: "NONE", network: "NOT_ENFORCED" }, approvalId: "x", requestedBy: "agent:a",
     manifestSha256: "c".repeat(64), settingsSha256: "d".repeat(64), ...over,
   };
 }
@@ -449,7 +449,7 @@ test("every change key leads with its sentence, in the contract's order", () => 
     signer: "KNOWN",
     endpoint: { kind: "REMOTE", host: "new.example:443" },
     isolation: undefined,
-    agents: ["basalt_agent_a"],
+    agents: ["agent:a"],
     change: {
       fromManifestSha256: "a".repeat(64),
       fromSigner: "UNKNOWN",
@@ -459,7 +459,7 @@ test("every change key leads with its sentence, in the contract's order", () => 
       hooksRemoved: ["wire.detect"],
       rolesRemoved: ["NAME_CUE", "VALUE"],
       egressRemoved: ["old.example:443"],
-      agentsRemoved: ["basalt_agent_b", "basalt_agent_c"],
+      agentsRemoved: ["agent:b", "agent:c"],
     },
   }));
   assert.deepEqual(view.change, [

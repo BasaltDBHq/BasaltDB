@@ -1,10 +1,10 @@
 // Package linkcodec encodes and decodes the request a long approval or
 // revert link carries in its fragment (CONTRACT.md, Codes):
 //
-//	1.<base64url(deflate-raw(request JSON))>   format 1, read only
-//	2.<base64url(deflate-raw(compact JSON))>   format 2, what the engine emits
+//	2.<base64url(deflate-raw(compact JSON))>
 //
-// Format 2 carries the preview or revert lines as shapes and values (Lines)
+// Format 1 (the request JSON itself) is no longer read (clean state). Format
+// 2 carries the preview or revert lines as shapes and values (Lines)
 // that the page rebuilds to the exact line text before hashing. Links are
 // untrusted input: every length is capped, and anything after the deflate
 // stream or after the JSON value is refused.
@@ -23,11 +23,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 )
 
-// Fragment formats: the prefix after '#'.
-const (
-	Format1 = "1."
-	Format2 = "2."
-)
+// Format2 is the prefix after '#' of the one fragment format read.
+const Format2 = "2."
 
 const (
 	// MaxFragmentLen caps the base64url payload before decoding.
@@ -67,16 +64,13 @@ func Marshal(v any) ([]byte, error) {
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
 }
 
-// Split returns the format and the payload of a fragment, with or without
-// '#'.
-func Split(fragment string) (format, payload string, err error) {
-	text := strings.TrimPrefix(fragment, "#")
-	for _, f := range []string{Format1, Format2} {
-		if rest, ok := strings.CutPrefix(text, f); ok {
-			return f, rest, nil
-		}
+// Split returns the payload of a format 2 fragment, with or without '#'.
+func Split(fragment string) (payload string, err error) {
+	rest, ok := strings.CutPrefix(strings.TrimPrefix(fragment, "#"), Format2)
+	if !ok {
+		return "", fmt.Errorf("must start with %q", Format2)
 	}
-	return "", "", fmt.Errorf("must start with %q or %q", Format1, Format2)
+	return rest, nil
 }
 
 // Decode decodes a payload into v: base64url, then deflate-raw with nothing
@@ -173,23 +167,15 @@ func EncodeRequest(binding string, lines []string, ids []passkey.Bytes) (string,
 // from the engine can carry it (CONTRACT.md, Large values).
 var ErrRequestTooLarge = errors.New("the request is too large for a link")
 
-// DecodeRequest decodes a request fragment of either format, with or
-// without '#'. Format 1 decodes into R as it is. Format 2 rebuilds the
-// binding text and at most maxLines lines and hands them, with the
+// DecodeRequest decodes a format 2 request fragment, with or without '#'.
+// It rebuilds the binding text and at most maxLines lines and hands them, with the
 // credential ids it carries (nil for none), to expand. The caller still
 // checks the request against its binding.
 func DecodeRequest[R any](fragment string, maxLines int, expand func(binding string, lines []string, ids []passkey.Bytes) R) (R, error) {
 	var zero R
-	format, payload, err := Split(fragment)
+	payload, err := Split(fragment)
 	if err != nil {
 		return zero, err
-	}
-	if format == Format1 {
-		var r R
-		if err := Decode(payload, &r); err != nil {
-			return zero, err
-		}
-		return r, nil
 	}
 	var c Lines
 	if err := Decode(payload, &c); err != nil {

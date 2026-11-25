@@ -2,19 +2,18 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/binding.v1.json",
   "title": "Approval binding",
-  "description": "The jsonb text basalt_meta.hold_action builds. The WebAuthn challenge is sha256 of its UTF-8 bytes. Clients parse it for display and never re-serialise it. See CONTRACT.md, Approvals.",
+  "description": "The binding text basalt_meta.hold_action builds, in the text rules of CONTRACT.md, Stores, Text rules. The WebAuthn challenge is sha256 of its UTF-8 bytes. Clients parse it for display and never re-serialise it. See CONTRACT.md, Approvals.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "kind",
     "approvalId",
-    "database",
+    "store",
     "agent",
     "runId",
     "intent",
-    "statement",
-    "params",
-    "assignedColumns",
+    "request",
+    "assignedFields",
     "rows",
     "rowsHash",
     "expiresAt"
@@ -31,13 +30,33 @@
       "type": "string",
       "format": "uuid"
     },
-    "database": {
-      "type": "string",
-      "description": "current_database() of the guarded database."
+    "store": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "name"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "POSTGRES"
+          ],
+          "description": "The store's kind (CONTRACT.md, Stores). A page uses it as a label only."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The name the store gives what the agent is bound to: current_database() in Postgres. For display."
+        }
+      }
     },
     "agent": {
       "type": "string",
-      "description": "The agent role's name (session_user)."
+      "pattern": "^agent:[a-z][a-z0-9_]*$",
+      "maxLength": 69,
+      "description": "The agent that holds the write, agent:<name> with <name> its name in engine.json; never the store's login (CONTRACT.md, Stores, Agent names)."
     },
     "runId": {
       "type": "string",
@@ -53,16 +72,36 @@
     "intent": {
       "type": "string"
     },
-    "statement": {
-      "type": "string"
+    "request": {
+      "description": "The held request, by family (CONTRACT.md, Stores, Request families). A page refuses to offer signing for a kind it has no view for.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "statement",
+            "params"
+          ],
+          "properties": {
+            "kind": {
+              "const": "SQL"
+            },
+            "statement": {
+              "type": "string",
+              "description": "The statement as the agent sent it."
+            },
+            "params": {
+              "type": "array",
+              "description": "Values bound to $1, $2, ... as the agent sent them."
+            }
+          }
+        }
+      ]
     },
-    "params": {
+    "assignedFields": {
       "type": "array",
-      "description": "Values bound to $1, $2, ... as the agent sent them."
-    },
-    "assignedColumns": {
-      "type": "array",
-      "description": "Columns of the target table the statement assigns; their new values are bound.",
+      "description": "The fields the request writes (in Postgres the columns of the target table the statement assigns); their new values are bound, and the page marks them.",
       "items": {
         "type": "string"
       }
@@ -80,7 +119,8 @@
     "expiresAt": {
       "type": "string",
       "format": "date-time",
-      "description": "RFC 3339 UTC with microseconds, 24 hours after the hold."
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$",
+      "description": "Exactly YYYY-MM-DDTHH:MM:SS.ffffffZ: UTC, six fraction digits, Z (the text rules), 24 hours after the hold."
     }
   }
 }

@@ -10,13 +10,13 @@ const PAST_VERBS = { INSERT: "inserted", UPDATE: "updated", DELETE: "deleted" };
 const HIDDEN_MARK = " [values hidden]";
 
 function addRow(groups, line) {
-  const g = groups.find((x) => x.table === line.table && x.op === line.op);
+  const g = groups.find((x) => x.resource === line.resource && x.op === line.op);
   if (g) {
     g.rows++;
     g.hidden = g.hidden || line.redacted;
     return;
   }
-  groups.push({ table: line.table, op: line.op, rows: 1, hidden: line.redacted });
+  groups.push({ resource: line.resource, op: line.op, rows: 1, hidden: line.redacted });
 }
 
 // Byte order, like Go's string comparison.
@@ -31,7 +31,7 @@ export function summarize(lines) {
   const direct = [];
   const cascaded = [];
   for (const line of lines) addRow(line.cascaded ? cascaded : direct, line);
-  cascaded.sort((a, b) => b.rows - a.rows || compareText(a.table, b.table) || compareText(a.op, b.op));
+  cascaded.sort((a, b) => b.rows - a.rows || compareText(a.resource, b.resource) || compareText(a.op, b.op));
   const cascadedRows = cascaded.reduce((n, g) => n + g.rows, 0);
   return { direct, cascaded, cascadedRows };
 }
@@ -53,13 +53,13 @@ function hidden(g) {
 // public.payments 2 [values hidden])".
 export function headline(summary) {
   const text = capitalize(
-    summary.direct.map((g) => `${VERBS[g.op]} ${plural(g.rows, "row")} in ${g.table}${hidden(g)}`).join(", "),
+    summary.direct.map((g) => `${VERBS[g.op]} ${plural(g.rows, "row")} in ${g.resource}${hidden(g)}`).join(", "),
   );
   if (summary.cascaded.length === 0) return text;
   const mainOp = summary.direct.length > 0 ? summary.direct[0].op : "";
   const entries = summary.cascaded.map((g) => {
     const verb = g.op === mainOp ? "" : ` ${PAST_VERBS[g.op]}`;
-    return `${g.table} ${g.rows}${verb}${hidden(g)}`;
+    return `${g.resource} ${g.rows}${verb}${hidden(g)}`;
   });
   const cascade = `${plural(summary.cascadedRows, "cascaded row")} (${entries.join(", ")})`;
   if (text === "") return capitalize(cascade);
@@ -76,7 +76,7 @@ function listTables(tables) {
 export function cascadeConfirmation(summary) {
   if (summary.cascadedRows === 0) return null;
   const verb = summary.cascaded.every((g) => g.op === "DELETE") ? "deletes" : "changes";
-  const tables = [...new Set(summary.cascaded.map((g) => g.table))];
+  const tables = [...new Set(summary.cascaded.map((g) => g.resource))];
   return `I understand this also ${verb} ${plural(summary.cascadedRows, "cascaded row")} in ${listTables(tables)}.`;
 }
 

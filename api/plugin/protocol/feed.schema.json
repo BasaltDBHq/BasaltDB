@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/plugin/protocol/feed.v1.json",
   "title": "feed.observe (feed/1)",
-  "description": "The feed/1 message: one call carries one agent's ledger events, in chain order, as a CloudEvents 1.0 JSON batch; the plugin answers with the last seq it handled. JSON-RPC method feed.observe; ConnectRPC basalt.plugin.v1.PluginService/FeedObserve. Events hold metadata only: never a row value or key, a statement, an intent, a refusal message, a link, or anything about plugins or passkeys. See CONTRACT.md, Plugins, Notifier messages.",
+  "description": "The feed/1 message (amended in place to the store-neutral form before the first release): one call carries one agent's ledger events, in chain order, as a CloudEvents 1.0 JSON batch; the plugin answers with the last seq it handled. JSON-RPC method feed.observe; ConnectRPC basalt.plugin.v1.PluginService/FeedObserve. Events hold metadata only: never a row value or key, a statement, an intent, a refusal message, a link, or anything about plugins or passkeys. See CONTRACT.md, Plugins, Notifier messages.",
   "$defs": {
     "request": {
       "type": "object",
       "required": ["agent", "events"],
       "properties": {
-        "agent": { "$ref": "#/$defs/agent" },
+        "agent": { "$ref": "#/$defs/agentName" },
         "events": {
           "description": "A CloudEvents JSON batch (application/cloudevents-batch+json): 1 to 100 events of this one agent, in ascending seq.",
           "type": "array",
@@ -58,7 +58,7 @@
           "description": "The ledger row's at. Absent on the skipped marker only.",
           "$ref": "#/$defs/timestamp"
         },
-        "subject": { "$ref": "#/$defs/agent" },
+        "subject": { "$ref": "#/$defs/agentName" },
         "datacontenttype": { "const": "application/json" },
         "data": { "type": "object" }
       },
@@ -78,33 +78,35 @@
       "description": "A CHANGE ledger row whose status is APPLIED: one per write, not one per row.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["installId", "seq", "agent", "changeId", "op", "rows", "cascadedRows"],
+      "required": ["installId", "seq", "agent", "changeId", "op", "store", "rows", "cascadedRows"],
       "properties": {
         "installId": { "$ref": "#/$defs/uuid" },
         "seq": { "$ref": "#/$defs/seq" },
-        "agent": { "$ref": "#/$defs/agent" },
+        "agent": { "$ref": "#/$defs/agentName" },
         "changeId": { "$ref": "#/$defs/uuid" },
         "runId": { "description": "When the write ran in a run.", "$ref": "#/$defs/uuid" },
         "taskId": { "description": "When the run had a task.", "$ref": "#/$defs/uuid" },
         "op": { "enum": ["INSERT", "UPDATE", "DELETE"] },
-        "table": { "description": "The statement's own table, when the write changed a row.", "$ref": "#/$defs/table" },
+        "store": { "$ref": "#/$defs/store" },
+        "resource": { "description": "The request's own resource, when the write changed a row.", "$ref": "#/$defs/resource" },
         "rows": { "description": "Rows written, cascaded rows included.", "type": "integer", "minimum": 0 },
         "cascadedRows": { "description": "Of rows, those written by cascade.", "type": "integer", "minimum": 0 }
       }
     },
     "writeRefused": {
-      "description": "A REFUSED ledger row whose op is not SELECT.",
+      "description": "A REFUSED ledger row whose op is not READ.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["installId", "seq", "agent", "changeId", "op"],
+      "required": ["installId", "seq", "agent", "changeId", "op", "store"],
       "properties": {
         "installId": { "$ref": "#/$defs/uuid" },
         "seq": { "$ref": "#/$defs/seq" },
-        "agent": { "$ref": "#/$defs/agent" },
+        "agent": { "$ref": "#/$defs/agentName" },
         "changeId": { "$ref": "#/$defs/uuid" },
         "runId": { "$ref": "#/$defs/uuid" },
         "taskId": { "$ref": "#/$defs/uuid" },
         "op": { "enum": ["INSERT", "UPDATE", "DELETE", "OTHER"] },
+        "store": { "description": "verb absent on OTHER when the store did not give its command (CONTRACT.md, Stores, Operations).", "$ref": "#/$defs/storeMaybeVerb" },
         "reasonCode": {
           "description": "The refusal's error code, when it is one of the codes of CONTRACT.md, Error codes. Never its message.",
           "type": "string",
@@ -113,19 +115,20 @@
       }
     },
     "writeHeld": {
-      "description": "An APPROVAL_PENDING ledger row: a write held for the person's approval. The row names no table.",
+      "description": "An APPROVAL_PENDING ledger row: a write held for the person's approval. The row names no resource.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["installId", "seq", "agent", "changeId", "approvalId", "runId", "op", "rows", "expiresAt"],
+      "required": ["installId", "seq", "agent", "changeId", "approvalId", "runId", "op", "store", "rows", "expiresAt"],
       "properties": {
         "installId": { "$ref": "#/$defs/uuid" },
         "seq": { "$ref": "#/$defs/seq" },
-        "agent": { "$ref": "#/$defs/agent" },
+        "agent": { "$ref": "#/$defs/agentName" },
         "changeId": { "description": "The held change.", "$ref": "#/$defs/uuid" },
         "approvalId": { "$ref": "#/$defs/uuid" },
         "runId": { "$ref": "#/$defs/uuid" },
         "taskId": { "$ref": "#/$defs/uuid" },
-        "op": { "description": "The operation on the statement's own table.", "enum": ["INSERT", "UPDATE", "DELETE"] },
+        "op": { "description": "The operation on the request's own resource.", "enum": ["INSERT", "UPDATE", "DELETE"] },
+        "store": { "$ref": "#/$defs/store" },
         "rows": { "description": "Rows the held write changes, cascaded rows included.", "type": "integer", "minimum": 1 },
         "expiresAt": { "$ref": "#/$defs/timestamp" }
       }
@@ -138,7 +141,7 @@
       "properties": {
         "installId": { "$ref": "#/$defs/uuid" },
         "seq": { "$ref": "#/$defs/seq" },
-        "agent": { "$ref": "#/$defs/agent" },
+        "agent": { "$ref": "#/$defs/agentName" },
         "changeId": { "description": "The held change.", "$ref": "#/$defs/uuid" },
         "approvalId": { "$ref": "#/$defs/uuid" }
       }
@@ -151,7 +154,7 @@
       "properties": {
         "installId": { "$ref": "#/$defs/uuid" },
         "seq": { "$ref": "#/$defs/seq" },
-        "agent": { "$ref": "#/$defs/agent" },
+        "agent": { "$ref": "#/$defs/agentName" },
         "revertId": { "$ref": "#/$defs/uuid" }
       }
     },
@@ -163,7 +166,7 @@
       "properties": {
         "installId": { "$ref": "#/$defs/uuid" },
         "seq": { "$ref": "#/$defs/seq" },
-        "agent": { "$ref": "#/$defs/agent" },
+        "agent": { "$ref": "#/$defs/agentName" },
         "changeId": { "description": "The revert's own change.", "$ref": "#/$defs/uuid" },
         "revertId": { "$ref": "#/$defs/uuid" }
       }
@@ -176,15 +179,41 @@
       "properties": {
         "installId": { "$ref": "#/$defs/uuid" },
         "seq": { "$ref": "#/$defs/seq" },
-        "agent": { "$ref": "#/$defs/agent" },
+        "agent": { "$ref": "#/$defs/agentName" },
         "afterSeq": { "description": "The cursor: the last seq the plugin acknowledged.", "type": "integer", "minimum": 0 }
       }
     },
-    "agent": {
-      "description": "The agent's name in engine.json.",
+    "agentName": {
+      "description": "The agent in the params, subject and data of feed/1 and deliver/1: agent:<name>, with <name> its name in engine.json (CONTRACT.md, Stores, Agent names).",
       "type": "string",
-      "pattern": "^[a-z][a-z0-9_]*$",
-      "maxLength": 63
+      "pattern": "^agent:[a-z][a-z0-9_]*$",
+      "maxLength": 69
+    },
+    "store": {
+      "description": "The store part (CONTRACT.md, Stores, What every store writes): the store's kind and its own word for the operation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "verb"],
+      "properties": {
+        "kind": { "enum": ["POSTGRES"] },
+        "verb": { "$ref": "#/$defs/verb" }
+      }
+    },
+    "storeMaybeVerb": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["POSTGRES"] },
+        "verb": { "$ref": "#/$defs/verb" }
+      }
+    },
+    "verb": {
+      "description": "The store's own word for the request's operation (CONTRACT.md, Stores, Operations): in Postgres the statement's command, INSERT, UPDATE, DELETE, or a DDL command such as CREATE TABLE.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z][A-Za-z ]*$"
     },
     "source": {
       "description": "urn:uuid: and the install id of the agent's database's guard (basalt_meta.install_id()).",
@@ -200,8 +229,8 @@
       "type": "string",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     },
-    "table": {
-      "description": "Schema-qualified, as Postgres writes the table's name, with any control character replaced by U+FFFD.",
+    "resource": {
+      "description": "What the request changed, in the store's form (schema.table in Postgres, as Postgres writes it), with any control character replaced by U+FFFD.",
       "type": "string",
       "minLength": 1,
       "maxLength": 300,

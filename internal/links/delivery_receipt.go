@@ -81,7 +81,8 @@ func (dc *Service) ApprovalReceiptOf(a action.Approval) (Receipt, error) {
 	}, "Approved", "approval")
 }
 
-// SignReceipt fills in the agent, the engine and the time and signs p
+// SignReceipt fills in the agent (agent:<name>, CONTRACT.md, Stores,
+// Agent names), the engine and the time and signs p
 // with the engine's key. Without a usable key (KEY_ERROR) there is no
 // receipt, and the line says why.
 func (dc *Service) SignReceipt(p channel.Receipt, verb, noun string) (Receipt, error) {
@@ -89,7 +90,7 @@ func (dc *Service) SignReceipt(p channel.Receipt, verb, noun string) (Receipt, e
 		return Receipt{Missing: NoReceiptKeyError, Line: noReceiptKeyErrorLine}, nil
 	}
 	p.Headline = guidance.Clip(p.Headline, channel.MaxReceiptHeadline)
-	p.Agent = dc.core.Name
+	p.Agent = approval.AgentName(dc.core.Name)
 	p.EngineID = dc.deps.Receipts.EngineID()
 	p.At = dc.core.Now().UTC().Truncate(time.Second).Format("2006-01-02T15:04:05Z")
 	token, err := channel.SignReceipt(dc.deps.Receipts, p)

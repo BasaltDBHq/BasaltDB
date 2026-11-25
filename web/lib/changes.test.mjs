@@ -23,11 +23,11 @@ function fakeElement(tag) {
 }
 
 const lead = {
-  op: "DELETE", table: "public.leads", cascaded: false, redacted: false, rowHash: null,
+  op: "DELETE", resource: "public.leads", cascaded: false, redacted: false, rowHash: null,
   key: { id: 4 }, old: { id: 4, name: "Dana" }, set: null, texts: null,
 };
 const hidden = (n) => ({
-  op: "DELETE", table: "public.lead_notes", cascaded: true, redacted: true, rowHash: String(n).repeat(64),
+  op: "DELETE", resource: "public.lead_notes", cascaded: true, redacted: true, rowHash: String(n).repeat(64),
   key: null, old: null, set: null, texts: null,
 });
 
@@ -92,7 +92,7 @@ test("the count names each kind of change", () => {
 test("rows list by key, numbers as numbers, the table's own rows before cascaded ones", () => {
   globalThis.document = { createElement: fakeElement };
   const row = (id, extra = {}) => ({ ...lead, key: { id }, old: { id, name: `n${id}` }, ...extra });
-  const groups = lineGroups([hidden(1), row(10), row(9), row(100), { ...row(5), table: "public.a_first" }]);
+  const groups = lineGroups([hidden(1), row(10), row(9), row(100), { ...row(5), resource: "public.a_first" }]);
   assert.deepEqual(groups.map((g) => g.children[0].children[0].textContent), ["public.a_first", "public.leads", "public.lead_notes"]);
   assert.deepEqual(rows(groups[1]).slice(1).map((r) => r[1]), ["9", "10", "100"]);
   const big = [row(9007199254740993), row(9007199254740992)];

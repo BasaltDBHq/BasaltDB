@@ -95,7 +95,7 @@ func newKeptFixture(t *testing.T, names []string, scoped ...string) *keptFixture
 		require.NoError(t, err)
 		t.Cleanup(pool.Close)
 		cc := pool.Config().ConnConfig
-		f.agents[name] = KeptAgent{db: pool, host: cc.Host, port: cc.Port, database: cc.Database, role: cc.User}
+		f.agents[name] = KeptAgent{db: pool, host: cc.Host, port: cc.Port, database: cc.Database}
 		f.cfg.Agents = append(f.cfg.Agents, config.Agent{Name: name, OSUser: me.Username})
 		uids[name] = keptOtherUID
 		if slices.Contains(scoped, name) {

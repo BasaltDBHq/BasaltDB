@@ -96,7 +96,10 @@ func TestWriteThroughTheGuard(t *testing.T) {
 	require.Equal(t, changeID, first["changeId"])
 	require.Equal(t, "APPLIED", first["status"])
 	require.Equal(t, "Lead 4 duplicates lead 3", first["intent"])
-	require.Equal(t, "UPDATE leads SET status = $1 WHERE id = $2", first["statement"])
+	require.Equal(t, map[string]any{"kind": "SQL", "statement": "UPDATE leads SET status = $1 WHERE id = $2", "params": []any{"merged", json.Number("4")}}, first["request"])
+	require.Equal(t, map[string]any{"kind": "POSTGRES", "verb": "UPDATE"}, first["store"])
+	require.Equal(t, "public.leads", first["resource"])
+	require.Equal(t, "RECORD", first["shape"])
 	actor, ok := first["actor"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "AGENT", actor["kind"])
@@ -151,22 +154,22 @@ func TestWriteRefusalsAreRecorded(t *testing.T) {
 	runID := str(t, run["runId"])
 
 	cases := []struct {
-		name, sql              string
-		code, reason, sqlState string
-		op                     string
+		name, sql               string
+		code, reason, storeCode string
+		op                      string
 	}{
 		{"delete is held", "DELETE FROM leads WHERE id = 1", guidance.CodeApprovalRequired, "", "", "DELETE"},
 		{"11 rows are held", "UPDATE leads SET score = 0 WHERE id BETWEEN 10 AND 20", guidance.CodeApprovalRequired, "", "", "UPDATE"},
 		{"over 50 rows", "UPDATE leads SET score = 0 WHERE id <= 60", guidance.CodeRowLimitExceeded, "", "BS003", "UPDATE"},
 		{"ddl", "DROP TABLE leads", guidance.CodeStatementRefused, "DDL_NOT_ALLOWED", "", "OTHER"},
-		{"read sent to write", "SELECT * FROM leads", guidance.CodeStatementRefused, "WRONG_TOOL", "", "SELECT"},
+		{"read sent to write", "SELECT * FROM leads", guidance.CodeStatementRefused, "WRONG_TOOL", "", "READ"},
 		{"function", "UPDATE leads SET name = pg_sleep(1)::text WHERE id = 1", guidance.CodeStatementRefused, "FUNCTION_NOT_ALLOWED", "", "UPDATE"},
 		{"ungranted table", "UPDATE payroll SET amount = 0 WHERE id = 1", guidance.CodePermissionDenied, "", "42501", "UPDATE"},
-		{"constraint", "INSERT INTO leads (id, name) VALUES (1, 'dup')", guidance.CodeSQLError, "", "23505", "INSERT"},
+		{"constraint", "INSERT INTO leads (id, name) VALUES (1, 'dup')", guidance.CodeStoreError, "", "23505", "INSERT"},
 	}
 	for _, c := range cases {
 		body, isError := h.call(t, "write", map[string]any{"sql": c.sql, "intent": "test " + c.name, "runId": runID})
-		requireToolError(t, body, isError, c.code, c.reason, c.sqlState)
+		requireToolError(t, body, isError, c.code, c.reason, c.storeCode)
 	}
 	require.Equal(t, "open", leadStatus(t, d, 1))
 
@@ -240,10 +243,12 @@ func TestQueryRefusalInARunIsRecorded(t *testing.T) {
 	recs := h.history(t, runID)
 	require.Len(t, recs, 2, "the read and the refusal")
 	require.Equal(t, "REFUSED", recs[0]["status"])
-	require.Equal(t, "SELECT", recs[0]["op"])
+	require.Equal(t, "READ", recs[0]["op"])
+	require.Equal(t, map[string]any{"kind": "POSTGRES", "verb": "SELECT"}, recs[0]["store"])
 	require.Equal(t, "Read leads", recs[0]["intent"])
 	require.Equal(t, "APPLIED", recs[1]["status"])
-	require.Equal(t, "SELECT", recs[1]["op"])
+	require.Equal(t, "READ", recs[1]["op"])
+	require.Equal(t, map[string]any{"kind": "POSTGRES", "verb": "SELECT"}, recs[1]["store"])
 	require.Equal(t, json.Number("1"), recs[1]["rows"])
 }
 

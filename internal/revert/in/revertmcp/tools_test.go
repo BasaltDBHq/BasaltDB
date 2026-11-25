@@ -61,12 +61,12 @@ func TestResourceNamesPassThroughToTheStore(t *testing.T) {
 }
 
 // The agent reads a line's store code as storeCode and its resource as
-// resource: the signed line's sqlState and table map to them, on preview
+// resource: the signed line's store.code and resource map to them, on preview
 // lines, plan items, a plan item's plan line and batch items.
 func TestRevertAnswersNameStoreCodeAndResource(t *testing.T) {
 	t.Parallel()
 	code, conflict := "23505", "KEY_TAKEN"
-	line := revert.Line{Action: "SKIP", Op: "INSERT", Table: "public.leads", Conflict: &conflict, SQLState: &code}
+	line := revert.Line{Action: "SKIP", Op: "INSERT", Resource: "public.leads", Conflict: &conflict, Store: revert.LineStore{Kind: "POSTGRES", Verb: "INSERT", Code: &code}}
 	got, err := json.Marshal(revertLineFromDomain(line))
 	require.NoError(t, err)
 	var fields map[string]any

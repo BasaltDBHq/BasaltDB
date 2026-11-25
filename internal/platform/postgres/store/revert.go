@@ -270,7 +270,7 @@ func timedOut(err error, se *action.StoreError) *action.RevertRefusalError {
 	if se.Code != action.CodeQueryTimeout || se.Reason != action.ReasonTimeLimit {
 		return nil
 	}
-	return &action.RevertRefusalError{Reason: action.RevertTimedOut, StoreCode: se.SQLState, Err: err}
+	return &action.RevertRefusalError{Reason: action.RevertTimedOut, StoreCode: se.StoreCode, Err: err}
 }
 
 // findRevertRefusal maps FindRevert's error: a revert the role did not

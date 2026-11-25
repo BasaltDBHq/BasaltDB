@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/revert-request.v1.json",
   "title": "Revert request",
-  "description": "What the engine's local pages serve at GET /api/v1/reverts/{revertId}, and what a format 1 revert link carries, <base>/reverts/<revertId>#1.<base64url(deflate-raw(this JSON))>, which the pages still read. The engine writes format 2 (compact-request.schema.json). See CONTRACT.md, Revert and Page links.",
+  "description": "What the engine's local pages serve at GET /api/v1/reverts/{revertId}, and what a format 2 link (compact-request.schema.json) expands to. No link carries this JSON: a format 1 link (#1.) is no longer read. See CONTRACT.md, Revert and Page links.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -18,7 +18,7 @@
     "binding": {
       "type": "string",
       "minLength": 2,
-      "description": "The binding text exactly as Postgres returned it (revert-binding.schema.json)."
+      "description": "The binding text exactly as the store wrote it (revert-binding.schema.json)."
     },
     "lines": {
       "type": "array",
@@ -27,7 +27,7 @@
       "items": {
         "type": "string"
       },
-      "description": "Revert lines exactly as Postgres returned them, in order (revert-line.schema.json). sha256 of the lines joined by a newline must equal the binding's rowsHash, or for a batched binding its sampleHash (the lines are then the plan's sample: min(1000, rows + skipped) lines). Empty only for a task proposal with no line of the agent's own (planned, version 20): the page then disables signing and offers to include other agents' changes. After a widen, served with the rotated link only: the full lines the proven call returned (CONTRACT.md, Rescope, widen and reject)."
+      "description": "Revert lines exactly as the store wrote them, in order (revert-line.schema.json). sha256 of the lines joined by a newline must equal the binding's rowsHash, or for a batched binding its sampleHash (the lines are then the plan's sample: min(1000, rows + skipped) lines). Empty only for a task proposal with no line of the agent's own (planned, version 20): the page then disables signing and offers to include other agents' changes. After a widen, served with the rotated link only: the full lines the proven call returned (CONTRACT.md, Rescope, widen and reject)."
     },
     "rescopeNonce": {
       "type": "string",

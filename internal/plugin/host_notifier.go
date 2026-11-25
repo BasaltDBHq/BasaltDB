@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
@@ -37,7 +38,7 @@ func (h *Host) ObserveFeedOn(ctx context.Context, k pluginmodel.EntryKey, reg Re
 	}
 	var res pluginproto.FeedObserveResponse
 	if err := h.CallOn(ctx, k, reg, []string{agent}, pluginproto.MethodFeedObserve,
-		pluginproto.FeedObserveRequest{Agent: agent, Events: events}, &res); err != nil {
+		pluginproto.FeedObserveRequest{Agent: approval.AgentName(agent), Events: events}, &res); err != nil {
 		return 0, err
 	}
 	if !slices.Contains(seqs, res.LastSeq) {
@@ -56,7 +57,7 @@ func (h *Host) DeliverApproval(ctx context.Context, k pluginmodel.EntryKey, agen
 		return fmt.Errorf("plugin %s: a notice must be one JSON object", k)
 	}
 	return h.Call(ctx, k, []string{agent}, pluginproto.MethodApprovalDeliver,
-		pluginproto.ApprovalDeliverRequest{Agent: agent, Event: event}, &pluginproto.ApprovalDeliverResponse{})
+		pluginproto.ApprovalDeliverRequest{Agent: approval.AgentName(agent), Event: event}, &pluginproto.ApprovalDeliverResponse{})
 }
 
 // batchSeqs reads data.seq of every event of a batch.

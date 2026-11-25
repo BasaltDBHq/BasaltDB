@@ -61,7 +61,7 @@ func requireApprovalReceipt(t *testing.T, env agentEnv, r channel.Receipt, id st
 	require.Equal(t, channel.ReceiptApproved, r.Status)
 	require.Equal(t, fmt.Sprintf("Update %d rows in public.leads", rows), r.Headline)
 	require.Equal(t, postgresBinding(t, env, id).RowsHash, r.RowsHash, "the rows the passkey signed, from Postgres")
-	require.Equal(t, "bot", r.Agent)
+	require.Equal(t, "agent:bot", r.Agent)
 	require.Equal(t, env.keys.EngineID(), r.EngineID)
 	require.Empty(t, r.ChangeID)
 }
@@ -157,7 +157,7 @@ func requireRevertReceipt(t *testing.T, env agentEnv, r channel.Receipt, id, cha
 	require.Equal(t, channel.ReceiptApplied, r.Status)
 	require.Equal(t, b.RowsHash, r.RowsHash, "the rows the passkey signed, from Postgres")
 	require.True(t, strings.HasPrefix(r.Headline, "Revert of run "), r.Headline)
-	require.Equal(t, "bot", r.Agent)
+	require.Equal(t, "agent:bot", r.Agent)
 	require.Equal(t, env.keys.EngineID(), r.EngineID)
 	require.Equal(t, changeID, r.ChangeID)
 }

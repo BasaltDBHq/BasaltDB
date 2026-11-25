@@ -249,15 +249,15 @@ func TestNoticeIsTheContractsEvent(t *testing.T) {
 	e.d.forAgent("product_a").DeliverLink(n)
 
 	got := waitNotices(t, p, 1)[0]
-	require.Equal(t, "product_a", got.Agent)
+	require.Equal(t, "agent:product_a", got.Agent)
 	require.Equal(t, "dev.basaltdb.approval.requested", got.Event.Type)
 	require.Equal(t, "urn:uuid:"+e.install.String(), got.Event.Source)
-	require.Equal(t, "product_a", got.Event.Subject)
+	require.Equal(t, "agent:product_a", got.Event.Subject)
 	id, err := uuid.Parse(got.Event.ID)
 	require.NoError(t, err)
 	require.Equal(t, uuid.Version(7), id.Version())
 	require.Equal(t, map[string]any{
-		"kind": "APPROVAL_REQUESTED", "agent": "product_a", "approvalId": testApproval, "headline": "Update 27 rows in public·leads",
+		"kind": "APPROVAL_REQUESTED", "agent": "agent:product_a", "approvalId": testApproval, "headline": "Update 27 rows in public·leads",
 		"expiresAt": n.ExpiresAt.UTC().Format(feedTimeLayout), "link": localShort, "linkOpens": "ENGINE_COMPUTER",
 		"instruction": "Open the link on the computer Basalt runs on to review the held write and approve it with your passkey.",
 	}, got.Event.Data)
@@ -542,7 +542,7 @@ func TestOnlyListedAgentsGetANotice(t *testing.T) {
 	waitNotices(t, both, 2)
 	time.Sleep(3 * fastDeliver.tries[3])
 	require.Len(t, one.received(), 1)
-	require.Equal(t, "product_a", one.received()[0].Agent)
+	require.Equal(t, "agent:product_a", one.received()[0].Agent)
 	require.NotContains(t, string(one.received()[0].raw), "client_x")
 	require.Len(t, both.received(), 2)
 	for _, g := range both.received() {

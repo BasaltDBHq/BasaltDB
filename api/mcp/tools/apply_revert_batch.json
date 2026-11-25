@@ -99,7 +99,7 @@
               "type": "string",
               "enum": [
                 "CHANGED_AFTER",
-                "ROW_GONE",
+                "TARGET_GONE",
                 "KEY_TAKEN",
                 "ALREADY_REVERTED",
                 "VALUES_PRUNED",

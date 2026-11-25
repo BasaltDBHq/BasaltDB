@@ -142,17 +142,17 @@ type revertLineDTO struct {
 
 func revertLineFromDomain(l revert.Line) revertLineDTO {
 	d := revertLineDTO{
-		Action: l.Action, Op: l.Op, Resource: l.Table, Key: l.Key, Now: l.Now, Set: l.Set,
+		Action: l.Action, Op: l.Op, Resource: l.Resource, Key: l.Key, Now: l.Now, Set: l.Set,
 		Cascaded: l.Cascaded, Redacted: l.Redacted, RowHash: l.RowHash, ChangeIDs: make([]string, 0, len(l.ChangeIDs)),
 		LargeValues: l.LargeValues, MoreChangeIDs: l.MoreChangeIDs,
 	}
 	if l.Conflict != nil {
 		d.Conflict = *l.Conflict
 	}
-	// The signed line names the store's code sqlState; the agent reads it
-	// as storeCode, and the signed text is never changed.
-	if l.SQLState != nil {
-		d.StoreCode = *l.SQLState
+	// The signed line carries the store's code in store.code; the agent
+	// reads it as storeCode, and the signed text is never changed.
+	if l.Store.Code != nil {
+		d.StoreCode = *l.Store.Code
 	}
 	for _, id := range l.ChangeIDs {
 		d.ChangeIDs = append(d.ChangeIDs, id.String())

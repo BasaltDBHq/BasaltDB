@@ -165,7 +165,7 @@ func proposalOf(r action.Revert) action.Scope {
 		// scope alone, and the page shows the person what a new request holds.
 		return scope
 	}
-	scope.Runs, scope.Tables = b.Select.Runs, b.Select.Tables
+	scope.Runs, scope.Tables = b.Select.Runs, b.Select.Resources
 	return scope
 }
 
@@ -400,7 +400,7 @@ func (rc *Service) revertExpired(r action.Revert) error {
 // the limit the tool ran under: request_revert's prepare has the 100
 // seconds of an MCP call, preview_revert the agent's statement timeout.
 func (rc *Service) prepareTimeout(tool string, scope action.Scope, storeCode string) error {
-	te := &toolresult.ToolError{Code: guidance.CodeQueryTimeout, Reason: guidance.ReasonTimeLimit, SQLState: storeCode, Message: fmt.Sprintf(
+	te := &toolresult.ToolError{Code: guidance.CodeQueryTimeout, Reason: guidance.ReasonTimeLimit, StoreCode: storeCode, Message: fmt.Sprintf(
 		"preparing the revert of %s %s took longer than the %d seconds an MCP call may take; nothing was prepared. "+
 			"A narrower revert, with runs or resources, may fit.",
 		strings.ToLower(string(scope.Kind)), scope.ID, int(rc.store.Limits.Prepare.Seconds()))}

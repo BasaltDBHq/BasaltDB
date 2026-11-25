@@ -19,9 +19,9 @@
       "required": [
         "agents",
         "runs",
-        "tables"
+        "resources"
       ],
-      "description": "What the person may choose from inside the widest select they proved: the agents with changes in it, their runs, the tables written, and from basalt_meta version 32 the agent of each change. Present only on a proven widen and on a narrow under its token; every other answer, and every view or tool the requesting agent reads, has no catalog and so no changeAgents.",
+      "description": "What the person may choose from inside the widest select they proved: the agents with changes in it, their runs, the resources written, and from basalt_meta version 32 the agent of each change. Present only on a proven widen and on a narrow under its token; every other answer, and every view or tool the requesting agent reads, has no catalog and so no changeAgents.",
       "properties": {
         "agents": {
           "type": "array",
@@ -35,7 +35,8 @@
             "properties": {
               "agent": {
                 "type": "string",
-                "description": "The agent role."
+                "pattern": "^agent:[a-z][a-z0-9_]*$",
+                "description": "The agent, agent:<name>."
               },
               "changes": {
                 "type": "integer",
@@ -62,7 +63,9 @@
                 "format": "uuid"
               },
               "agent": {
-                "type": "string"
+                "type": "string",
+                "pattern": "^agent:[a-z][a-z0-9_]*$",
+                "description": "The agent, agent:<name>."
               },
               "startedAt": {
                 "type": "string",
@@ -75,19 +78,19 @@
             }
           }
         },
-        "tables": {
+        "resources": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
             "required": [
-              "table",
+              "resource",
               "rows"
             ],
             "properties": {
-              "table": {
+              "resource": {
                 "type": "string",
-                "description": "schema.table"
+                "description": "The resource in the store's form: schema.table in Postgres."
               },
               "rows": {
                 "type": "integer",
@@ -105,9 +108,10 @@
           },
           "additionalProperties": {
             "type": "string",
-            "description": "The agent role that made the change."
+            "pattern": "^agent:[a-z][a-z0-9_]*$",
+            "description": "The agent that made the change, agent:<name>."
           },
-          "description": "basalt_meta version 32 (owner decision Q-11): every change in the widest select the person proved, by change id, to the agent role that made it. It covers every change id the request's lines name, so the page tags each row with its agents. Absent on a guard older than version 32; the page then tags rows only when the select names exactly one agent."
+          "description": "basalt_meta version 32 (owner decision Q-11): every change in the widest select the person proved, by change id, to the agent that made it (agent:<name>). It covers every change id the request's lines name, so the page tags each row with its agents. Absent on a guard older than version 32; the page then tags rows only when the select names exactly one agent."
         }
       }
     }

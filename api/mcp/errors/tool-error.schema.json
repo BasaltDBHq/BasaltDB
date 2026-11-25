@@ -23,7 +23,7 @@
         "NOTHING_TO_REVERT",
         "PERMISSION_DENIED",
         "NOT_FOUND",
-        "SQL_ERROR",
+        "STORE_ERROR",
         "INVALID_ARGUMENT",
         "UNAVAILABLE",
         "INTERNAL",
@@ -39,10 +39,11 @@
       "type": "string",
       "description": "One line for the agent. May repeat the steps in prose."
     },
-    "sqlState": {
+    "storeCode": {
       "type": "string",
-      "pattern": "^[0-9A-Z]{5}$",
-      "description": "Set when Postgres raised the error."
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "The store's own error code, present whenever the store raised the error, on any code (a QUERY_TIMEOUT from Postgres carries 57014). In Postgres the SQLSTATE. CONTRACT.md, Stores, What every store writes."
     },
     "docsUrl": {
       "type": "string",

@@ -14,7 +14,7 @@
     "nothing-to-revert",
     "permission-denied",
     "not-found",
-    "sql-error",
+    "store-error",
     "invalid-argument",
     "unavailable",
     "internal",

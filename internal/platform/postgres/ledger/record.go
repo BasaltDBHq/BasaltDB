@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/lib/wiretime"
 )
@@ -18,20 +19,23 @@ const ActorKindAgent = "AGENT"
 // per action, with the rows it wrote. basalt log --json and the MCP
 // run_history tool both render it.
 type Record struct {
-	ChangeID     string          `json:"changeId"`
-	At           string          `json:"at"`
-	Actor        RecordActor     `json:"actor"`
-	Intent       string          `json:"intent,omitempty"`
-	Target       RecordTarget    `json:"target"`
-	Op           string          `json:"op,omitempty"`
-	Statement    string          `json:"statement,omitempty"`
-	Params       json.RawMessage `json:"params,omitempty"`
-	DurationMs   *int            `json:"durationMs,omitempty"`
-	Rows         int             `json:"rows"`
-	CascadedRows int             `json:"cascadedRows"`
-	Status       string          `json:"status"`
-	Reason       *RecordReason   `json:"reason,omitempty"`
-	RowChanges   []RecordRow     `json:"rowChanges"`
+	ChangeID string      `json:"changeId"`
+	At       string      `json:"at"`
+	Actor    RecordActor `json:"actor"`
+	Intent   string      `json:"intent,omitempty"`
+	// Resource is the request's own resource (schema.table in Postgres),
+	// and Shape its kind of data: both absent when the action named none.
+	Resource     string         `json:"resource,omitempty"`
+	Shape        string         `json:"shape,omitempty"`
+	Op           string         `json:"op"`
+	Store        RecordStore    `json:"store"`
+	Request      *RecordRequest `json:"request,omitempty"`
+	DurationMs   *int           `json:"durationMs,omitempty"`
+	Rows         int            `json:"rows"`
+	CascadedRows int            `json:"cascadedRows"`
+	Status       string         `json:"status"`
+	Reason       *RecordReason  `json:"reason,omitempty"`
+	RowChanges   []RecordRow    `json:"rowChanges"`
 	// BasedOn is set when the change wrote exactly one non-cascaded row
 	// and the run had read it (M1.5).
 	BasedOn *RecordBasedOn `json:"basedOn,omitempty"`
@@ -59,9 +63,21 @@ type RecordActor struct {
 	TaskID string `json:"taskId,omitempty"`
 }
 
-// RecordTarget is the table the action named first.
-type RecordTarget struct {
-	Table string `json:"table,omitempty"`
+// RecordStore is the record's store part (CONTRACT.md, Stores, What every
+// store writes): the store's kind and its own word for the request's
+// operation, absent on REVERT and on an OTHER the store gave no command for.
+type RecordStore struct {
+	Kind string `json:"kind"`
+	Verb string `json:"verb,omitempty"`
+}
+
+// RecordRequest is the request by family (CONTRACT.md, Stores, Request
+// families): for SQL the statement and the values bound to it, either
+// absent when it is left out as a large value.
+type RecordRequest struct {
+	Kind      string          `json:"kind"`
+	Params    json.RawMessage `json:"params,omitempty"`
+	Statement string          `json:"statement,omitempty"`
 }
 
 // RecordReason is why a REFUSED action was refused: a tool error code.
@@ -72,7 +88,8 @@ type RecordReason struct {
 
 // RecordRow is one row the action wrote, cascades included.
 type RecordRow struct {
-	Table      string         `json:"table"`
+	Resource   string         `json:"resource"`
+	Shape      string         `json:"shape"`
 	Op         string         `json:"op"`
 	Key        map[string]any `json:"key"`
 	Before     map[string]any `json:"before"`
@@ -114,9 +131,12 @@ func RecordFromDomain(ch action.Change, rows []action.RowChange) Record {
 	rec := Record{
 		ChangeID: ch.ID.String(), At: ch.At.UTC().Format(time.RFC3339),
 		Actor:  RecordActor{Kind: actorKind(ch.ActorKind), Name: ch.Agent},
-		Intent: ch.Intent, Target: RecordTarget{Table: ch.Table}, Op: ch.Op, Statement: ch.Statement,
-		Params: ch.Params, DurationMs: ch.DurationMs, Rows: ch.Rows, CascadedRows: ch.CascadedRows,
+		Intent: ch.Intent, Op: ch.Op, Store: RecordStore{Kind: string(action.StorePostgres), Verb: ch.Verb},
+		Request: requestOf(ch), DurationMs: ch.DurationMs, Rows: ch.Rows, CascadedRows: ch.CascadedRows,
 		Status: ch.Status, RowChanges: make([]RecordRow, 0, len(rows)), LargeValues: ch.LargeValues,
+	}
+	if ch.Table != "" {
+		rec.Resource, rec.Shape = ch.Table, approval.ShapeRecord
 	}
 	if ch.RunID.Valid {
 		rec.Actor.RunID = ch.RunID.UUID.String()
@@ -136,7 +156,7 @@ func RecordFromDomain(ch action.Change, rows []action.RowChange) Record {
 	direct := 0
 	for _, r := range rows {
 		row := RecordRow{
-			Table: r.Table, Op: r.Op, Key: wiretime.Map(r.Key), Before: wiretime.Map(r.Before), After: wiretime.Map(r.After),
+			Resource: r.Table, Shape: approval.ShapeRecord, Op: r.Op, Key: wiretime.Map(r.Key), Before: wiretime.Map(r.Before), After: wiretime.Map(r.After),
 			Cascaded: r.Cascaded, Redacted: r.Redacted, Pruned: r.Pruned,
 			BasedOn: basedOnFromDomain(r.BasedOn), BlindWrite: r.BlindWrite,
 			LargeValues: r.LargeValues, leftOut: leftOutImages(r),
@@ -151,6 +171,15 @@ func RecordFromDomain(ch action.Change, rows []action.RowChange) Record {
 		rec.BasedOn = nil
 	}
 	return rec
+}
+
+// requestOf is ch's request: its statement and params, nil when it has
+// neither and none was left out as a large value (a revert's own record).
+func requestOf(ch action.Change) *RecordRequest {
+	if ch.Statement == "" && ch.Params == nil && len(ch.LargeValues) == 0 {
+		return nil
+	}
+	return &RecordRequest{Kind: approval.RequestSQL, Params: ch.Params, Statement: ch.Statement}
 }
 
 func basedOnFromDomain(b *action.BasedOn) *RecordBasedOn {

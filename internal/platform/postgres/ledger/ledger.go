@@ -55,8 +55,18 @@ var changeColumns = []string{
 	colChangeID, "at", "agent", colRunID, "task_id", "coalesce(intent, '') AS intent", "coalesce(op, '') AS op",
 	"coalesce(table_name, '') AS table_name", "coalesce(statement, '') AS statement", "params", "rows", "cascaded_rows",
 	"duration_ms", "status", "coalesce(code, '') AS code", "coalesce(reason, '') AS reason", "actor_kind", "revert_id",
-	"reverted_by",
+	"reverted_by", changeVerb,
 }
+
+// changeVerb is the store's word for a change's request (CONTRACT.md,
+// Stores, Operations): agent_changes has no verb, so it is the one on the
+// change's latest ledger row that records the request (CHANGE, READ,
+// REFUSED, APPROVAL_PENDING). An upsert whose rows all update is op UPDATE
+// with verb INSERT, so it is read, never derived from op. Plain SQL: a
+// correlated subquery, one index lookup per change (ledger_change).
+const changeVerb = `coalesce((SELECT l.verb FROM basalt_meta.agent_ledger l
+	WHERE l.change_id = agent_changes.change_id AND l.kind IN ('CHANGE', 'READ', 'REFUSED', 'APPROVAL_PENDING')
+	ORDER BY l.seq DESC LIMIT 1), '') AS verb`
 
 // changePage is the SQL of one page of change records (one row more than
 // the limit, to tell whether another page follows), and whether it is
@@ -93,7 +103,7 @@ func changeDest(c *action.Change) []any {
 	return []any{
 		&c.ID, &c.At, &c.Agent, &c.RunID, &c.TaskID, &c.Intent, &c.Op, &c.Table, &c.Statement,
 		&c.Params, &c.Rows, &c.CascadedRows, &c.DurationMs, &c.Status, &c.Code, &c.Reason,
-		&c.ActorKind, &c.RevertID, &c.RevertedBy,
+		&c.ActorKind, &c.RevertID, &c.RevertedBy, &c.Verb,
 	}
 }
 

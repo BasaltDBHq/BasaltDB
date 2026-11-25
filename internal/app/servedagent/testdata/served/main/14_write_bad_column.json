@@ -1,6 +1,6 @@
 {
   "body": {
-    "code": "SQL_ERROR",
+    "code": "STORE_ERROR",
     "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
     "message": "column \"nope\" of relation \"leads\" does not exist",
     "nextSteps": [
@@ -11,7 +11,7 @@
         "tool": "write"
       }
     ],
-    "sqlState": "42703"
+    "storeCode": "42703"
   },
   "isError": true,
   "tool": "write"

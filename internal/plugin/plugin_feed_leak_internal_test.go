@@ -184,10 +184,10 @@ func TestFeedEventsMatchTheSchema(t *testing.T) {
 	change := uuid.NullUUID{UUID: uuid.Must(uuid.NewV7()), Valid: true}
 	at := time.Date(2026, 11, 19, 6, 2, 11, 513958000, time.UTC)
 	rows := []guardmodel.FeedRow{
-		{Seq: 1, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("INSERT"), RunID: id(), TaskID: id(), Table: s("public.\"we\x01ird\""), Rows: s("3"), CascadedRows: s("2")},
-		{Seq: 2, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("DELETE")},
-		{Seq: 3, At: at, Kind: guardmodel.KindRefused, ChangeID: change, Op: s("OTHER"), RunID: id(), TaskID: id(), Code: s("SQL_ERROR")},
-		{Seq: 4, At: at, Kind: guardmodel.KindApprovalPending, ChangeID: change, Op: s("UPDATE"), RunID: id(), ApprovalID: id(), Rows: s("27"), ExpiresAt: s("2026-11-20T06:02:11+00:00")},
+		{Seq: 1, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("INSERT"), Verb: s("INSERT"), RunID: id(), TaskID: id(), Table: s("public.\"we\x01ird\""), Rows: s("3"), CascadedRows: s("2")},
+		{Seq: 2, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("DELETE"), Verb: s("DELETE")},
+		{Seq: 3, At: at, Kind: guardmodel.KindRefused, ChangeID: change, Op: s("OTHER"), RunID: id(), TaskID: id(), Code: s("STORE_ERROR")},
+		{Seq: 4, At: at, Kind: guardmodel.KindApprovalPending, ChangeID: change, Op: s("UPDATE"), Verb: s("INSERT"), RunID: id(), ApprovalID: id(), Rows: s("27"), ExpiresAt: s("2026-11-20T06:02:11+00:00")},
 		{Seq: 5, At: at, Kind: guardmodel.KindApproved, ChangeID: change, ApprovalID: id()},
 		{Seq: 6, At: at, Kind: guardmodel.KindRevertPending, RevertID: id()},
 		{Seq: 7, At: at, Kind: guardmodel.KindRevertSigned, ChangeID: change, RevertID: id()},
@@ -204,13 +204,13 @@ func TestFeedEventsMatchTheSchema(t *testing.T) {
 	for _, ev := range events {
 		raw, _, err := feedBatch([]feedEvent{ev})
 		require.NoError(t, err)
-		req, err := json.Marshal(pluginproto.FeedObserveRequest{Agent: "product_a", Events: raw})
+		req, err := json.Marshal(pluginproto.FeedObserveRequest{Agent: "agent:product_a", Events: raw})
 		require.NoError(t, err)
 		inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(req))
 		require.NoError(t, err)
 		require.NoError(t, sch.Validate(inst), string(req))
 	}
-	require.Equal(t, "public.\"we�ird\"", events[1].Data.Table)
+	require.Equal(t, "public.\"we�ird\"", events[1].Data.Resource)
 
 	for _, bad := range []guardmodel.FeedRow{
 		{Seq: 1, At: at, Kind: "READ", ChangeID: change, Op: s("SELECT")},
@@ -219,6 +219,9 @@ func TestFeedEventsMatchTheSchema(t *testing.T) {
 		{Seq: 1, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("UPDATE"), RunID: s("x")},         // not an id
 		{Seq: 1, At: at, Kind: guardmodel.KindApprovalPending, ChangeID: change, Op: s("UPDATE"), Rows: s("1")}, // no approval, run or expiry
 		{Seq: 1, At: at, Kind: guardmodel.KindRevertPending},                                                    // no revert id
+		{Seq: 1, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("UPDATE")},                        // no verb
+		{Seq: 1, At: at, Kind: guardmodel.KindRefused, ChangeID: change, Op: s("UPDATE")},                       // no verb, not OTHER
+		{Seq: 1, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("UPDATE"), Verb: s("UP;DATE")},    // not a verb
 		{Seq: 0, At: at, Kind: guardmodel.KindRevertPending, RevertID: id()},
 	} {
 		_, ok := feedEventOf(install, "product_a", bad)

@@ -89,8 +89,8 @@ func TestRequestPluginAgainstGuard(t *testing.T) {
 	require.Equal(t, []string{"bot"}, opened.Agents, "the caller alone by default, never every agent")
 	b, err := approval.ParsePluginBinding(opened.BindingText)
 	require.NoError(t, err)
-	require.Equal(t, f.roles["bot"].Role, b.RequestedBy, "opened with the caller's own credential")
-	require.Equal(t, []string{f.roles["bot"].Role}, b.Agents)
+	require.Equal(t, "agent:bot", b.RequestedBy, "opened with the caller's own credential")
+	require.Equal(t, []string{"agent:bot"}, b.Agents)
 	require.Equal(t, []string{"bot"}, f.entries()[0].Agents, "the entry serves the caller alone")
 
 	// The upload is used: the same id again is gone.

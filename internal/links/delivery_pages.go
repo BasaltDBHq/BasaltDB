@@ -29,7 +29,7 @@ type ColumnOrder interface {
 	ColumnOrder(ctx context.Context, tables []string) (map[string][]string, error)
 }
 
-// ColumnsOf is the column order of the tables lines name, for the pages'
+// ColumnsOf is the column order of the resources (tables) lines name, for the pages'
 // display only (CONTRACT.md, Local pages): never signed, and a failure
 // only costs the order, so it is logged and nil is returned.
 func (dc *Service) ColumnsOf(ctx context.Context, lines []string) approval.ColumnOrder {
@@ -40,13 +40,13 @@ func (dc *Service) ColumnsOf(ctx context.Context, lines []string) approval.Colum
 	var tables []string
 	for _, l := range lines {
 		var line struct {
-			Table string `json:"table"`
+			Resource string `json:"resource"`
 		}
-		if json.Unmarshal([]byte(l), &line) != nil || line.Table == "" || seen[line.Table] {
+		if json.Unmarshal([]byte(l), &line) != nil || line.Resource == "" || seen[line.Resource] {
 			continue
 		}
-		seen[line.Table] = true
-		tables = append(tables, line.Table)
+		seen[line.Resource] = true
+		tables = append(tables, line.Resource)
 	}
 	if len(tables) == 0 {
 		return nil

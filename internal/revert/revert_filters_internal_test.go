@@ -33,7 +33,7 @@ func TestRevertStepsKeepTheFilters(t *testing.T) {
 	require.NotContains(t, msg, "basalt ", "the person runs no command")
 
 	r := revertOf(t, "Undo", []string{changedAfterLine}, false)
-	r.BindingText = strings.Replace(r.BindingText, `"tables": null`, `"tables": ["public.lead_owner"]`, 1)
+	r.BindingText = strings.Replace(r.BindingText, `"resources": null`, `"resources": ["public.lead_owner"]`, 1)
 	want := map[string]any{"runId": caseRunID, "resources": []string{"public.lead_owner"}}
 	require.Equal(t, want, expiredSteps(r)[1].Arguments)
 	var te *toolresult.ToolError

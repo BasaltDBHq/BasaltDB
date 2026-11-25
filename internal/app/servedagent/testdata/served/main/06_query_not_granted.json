@@ -32,7 +32,7 @@
       }
     ],
     "personMessage": "The agent was denied read access to payroll. If it should have it, tell the agent: it gives you a link where you grant it.",
-    "sqlState": "42501"
+    "storeCode": "42501"
   },
   "isError": true,
   "tool": "query"

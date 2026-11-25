@@ -26,11 +26,14 @@ const (
 // fields as text, nil when absent). It never holds an intent, a statement,
 // params, a refusal's reason, a key or a value: they are not read.
 type FeedRow struct {
-	Seq          int64
-	At           time.Time
-	Kind         string
-	ChangeID     uuid.NullUUID
-	Op           *string
+	Seq      int64
+	At       time.Time
+	Kind     string
+	ChangeID uuid.NullUUID
+	Op       *string
+	// Verb is the store's own word for the request's operation (CONTRACT.md,
+	// Stores, Operations), nil on a row that has none.
+	Verb         *string
 	RunID        *string
 	TaskID       *string
 	Table        *string
@@ -70,7 +73,7 @@ type PluginEntryEvent struct {
 
 // FeedFilter is which ledger rows a feed read returns: rows of the listed
 // kinds, a CHANGE only when it was applied and a REFUSED only when its op is
-// not SELECT, unless the Include flags say otherwise. The zero value of each
+// not READ, unless the Include flags say otherwise. The zero value of each
 // flag is the narrower read, so a filter built without them carries no
 // unapplied change and no refused read. The store applies it in its query,
 // so a limit pages over the rows it keeps.
@@ -78,6 +81,6 @@ type FeedFilter struct {
 	Kinds []string
 	// IncludeUnappliedChanges keeps a CHANGE whatever its status.
 	IncludeUnappliedChanges bool
-	// IncludeRefusedReads keeps a REFUSED SELECT.
+	// IncludeRefusedReads keeps a REFUSED READ.
 	IncludeRefusedReads bool
 }

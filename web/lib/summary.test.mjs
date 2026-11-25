@@ -47,7 +47,7 @@ test("cascade confirmation names the rows and tables", () => {
   );
   const three = summarize(
     ["public.a", "public.b", "public.c", "public.leads"].map((table, i) =>
-      parseLine(JSON.stringify({ op: "DELETE", key: { id: i }, old: { id: i }, set: null, table, cascaded: table !== "public.leads" })),
+      parseLine(JSON.stringify({ op: "DELETE", key: { id: i }, old: { id: i }, set: null, shape: "RECORD", store: { kind: "POSTGRES", verb: "DELETE" }, resource: table, cascaded: table !== "public.leads" })),
     ),
   );
   assert.equal(cascadeConfirmation(three), "I understand this also deletes 3 cascaded rows in public.a, public.b and public.c.");

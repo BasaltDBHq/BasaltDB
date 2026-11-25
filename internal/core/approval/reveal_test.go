@@ -16,8 +16,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
-	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
-	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec/linkcodectest"
 )
 
 const revealFile = "testdata/reveal.json"
@@ -126,11 +124,11 @@ func rowHashOf(row string) string {
 }
 
 func approvalLine(hash string) string {
-	return fmt.Sprintf(`{"op": "DELETE", "table": "public.lead_notes", "rowHash": %q, "cascaded": true, "redacted": true}`, hash)
+	return fmt.Sprintf(`{"op": "DELETE", "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "DELETE"}, "rowHash": %q, "cascaded": true, "redacted": true, "resource": "public.lead_notes"}`, hash)
 }
 
 func revertLine(hash string) string {
-	return fmt.Sprintf(`{"op": "INSERT", "table": "public.lead_notes", "action": "RESTORE", "rowHash": %q, "cascaded": true, "conflict": null, "redacted": true, "changeIds": ["0193a3f0-0000-7000-8000-0000000000c1"]}`, hash)
+	return fmt.Sprintf(`{"op": "INSERT", "shape": "RECORD", "store": {"code": null, "kind": "POSTGRES", "verb": "INSERT"}, "action": "RESTORE", "rowHash": %q, "cascaded": true, "conflict": null, "redacted": true, "resource": "public.lead_notes", "changeIds": ["0193a3f0-0000-7000-8000-0000000000c1"]}`, hash)
 }
 
 func buildRevealVectors(t *testing.T) revealVectors {
@@ -177,7 +175,7 @@ func buildRevealVectors(t *testing.T) revealVectors {
 		{"a SECRET column the row does not contain", unchecked, row(secretOld, "ssn"), resultRefused},
 		{"a SECRET column named twice", unchecked, row(secretOld, "pin", "pin"), resultRefused},
 		{"a SECRET column with an empty name", unchecked, row(secretOld, ""), resultRefused},
-		{"a line that is not redacted", `{"op": "DELETE", "key": {"id": 8}, "old": {"id": 8}, "set": null, "table": "public.leads", "cascaded": false}`, row(note), resultRefused},
+		{"a line that is not redacted", `{"op": "DELETE", "key": {"id": 8}, "old": {"id": 8}, "set": null, "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "DELETE"}, "cascaded": false, "resource": "public.leads"}`, row(note), resultRefused},
 		{"a row that is not three values", approvalLine(rowHashOf(`[{"id": 8}, null]`)), row(`[{"id": 8}, null]`), resultRefused},
 		{"a row with a scalar value", approvalLine(rowHashOf(`[{"id": 8}, 5, null]`)), row(`[{"id": 8}, 5, null]`), resultRefused},
 		{"a row that is not JSON", approvalLine(rowHashOf(`[{"id": 8}`)), row(`[{"id": 8}`), resultRefused},
@@ -238,7 +236,7 @@ func decodeRow(t *testing.T, raw json.RawMessage) approval.RevealedRow {
 func TestCheckRevealAnswer(t *testing.T) {
 	t.Parallel()
 	note := `[{"id": 8}, {"id": 8, "body": "x"}, null]`
-	visible := `{"op": "DELETE", "key": {"id": 4}, "old": {"id": 4}, "set": null, "table": "public.leads", "cascaded": false}`
+	visible := `{"op": "DELETE", "key": {"id": 4}, "old": {"id": 4}, "set": null, "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "DELETE"}, "cascaded": false, "resource": "public.leads"}`
 	lines := []string{approvalLine(rowHashOf(note)), visible, approvalLine(rowHashOf(note))}
 	ok := approval.RevealedRow{Line: 0, Row: note}
 	second := approval.RevealedRow{Line: 2, Row: note}
@@ -274,39 +272,4 @@ func TestRequestRevealNonce(t *testing.T) {
 	var back approval.Request
 	require.NoError(t, json.Unmarshal(out, &back))
 	require.Equal(t, r.RevealNonce, back.RevealNonce)
-}
-
-// A long link never carries revealNonce: only the engine serves it. The
-// Go parser refuses it as the pages do.
-func TestParseRequestRefusesRevealNonce(t *testing.T) {
-	t.Parallel()
-	lines := previewLines()
-	req := approval.Request{ApprovalID: approvalID, Binding: bindingText(lines), Lines: lines}
-	frag, err := linkcodectest.Encode(linkcodec.Format1, req)
-	require.NoError(t, err)
-	_, _, err = approvaltest.ParseRequest(frag)
-	require.NoError(t, err)
-	for name, bad := range map[string]approval.Request{
-		"revealNonce": {ApprovalID: req.ApprovalID, Binding: req.Binding, Lines: lines, RevealNonce: counting(100)},
-		"columns":     {ApprovalID: req.ApprovalID, Binding: req.Binding, Lines: lines, Columns: approval.ColumnOrder{"public.leads": {"id"}}},
-	} {
-		frag, err = linkcodectest.Encode(linkcodec.Format1, bad)
-		require.NoError(t, err)
-		_, _, err = approvaltest.ParseRequest(frag)
-		require.ErrorIs(t, err, approval.ErrInvalid, name)
-	}
-}
-
-// A link that names columns at all is refused, an empty or null one too.
-func TestParseRequestRefusesEmptyColumns(t *testing.T) {
-	t.Parallel()
-	lines := previewLines()
-	for _, columns := range []any{nil, map[string]any{}, []any{}} {
-		frag, err := linkcodectest.Encode(linkcodec.Format1, map[string]any{
-			"approvalId": approvalID, "binding": bindingText(lines), "lines": lines, "columns": columns,
-		})
-		require.NoError(t, err)
-		_, _, err = approvaltest.ParseRequest(frag)
-		require.ErrorIs(t, err, approval.ErrInvalid, "%v", columns)
-	}
 }

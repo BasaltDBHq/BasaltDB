@@ -148,7 +148,7 @@
       "name": "run_history"
     },
     {
-      "description": "This agent's own runs, newest first, with what each did: its intent, when it started, how many changes it applied, held, had refused or saw reverted, the rows it wrote and the tables it wrote to. Use it to find the run the person means (\"what you did yesterday on leads\") before run_history, preview_revert and request_revert. Without startTime or endTime you get the newest runs; you do not have to ask the person for a period. startTime and endTime filter on the run's start. Only runs of this agent are listed. Cursor-paginated.",
+      "description": "This agent's own runs, newest first, with what each did: its intent, when it started, how many changes it applied, held, had refused or saw reverted, the rows it wrote and the resources it wrote to. Use it to find the run the person means (\"what you did yesterday on leads\") before run_history, preview_revert and request_revert. Without startTime or endTime you get the newest runs; you do not have to ask the person for a period. startTime and endTime filter on the run's start. Only runs of this agent are listed. Cursor-paginated.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

@@ -310,6 +310,9 @@ func TestPluginEventsUpgradeFromVersion2(t *testing.T) {
 	require.Empty(t, recs.Entries)
 
 	restore()
+	// Up to the version before StoreNeutralVersion: the chain does not
+	// verify rows hashed before that version (clean state).
+	guardtest.UpToVersion(t, guard.StoreNeutralVersion-1)
 	d.NewAgent(t, "bot", leads, nil)
 	require.NoError(t, guard.RecordPluginEntryEvent(ctx, a.Conn, guardmodel.PluginEnabled, validLocal()))
 	st, err := guard.VerifyChain(ctx, a.Conn)
@@ -359,6 +362,9 @@ func TestPluginTrustRemovedMigration(t *testing.T) {
 	require.NoError(t, guard.RecordPluginTrustAdded(ctx, a.Conn, "jNZPxNG5htlwfhg4ZgknAA"), "version 3 still records")
 
 	restore()
+	// Up to the version before StoreNeutralVersion: the chain does not
+	// verify rows hashed before that version (clean state).
+	guardtest.UpToVersion(t, guard.StoreNeutralVersion-1)
 	d.NewAgent(t, "bot", leads, nil)
 	sql := guard.PluginTrustRemovedSQL(d.Names)
 	d.Exec(t, "BEGIN; SET LOCAL ROLE "+d.Names.Guard()+"; SET LOCAL search_path = pg_catalog, pg_temp;"+sql+"COMMIT;")

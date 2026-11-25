@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"encoding/json"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
@@ -21,8 +24,10 @@ const (
 	feedDataContentType    = "application/json"
 	feedTypePrefix         = "dev.basaltdb."
 	feedTypeSkipped        = feedTypePrefix + "feed.skipped"
-	// feedTableMaxRunes is feed.schema.json's longest table.
-	feedTableMaxRunes = 300
+	// feedResourceMaxRunes is feed.schema.json's longest resource.
+	feedResourceMaxRunes = 300
+	// feedVerbMaxBytes is feed.schema.json's longest verb.
+	feedVerbMaxBytes = 64
 	// feedTimeLayout is RFC 3339 UTC with Z, fractional seconds kept when
 	// present (at most microseconds, as Postgres stores them).
 	feedTimeLayout = "2006-01-02T15:04:05.999999Z"
@@ -46,7 +51,7 @@ var feedReasonCodes = map[string]bool{
 	"INTENT_REQUIRED": true, "STALE_READ": true, "STATEMENT_REFUSED": true, "ROW_LIMIT_EXCEEDED": true,
 	"QUERY_TIMEOUT": true, "APPROVAL_REQUIRED": true, "APPROVAL_EXPIRED": true, "APPROVAL_INVALID": true,
 	"REVERT_INVALID": true, "REVERT_EXPIRED": true, "NOTHING_TO_REVERT": true, "PERMISSION_DENIED": true,
-	"NOT_FOUND": true, "SQL_ERROR": true, "INVALID_ARGUMENT": true, "UNAVAILABLE": true, "INTERNAL": true,
+	"NOT_FOUND": true, "STORE_ERROR": true, "INVALID_ARGUMENT": true, "UNAVAILABLE": true, "INTERNAL": true,
 	"PLUGIN_REFUSED": true,
 }
 
@@ -55,6 +60,14 @@ var (
 	writeOps   = []string{"INSERT", "UPDATE", "DELETE"}
 	refusedOps = []string{"INSERT", "UPDATE", "DELETE", "OTHER"}
 )
+
+// opOther is the one op whose verb may be absent: the store did not give
+// its command (CONTRACT.md, Stores, Operations).
+const opOther = "OTHER"
+
+// feedVerb is feed.schema.json's verb: the store's word for the request's
+// operation, such as INSERT or CREATE TABLE.
+var feedVerb = regexp.MustCompile(`^[A-Za-z][A-Za-z ]*$`)
 
 // feedEvent is one CloudEvent of feed/1, in its JSON form.
 type feedEvent struct {
@@ -73,35 +86,44 @@ type feedEvent struct {
 // can be written: there is no field for a value, a statement, an intent or
 // a refusal message.
 type feedData struct {
-	InstallID    string `json:"installId"`
-	Seq          int64  `json:"seq"`
-	Agent        string `json:"agent"`
-	AfterSeq     *int64 `json:"afterSeq,omitempty"`
-	ChangeID     string `json:"changeId,omitempty"`
-	ApprovalID   string `json:"approvalId,omitempty"`
-	RevertID     string `json:"revertId,omitempty"`
-	RunID        string `json:"runId,omitempty"`
-	TaskID       string `json:"taskId,omitempty"`
-	Op           string `json:"op,omitempty"`
-	Table        string `json:"table,omitempty"`
-	Rows         *int64 `json:"rows,omitempty"`
-	CascadedRows *int64 `json:"cascadedRows,omitempty"`
-	ReasonCode   string `json:"reasonCode,omitempty"`
-	ExpiresAt    string `json:"expiresAt,omitempty"`
+	InstallID    string     `json:"installId"`
+	Seq          int64      `json:"seq"`
+	Agent        string     `json:"agent"`
+	AfterSeq     *int64     `json:"afterSeq,omitempty"`
+	ChangeID     string     `json:"changeId,omitempty"`
+	ApprovalID   string     `json:"approvalId,omitempty"`
+	RevertID     string     `json:"revertId,omitempty"`
+	RunID        string     `json:"runId,omitempty"`
+	TaskID       string     `json:"taskId,omitempty"`
+	Op           string     `json:"op,omitempty"`
+	Store        *feedStore `json:"store,omitempty"`
+	Resource     string     `json:"resource,omitempty"`
+	Rows         *int64     `json:"rows,omitempty"`
+	CascadedRows *int64     `json:"cascadedRows,omitempty"`
+	ReasonCode   string     `json:"reasonCode,omitempty"`
+	ExpiresAt    string     `json:"expiresAt,omitempty"`
+}
+
+// feedStore is an event's store part (CONTRACT.md, Stores, What every store
+// writes): the store's kind and its word for the request's operation.
+type feedStore struct {
+	Kind string `json:"kind"`
+	Verb string `json:"verb,omitempty"`
 }
 
 // feedEventOf is the event of ledger row r of agent (its name in
-// engine.json) in the database of install id install, false when the row
-// is not one feed/1 can carry: a kind that is not an event, or a field the
-// schema needs that the row does not hold in the form it fixes. Only what
-// the row holds at its seq goes in, parsed and written again, never copied
-// as text: an id is a UUID, a count a number, a time RFC 3339.
+// engine.json, sent as agent:<name>) in the database of install id install,
+// false when the row is not one feed/1 can carry: a kind that is not an
+// event, or a field the schema needs that the row does not hold in the form
+// it fixes. Only what the row holds at its seq goes in, parsed and written
+// again, never copied as text: an id is a UUID, a count a number, a time
+// RFC 3339.
 func feedEventOf(install uuid.UUID, agent string, r guardmodel.FeedRow) (feedEvent, bool) {
 	typ, ok := feedTypes[r.Kind]
 	if !ok || r.Seq <= 0 {
 		return feedEvent{}, false
 	}
-	d := feedData{InstallID: install.String(), Seq: r.Seq, Agent: agent}
+	d := feedData{InstallID: install.String(), Seq: r.Seq, Agent: approval.AgentName(agent)}
 	if !fillFeedData(&d, r) {
 		return feedEvent{}, false
 	}
@@ -111,7 +133,7 @@ func feedEventOf(install uuid.UUID, agent string, r guardmodel.FeedRow) (feedEve
 		Source:          feedSource(install),
 		Type:            typ,
 		Time:            r.At.UTC().Format(feedTimeLayout),
-		Subject:         agent,
+		Subject:         d.Agent,
 		DataContentType: feedDataContentType,
 		Data:            d,
 	}, true
@@ -123,17 +145,17 @@ func fillFeedData(d *feedData, r guardmodel.FeedRow) bool {
 	var ok bool
 	switch r.Kind {
 	case guardmodel.KindChange:
-		ok = fill(d.setChange(r), d.setRunTask(r), d.setOp(r, writeOps), d.setCounts(r))
+		ok = fill(d.setChange(r), d.setRunTask(r), d.setOp(r, writeOps), d.setStore(r), d.setCounts(r))
 		if ok && r.Table != nil {
-			d.Table, ok = feedTable(*r.Table)
+			d.Resource, ok = feedResource(*r.Table)
 		}
 	case guardmodel.KindRefused:
-		ok = fill(d.setChange(r), d.setRunTask(r), d.setOp(r, refusedOps))
+		ok = fill(d.setChange(r), d.setRunTask(r), d.setOp(r, refusedOps), d.setStore(r))
 		if ok && r.Code != nil && feedReasonCodes[*r.Code] {
 			d.ReasonCode = *r.Code
 		}
 	case guardmodel.KindApprovalPending:
-		ok = fill(d.setChange(r), d.setRunTask(r), d.setOp(r, writeOps), d.setHeldRows(r), d.setExpiry(r))
+		ok = fill(d.setChange(r), d.setRunTask(r), d.setOp(r, writeOps), d.setStore(r), d.setHeldRows(r), d.setExpiry(r))
 		ok = ok && d.RunID != "" && setID(&d.ApprovalID, r.ApprovalID)
 	case guardmodel.KindApproved:
 		ok = d.setChange(r) && setID(&d.ApprovalID, r.ApprovalID)
@@ -177,6 +199,23 @@ func (d *feedData) setOp(r guardmodel.FeedRow, allowed []string) bool {
 
 // setCounts sets a write's rows and cascadedRows; a row that holds none
 // changed none.
+// setStore sets the store part after setOp: its verb is r's, required on
+// every op but OTHER, where the store may not have given its command.
+func (d *feedData) setStore(r guardmodel.FeedRow) bool {
+	s := &feedStore{Kind: string(action.StorePostgres)}
+	switch {
+	case r.Verb != nil:
+		if len(*r.Verb) > feedVerbMaxBytes || !feedVerb.MatchString(*r.Verb) {
+			return false
+		}
+		s.Verb = *r.Verb
+	case d.Op != opOther:
+		return false
+	}
+	d.Store = s
+	return true
+}
+
 func (d *feedData) setCounts(r guardmodel.FeedRow) bool {
 	rows, ok := count(r.Rows, 0)
 	cascaded, ok2 := count(r.CascadedRows, 0)
@@ -239,11 +278,11 @@ func count(v *string, lowest int64) (int64, bool) {
 	return n, err == nil && n >= lowest
 }
 
-// feedTable is the statement's own table as Postgres writes its name, each
-// control character replaced by U+FFFD (CONTRACT.md, table is the
-// database's text). False when it is empty or longer than the schema
-// allows.
-func feedTable(name string) (string, bool) {
+// feedResource is the request's own resource in the store's form (in
+// Postgres the table's name as Postgres writes it), each control character
+// replaced by U+FFFD (CONTRACT.md, resource is the store's text). False
+// when it is empty or longer than the schema allows.
+func feedResource(name string) (string, bool) {
 	clean := strings.Map(func(r rune) rune {
 		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
 			return utf8.RuneError
@@ -251,7 +290,7 @@ func feedTable(name string) (string, bool) {
 		return r
 	}, strings.ToValidUTF8(name, string(utf8.RuneError)))
 	n := utf8.RuneCountInString(clean)
-	return clean, n >= 1 && n <= feedTableMaxRunes
+	return clean, n >= 1 && n <= feedResourceMaxRunes
 }
 
 // feedSource is the events' source: the database's guard install.
@@ -259,9 +298,10 @@ func feedSource(install uuid.UUID) string { return "urn:uuid:" + install.String(
 
 // skippedEvent is the skipped-ahead marker: retention deleted rows after
 // the cursor (afterSeq) before they were delivered; the agent's events up
-// to seq may be gone.
+// to seq may be gone. agent is the agent's name in engine.json.
 func skippedEvent(install uuid.UUID, agent string, afterSeq, seq int64) feedEvent {
 	after := afterSeq
+	agent = approval.AgentName(agent)
 	return feedEvent{
 		SpecVersion:     cloudEventsSpecVersion,
 		ID:              install.String() + ":skipped:" + strconv.FormatInt(afterSeq, 10) + ":" + strconv.FormatInt(seq, 10),

@@ -7,13 +7,13 @@ import { personText, whenText } from "./page.js";
 
 const SCOPE_WORDS = { CHANGE: "change", RUN: "run", TASK: "task" };
 
-// agentName is an agent role as the person knows the agent: the part after
-// "<prefix>_agent_" (basalt_agent_bot is "bot"), or the whole role when it
-// has no such part.
-export function agentName(role) {
-  const m = /^.+?_agent_(.+)$/.exec(role);
-  return m ? m[1] : role;
+// agentName is an agent as the person knows it: the name in agent:<name>
+// (CONTRACT.md, Stores, Agent names; agent:bot is "bot").
+export function agentName(text) {
+  return String(text).startsWith(AGENT_PREFIX) ? String(text).slice(AGENT_PREFIX.length) : String(text);
 }
+
+const AGENT_PREFIX = "agent:";
 
 function plural(n, word) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -87,7 +87,7 @@ export function headline(binding) {
 export function signingSummary(req) {
   const rows = plural(req.binding.rows, "row");
   if (req.binding.batched) return `You're signing ${rows}.`;
-  const tables = new Set(req.lines.filter((l) => l.action === "RESTORE").map((l) => l.table)).size;
+  const tables = new Set(req.lines.filter((l) => l.action === "RESTORE").map((l) => l.resource)).size;
   return `You're signing ${rows} in ${plural(tables, "table")}.`;
 }
 
@@ -165,13 +165,13 @@ const byText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 // catalog, so a table left out stays known from earlier answers.
 export function knownTables(req, known) {
   const b = req.binding;
-  const all = new Set([...known, ...req.lines.map((l) => l.table), ...(b.select.tables ?? []), ...(b.proposed?.tables ?? [])]);
+  const all = new Set([...known, ...req.lines.map((l) => l.resource), ...(b.select.resources ?? []), ...(b.proposed?.resources ?? [])]);
   return [...all].sort(byText);
 }
 
 function linesPerTable(req) {
   const n = new Map();
-  for (const l of req.lines) n.set(l.table, (n.get(l.table) ?? 0) + 1);
+  for (const l of req.lines) n.set(l.resource, (n.get(l.resource) ?? 0) + 1);
   return n;
 }
 
@@ -190,7 +190,7 @@ export function scopeChoices(req, catalog, known) {
   if (catalog === null) {
     return {
       agents: [{ key: b.requestedBy, label: agentName(b.requestedBy), count: b.rows + b.skipped, on: true, other: false, fixed: true }],
-      tables: known.map((t) => ({ key: t, label: t, count: perTable.get(t) ?? 0, on: isOn(sel.tables, t), fixed: false })),
+      resources: known.map((t) => ({ key: t, label: t, count: perTable.get(t) ?? 0, on: isOn(sel.resources, t), fixed: false })),
       runs: null,
     };
   }
@@ -200,8 +200,8 @@ export function scopeChoices(req, catalog, known) {
       key: a.agent, label: agentName(a.agent), count: agentRows[a.agent] ?? 0, on: isOn(sel.agents, a.agent),
       other: a.agent !== b.requestedBy, fixed: false,
     })),
-    tables: [...catalog.tables].sort((x, y) => byText(x.table, y.table)).map((t) => ({
-      key: t.table, label: t.table, count: perTable.get(t.table) ?? 0, on: isOn(sel.tables, t.table), fixed: false,
+    resources: [...catalog.resources].sort((x, y) => byText(x.resource, y.resource)).map((t) => ({
+      key: t.resource, label: t.resource, count: perTable.get(t.resource) ?? 0, on: isOn(sel.resources, t.resource), fixed: false,
     })),
     // A run of an agent left out is not in the scope: shown unticked and
     // fixed, and never listed (Postgres takes only runs of selected agents).
@@ -220,7 +220,7 @@ export function scopeChoices(req, catalog, known) {
 }
 
 // toggled is the select after the person ticks or unticks key in kind
-// (agents, runs or tables): null when every choice is ticked, else the
+// (agents, runs or resources): null when every choice is ticked, else the
 // ticked keys. null (no change) when it would untick the last one: a
 // descriptor lists at least one of each, or null for all.
 export function toggled(select, choices, kind, key) {
@@ -253,7 +253,7 @@ export function scopeLine(req, catalog, known) {
   const b = req.binding;
   const c = scopeChoices(req, catalog, known);
   const agents = c.agents.filter((a) => a.on).map((a) => a.label).join(" + ");
-  const parts = [agents, plural(c.tables.filter((t) => t.on).length, "table")];
+  const parts = [agents, plural(c.resources.filter((t) => t.on).length, "table")];
   if (c.runs !== null) parts.push(plural(c.runs.filter((r) => r.on).length, "run"));
   const requester = agentName(b.requestedBy);
   let sub = `As ${requester} proposed`;

@@ -39,7 +39,7 @@ func previewRevert(t *testing.T, q guard.Querier, kind revert.Scope, id uuid.UUI
 func lineFor(t *testing.T, lines []revert.Line, table, key string) revert.Line {
 	t.Helper()
 	for _, l := range lines {
-		if l.Table != table {
+		if l.Resource != table {
 			continue
 		}
 		if key == "" || (len(l.Key) > 0 && compact(t, l.Key) == key) {
@@ -96,7 +96,7 @@ func approvedWrite(t *testing.T, a *guardtest.Agent, p *passkeytest.Authenticato
 func changeIDOf(t *testing.T, a *guardtest.Agent, run uuid.UUID) uuid.UUID {
 	t.Helper()
 	return scalarOf[uuid.UUID](t, a.Conn, `SELECT change_id FROM basalt_meta.agent_changes
-		WHERE run_id = $1 AND op <> 'SELECT' ORDER BY change_id LIMIT 1`, run)
+		WHERE run_id = $1 AND op <> 'READ' ORDER BY change_id LIMIT 1`, run)
 }
 
 func TestRevertLinesUpdate(t *testing.T) {
@@ -112,7 +112,7 @@ func TestRevertLinesUpdate(t *testing.T) {
 	for _, l := range lines {
 		require.Equal(t, revert.ActionRestore, l.Action)
 		require.Equal(t, "UPDATE", l.Op)
-		require.Equal(t, "public.leads", l.Table)
+		require.Equal(t, "public.leads", l.Resource)
 		require.Equal(t, "open", field(t, l.Set, "status"))
 		require.Equal(t, "won", field(t, l.Now, "status"))
 		require.Len(t, l.ChangeIDs, 1)
@@ -247,7 +247,7 @@ func TestRevertConflicts(t *testing.T) {
 	want := map[string]string{
 		`{"id":40}`:   revert.ConflictChangedAfter,
 		`{"id":41}`:   revert.ConflictChangedAfter,
-		`{"id":42}`:   revert.ConflictRowGone,
+		`{"id":42}`:   revert.ConflictTargetGone,
 		`{"id":43}`:   "",
 		`{"id":44}`:   "",
 		`{"id":45}`:   "",

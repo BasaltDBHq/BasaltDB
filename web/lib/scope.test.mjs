@@ -38,44 +38,45 @@ const ID = fixtures.request.revertId;
 // widen turns the fixture's own proposal into a widened select, as the
 // engine returns it after the person's widen proof.
 function widen(agentRows, agents = "null") {
-  return parseRevertBinding(BINDING.replace('["basalt_agent_bot"]', agents)
+  return parseRevertBinding(BINDING.replace('["agent:bot"]', agents)
     .replace('"widened": false', `"widened": true, "agentRows": ${JSON.stringify(agentRows)}`));
 }
 
 test("agent roles show by their short name", () => {
-  assert.equal(agentName("basalt_agent_bot"), "bot");
-  assert.equal(agentName("acme_agent_sync_2"), "sync_2");
+  assert.equal(agentName("agent:bot"), "bot");
+  assert.equal(agentName("agent:sync_2"), "sync_2");
+  // Only agent:<name> loses its prefix; a store login is never stripped.
+  assert.equal(agentName("acme_agent_sync_2"), "acme_agent_sync_2");
   assert.equal(agentName("reporter"), "reporter");
-  assert.equal(agentName("basalt_agent_"), "basalt_agent_");
 });
 
 test("a row is tagged with its agent only when the signed select names one", () => {
   const own = parseRevertBinding(BINDING);
-  assert.deepEqual(rowAgent(own), { role: "basalt_agent_bot", other: false });
+  assert.deepEqual(rowAgent(own), { role: "agent:bot", other: false });
   // The person kept only another agent's changes: every row is that
   // agent's, and it is not the requester.
-  const onlySync = widen({ basalt_agent_sync: 4 }, '["basalt_agent_sync"]');
-  assert.deepEqual(rowAgent(onlySync), { role: "basalt_agent_sync", other: true });
+  const onlySync = widen({ "agent:sync": 4 }, '["agent:sync"]');
+  assert.deepEqual(rowAgent(onlySync), { role: "agent:sync", other: true });
   // Several agents: the lines do not say whose each one is, so no row is
   // tagged rather than tagged wrong.
-  assert.equal(rowAgent(widen({ basalt_agent_bot: 3, basalt_agent_sync: 1 })), null);
+  assert.equal(rowAgent(widen({ "agent:bot": 3, "agent:sync": 1 })), null);
   // agents null with a single agent in the scope.
-  assert.deepEqual(rowAgent(widen({ basalt_agent_sync: 4 })), { role: "basalt_agent_sync", other: true });
+  assert.deepEqual(rowAgent(widen({ "agent:sync": 4 })), { role: "agent:sync", other: true });
 });
 
 test("with the catalog's change map every row of a multi-agent select is tagged with its agents", () => {
   const BOT = "0193a000-0000-7000-8000-000000000001";
   const SYNC = "0193a000-0000-7000-8000-000000000002";
   const OTHER = "0193a000-0000-7000-8000-000000000003";
-  const wide = widen({ basalt_agent_bot: 3, basalt_agent_sync: 1 });
-  const catalog = { changeAgents: new Map([[BOT, "basalt_agent_bot"], [SYNC, "basalt_agent_sync"]]) };
+  const wide = widen({ "agent:bot": 3, "agent:sync": 1 });
+  const catalog = { changeAgents: new Map([[BOT, "agent:bot"], [SYNC, "agent:sync"]]) };
   const of = lineAgents(wide, catalog);
-  assert.deepEqual(of({ changeIds: [BOT] }), [{ role: "basalt_agent_bot", other: false }]);
-  assert.deepEqual(of({ changeIds: [SYNC] }), [{ role: "basalt_agent_sync", other: true }]);
+  assert.deepEqual(of({ changeIds: [BOT] }), [{ role: "agent:bot", other: false }]);
+  assert.deepEqual(of({ changeIds: [SYNC] }), [{ role: "agent:sync", other: true }]);
   // A row two agents changed names both, each once, in a stable order.
   assert.deepEqual(of({ changeIds: [SYNC, BOT, SYNC] }), [
-    { role: "basalt_agent_bot", other: false },
-    { role: "basalt_agent_sync", other: true },
+    { role: "agent:bot", other: false },
+    { role: "agent:sync", other: true },
   ]);
   // A change the map does not name, or no change at all: no tag rather
   // than a guessed one.
@@ -84,7 +85,7 @@ test("with the catalog's change map every row of a multi-agent select is tagged 
   // No catalog (before a widen) or a catalog without the map (a guard
   // older than version 32): no per-row tags; rowAgent covers one agent.
   assert.equal(lineAgents(wide, null), null);
-  assert.equal(lineAgents(wide, { agents: [], runs: [], tables: [] }), null);
+  assert.equal(lineAgents(wide, { agents: [], runs: [], resources: [] }), null);
   // One agent in the select: the one tag for every row stays.
   assert.equal(lineAgents(parseRevertBinding(BINDING), catalog), null);
 });
@@ -95,7 +96,7 @@ test("the headline says whose rows and when the person widened", () => {
   assert.equal(own.widened, false);
   assert.equal(own.lede, "Nothing changes until you sign with your passkey.");
 
-  const wide = headline(widen({ basalt_agent_bot: 3, basalt_agent_sync: 1 }));
+  const wide = headline(widen({ "agent:bot": 3, "agent:sync": 1 }));
   assert.equal(wide.title, "Undo 3 rows in this run");
   assert.equal(wide.widened, true);
   assert.equal(wide.lede, "bot proposed its own 3. You added sync's 1. bot can't see the rows you added.");
@@ -106,7 +107,7 @@ test("the headline says whose rows and when the person widened", () => {
 
 test("what the person signs counts rows and the tables they are in", async () => {
   const req = await parseRevertRequest("#" + fixtures.request.fragment);
-  const tables = new Set(req.lines.filter((l) => l.action === "RESTORE").map((l) => l.table)).size;
+  const tables = new Set(req.lines.filter((l) => l.action === "RESTORE").map((l) => l.resource)).size;
   assert.equal(signingSummary(req), `You're signing 3 rows in ${tables} ${tables === 1 ? "table" : "tables"}.`);
   // A large plan shows only a sample: the table count is not signed data.
   const big = await parseRevertRequest("#" + fixtures.batched.fragment);
@@ -143,8 +144,8 @@ test("the reject body carries the note only when there is one", () => {
 });
 
 test("the reject result says nothing was reverted and who reads the note", () => {
-  assert.equal(rejectDone(false, "basalt_agent_bot"), "Rejected. Nothing was reverted, and bot was told.");
-  assert.equal(rejectDone(true, "basalt_agent_bot"), "Rejected. Nothing was reverted, and bot was told. It will read your note.");
+  assert.equal(rejectDone(false, "agent:bot"), "Rejected. Nothing was reverted, and bot was told.");
+  assert.equal(rejectDone(true, "agent:bot"), "Rejected. Nothing was reverted, and bot was told. It will read your note.");
 });
 
 test("Reject posts the note to the engine under the link's secret, and nothing else", async () => {
@@ -186,12 +187,12 @@ test("a refused reject reaches the page as the engine's error", async () => {
 });
 
 const CATALOG = {
-  agents: [{ agent: "basalt_agent_bot", changes: 2 }, { agent: "basalt_agent_sync", changes: 1 }],
+  agents: [{ agent: "agent:bot", changes: 2 }, { agent: "agent:sync", changes: 1 }],
   runs: [
-    { runId: "0193a4c2-7d1e-7c3a-9f00-0000000000b3", agent: "basalt_agent_sync", startedAt: new Date("2026-11-11T10:05:00Z"), changes: 1 },
-    { runId: "0193a4c2-7d1e-7c3a-9f00-0000000000b2", agent: "basalt_agent_bot", startedAt: new Date("2026-11-11T09:12:00Z"), changes: 2 },
+    { runId: "0193a4c2-7d1e-7c3a-9f00-0000000000b3", agent: "agent:sync", startedAt: new Date("2026-11-11T10:05:00Z"), changes: 1 },
+    { runId: "0193a4c2-7d1e-7c3a-9f00-0000000000b2", agent: "agent:bot", startedAt: new Date("2026-11-11T09:12:00Z"), changes: 2 },
   ],
-  tables: [{ table: "public.notes", rows: 1 }, { table: "public.leads", rows: 3 }],
+  resources: [{ resource: "public.notes", rows: 1 }, { resource: "public.leads", rows: 3 }],
 };
 
 // hm is a run's start as the page shows it: local hours and minutes.
@@ -207,25 +208,25 @@ test("before a widen the chips are the agent's own: itself, fixed, and the table
   const known = knownTables(req, []);
   assert.deepEqual(known, ["public.lead_notes", "public.leads", "public.note_tags"]);
   const c = scopeChoices(req, null, known);
-  assert.deepEqual(c.agents, [{ key: "basalt_agent_bot", label: "bot", count: 4, on: true, other: false, fixed: true }]);
-  assert.deepEqual(c.tables.map((t) => [t.key, t.count, t.on, t.fixed]), [
+  assert.deepEqual(c.agents, [{ key: "agent:bot", label: "bot", count: 4, on: true, other: false, fixed: true }]);
+  assert.deepEqual(c.resources.map((t) => [t.key, t.count, t.on, t.fixed]), [
     ["public.lead_notes", 1, true, false],
     ["public.leads", 2, true, false],
     ["public.note_tags", 1, true, false],
   ]);
   assert.equal(c.runs, null);
   // A table the person left out keeps its chip, unticked.
-  const narrowed = await taskReq((b) => b.replace('"tables": null', '"tables": ["public.leads"]'));
-  const n = scopeChoices({ ...narrowed, lines: narrowed.lines.filter((l) => l.table === "public.leads") }, null, knownTables(narrowed, known));
-  assert.deepEqual(n.tables.map((t) => [t.key, t.on]), [["public.lead_notes", false], ["public.leads", true], ["public.note_tags", false]]);
+  const narrowed = await taskReq((b) => b.replace('"resources": null', '"resources": ["public.leads"]'));
+  const n = scopeChoices({ ...narrowed, lines: narrowed.lines.filter((l) => l.resource === "public.leads") }, null, knownTables(narrowed, known));
+  assert.deepEqual(n.resources.map((t) => [t.key, t.on]), [["public.lead_notes", false], ["public.leads", true], ["public.note_tags", false]]);
 });
 
 test("after a widen the chips and runs come from the catalog", async () => {
-  const req = await taskReq((b) => b.replace('["basalt_agent_bot"]', "null")
-    .replace('"widened": false', '"widened": true, "agentRows": {"basalt_agent_bot": 3, "basalt_agent_sync": 1}'));
+  const req = await taskReq((b) => b.replace('["agent:bot"]', "null")
+    .replace('"widened": false', '"widened": true, "agentRows": {"agent:bot": 3, "agent:sync": 1}'));
   const c = scopeChoices(req, CATALOG, []);
   assert.deepEqual(c.agents.map((a) => [a.label, a.count, a.on, a.other, a.fixed]), [["bot", 3, true, false, false], ["sync", 1, true, true, false]]);
-  assert.deepEqual(c.tables.map((t) => [t.key, t.count, t.on]), [["public.leads", 2, true], ["public.notes", 0, true]]);
+  assert.deepEqual(c.resources.map((t) => [t.key, t.count, t.on]), [["public.leads", 2, true], ["public.notes", 0, true]]);
   assert.deepEqual(c.runs.map((r) => [r.key, r.label, r.on]), [
     ["0193a4c2-7d1e-7c3a-9f00-0000000000b2", `bot, 2 changes, ${hm(CATALOG.runs[1].startedAt)}`, true],
     ["0193a4c2-7d1e-7c3a-9f00-0000000000b3", `sync, 1 change, ${hm(CATALOG.runs[0].startedAt)}`, true],
@@ -233,19 +234,19 @@ test("after a widen the chips and runs come from the catalog", async () => {
 });
 
 test("ticking a chip builds the next select: null for all, never an empty list", async () => {
-  const req = await taskReq((b) => b.replace('["basalt_agent_bot"]', "null")
-    .replace('"widened": false', '"widened": true, "agentRows": {"basalt_agent_bot": 3, "basalt_agent_sync": 1}'));
+  const req = await taskReq((b) => b.replace('["agent:bot"]', "null")
+    .replace('"widened": false', '"widened": true, "agentRows": {"agent:bot": 3, "agent:sync": 1}'));
   const c = scopeChoices(req, CATALOG, []);
-  const s1 = toggled(req.binding.select, c, "agents", "basalt_agent_sync");
-  assert.deepEqual(s1.agents, ["basalt_agent_bot"]);
-  assert.equal(s1.tables, null);
-  const back = toggled(s1, scopeChoices({ ...req, binding: { ...req.binding, select: s1 } }, CATALOG, []), "agents", "basalt_agent_sync");
+  const s1 = toggled(req.binding.select, c, "agents", "agent:sync");
+  assert.deepEqual(s1.agents, ["agent:bot"]);
+  assert.equal(s1.resources, null);
+  const back = toggled(s1, scopeChoices({ ...req, binding: { ...req.binding, select: s1 } }, CATALOG, []), "agents", "agent:sync");
   assert.equal(back.agents, null, "every agent again is null");
   const s2 = toggled(req.binding.select, c, "runs", "0193a4c2-7d1e-7c3a-9f00-0000000000b3");
   assert.deepEqual(s2.runs, ["0193a4c2-7d1e-7c3a-9f00-0000000000b2"]);
   // With sync left out, its run is out of the scope: unticked, fixed, and
   // never listed when the person unticks bot's run.
-  const botOnly = { ...req.binding.select, agents: ["basalt_agent_bot"] };
+  const botOnly = { ...req.binding.select, agents: ["agent:bot"] };
   const cb = scopeChoices({ ...req, binding: { ...req.binding, select: botOnly } }, CATALOG, []);
   assert.deepEqual(cb.runs.map((r) => [r.on, r.fixed]), [[true, false], [false, true]]);
   assert.equal(toggled(botOnly, cb, "runs", "0193a4c2-7d1e-7c3a-9f00-0000000000b3"), null);
@@ -254,27 +255,27 @@ test("ticking a chip builds the next select: null for all, never an empty list",
   // runs of selected agents.
   const r1 = "0193a4c2-7d1e-7c3a-9f00-0000000000b2";
   const r3 = "0193a4c2-7d1e-7c3a-9f00-0000000000b3";
-  const runs2 = { ...CATALOG, runs: [...CATALOG.runs, { runId: "0193a4c2-7d1e-7c3a-9f00-0000000000b4", agent: "basalt_agent_bot", startedAt: new Date("2026-11-11T09:40:00Z"), changes: 1 }] };
+  const runs2 = { ...CATALOG, runs: [...CATALOG.runs, { runId: "0193a4c2-7d1e-7c3a-9f00-0000000000b4", agent: "agent:bot", startedAt: new Date("2026-11-11T09:40:00Z"), changes: 1 }] };
   const noR4 = { ...req.binding.select, runs: [r1, r3] };
   const cr = scopeChoices({ ...req, binding: { ...req.binding, select: noR4 } }, runs2, []);
-  assert.deepEqual(toggled(noR4, cr, "agents", "basalt_agent_sync"), { ...noR4, agents: ["basalt_agent_bot"], runs: [r1] });
+  assert.deepEqual(toggled(noR4, cr, "agents", "agent:sync"), { ...noR4, agents: ["agent:bot"], runs: [r1] });
   // Only sync's run listed, sync left out: every run of bot again.
   const onlyR3 = { ...req.binding.select, runs: [r3] };
   const c3 = scopeChoices({ ...req, binding: { ...req.binding, select: onlyR3 } }, runs2, []);
-  assert.equal(toggled(onlyR3, c3, "agents", "basalt_agent_sync").runs, null);
-  const one = toggled(req.binding.select, c, "tables", "public.leads");
-  assert.equal(toggled(one, scopeChoices({ ...req, binding: { ...req.binding, select: one } }, CATALOG, []), "tables", "public.notes"), null,
+  assert.equal(toggled(onlyR3, c3, "agents", "agent:sync").runs, null);
+  const one = toggled(req.binding.select, c, "resources", "public.leads");
+  assert.equal(toggled(one, scopeChoices({ ...req, binding: { ...req.binding, select: one } }, CATALOG, []), "resources", "public.notes"), null,
     "the last ticked chip cannot be left out");
 });
 
 test("the phone's scope line sums up the choice", async () => {
   const own = await taskReq();
   assert.deepEqual(scopeLine(own, null, knownTables(own, [])), { text: "bot, 3 tables", sub: "As bot proposed" });
-  const wide = await taskReq((b) => b.replace('["basalt_agent_bot"]', "null")
-    .replace('"widened": false', '"widened": true, "agentRows": {"basalt_agent_bot": 3, "basalt_agent_sync": 1}'));
+  const wide = await taskReq((b) => b.replace('["agent:bot"]', "null")
+    .replace('"widened": false', '"widened": true, "agentRows": {"agent:bot": 3, "agent:sync": 1}'));
   assert.deepEqual(scopeLine(wide, CATALOG, []), { text: "bot + sync, 2 tables, 2 runs", sub: "bot can't see the rows you added" });
-  const changed = await taskReq((b) => b.replace('"tables": null', '"tables": ["public.leads"]')
-    .replace('"widened": false', '"widened": false, "proposed": {"runs": null, "scope": "TASK", "agents": ["basalt_agent_bot"], "tables": null, "scopeId": "0193a4c2-7d1e-7c3a-9f00-0000000000b2"}'));
+  const changed = await taskReq((b) => b.replace('"resources": null', '"resources": ["public.leads"]')
+    .replace('"widened": false', '"widened": false, "proposed": {"runs": null, "scope": "TASK", "agents": ["agent:bot"], "scopeId": "0193a4c2-7d1e-7c3a-9f00-0000000000b2", "resources": null}'));
   assert.equal(scopeLine(changed, null, ["public.leads", "public.notes"]).sub, "You changed bot's proposal");
 });
 

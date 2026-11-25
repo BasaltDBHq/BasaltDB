@@ -97,8 +97,8 @@ Planned (owner decisions AE-1 to AE-14). Every error body and every result the a
 | `NOT_FOUND` | `TASK` | — | RS-6. A `CALL_TOOL` (`list_runs`); +pm: this agent has no run in task X; to revert work in that task the person asks an agent that ran in it to request the revert, and can include the other agents' changes on its signing page. The message names no agent, because this agent cannot see who ran in the task (N12-R1) |
 | `NOT_FOUND` | `LINK_RESET` | — | RS-2. P `TELL_AGENT` (pages only: the agent reset this revert to its own work; ask it for the new link, and widen again to include other agents); +pm |
 | `NOT_FOUND` | — | `describe` | A `CALL_TOOL` (`describe` with `query`), A `ASK_PERSON`, P `TELL_AGENT` (to add the table, or which one to use), A `RUN_COMMAND` (`basalt init`, whose page lists the tables the agent cannot read, never shown to the agent); +pm |
-| `SQL_ERROR` | — | — | A `REVISE_CALL` |
-| `SQL_ERROR` | `NO_ROWS_NOW` | — | A `REVISE_CALL` (`query`) |
+| `STORE_ERROR` | — | — | A `REVISE_CALL` |
+| `STORE_ERROR` | `NO_ROWS_NOW` | — | A `REVISE_CALL` (`query`) |
 | `INVALID_ARGUMENT` | — | — | A `REVISE_CALL` |
 | `INVALID_ARGUMENT` | `STALE_CURSOR` | — | A `CALL_TOOL` (same call, no `cursor`) |
 | `INVALID_ARGUMENT` | `SCOPE_FILTER` | — | A `REVISE_CALL` (the same call without the refused entries), A `CALL_TOOL` (`run_history` of the run, or `list_runs` for a task, to see its own runs and the resources each one wrote) |

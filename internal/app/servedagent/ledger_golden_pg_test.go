@@ -128,7 +128,7 @@ func TestPageAPIBodiesGolden(t *testing.T) {
 	// A widen with no proof from the person.
 	task := uuid.Must(uuid.NewV7())
 	c.post("revert_rescope_without_proof", scopePath(revertID), secret, revertsvc.ScopeRequest{
-		Select: revert.Select{Scope: revert.ScopeTask, ScopeID: task, Agents: []string{e.a.Role}},
+		Select: revert.Select{Scope: revert.ScopeTask, ScopeID: task, Agents: []string{e.a.Name}},
 	})
 
 	// The person rejects it on the page.

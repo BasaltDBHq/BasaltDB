@@ -139,13 +139,12 @@ type keptAgent struct {
 	host     string
 	port     uint16
 	database string
-	role     string
 }
 
 func openKeptPlugins(cfg config.Config, configPath string, store *plugin.Store, ep *plugin.Plugins, agents map[string]keptAgent, log *slog.Logger) *plugin.KeptPlugins {
 	kept := make(map[string]plugin.KeptAgent, len(agents))
 	for name, a := range agents {
-		kept[name] = plugin.NewKeptAgent(a.db, a.host, a.port, a.database, a.role)
+		kept[name] = plugin.NewKeptAgent(a.db, a.host, a.port, a.database)
 	}
 	return plugin.OpenKeptPlugins(cfg, configPath, store, ep, kept, log, pluginPorts)
 }

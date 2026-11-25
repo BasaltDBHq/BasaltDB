@@ -65,7 +65,7 @@ test("a large format 2 request stays within the caps", async () => {
 test("the page shows each value as the line carries it, not as JSON.parse rounds it", async () => {
   const v = vectors.valid.find((c) => c.name.startsWith("every kind of value"));
   const req = await parseApprovalRequest(v.fragment);
-  const line = req.lines.find((l) => l.table === "public.items");
+  const line = req.lines.find((l) => l.resource === "public.items");
   const shown = (member, col) => displayValue(line[member][col], line.texts[member].get(col));
   assert.equal(line.old.big, 9007199254740992, "JSON.parse rounds it");
   assert.equal(shown("old", "big"), "9007199254740993");
@@ -80,9 +80,9 @@ test("the page shows each value as the line carries it, not as JSON.parse rounds
 });
 
 test("revert lines keep each value's text too", () => {
-  const text = '{"op": "UPDATE", "key": {"id": 1}, "now": {"id": 1, "n": 12345678901234567890}, "set": {"id": 1, "n": 0.10}, "table": "public.t", "action": "RESTORE", "cascaded": false, "conflict": null, "sqlState": null, "changeIds": ["0193a4c2-7d1e-7c3a-9f00-0000000000e1"]}';
+  const text = '{"op": "UPDATE", "key": {"id": 1}, "now": {"id": 1, "n": 12345678901234567890}, "set": {"id": 1, "n": 0.10}, "shape": "RECORD", "store": {"code": null, "kind": "POSTGRES", "verb": "UPDATE"}, "action": "RESTORE", "cascaded": false, "conflict": null, "resource": "public.t", "changeIds": ["0193a4c2-7d1e-7c3a-9f00-0000000000e1"]}';
   const line = parseRevertLine(text);
   assert.equal(displayValue(line.now.n, line.texts.now.get("n")), "12345678901234567890");
   assert.equal(displayValue(line.set.n, line.texts.set.get("n")), "0.10");
-  assert.equal(parseLine('{"op": "DELETE", "table": "public.t", "rowHash": "ab", "cascaded": true, "redacted": true}').texts, null);
+  assert.equal(parseLine('{"op": "DELETE", "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "DELETE"}, "rowHash": "ab", "cascaded": true, "redacted": true, "resource": "public.t"}').texts, null);
 });

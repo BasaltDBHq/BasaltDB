@@ -38,8 +38,8 @@ type ColumnRef struct {
 
 // Class is one row of basalt_meta.agent_pii_columns.
 type Class struct {
-	Schema, Table, Column string
-	Class                 string
+	Namespace, Resource, Field string
+	Class                      string
 	// EntityType is set exactly when Class is IDENTIFIER.
 	EntityType string
 	// PhoneRegion is the region a PHONE column's values are parsed in, or "".
@@ -51,7 +51,7 @@ type Class struct {
 var Unclassified = Class{Class: guardmodel.ClassUnclassified}
 
 // Name is schema.table.column (names are not PII).
-func (c Class) Name() string { return c.Schema + "." + c.Table + "." + c.Column }
+func (c Class) Name() string { return c.Namespace + "." + c.Resource + "." + c.Field }
 
 // marks are what the map was loaded with: the live fingerprint and the
 // catalog row, compared on each hourly tick.
@@ -422,7 +422,7 @@ func readSnapshot(ctx context.Context, db PiidictQuerier, between func()) (*snap
 		ref ColumnRef
 		c   Class
 	)
-	err = forEachRow(rows, []any{&ref.TableOID, &ref.Attnum, &c.Schema, &c.Table, &c.Column, &c.Class, &c.EntityType, &c.PhoneRegion}, func() error {
+	err = forEachRow(rows, []any{&ref.TableOID, &ref.Attnum, &c.Namespace, &c.Resource, &c.Field, &c.Class, &c.EntityType, &c.PhoneRegion}, func() error {
 		s.cols[ref] = c
 		s.oids[ref.TableOID] = struct{}{}
 		return nil

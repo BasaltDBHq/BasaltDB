@@ -307,13 +307,13 @@ func byTable(cols []IdentifierColumn) []scanTable {
 		if !ok {
 			i = len(out)
 			idx[c.Ref.TableOID] = i
-			out = append(out, scanTable{oid: c.Ref.TableOID, schema: c.Class.Schema, name: c.Class.Table})
+			out = append(out, scanTable{oid: c.Ref.TableOID, schema: c.Class.Namespace, name: c.Class.Resource})
 		}
 		out[i].cols = append(out[i].cols, c.Class)
 	}
 	slices.SortFunc(out, func(a, b scanTable) int { return strings.Compare(a.schema+"."+a.name, b.schema+"."+b.name) })
 	for i := range out {
-		slices.SortFunc(out[i].cols, func(a, b Class) int { return strings.Compare(a.Column, b.Column) })
+		slices.SortFunc(out[i].cols, func(a, b Class) int { return strings.Compare(a.Field, b.Field) })
 	}
 	return out
 }
@@ -456,7 +456,7 @@ func rowPager(t scanTable, keys []keyColumn) func(page int) pager {
 			bounds = append(bounds, "CAST(? AS "+k.typ+")")
 		}
 		for _, c := range t.cols {
-			sel = append(sel, quoteIdentifier(c.Column))
+			sel = append(sel, quoteIdentifier(c.Field))
 		}
 		from := quoteIdentifier(t.schema, t.name)
 		tuple := "(" + strings.Join(order, ", ") + ") > (" + strings.Join(bounds, ", ") + ")"
@@ -481,7 +481,7 @@ func onePassPager(t scanTable) func(page int) pager {
 	return func(int) pager {
 		sel := make([]string, 0, len(t.cols))
 		for _, c := range t.cols {
-			sel = append(sel, quoteIdentifier(c.Column))
+			sel = append(sel, quoteIdentifier(c.Field))
 		}
 		from := quoteIdentifier(t.schema, t.name)
 		return pager{

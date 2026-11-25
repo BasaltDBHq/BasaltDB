@@ -59,7 +59,7 @@ func ApprovalInvalidSteps(b *guidance.Steps, te *toolresult.ToolError, runID str
 		b.CallTool(guidance.ToolRunHistory, runArgs(runID), "Read the run's history: the write was already applied.")
 		b.Stop("Do not apply it again.")
 	case guidance.ReasonDifferentWrite:
-		b.CallTool(guidance.ToolListPending, runArgs(runID), "List the held write, then send exactly its sql, params and intent with its approvalId.")
+		b.CallTool(guidance.ToolListPending, runArgs(runID), "List the held write, then send exactly the held request and intent with its approvalId.")
 	case guidance.ReasonNotThisAgent:
 		b.CallTool(guidance.ToolListPending, map[string]any{}, "List your pending approvals and use the approvalId of the one this write was held for.")
 	case guidance.ReasonRowsChanged:

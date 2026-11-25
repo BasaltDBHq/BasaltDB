@@ -48,7 +48,7 @@ func TestPendingItemMatchesTheSchema(t *testing.T) {
 	item := pendingFromDomain(approvalsvc.PendingItem{
 		Approval: action.Approval{
 			ID: id, RunID: uuid.Must(uuid.NewV7()), Intent: "Leads went cold",
-			Statement: "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3", Params: json.RawMessage(`["closed",21,31]`),
+			Request:  action.HeldRequest{Kind: "SQL", Text: "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3", Params: json.RawMessage(`["closed",21,31]`)},
 			Assigned: []string{"status"}, Rows: 11, Status: "PENDING", CreatedAt: at, ExpiresAt: at.Add(24 * time.Hour),
 		},
 		Notice:        toolresult.ApprovalNotice{ApprovalURL: "http://localhost:8787/approvals/" + id.String(), Headline: "Update 11 rows in public·leads"},
@@ -57,4 +57,14 @@ func TestPendingItemMatchesTheSchema(t *testing.T) {
 	toolschema.Validate(t, sch, map[string]any{"items": []pendingDTO{item}})
 	require.Equal(t, pendingRequestDTO{Kind: "SQL", Params: json.RawMessage(`["closed",21,31]`), Statement: "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3"}, item.Request)
 	require.Equal(t, []string{"status"}, item.AssignedFields)
+}
+
+// list_pending answers request.kind from the held write, not a constant.
+func TestPendingItemKindIsTheHeldWrites(t *testing.T) {
+	t.Parallel()
+	item := pendingFromDomain(approvalsvc.PendingItem{Approval: action.Approval{
+		ID: uuid.Must(uuid.NewV7()), RunID: uuid.Must(uuid.NewV7()),
+		Request: action.HeldRequest{Kind: "DOCUMENT", Text: `{"update":"notes"}`},
+	}})
+	require.Equal(t, pendingRequestDTO{Kind: "DOCUMENT", Statement: `{"update":"notes"}`}, item.Request)
 }

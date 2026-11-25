@@ -200,7 +200,7 @@ func TestListOpenApprovalsReadsAHeldWrite(t *testing.T) {
 	page, err := ledger.ListOpenApprovals(ctx, a.Conn, action.ApprovalListParams{Params: pagination.Params{Limit: 1}})
 	require.NoError(t, err)
 	require.Len(t, page.Items, 1)
-	require.Equal(t, sql, page.Items[0].Statement)
-	require.JSONEq(t, `[1]`, string(page.Items[0].Params))
+	require.Equal(t, action.HeldRequest{Kind: "SQL", Text: sql, Params: page.Items[0].Request.Params}, page.Items[0].Request)
+	require.JSONEq(t, `[1]`, string(page.Items[0].Request.Params))
 	require.Nil(t, page.Items[0].LargeValues)
 }

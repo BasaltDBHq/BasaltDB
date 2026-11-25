@@ -24,6 +24,13 @@ type Request struct {
 	Params []any
 }
 
+// RequestArgs names a request's arguments the way its store family's
+// tools take them, for a next step that calls a tool with it.
+type RequestArgs interface {
+	// Args is req as the family's query and write tools take it.
+	Args(req Request) map[string]any
+}
+
 // ResourceRef names one resource (a table, a collection, a bucket) as its
 // store assigns it. It is opaque to the agent service: compared and used as
 // a map key, never parsed. Postgres: the table's OID, as "16384".

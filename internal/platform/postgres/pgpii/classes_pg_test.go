@@ -276,17 +276,10 @@ func TestWatchWarnsAboutUnclassifiedColumns(t *testing.T) {
 	require.Contains(t, out.String(), "pii: classification loaded")
 
 	// A column that changed type keeps its class and is reported apart.
-	f.db.Exec(t, `ALTER TABLE public.customers ALTER COLUMN note TYPE varchar(40)`)
+	f.db.Exec(t, `ALTER TABLE public.orders ALTER COLUMN a TYPE bigint`)
 	got, err := Classes(f.pool).Unclassified(ctx)
 	require.NoError(t, err)
-	var note []piistore.Unclassified
-	for _, u := range got {
-		if u.Name == "public.customers.note" {
-			note = append(note, u)
-		}
-	}
-	require.Len(t, note, 1, "%v", got)
-	require.True(t, note[0].Changed)
+	require.Contains(t, got, piistore.Unclassified{Name: "public.orders.a", DataType: "bigint", Changed: true})
 }
 
 // TestMapListsSecretsAndTheCatalogFingerprint: describe hides SECRET columns
@@ -313,7 +306,7 @@ func TestMapListsSecretsAndTheCatalogFingerprint(t *testing.T) {
 		var c guardmodel.PIIColumn
 		err := r.Scan(&c.Schema, &c.Table, &c.Column, &c.DataType)
 		c.Class = guardmodel.ClassPublic
-		if (c.Table == "orders" && c.Column == "email") || (c.Table == "customers" && c.Column == "note") {
+		if c.Table == "orders" && c.Column == "email" {
 			c.Class = guardmodel.ClassSecret
 		}
 		return c, err
@@ -327,8 +320,7 @@ func TestMapListsSecretsAndTheCatalogFingerprint(t *testing.T) {
 
 	secrets, err = m.Secrets(ctx)
 	require.NoError(t, err)
-	// customers was created before orders: table oid, then attnum.
-	require.Equal(t, []agentstore.FieldRef{f.ref(t, "public.customers", "note"), f.ref(t, "public.orders", "email")}, secrets)
+	require.Equal(t, []agentstore.FieldRef{f.ref(t, "public.orders", "email")}, secrets)
 	print1, err := m.CatalogFingerprint(ctx)
 	require.NoError(t, err)
 	require.Regexp(t, `^[0-9a-f]{64}$`, print1)

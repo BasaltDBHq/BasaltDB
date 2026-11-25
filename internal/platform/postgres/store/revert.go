@@ -235,6 +235,13 @@ func (s *Store) revealRevertRowsRaw(ctx context.Context, id uuid.UUID, proof pas
 // did not prepare, or none (_revert_lock_pending).
 const revertNotFoundDetail = "no such revert"
 
+// tablesShapeHint is the guard's hint for a tables entry that is not a
+// schema.table name (_revert_select_norm, detail SHAPE). On a preview or
+// a prepare it is the agent's filter the store refused, RevertFilter with
+// this hint, like a table outside the agent's own work; any other SHAPE
+// is RevertInvalid.
+const tablesShapeHint = "tables are schema.table names"
+
 // scopeReasons are the revert reasons of the guard's SCOPE_REFUSED details
 // on a preview or a prepare; any other detail is RevertInvalid.
 var scopeReasons = map[string]action.RevertReason{
@@ -280,7 +287,8 @@ func findRevertRefusal(err error) error {
 }
 
 // prepareRefusal maps PreviewRevert's and PrepareRevert's errors: a scope
-// the guard refused (the hint says why), nothing to revert (the scope
+// the guard refused (the hint says why; a badly formed table name is the
+// agent's filter refused), nothing to revert (the scope
 // changed no rows, or every row would be skipped; the detail is the guard's
 // whole message), and the time limit.
 func prepareRefusal(err error) error {
@@ -291,7 +299,10 @@ func prepareRefusal(err error) error {
 	switch guardmodel.Code(se.LedgerCode) {
 	case guardmodel.CodeScopeRefused:
 		reason, ok := scopeReasons[se.Detail]
-		if !ok {
+		switch {
+		case se.Detail == guardmodel.ScopeShape && se.Hint == tablesShapeHint:
+			reason = action.RevertFilter
+		case !ok:
 			reason = action.RevertInvalid
 		}
 		return refusal(err, reason, se.Hint)

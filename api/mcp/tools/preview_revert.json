@@ -39,8 +39,7 @@
         "maxItems": 20,
         "uniqueItems": true,
         "items": {
-          "type": "string",
-          "pattern": "^[^.\\s;]+\\.[^.\\s;]+$"
+          "type": "string"
         },
         "description": "1 to 20 schema.table names, each a table you wrote in this scope; the preview holds only their lines. Absent: every table."
       },

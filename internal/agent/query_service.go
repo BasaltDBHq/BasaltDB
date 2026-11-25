@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 	"unicode/utf8"
@@ -134,10 +135,26 @@ func (wc *Service) refused(ctx context.Context, in action.Intent, stmt action.St
 		Code: te.Code, Reason: truncate(te.Message, maxReasonBytes), Duration: wc.core.Now().Sub(start),
 		Resources: refusalResources(stmt),
 	}
-	if recErr := wc.store.Ledger.RecordRefusal(context.WithoutCancel(ctx), r); recErr != nil {
+	if recErr := wc.recordRefusal(context.WithoutCancel(ctx), r); recErr != nil {
 		wc.core.Log.Error("record refusal", "code", te.Code, "err", recErr)
 	}
 	return err
+}
+
+// recordRefusal records r. When that fails while r names resources, it
+// records r once more naming none, so no name can keep a refusal out of
+// the ledger, and logs the first failure as a warning.
+func (wc *Service) recordRefusal(ctx context.Context, r action.Refusal) error {
+	err := wc.store.Ledger.RecordRefusal(ctx, r)
+	if err == nil || len(r.Resources) == 0 {
+		return err
+	}
+	r.Resources = nil
+	if retryErr := wc.store.Ledger.RecordRefusal(ctx, r); retryErr != nil {
+		return errors.Join(err, retryErr)
+	}
+	wc.core.Log.Warn("record refusal: recorded without its resources", "code", r.Code, "err", err)
+	return nil
 }
 
 // refusalResources are the resources a refusal records: a write's target

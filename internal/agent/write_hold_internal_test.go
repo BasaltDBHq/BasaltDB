@@ -29,6 +29,21 @@ func (l *refusalLedger) RecordRefusal(_ context.Context, r action.Refusal) error
 	return nil
 }
 
+// failingNamesLedger fails every refusal that names resources, as a
+// ledger whose qualification of the names fails would.
+type failingNamesLedger struct {
+	refusalLedger
+	calls int
+}
+
+func (l *failingNamesLedger) RecordRefusal(ctx context.Context, r action.Refusal) error {
+	l.calls++
+	if len(r.Resources) > 0 {
+		return errors.New("the names could not be qualified")
+	}
+	return l.refusalLedger.RecordRefusal(ctx, r)
+}
+
 // fixedHolds is the approval's store with a fixed preview and hold result.
 type fixedHolds struct {
 	approvalsvc.Store
@@ -177,4 +192,22 @@ func TestDifferentWriteStepKeepsExactNumbers(t *testing.T) {
 
 	rounded := WriteParams{RunID: held.RunID, Request: agentstore.Request{Text: call.SQL, Params: callParams(t, `[9007199254740992]`)}}
 	require.Error(t, wc.sameAsHeld(held, rounded))
+}
+
+// A refusal whose names make recording fail is recorded once more without
+// them: no name keeps a refusal out of the ledger.
+func TestRefusedIsRecordedWithoutNamesWhenTheyFail(t *testing.T) {
+	t.Parallel()
+	ledger := &failingNamesLedger{}
+	wc := newTestService(t, "linux", "", func(s *settings) { s.store.Ledger = ledger })
+	in := action.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "tidy the leads"}
+	refusal := &action.RefusalError{Reason: action.ReasonFunction, Detail: "pg_sleep is not on the function allowlist"}
+	stmt := action.Statement{Op: action.OpDelete, Tables: []string{"leads"}, Target: "leads"}
+
+	err := wc.refused(context.Background(), in, stmt, agentstore.Request{Text: "DELETE FROM leads"}, wc.core.Now(), refusal)
+	require.Equal(t, refusal, err, "the agent still gets its refusal")
+	require.Equal(t, 2, ledger.calls)
+	require.Len(t, ledger.refusals, 1)
+	require.Empty(t, ledger.refusals[0].Resources)
+	require.Equal(t, "DELETE FROM leads", ledger.refusals[0].Statement)
 }

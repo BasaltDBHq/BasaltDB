@@ -188,17 +188,33 @@ func Classify(sql string) (Statement, error) {
 	return stmt, nil
 }
 
-// targetOf is the relation an INSERT, UPDATE or DELETE writes, as written;
-// "" for any other statement.
+// targetOf is the relation the statement writes, as written; "" for a
+// statement that writes none. It is the first relation written in
+// statement order: the WITH clause's data-modifying queries as written
+// (each by this same rule, so a nested WITH comes first), then the
+// statement's own INSERT, UPDATE, DELETE or MERGE target. So a refused
+// "WITH d AS (DELETE FROM payroll ...) INSERT INTO audit_log ..." names
+// payroll, the first thing it changes as a person reads it, and a
+// SELECT or a table it only reads never becomes the target.
 func targetOf(stmt *pganalyze.Node) string {
+	var with *pganalyze.WithClause
 	var rel *pganalyze.RangeVar
 	switch n := stmt.GetNode().(type) {
+	case *pganalyze.Node_SelectStmt:
+		with = n.SelectStmt.GetWithClause()
 	case *pganalyze.Node_InsertStmt:
-		rel = n.InsertStmt.GetRelation()
+		with, rel = n.InsertStmt.GetWithClause(), n.InsertStmt.GetRelation()
 	case *pganalyze.Node_UpdateStmt:
-		rel = n.UpdateStmt.GetRelation()
+		with, rel = n.UpdateStmt.GetWithClause(), n.UpdateStmt.GetRelation()
 	case *pganalyze.Node_DeleteStmt:
-		rel = n.DeleteStmt.GetRelation()
+		with, rel = n.DeleteStmt.GetWithClause(), n.DeleteStmt.GetRelation()
+	case *pganalyze.Node_MergeStmt:
+		with, rel = n.MergeStmt.GetWithClause(), n.MergeStmt.GetRelation()
+	}
+	for _, c := range with.GetCtes() {
+		if t := targetOf(c.GetCommonTableExpr().GetCtequery()); t != "" {
+			return t
+		}
 	}
 	if rel == nil {
 		return ""

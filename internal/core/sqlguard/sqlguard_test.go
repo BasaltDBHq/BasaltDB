@@ -98,12 +98,17 @@ func TestClassify(t *testing.T) {
 func TestTarget(t *testing.T) {
 	t.Parallel()
 	for sql, want := range map[string]string{
-		"UPDATE payroll SET amount = 0 FROM audit_log a WHERE a.id = payroll.id": "payroll",
-		"DELETE FROM public.leads USING archive WHERE archive.id = leads.id":     "public.leads",
-		"INSERT INTO leads (id) SELECT id FROM a_import":                         "leads",
-		`UPDATE "Old Leads" SET id = 1`:                                          "Old Leads",
-		"SELECT * FROM leads":                                                    "",
-		"DROP TABLE leads":                                                       "",
+		"UPDATE payroll SET amount = 0 FROM audit_log a WHERE a.id = payroll.id":                           "payroll",
+		"DELETE FROM public.leads USING archive WHERE archive.id = leads.id":                               "public.leads",
+		"INSERT INTO leads (id) SELECT id FROM a_import":                                                   "leads",
+		`UPDATE "Old Leads" SET id = 1`:                                                                    "Old Leads",
+		"SELECT * FROM leads":                                                                              "",
+		"MERGE INTO payroll p USING audit_log a ON p.id = a.id WHEN MATCHED THEN DELETE":                   "payroll",
+		"WITH d AS (DELETE FROM payroll RETURNING *) INSERT INTO audit_log SELECT * FROM d":                "payroll",
+		"WITH d AS (DELETE FROM payroll RETURNING *) SELECT * FROM d JOIN audit_log USING (id)":            "payroll",
+		"WITH r AS (SELECT * FROM audit_log), u AS (UPDATE public.leads SET id = 1 RETURNING id) SELECT 1": "public.leads",
+		"WITH r AS (SELECT * FROM audit_log) UPDATE payroll SET id = 1 FROM r":                             "payroll",
+		"DROP TABLE leads": "",
 	} {
 		stmt, _ := sqlguard.Classify(sql)
 		require.Equal(t, want, stmt.Target, sql)

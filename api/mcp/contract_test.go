@@ -122,7 +122,7 @@ func TestAgentRevertToolsHaveContracts(t *testing.T) {
 	require.True(t, ok)
 	require.NotContains(t, props, "signature", "the page relays the signature")
 	require.Contains(t, props, "taskId", "RS-7: served now that the engine checks the agent ran in the task")
-	for _, filter := range []string{"runs", "tables"} {
+	for _, filter := range []string{"runs", "resources"} {
 		require.Contains(t, props, filter, "RS-1: the filters are served")
 	}
 }
@@ -159,8 +159,8 @@ func TestRevertScopeArguments(t *testing.T) {
 	all, err := mcpcontract.LoadAll()
 	require.NoError(t, err)
 	for tool, names := range map[string][]string{
-		"request_revert": {"runs", "tables"},
-		"preview_revert": {"runs", "tables"},
+		"request_revert": {"runs", "resources"},
+		"preview_revert": {"runs", "resources"},
 	} {
 		written, ok := mcpcontract.Find(all, tool)
 		require.True(t, ok, tool)
@@ -174,7 +174,7 @@ func TestRevertScopeArguments(t *testing.T) {
 			require.False(t, strings.HasPrefix(desc, mcpcontract.PlannedPrefix), "%s.%s is served", tool, name)
 			require.Contains(t, servedProps, name, "%s.%s is served", tool, name)
 		}
-		for _, name := range []string{"runs", "tables"} {
+		for _, name := range []string{"runs", "resources"} {
 			require.EqualValues(t, mcpcontract.MaxScopeFilter, mustMap(t, props[name])["maxItems"], "%s.%s cap (owner, Q10)", tool, name)
 		}
 	}

@@ -40,7 +40,7 @@ func TestPreviewRevertTool(t *testing.T) {
 	conflicts := map[string]int{}
 	for _, l := range list {
 		require.Equal(t, "UPDATE", l["op"])
-		require.Equal(t, "public.leads", l["table"])
+		require.Equal(t, "public.leads", l["resource"])
 		c, _ := l["conflict"].(string)
 		conflicts[c]++
 	}

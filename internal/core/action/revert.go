@@ -56,9 +56,11 @@ const (
 	RevertNotOwnChange RevertReason = "NOT_OWN_CHANGE"
 	RevertNotOwnRun    RevertReason = "NOT_OWN_RUN"
 	RevertNotOwnTask   RevertReason = "NOT_OWN_TASK"
-	// RevertFilter is a filter naming work that is not the agent's, or
-	// a name the store cannot use.
+	// RevertFilter is a filter naming work that is not the agent's.
 	RevertFilter RevertReason = "FILTER"
+	// RevertFilterName is a filter holding a resource name the store
+	// cannot use, whoever's work it would name. Detail is the store's text.
+	RevertFilterName RevertReason = "FILTER_NAME"
 	// RevertFilterCap is a filter over its length limit.
 	RevertFilterCap RevertReason = "FILTER_CAP"
 	// RevertTimedOut is a call the store stopped at its time limit.
@@ -152,12 +154,13 @@ type PreparedRevert struct {
 	LineCount int
 }
 
-// BatchItem is one line of an applied batch.
+// BatchItem is one line of an applied batch. StoreCode is the store's own
+// error code for a skipped line, when it has one.
 type BatchItem struct {
-	Line     int    `json:"line"`
-	Outcome  string `json:"outcome"`
-	Conflict string `json:"conflict,omitempty"`
-	SQLState string `json:"sqlState,omitempty"`
+	Line      int    `json:"line"`
+	Outcome   string `json:"outcome"`
+	Conflict  string `json:"conflict,omitempty"`
+	StoreCode string `json:"storeCode,omitempty"`
 }
 
 // BatchResult is one applied batch: its number, the plan's status and

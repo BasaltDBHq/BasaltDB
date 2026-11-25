@@ -154,7 +154,7 @@
               ],
               "description": "Why the line was skipped. Set on SKIPPED only."
             },
-            "sqlState": {
+            "storeCode": {
               "type": "string",
               "description": "Set on CONSTRAINT conflicts only."
             },
@@ -203,11 +203,11 @@
       "revertLine": {
         "type": "object",
         "additionalProperties": false,
-        "description": "The signed revert line as an object (CONTRACT.md, Revert); the fields are those of preview_revert items.",
+        "description": "The signed revert line as an object (CONTRACT.md, Revert); the fields are those of preview_revert items: the signed line's table is resource and its sqlState is storeCode.",
         "required": [
           "action",
           "op",
-          "table",
+          "resource",
           "cascaded",
           "changeIds"
         ],
@@ -227,7 +227,7 @@
               "DELETE"
             ]
           },
-          "table": {
+          "resource": {
             "type": "string"
           },
           "key": {
@@ -258,7 +258,7 @@
               "CONSTRAINT"
             ]
           },
-          "sqlState": {
+          "storeCode": {
             "type": "string"
           },
           "cascaded": {

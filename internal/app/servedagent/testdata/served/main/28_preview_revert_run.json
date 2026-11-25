@@ -17,13 +17,13 @@
           "status": "closed"
         },
         "op": "UPDATE",
+        "resource": "public.leads",
         "set": {
           "id": 21,
           "name": "lead 21",
           "score": 0,
           "status": "open"
-        },
-        "table": "public.leads"
+        }
       },
       {
         "action": "RESTORE",
@@ -41,13 +41,13 @@
           "status": "closed"
         },
         "op": "UPDATE",
+        "resource": "public.leads",
         "set": {
           "id": 22,
           "name": "lead 22",
           "score": 1,
           "status": "open"
-        },
-        "table": "public.leads"
+        }
       },
       {
         "action": "RESTORE",
@@ -65,13 +65,13 @@
           "status": "closed"
         },
         "op": "UPDATE",
+        "resource": "public.leads",
         "set": {
           "id": 23,
           "name": "lead 23",
           "score": 2,
           "status": "open"
-        },
-        "table": "public.leads"
+        }
       },
       {
         "action": "RESTORE",
@@ -89,13 +89,13 @@
           "status": "closed"
         },
         "op": "UPDATE",
+        "resource": "public.leads",
         "set": {
           "id": 24,
           "name": "lead 24",
           "score": 3,
           "status": "open"
-        },
-        "table": "public.leads"
+        }
       },
       {
         "action": "RESTORE",
@@ -113,13 +113,13 @@
           "status": "closed"
         },
         "op": "UPDATE",
+        "resource": "public.leads",
         "set": {
           "id": 25,
           "name": "lead 25",
           "score": 4,
           "status": "open"
-        },
-        "table": "public.leads"
+        }
       },
       {
         "action": "RESTORE",
@@ -137,13 +137,13 @@
           "status": "closed"
         },
         "op": "UPDATE",
+        "resource": "public.leads",
         "set": {
           "id": 26,
           "name": "lead 26",
           "score": 5,
           "status": "open"
-        },
-        "table": "public.leads"
+        }
       },
       {
         "action": "RESTORE",
@@ -161,13 +161,13 @@
           "status": "closed"
         },
         "op": "UPDATE",
+        "resource": "public.leads",
         "set": {
           "id": 27,
           "name": "lead 27",
           "score": 6,
           "status": "open"
-        },
-        "table": "public.leads"
+        }
       },
       {
         "action": "RESTORE",
@@ -185,13 +185,13 @@
           "status": "closed"
         },
         "op": "UPDATE",
+        "resource": "public.leads",
         "set": {
           "id": 28,
           "name": "lead 28",
           "score": 0,
           "status": "open"
-        },
-        "table": "public.leads"
+        }
       },
       {
         "action": "RESTORE",
@@ -209,13 +209,13 @@
           "status": "closed"
         },
         "op": "UPDATE",
+        "resource": "public.leads",
         "set": {
           "id": 29,
           "name": "lead 29",
           "score": 1,
           "status": "open"
-        },
-        "table": "public.leads"
+        }
       },
       {
         "action": "RESTORE",
@@ -233,13 +233,13 @@
           "status": "closed"
         },
         "op": "UPDATE",
+        "resource": "public.leads",
         "set": {
           "id": 30,
           "name": "lead 30",
           "score": 2,
           "status": "open"
-        },
-        "table": "public.leads"
+        }
       },
       {
         "action": "RESTORE",
@@ -257,13 +257,13 @@
           "status": "closed"
         },
         "op": "UPDATE",
+        "resource": "public.leads",
         "set": {
           "id": 31,
           "name": "lead 31",
           "score": 3,
           "status": "open"
-        },
-        "table": "public.leads"
+        }
       },
       {
         "action": "RESTORE",
@@ -281,13 +281,13 @@
           "status": "merged"
         },
         "op": "UPDATE",
+        "resource": "public.leads",
         "set": {
           "id": 4,
           "name": "lead 4",
           "score": 4,
           "status": "open"
-        },
-        "table": "public.leads"
+        }
       }
     ],
     "nextSteps": [

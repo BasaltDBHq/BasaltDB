@@ -33,7 +33,7 @@
         },
         "description": "Only with taskId, 1 to 20 of your own runs with that task id; the revert holds only their lines and the page shows it as your proposal. Absent: all your runs in the task."
       },
-      "tables": {
+      "resources": {
         "type": "array",
         "minItems": 1,
         "maxItems": 20,
@@ -41,7 +41,7 @@
         "items": {
           "type": "string"
         },
-        "description": "With changeId, runId or taskId, 1 to 20 schema.table names, each a table you wrote in this scope; the revert holds only their lines. Absent: every table."
+        "description": "With changeId, runId or taskId, 1 to 20 resource names, each one you wrote in this scope (Postgres: schema.table names); the revert holds only their lines. Absent: every resource."
       },
       "intent": {
         "type": "string",

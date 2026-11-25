@@ -71,7 +71,7 @@ func InvalidArgumentSteps(b *Steps, te *toolresult.ToolError, f Failure) string 
 		b.CallTool(ToolListRuns, map[string]any{}, "List your runs to see your own runs in the task; run_history shows the tables each one wrote.")
 		return ""
 	case ReasonScopeFilterCap:
-		b.ReviseCall(f.Tool, nil, fmt.Sprintf("Call again with at most %d runs and %d tables, or without the filter: the person "+
+		b.ReviseCall(f.Tool, nil, fmt.Sprintf("Call again with at most %d runs and %d resources, or without the filter: the person "+
 			"can narrow it on the signing page.", revert.MaxFilter, revert.MaxFilter))
 		return ""
 	case ReasonAdminCredential:

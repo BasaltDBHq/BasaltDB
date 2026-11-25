@@ -169,14 +169,16 @@ type RevertListParams struct {
 }
 
 // RevertLine is one line of a batched plan: its number (execution order),
-// the signed text, and what happened to it. Batch is nil while pending.
+// the signed text, and what happened to it. StoreCode is the store's own
+// error code for a skipped line, when it has one. Batch is nil while
+// pending.
 type RevertLine struct {
-	No       int
-	Text     string
-	Outcome  string
-	Conflict string
-	SQLState string
-	Batch    *int
+	No        int
+	Text      string
+	Outcome   string
+	Conflict  string
+	StoreCode string
+	Batch     *int
 }
 
 // RevertLineParams lists a batched plan's lines in number order. Outcome

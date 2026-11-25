@@ -53,11 +53,11 @@ Planned (owner decisions AE-1 to AE-14). Every error body and every result the a
 | `ROW_LIMIT_EXCEEDED` | — | — | A `STOP`, A `ASK_PERSON`, A `RETRY_SMALLER_BATCHES` (`maxRows` 50, only on an explicit yes); +pm |
 | `QUERY_TIMEOUT` | `ROW_LIMIT` | — | A `REVISE_CALL` |
 | `QUERY_TIMEOUT` | `SIZE_LIMIT` | — | A `REVISE_CALL` (select fewer or shorter columns, for example `left(col, 200)`, or fewer rows; for `run_history`, `list_pending`, `preview_revert`, `revert_plan` and `describe`, a smaller `limit`, down to 1) |
-| `QUERY_TIMEOUT` | `REQUEST_TOO_LARGE` | `request_revert` | ([Large values](mcp-tools.md#large-values)): A `STOP`, A `ASK_PERSON` (the setup change by setup, or a narrower revert with `runs` or `tables`), A `END_TURN`, A `CALL_TOOL` (`request_revert` with the `revertId`, and `reissueLink`, once the person says they changed the setup); +pm |
+| `QUERY_TIMEOUT` | `REQUEST_TOO_LARGE` | `request_revert` | ([Large values](mcp-tools.md#large-values)): A `STOP`, A `ASK_PERSON` (the setup change by setup, or a narrower revert with `runs` or `resources`), A `END_TURN`, A `CALL_TOOL` (`request_revert` with the `revertId`, and `reissueLink`, once the person says they changed the setup); +pm |
 | `QUERY_TIMEOUT` | `ROW_TOO_LARGE` | — | A `REVISE_CALL` (select fewer columns, the size with `length(col)`, or a slice with `substr(col, 1, 100000)`; the message names the large columns and their sizes) |
 | `QUERY_TIMEOUT` | `TIME_LIMIT` | — | A `REVISE_CALL` |
-| `QUERY_TIMEOUT` | `TIME_LIMIT` | `preview_revert` | A `STOP`, A `ASK_PERSON` (whether a narrower revert, with `runs` or `tables`, will do), A `END_TURN`; +pm |
-| `QUERY_TIMEOUT` | `TIME_LIMIT` | `request_revert` | A `STOP`, A `ASK_PERSON` (whether a narrower revert, with `runs` or `tables`, will do), A `END_TURN`; +pm |
+| `QUERY_TIMEOUT` | `TIME_LIMIT` | `preview_revert` | A `STOP`, A `ASK_PERSON` (whether a narrower revert, with `runs` or `resources`, will do), A `END_TURN`; +pm |
+| `QUERY_TIMEOUT` | `TIME_LIMIT` | `request_revert` | A `STOP`, A `ASK_PERSON` (whether a narrower revert, with `runs` or `resources`, will do), A `END_TURN`; +pm |
 | `APPROVAL_REQUIRED` | `HELD` | — | P `OPEN_LINK`, A `CALL_TOOL` (`write` with `approvalId`, waits once); +pm |
 | `APPROVAL_REQUIRED` | `HELD_NO_PAGES` | — | P `OPEN_LINK` (the link the hold handed over, for review only: no page can sign it), A `END_TURN` (no wait: it cannot succeed), A `CALL_TOOL` (`list_pending` with `reissueLink: true`, once `status` shows the Vault connected); +pm |
 | `APPROVAL_REQUIRED` | `REQUEST_TOO_LARGE` | — | ([Large values](mcp-tools.md#large-values)): A `ASK_PERSON` (the setup change by setup: local pages, or the Vault for the portal; the held write waits until it expires), A `END_TURN`, A `CALL_TOOL` (`list_pending` with `kind` `APPROVAL`, `status` `PENDING`, the hold's `runId` and `reissueLink`, once the person says they changed the setup); +pm |

@@ -129,7 +129,7 @@ func expiredSteps(r action.Revert) []toolresult.NextStep {
 }
 
 // scopeArgs names a revert scope as request_revert's arguments, its runs
-// and tables filters included, so a request the agent makes from these
+// and resources filters included, so a request the agent makes from these
 // steps covers no more than the person was shown.
 func scopeArgs(scope action.Scope) map[string]any {
 	args := map[string]any{strings.ToLower(string(scope.Kind)) + "Id": scope.ID.String()}
@@ -141,7 +141,7 @@ func scopeArgs(scope action.Scope) map[string]any {
 		args["runs"] = runs
 	}
 	if len(scope.Tables) > 0 {
-		args["tables"] = scope.Tables
+		args["resources"] = scope.Tables
 	}
 	return args
 }
@@ -396,25 +396,25 @@ func (rc *Service) revertExpired(r action.Revert) error {
 
 // prepareTimeout: the revert is too large to prepare in one MCP call. The
 // agent stops and asks the person whether a narrower revert (some runs or
-// tables) will do; there is no other way to prepare it. The message names
+// resources) will do; there is no other way to prepare it. The message names
 // the limit the tool ran under: request_revert's prepare has the 100
 // seconds of an MCP call, preview_revert the agent's statement timeout.
-func (rc *Service) prepareTimeout(tool string, scope action.Scope, sqlState string) error {
-	te := &toolresult.ToolError{Code: guidance.CodeQueryTimeout, Reason: guidance.ReasonTimeLimit, SQLState: sqlState, Message: fmt.Sprintf(
+func (rc *Service) prepareTimeout(tool string, scope action.Scope, storeCode string) error {
+	te := &toolresult.ToolError{Code: guidance.CodeQueryTimeout, Reason: guidance.ReasonTimeLimit, SQLState: storeCode, Message: fmt.Sprintf(
 		"preparing the revert of %s %s took longer than the %d seconds an MCP call may take; nothing was prepared. "+
-			"A narrower revert, with runs or tables, may fit.",
+			"A narrower revert, with runs or resources, may fit.",
 		strings.ToLower(string(scope.Kind)), scope.ID, int(rc.store.Limits.Prepare.Seconds()))}
 	what := "prepare"
 	if tool == guidance.ToolPreviewRevert {
 		what = "preview"
 		te.Message = fmt.Sprintf("previewing the revert of %s %s took longer than %s; nothing was previewed. "+
-			"A narrower revert, with runs or tables, may fit.",
+			"A narrower revert, with runs or resources, may fit.",
 			strings.ToLower(string(scope.Kind)), scope.ID, statementLimitText(rc.describe.StatementTimeout()))
 	}
 	te.PersonMessage = fmt.Sprintf("This revert is too large for the agent to %s in one call, so nothing was prepared. "+
 		"The agent can revert a part of it instead: only some runs or tables.", what)
 	steps, err := guidance.NewSteps().Stop("This revert is too large to prepare here: do not retry it as it is.").
-		AskPerson("Ask the person whether a narrower revert will do: request_revert with runs or tables.").
+		AskPerson("Ask the person whether a narrower revert will do: request_revert with runs or resources.").
 		EndTurn(guidance.StepEndTurnPersonActsNext).Build()
 	if err != nil {
 		return err

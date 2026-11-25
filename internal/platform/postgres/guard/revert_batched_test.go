@@ -381,7 +381,7 @@ func TestBatchedParentsBeforeChildren(t *testing.T) {
 	require.Equal(t, parents*(children+1), signed.Pending)
 	for _, res := range e.applyAll(t, prep.RevertID) {
 		for _, it := range res.Items {
-			require.Equal(t, guardmodel.OutcomeRestored, it.Outcome, "line %d: %s %s", it.Line, it.Conflict, it.SQLState)
+			require.Equal(t, guardmodel.OutcomeRestored, it.Outcome, "line %d: %s %s", it.Line, it.Conflict, it.StoreCode)
 		}
 	}
 	require.Equal(t, parents, count(t, d.Admin, `SELECT count(id)::int FROM public.folders`))

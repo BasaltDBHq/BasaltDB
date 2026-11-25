@@ -67,7 +67,7 @@ func TestRevertRefusalsPerCall(t *testing.T) {
 		{"prepare: not own task", prepareRefusal, scopeRefusedErr("NOT_OWN_TASK", "x"), action.RevertNotOwnTask, "x", ""},
 		{"prepare: filter", prepareRefusal, scopeRefusedErr("FILTER", filterHint), action.RevertFilter, filterHint, ""},
 		{"prepare: filter cap", prepareRefusal, scopeRefusedErr("FILTER_CAP", "at most 50"), action.RevertFilterCap, "at most 50", ""},
-		{"prepare: table name shape", prepareRefusal, scopeRefusedErr("SHAPE", shapeHint), action.RevertFilter, shapeHint, ""},
+		{"prepare: table name shape", prepareRefusal, scopeRefusedErr("SHAPE", shapeHint), action.RevertFilterName, shapeHint, ""},
 		{"prepare: run id shape", prepareRefusal, scopeRefusedErr("SHAPE", "runs are run ids"), action.RevertInvalid, "runs are run ids", ""},
 		{"prepare: agents shape", prepareRefusal, scopeRefusedErr("SHAPE", "agents are role names"), action.RevertInvalid, "agents are role names", ""},
 		{"prepare: other shape", prepareRefusal, scopeRefusedErr("SHAPE", "scopeId is a uuid"), action.RevertInvalid, "scopeId is a uuid", ""},

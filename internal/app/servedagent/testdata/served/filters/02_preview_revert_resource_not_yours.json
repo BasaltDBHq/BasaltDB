@@ -1,0 +1,27 @@
+{
+  "body": {
+    "code": "INVALID_ARGUMENT",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "the revert filter names work that is not yours, nothing was prepared: public.ghost has no change of yours in this scope. runs lists only your own runs in the task, and resources only what you wrote in this scope; run_history shows them",
+    "nextSteps": [
+      {
+        "action": "REVISE_CALL",
+        "actor": "AGENT",
+        "text": "Call again without the refused entries the message names, or without that filter.",
+        "tool": "preview_revert"
+      },
+      {
+        "action": "CALL_TOOL",
+        "actor": "AGENT",
+        "arguments": {
+          "runId": "<id-1>"
+        },
+        "text": "Read the run's history to see the tables you wrote in it.",
+        "tool": "run_history"
+      }
+    ],
+    "reason": "SCOPE_FILTER"
+  },
+  "isError": true,
+  "tool": "preview_revert"
+}

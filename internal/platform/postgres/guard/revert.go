@@ -190,11 +190,51 @@ func ApplyRevert(ctx context.Context, q Querier, revertID uuid.UUID, a passkey.A
 // re-checks each line with its row locked, and skips (people win) a row
 // changed since the plan was built. Run it in its own transaction.
 func ApplyRevertBatch(ctx context.Context, q Querier, revertID uuid.UUID, lines []int) (action.BatchResult, error) {
-	var out action.BatchResult
+	var raw []byte
 	// Plain SQL: one function call returning jsonb.
-	err := q.QueryRow(ctx, `SELECT basalt_meta.apply_revert_batch($1::uuid, $2::int[])`, revertID.String(), lines).Scan(&out)
+	err := q.QueryRow(ctx, `SELECT basalt_meta.apply_revert_batch($1::uuid, $2::int[])`, revertID.String(), lines).Scan(&raw)
 	if err != nil {
 		return action.BatchResult{}, err
+	}
+	return decodeBatchResult(raw)
+}
+
+// batchItemJSON is one line of apply_revert_batch's answer as the guard
+// writes it: the line's SQLSTATE is sqlState.
+type batchItemJSON struct {
+	Line     int    `json:"line"`
+	Outcome  string `json:"outcome"`
+	Conflict string `json:"conflict"`
+	SQLState string `json:"sqlState"`
+}
+
+// batchResultJSON is apply_revert_batch's answer as the guard writes it.
+type batchResultJSON struct {
+	RevertID uuid.UUID       `json:"revertId"`
+	Batch    int             `json:"batch"`
+	Status   string          `json:"status"`
+	Restored int             `json:"restored"`
+	Skipped  int             `json:"skipped"`
+	Pending  int             `json:"pending"`
+	Items    []batchItemJSON `json:"items"`
+}
+
+// decodeBatchResult reads apply_revert_batch's jsonb answer into the
+// store-neutral batch result: a line's sqlState is its StoreCode.
+func decodeBatchResult(raw []byte) (action.BatchResult, error) {
+	var in batchResultJSON
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return action.BatchResult{}, fmt.Errorf("decode apply_revert_batch: %w", err)
+	}
+	out := action.BatchResult{
+		RevertID: in.RevertID, Batch: in.Batch, Status: in.Status,
+		Restored: in.Restored, Skipped: in.Skipped, Pending: in.Pending,
+	}
+	if in.Items != nil {
+		out.Items = make([]action.BatchItem, 0, len(in.Items))
+	}
+	for _, it := range in.Items {
+		out.Items = append(out.Items, action.BatchItem{Line: it.Line, Outcome: it.Outcome, Conflict: it.Conflict, StoreCode: it.SQLState})
 	}
 	return out, nil
 }

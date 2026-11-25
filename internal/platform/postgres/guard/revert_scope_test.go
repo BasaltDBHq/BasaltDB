@@ -268,13 +268,39 @@ func TestRevertScopeShape(t *testing.T) {
 		"a missing key":          {fmt.Sprintf(`{"scope": "TASK", "scopeId": %q, "agents": [%q], "runs": null}`, e.task, e.bot.Role), guardmodel.ScopeShape},
 		"an unknown scope":       {base("DATABASE", "null", "null"), guardmodel.ScopeShape},
 		"a bad run id":           {base("TASK", `["x"]`, "null"), guardmodel.ScopeShape},
-		"a bad table name":       {base("TASK", "null", `["leads"]`), guardmodel.ScopeShape},
+		"a bad table name":       {base("TASK", "null", `["leads"]`), guardmodel.ScopeName},
+		"a table not a string":   {base("TASK", "null", `[1]`), guardmodel.ScopeShape},
 		"not an object":          {`[]`, guardmodel.ScopeShape},
 	}
 	for name, tc := range cases {
 		err := rawPreview(e.bot.Conn, tc.sel)
 		requireScopeRefused(t, err, tc.detail)
 		require.Equal(t, tc.detail, func() string { d, _, _ := guard.ScopeRefusal(rawPrepare(e.bot.Conn, tc.sel)); return d }(), name)
+	}
+}
+
+// A tables entry that is not one schema.table name is refused as NAME, its
+// hint naming the first such entry in the caller's order (version 9).
+func TestRevertScopeBadTableNameNamed(t *testing.T) {
+	t.Parallel()
+	e := newScopeTask(t)
+	sel := func(tables string) string {
+		return fmt.Sprintf(`{"scope": "TASK", "scopeId": %q, "agents": [%q], "runs": null, "tables": %s}`, e.task, e.bot.Role, tables)
+	}
+	long := strings.Repeat("x", 200)
+	cases := map[string]struct{ tables, hint string }{
+		"one bad name":          {`["leads"]`, "leads is not a schema.table name"},
+		"the first is named":    {`["public.leads", "b.c.d", "leads"]`, "b.c.d is not a schema.table name"},
+		"in the caller's order": {`["public.leads", "zz", "aa"]`, "zz is not a schema.table name"},
+		"a space":               {`["public.lead s"]`, "public.lead s is not a schema.table name"},
+		"a long name is cut":    {fmt.Sprintf("[%q]", long), long[:127] + "... is not a schema.table name"},
+	}
+	for name, tc := range cases {
+		for call, err := range map[string]error{"preview": rawPreview(e.bot.Conn, sel(tc.tables)), "prepare": rawPrepare(e.bot.Conn, sel(tc.tables))} {
+			requireScopeRefused(t, err, guardmodel.ScopeName)
+			_, hint, _ := guard.ScopeRefusal(err)
+			require.Equal(t, tc.hint, hint, "%s: %s", name, call)
+		}
 	}
 }
 

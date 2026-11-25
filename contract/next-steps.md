@@ -101,7 +101,7 @@ Planned (owner decisions AE-1 to AE-14). Every error body and every result the a
 | `STORE_ERROR` | `NO_ROWS_NOW` | — | A `REVISE_CALL` (`query`) |
 | `INVALID_ARGUMENT` | — | — | A `REVISE_CALL` |
 | `INVALID_ARGUMENT` | `STALE_CURSOR` | — | A `CALL_TOOL` (same call, no `cursor`) |
-| `INVALID_ARGUMENT` | `SCOPE_FILTER` | — | A `REVISE_CALL` (the same call without the refused entries), A `CALL_TOOL` (`run_history` of the run, or `list_runs` for a task, to see its own runs and tables) |
+| `INVALID_ARGUMENT` | `SCOPE_FILTER` | — | A `REVISE_CALL` (the same call without the refused entries), A `CALL_TOOL` (`run_history` of the run, or `list_runs` for a task, to see its own runs and the resources each one wrote) |
 | `INVALID_ARGUMENT` | `SCOPE_FILTER_CAP` | — | A `REVISE_CALL` (at most 20 entries, or no filter: the person can narrow on the page) |
 | `INVALID_ARGUMENT` | `ADMIN_CREDENTIAL` | — | A `ASK_PERSON` (tell the person a connection string with a password was in the call and was not kept; ask them to change that database password now), A `REVISE_CALL` (the same call without it); +pm: a database connection string with a password was sent through the agent, Basalt refused the call and kept no copy, change that password now |
 | `UNAVAILABLE` | `DATABASE_UNREACHABLE` | — | A `CALL_TOOL` (same call after 10 s), A `ASK_PERSON`; +pm |

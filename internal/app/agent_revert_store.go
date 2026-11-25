@@ -22,9 +22,6 @@ type revertDeps struct {
 // limit of one MCP call.
 func (s *Service) revertStoreSet() revertsvc.StoreSet {
 	set := revertsvc.StoreSet{Limits: revertsvc.Limits{Prepare: guardmodel.MCPPrepareTimeout}}
-	if st := s.deps.Core.Store; st != nil {
-		set.Kind, set.Capabilities = st.Kind(), st.Capabilities()
-	}
 	if r := s.deps.Revert.Store; r != nil {
 		set.Records, set.Undo, set.Proofs = r, r, r
 	}

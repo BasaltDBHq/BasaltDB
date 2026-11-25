@@ -63,9 +63,9 @@ func TestScopeRefusedGivesTheFilterReasons(t *testing.T) {
 
 	// A name the store cannot use says nothing of whose work it names: the
 	// store's text, without "not yours".
-	require.ErrorAs(t, refuse(action.RevertFilterName, "tables are schema.table names"), &ae)
+	require.ErrorAs(t, refuse(action.RevertFilterName, "leads is not a schema.table name"), &ae)
 	require.Equal(t, guidance.ReasonScopeFilter, ae.Reason)
-	require.Equal(t, "the revert filter is not valid, nothing was prepared: tables are schema.table names", ae.Message)
+	require.Equal(t, "the revert filter is not valid, nothing was prepared: leads is not a schema.table name", ae.Message)
 
 	require.ErrorAs(t, refuse(action.RevertFilterCap, ""), &ae)
 	require.Equal(t, guidance.ReasonScopeFilterCap, ae.Reason)

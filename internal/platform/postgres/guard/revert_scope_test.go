@@ -133,14 +133,14 @@ func TestRevertScopeOwnWorkOnly(t *testing.T) {
 
 	// Straight to the functions as the agent role, naming the other agent in
 	// agents, or every agent: refused before anything is read.
-	for _, agents := range []string{fmt.Sprintf(`[%q]`, e.helper.Role), `null`, fmt.Sprintf(`[%q, %q]`, e.bot.Role, e.helper.Role)} {
-		sel := fmt.Sprintf(`{"scope": "TASK", "scopeId": %q, "agents": %s, "runs": null, "tables": null}`, e.task, agents)
+	for _, agents := range []string{fmt.Sprintf(`[%q]`, e.helper.Name), `null`, fmt.Sprintf(`[%q, %q]`, e.bot.Name, e.helper.Name)} {
+		sel := fmt.Sprintf(`{"scope": "TASK", "scopeId": %q, "agents": %s, "runs": null, "resources": null}`, e.task, agents)
 		requireScopeRefused(t, rawPreview(e.bot.Conn, sel), guardmodel.ScopeFilter)
 		requireScopeRefused(t, rawPrepare(e.bot.Conn, sel), guardmodel.ScopeFilter)
 	}
 	// A select naming another agent's work in its runs, under a task bot
 	// never ran in, is refused for the task first: nothing about the run.
-	sel := fmt.Sprintf(`{"scope": "TASK", "scopeId": %q, "agents": [%q], "runs": [%q], "tables": null}`, helperTask, e.bot.Role, in.RunID)
+	sel := fmt.Sprintf(`{"scope": "TASK", "scopeId": %q, "agents": [%q], "runs": [%q], "resources": null}`, helperTask, e.bot.Name, in.RunID)
 	requireScopeRefused(t, rawPreview(e.bot.Conn, sel), guardmodel.ScopeNotOwnTask)
 }
 
@@ -159,7 +159,7 @@ func TestRevertScopeTaskOwnLines(t *testing.T) {
 	require.NoError(t, err)
 	b, err := revert.ParseBinding(prep.BindingText)
 	require.NoError(t, err)
-	require.Equal(t, revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Role}}, b.Select)
+	require.Equal(t, revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Name}}, b.Select)
 	require.False(t, b.Widened)
 	require.Equal(t, 3, b.Rows)
 	var widened bool
@@ -256,7 +256,7 @@ func TestRevertScopeShape(t *testing.T) {
 		return string(b)
 	}
 	base := func(scope, runs, tables string) string {
-		return fmt.Sprintf(`{"scope": %q, "scopeId": %q, "agents": [%q], "runs": %s, "tables": %s}`, scope, e.task, e.bot.Role, runs, tables)
+		return fmt.Sprintf(`{"scope": %q, "scopeId": %q, "agents": [%q], "runs": %s, "resources": %s}`, scope, e.task, e.bot.Name, runs, tables)
 	}
 	cases := map[string]struct{ sel, detail string }{
 		"the reserved store key": {strings.Replace(base("TASK", "null", "null"), `{`, `{"store": "db1", `, 1), guardmodel.ScopeStoreReserved},
@@ -285,7 +285,7 @@ func TestRevertScopeBadTableNameNamed(t *testing.T) {
 	t.Parallel()
 	e := newScopeTask(t)
 	sel := func(tables string) string {
-		return fmt.Sprintf(`{"scope": "TASK", "scopeId": %q, "agents": [%q], "runs": null, "tables": %s}`, e.task, e.bot.Role, tables)
+		return fmt.Sprintf(`{"scope": "TASK", "scopeId": %q, "agents": [%q], "runs": null, "resources": %s}`, e.task, e.bot.Name, tables)
 	}
 	long := strings.Repeat("x", 200)
 	cases := map[string]struct{ tables, hint string }{
@@ -308,8 +308,8 @@ func TestRevertScopeBadTableNameNamed(t *testing.T) {
 func TestRevertScopeNormalized(t *testing.T) {
 	t.Parallel()
 	e := newScopeTask(t)
-	sel := fmt.Sprintf(`{"tables": ["public.leads", "public.lead_owner", "public.leads"], "runs": [%q, %q], "agents": [%q], "scopeId": %q, "scope": "TASK"}`,
-		strings.ToUpper(e.botB.RunID.String()), e.botA.RunID, e.bot.Role, strings.ToUpper(e.task.String()))
+	sel := fmt.Sprintf(`{"resources": ["public.leads", "public.lead_owner", "public.leads"], "runs": [%q, %q], "agents": [%q], "scopeId": %q, "scope": "TASK"}`,
+		strings.ToUpper(e.botB.RunID.String()), e.botA.RunID, e.bot.Name, strings.ToUpper(e.task.String()))
 	var stored string
 	err := e.bot.Conn.QueryRow(context.Background(), `SELECT binding_text FROM basalt_meta.prepare_revert($1::jsonb, 'x')`, sel).Scan(&stored)
 	require.NoError(t, err)
@@ -320,11 +320,11 @@ func TestRevertScopeNormalized(t *testing.T) {
 		want[0], want[1] = want[1], want[0]
 	}
 	require.Equal(t, revert.Select{
-		Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Role}, Runs: want,
+		Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Name}, Runs: want,
 		Tables: []string{"public.lead_owner", "public.leads"},
 	}, b.Select)
-	require.Contains(t, stored, fmt.Sprintf(`"select": {"runs": [%q, %q], "scope": "TASK", "agents": [%q], "tables": ["public.lead_owner", "public.leads"], "scopeId": %q}`,
-		want[0], want[1], e.bot.Role, e.task))
+	require.Contains(t, stored, fmt.Sprintf(`"select": {"runs": [%q, %q], "scope": "TASK", "agents": [%q], "scopeId": %q, "resources": ["public.lead_owner", "public.leads"]}`,
+		want[0], want[1], e.bot.Name, e.task))
 }
 
 // A task the caller ran in with no line of its own: preview has nothing to
@@ -368,7 +368,7 @@ func TestRevertScopeApplyChecks(t *testing.T) {
 
 	// A binding whose select is not the stored selection.
 	prep, as := prepareSigned(t, e.bot, p, revert.ScopeRun, e.botA.RunID)
-	e.d.Exec(t, `UPDATE basalt_meta.reverts SET binding_text = replace(binding_text, '"tables": null', '"tables": ["public.leads"]')
+	e.d.Exec(t, `UPDATE basalt_meta.reverts SET binding_text = replace(binding_text, '"resources": null', '"resources": ["public.leads"]')
 		WHERE revert_id = $1`, prep.RevertID)
 	_, err := guard.ApplyRevert(ctx, e.bot.Conn, prep.RevertID, as)
 	requireRevertInvalid(t, err, "does not carry this revert's scope")

@@ -215,6 +215,15 @@ func TestRecordRefusal(t *testing.T) {
 	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
 	_, err = guard.RecordRefusal(ctx, a.Conn, guard.Refusal{Intent: in, Op: "OTHER", Code: "lower"})
 	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+
+	// A refused read is recorded with Basalt's op, READ, and the store's
+	// verb, SELECT.
+	id, err = guard.RecordRefusal(ctx, a.Conn, guard.Refusal{Intent: in, Op: "SELECT", Code: "QUERY_TIMEOUT"})
+	require.NoError(t, err)
+	var op, verb string
+	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT c.op, l.verb FROM basalt_meta.changes c
+		JOIN basalt_meta.ledger l ON l.change_id = c.change_id AND l.kind = 'REFUSED' WHERE c.change_id = $1`, id).Scan(&op, &verb))
+	require.Equal(t, []string{"READ", "SELECT"}, []string{op, verb})
 }
 
 // TestRecordRefusalStoresANUL: Postgres text and jsonb cannot hold a NUL,

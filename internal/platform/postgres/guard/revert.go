@@ -20,11 +20,11 @@ import (
 )
 
 // ownSelect is the SQL expression of the calling role's own descriptor for
-// $1 (scope), $2 (scope id), $3 (runs) and $4 (tables), with agents
-// = [session_user]: the role is the one Postgres authenticated, never an
-// argument.
+// $1 (scope), $2 (scope id), $3 (runs) and $4 (resources), with agents
+// = [agent:<name>] of session_user (basalt_meta.agent_name): the agent is
+// the one Postgres authenticated, never an argument.
 const ownSelect = `jsonb_build_object('scope', $1::text, 'scopeId', $2::text, ` +
-	`'agents', jsonb_build_array(session_user::text), 'runs', $3::jsonb, 'tables', $4::jsonb)`
+	`'agents', jsonb_build_array(basalt_meta.agent_name()), 'runs', $3::jsonb, 'resources', $4::jsonb)`
 
 // scopeArgs are the ownSelect arguments of s. A nil list is JSON null (all).
 func scopeArgs(s action.Scope) ([]any, error) {
@@ -32,11 +32,11 @@ func scopeArgs(s action.Scope) ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	tables, err := json.Marshal(s.Tables)
+	resources, err := json.Marshal(s.Tables)
 	if err != nil {
 		return nil, err
 	}
-	return []any{string(s.Kind), s.ID.String(), string(runs), string(tables)}, nil
+	return []any{string(s.Kind), s.ID.String(), string(runs), string(resources)}, nil
 }
 
 // PreviewRevert returns the revert lines of the caller's own scope as
@@ -128,11 +128,11 @@ func PrepareRevert(ctx context.Context, q Querier, s action.Scope, intent string
 	if err != nil {
 		return action.PreparedRevert{}, err
 	}
-	b, err := revert.ParseBinding(p.BindingText)
+	batched, err := bindingBatched(p.BindingText)
 	if err != nil {
-		return action.PreparedRevert{}, fmt.Errorf("guard returned a bad revert binding: %w", err)
+		return action.PreparedRevert{}, err
 	}
-	p.Batched = b.Batched
+	p.Batched = batched
 	return p, nil
 }
 
@@ -197,6 +197,24 @@ func ApplyRevertBatch(ctx context.Context, q Querier, revertID uuid.UUID, lines 
 		return action.BatchResult{}, err
 	}
 	return decodeBatchResult(raw)
+}
+
+// bindingBatched reads batched from a revert binding text the guard wrote
+// (CONTRACT.md, Revert, revert-binding.schema.json): only whether the plan
+// is applied in batches matters here. The text is Postgres's own; the
+// pages and the engine's codecs check the rest of it.
+func bindingBatched(text string) (bool, error) {
+	var b struct {
+		Kind    string `json:"kind"`
+		Batched bool   `json:"batched"`
+	}
+	if err := json.Unmarshal([]byte(text), &b); err != nil {
+		return false, fmt.Errorf("guard returned a bad revert binding: %w", err)
+	}
+	if b.Kind != revert.KindRevert {
+		return false, fmt.Errorf("guard returned a revert binding of kind %q", b.Kind)
+	}
+	return b.Batched, nil
 }
 
 // batchItemJSON is one line of apply_revert_batch's answer as the guard

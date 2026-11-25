@@ -54,7 +54,7 @@ func newWidenEnv(t *testing.T) widenEnv {
 
 // own is bot's own proposal for the task; every is the whole task.
 func (e widenEnv) own() revert.Select {
-	return revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Role}}
+	return revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Name}}
 }
 
 func (e widenEnv) every() revert.Select {
@@ -148,18 +148,18 @@ func TestRescopeWidenWithProof(t *testing.T) {
 	require.Equal(t, e.every(), b.Select)
 	require.NotNil(t, b.Proposed)
 	require.Equal(t, e.own(), *b.Proposed)
-	require.Equal(t, map[string]int{e.bot.Role: 3, e.helper.Role: 2}, b.AgentRows)
+	require.Equal(t, map[string]int{e.bot.Name: 3, e.helper.Name: 2}, b.AgentRows)
 	require.Equal(t, 5, b.Rows)
 	require.True(t, b.ExpiresAt.After(e.prep.ExpiresAt) || b.ExpiresAt.Equal(e.prep.ExpiresAt))
 
 	require.Len(t, out.ScopeToken, 16)
 	require.NotNil(t, out.Catalog)
-	require.Equal(t, []action.CatalogAgent{{Agent: e.bot.Role, Changes: 3}, {Agent: e.helper.Role, Changes: 2}}, sortedAgents(out.Catalog.Agents, e.bot.Role))
+	require.Equal(t, []action.CatalogAgent{{Agent: e.bot.Name, Changes: 3}, {Agent: e.helper.Name, Changes: 2}}, sortedAgents(out.Catalog.Agents, e.bot.Name))
 	runs := map[uuid.UUID]string{}
 	for _, r := range out.Catalog.Runs {
 		runs[r.RunID] = r.Agent
 	}
-	require.Equal(t, map[uuid.UUID]string{e.botA.RunID: e.bot.Role, e.botB.RunID: e.bot.Role, e.help.RunID: e.helper.Role}, runs,
+	require.Equal(t, map[uuid.UUID]string{e.botA.RunID: e.bot.Name, e.botB.RunID: e.bot.Name, e.help.RunID: e.helper.Name}, runs,
 		"the helper's run outside the task is not in the catalog")
 	require.Equal(t, []action.CatalogTable{{Table: "public.lead_owner", Rows: 2}, {Table: "public.leads", Rows: 3}}, out.Catalog.Tables)
 
@@ -234,7 +234,7 @@ func TestRescopeWidenRefused(t *testing.T) {
 	other, err := guard.PrepareRevert(ctx, e.bot.Conn, action.Scope{Kind: revert.ScopeRun, ID: e.botA.RunID}, "x")
 	require.NoError(t, err)
 	both := e.every()
-	both.Agents = []string{e.bot.Role, e.helper.Role}
+	both.Agents = []string{e.bot.Name, e.helper.Name}
 
 	validProof, validKey := e.proof(t, id, e.every(), "secret")
 	otherKey, err := revert.RescopeKey([]byte("another secret"))
@@ -251,7 +251,7 @@ func TestRescopeWidenRefused(t *testing.T) {
 		"a pasted proof without its key":     {Select: e.every(), Proof: &validProof},
 		"a pasted proof with a guessed key":  {Select: e.every(), Proof: &validProof, RescopeKey: otherKey},
 		"a token on a revert never widened":  {Select: e.every(), Token: make([]byte, 16)},
-		"the other agent only, no proof":     {Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}}},
+		"the other agent only, no proof":     {Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Name}}},
 		"a proof with a short key":           {Select: e.every(), Proof: &validProof, RescopeKey: validKey[:16]},
 		"an approval-shaped proof, any text": {Select: e.every(), Proof: &passkey.Assertion{CredentialID: []byte("x")}, RescopeKey: validKey},
 	}
@@ -341,7 +341,7 @@ func TestRescopeProbeUniform(t *testing.T) {
 	theirRevert, err := guard.PrepareRevert(ctx, e.helper.Conn, action.Scope{Kind: revert.ScopeRun, ID: e.help.RunID}, "x")
 	require.NoError(t, err)
 	unknown := uuid.Must(uuid.NewV7())
-	sel := revert.Select{Scope: revert.ScopeRun, ScopeID: e.help.RunID, Agents: []string{e.bot.Role}}
+	sel := revert.Select{Scope: revert.ScopeRun, ScopeID: e.help.RunID, Agents: []string{e.bot.Name}}
 	require.Equal(t, refused(unknown, sel, unknown), refused(theirRevert.RevertID, sel, theirRevert.RevertID))
 	_, err = guard.ResetRevert(ctx, e.bot.Conn, theirRevert.RevertID)
 	theirText := scopeErrorText(t, err, theirRevert.RevertID)
@@ -403,7 +403,7 @@ func TestRescopeTokenAfterCeiling(t *testing.T) {
 	_, err = guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{RevertID: id, Select: leadsOnly})
 	requireWidenRefused(t, err)
 	// Inside the ceiling with the token: the helper's leads only.
-	helperLeads := revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}, Tables: []string{"public.leads"}}
+	helperLeads := revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Name}, Tables: []string{"public.leads"}}
 	out, err = guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{RevertID: id, Select: helperLeads, Token: token})
 	require.NoError(t, err)
 	require.NotNil(t, out.Catalog)
@@ -411,7 +411,7 @@ func TestRescopeTokenAfterCeiling(t *testing.T) {
 	b, err = revert.ParseBinding(out.BindingText)
 	require.NoError(t, err)
 	require.Equal(t, 1, b.Rows)
-	require.Equal(t, map[string]int{e.helper.Role: 1}, b.AgentRows)
+	require.Equal(t, map[string]int{e.helper.Name: 1}, b.AgentRows)
 	// Own work with the token: back inside the ceiling.
 	_, err = guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{RevertID: id, Select: leadsOnly, Token: token})
 	require.NoError(t, err)
@@ -420,7 +420,7 @@ func TestRescopeTokenAfterCeiling(t *testing.T) {
 		"a wrong token":                 {Select: helperLeads, Token: make([]byte, 16)},
 		"outside the ceiling (a table)": {Select: e.own(), Token: token},
 		"wider than the ceiling":        {Select: e.every(), Token: token},
-		"another scope":                 {Select: revert.Select{Scope: revert.ScopeRun, ScopeID: e.botA.RunID, Agents: []string{e.bot.Role}}, Token: token},
+		"another scope":                 {Select: revert.Select{Scope: revert.ScopeRun, ScopeID: e.botA.RunID, Agents: []string{e.bot.Name}}, Token: token},
 	} {
 		req.RevertID = id
 		_, err := guard.RescopeRevert(ctx, e.bot.Conn, req)
@@ -456,7 +456,7 @@ func TestRescopeMembership(t *testing.T) {
 	table.Tables = []string{"public.payroll"}
 	requireScopeRefused(t, try(table), guardmodel.ScopeFilter)
 	agent := e.every()
-	agent.Agents = []string{e.helper.Role, "basalt_agent_nobody"}
+	agent.Agents = []string{e.helper.Name, "agent:nobody"}
 	requireScopeRefused(t, try(agent), guardmodel.ScopeDescriptor)
 	requireScopeRefused(t, try(revert.Select{Scope: revert.ScopeRun, ScopeID: e.helperOutside.RunID}), guardmodel.ScopeDescriptor)
 	// The agent's own unrelated run: own work, but not this revert's scope.
@@ -464,7 +464,7 @@ func TestRescopeMembership(t *testing.T) {
 	require.NoError(t, guardtest.Guarded(ctx, e.bot.Conn, outside, `UPDATE public.leads SET status = 'o' WHERE id = 35`))
 	_, err := guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{
 		RevertID: e.prep.RevertID,
-		Select:   revert.Select{Scope: revert.ScopeRun, ScopeID: outside.RunID, Agents: []string{e.bot.Role}},
+		Select:   revert.Select{Scope: revert.ScopeRun, ScopeID: outside.RunID, Agents: []string{e.bot.Name}},
 	})
 	requireScopeRefused(t, err, guardmodel.ScopeDescriptor)
 	require.Empty(t, ledgerDetails(t, e.d, "REVERT_RESCOPED"))
@@ -519,7 +519,7 @@ func TestResetRevert(t *testing.T) {
 		require.Contains(t, []guardmodel.Code{guardmodel.CodeRevertInvalid, guardmodel.CodeRevertExpired}, code, name)
 		_, err = guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{
 			RevertID: prep.RevertID,
-			Select:   revert.Select{Scope: revert.ScopeRun, ScopeID: e.botA.RunID, Agents: []string{e.bot.Role}},
+			Select:   revert.Select{Scope: revert.ScopeRun, ScopeID: e.botA.RunID, Agents: []string{e.bot.Name}},
 		})
 		code, _ = guard.CodeOf(err)
 		require.Contains(t, []guardmodel.Code{guardmodel.CodeRevertInvalid, guardmodel.CodeRevertExpired}, code, name)
@@ -574,7 +574,7 @@ func TestUndoWidenedRevertRefused(t *testing.T) {
 	require.NoError(t, err)
 	_, err = guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{
 		RevertID: pending.RevertID,
-		Select:   revert.Select{Scope: revert.ScopeChange, ScopeID: applied.ChangeID, Agents: []string{e.bot.Role}},
+		Select:   revert.Select{Scope: revert.ScopeChange, ScopeID: applied.ChangeID, Agents: []string{e.bot.Name}},
 	})
 	requireWidenRefused(t, err)
 
@@ -755,6 +755,7 @@ func TestWidenedBatchedLedgerRedacted(t *testing.T) {
 	for _, r := range all {
 		kinds[r.Kind] = true
 		require.NotContains(t, r.Text, e.helper.Role, r.Kind)
+		require.NotContains(t, r.Text, e.helper.Name, r.Kind)
 		require.NotContains(t, r.Text, `"helper"`, "a helper row's values: %s", r.Kind)
 		require.NotContains(t, r.Text, `"id": 500`, r.Kind)
 		require.NotContains(t, r.Text, `"id": 900`, r.Kind)

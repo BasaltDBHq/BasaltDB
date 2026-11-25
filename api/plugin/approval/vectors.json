@@ -1,9 +1,10 @@
 {
-  "description": "Plugin approval vectors (CONTRACT.md, Plugins, What a plugin approval binds and The plugin approval page). Each binding and settings text is the jsonb text Postgres 16 returned for it, byte for byte; challenge is base64url (no padding) of sha256 of the binding text. expect gives what the page derives from the two texts alone: whether the settings text hashes to settingsSha256, then the level, whether the tick is shown, and the page's sentences in the order the contract fixes. A settings mismatch shows an error and no approve button. response is the JSON the page posts (response.schema.json); its byte fields are placeholders, not a real assertion. TestPluginApprovalVectors checks all of it. Pending: each vector's binding and challenge are replaced by \"pending\": true until the guard writes the store-neutral binding (store, agent:<name>; CONTRACT.md, Stores, Text rules); its settings and expect stay. A test that reads a pending vector fails.",
+  "description": "Plugin approval vectors (CONTRACT.md, Plugins, What a plugin approval binds and The plugin approval page). Each binding and settings text is the text the guard returned for it (basalt_meta schema version 10), byte for byte, in the text rules of CONTRACT.md, Stores, Text rules: the binding names the store and every agent agent:<name>; challenge is base64url (no padding) of sha256 of the binding text. expect gives what the page derives from the two texts alone: whether the settings text hashes to settingsSha256, then the level, whether the tick is shown, and the page's sentences in the order the contract fixes. A settings mismatch shows an error and no approve button. response is the JSON the page posts (response.schema.json); its byte fields are placeholders, not a real assertion. TestPluginApprovalVectors checks all of it.",
   "vectors": [
     {
       "name": "level-1-known-local",
-      "pending": true,
+      "binding": "{\"kind\": \"PLUGIN\", \"name\": \"slack-notify\", \"hooks\": [\"approval.deliver\", \"feed.observe\"], \"store\": {\"kind\": \"POSTGRES\", \"name\": \"app\"}, \"agents\": [\"agent:product_a\", \"agent:product_b\"], \"egress\": [\"slack.com:443\"], \"signer\": \"KNOWN\", \"version\": \"1.0.0\", \"endpoint\": {\"kind\": \"LOCAL\"}, \"instance\": \"default\", \"expiresAt\": \"2026-11-20T09:15:02.123456Z\", \"isolation\": {\"files\": \"NONE\", \"network\": \"NOT_ENFORCED\"}, \"approvalId\": \"0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7b\", \"requestedBy\": \"agent:product_a\", \"signerKeyId\": \"jNZPxNG5htlwfhg4ZgknAA\", \"manifestSha256\": \"5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e\", \"settingsSha256\": \"377fd91f32749c88bf8f0fa651b648f30b87abfe51721d9d57cb1d47fed1c178\"}",
+      "challenge": "NO0E60NG6DOV8DoRR4bDoec3J_hxuOmfO-63g2wWYB8",
       "settings": "{\"config\": {\"channel\": \"ops-alerts\"}, \"timeoutMs\": 2000}",
       "expect": {
         "settingsMatch": true,
@@ -23,7 +24,8 @@
     },
     {
       "name": "level-2-unknown-remote",
-      "pending": true,
+      "binding": "{\"kind\": \"PLUGIN\", \"name\": \"acme-ner\", \"hooks\": [\"wire.detect\"], \"roles\": [\"NAME_CUE\", \"VALUE\"], \"store\": {\"kind\": \"POSTGRES\", \"name\": \"app\"}, \"agents\": [\"agent:product_a\"], \"egress\": [\"ner.acme.example:443\"], \"signer\": \"UNKNOWN\", \"version\": \"1.4.0\", \"endpoint\": {\"host\": \"ner.acme.example:443\", \"kind\": \"REMOTE\"}, \"instance\": \"default\", \"expiresAt\": \"2026-11-20T09:16:40.000001Z\", \"approvalId\": \"0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7c\", \"requestedBy\": \"agent:product_a\", \"manifestSha256\": \"3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\", \"settingsSha256\": \"45ae5c4f1d0beea85ea5c512afbf5f3257de0ca877d54f77ce7cb355ee0476c4\"}",
+      "challenge": "3yAUIQZrQhjtZ2XiYUOJbP7aJT7u2cm8tvdi1GaIPCE",
       "settings": "{\"auth\": {\"credentialFile\": \"/etc/basalt/plugins/acme-ner.token\"}, \"config\": {\"languages\": [\"en\", \"id\"]}, \"timeoutMs\": 2000}",
       "expect": {
         "settingsMatch": true,
@@ -43,7 +45,8 @@
     },
     {
       "name": "level-3-unknown-local",
-      "pending": true,
+      "binding": "{\"kind\": \"PLUGIN\", \"name\": \"local-ner\", \"hooks\": [\"wire.detect\"], \"roles\": [\"VALUE\"], \"store\": {\"kind\": \"POSTGRES\", \"name\": \"app\"}, \"agents\": [\"agent:product_b\"], \"egress\": [], \"signer\": \"UNKNOWN\", \"version\": \"0.3.1\", \"endpoint\": {\"kind\": \"LOCAL\"}, \"instance\": \"client_x\", \"expiresAt\": \"2026-11-20T10:00:00.500000Z\", \"isolation\": {\"files\": \"NONE\", \"network\": \"NOT_ENFORCED\"}, \"approvalId\": \"0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7d\", \"requestedBy\": \"agent:product_b\", \"manifestSha256\": \"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\", \"settingsSha256\": \"81de1544c257d8c44bad1756a6051b5ecce832e5f4202bb9aa416ad76daa72e3\"}",
+      "challenge": "iRgKXS8QSrewBZhtTR9nqxLlPbHzN1t-c-TSkgrAM-0",
       "settings": "{\"config\": {\"a\": null, \"max\": 1000, \"note\": \"tab\\there é\", \"threshold\": 0.60}, \"timeoutMs\": 300, \"minConfidence\": 0.6}",
       "expect": {
         "settingsMatch": true,
@@ -62,7 +65,8 @@
     },
     {
       "name": "change-unknown-local",
-      "pending": true,
+      "binding": "{\"kind\": \"PLUGIN\", \"name\": \"local-ner\", \"hooks\": [\"wire.detect\"], \"roles\": [\"NAME_CUE\", \"VALUE\"], \"store\": {\"kind\": \"POSTGRES\", \"name\": \"app\"}, \"agents\": [\"agent:client_x\", \"agent:product_a\"], \"change\": {\"rolesAdded\": [\"NAME_CUE\"], \"agentsAdded\": [\"agent:client_x\"], \"egressAdded\": [\"models.acme.example:443\"], \"fromVersion\": \"0.3.1\", \"settingsChanged\": true, \"fromManifestSha256\": \"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"}, \"egress\": [\"models.acme.example:443\"], \"signer\": \"UNKNOWN\", \"version\": \"0.4.0\", \"endpoint\": {\"kind\": \"LOCAL\"}, \"instance\": \"default\", \"expiresAt\": \"2026-11-21T08:00:00.000000Z\", \"isolation\": {\"files\": \"NONE\", \"network\": \"NOT_ENFORCED\"}, \"approvalId\": \"0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7e\", \"requestedBy\": \"agent:product_a\", \"manifestSha256\": \"b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\", \"settingsSha256\": \"80bcc157a29f1c109430fd4e4089e4069b32377e2f3fddc9383fd721f9b1e42b\"}",
+      "challenge": "H87Y7zG4h3xxYS0jXDgqD6_pGdLjZhneDtquCO25Xhg",
       "settings": "{\"config\": {\"languages\": [\"en\"]}, \"timeoutMs\": 500}",
       "expect": {
         "settingsMatch": true,
@@ -88,7 +92,8 @@
     },
     {
       "name": "change-turned-on-again",
-      "pending": true,
+      "binding": "{\"kind\": \"PLUGIN\", \"name\": \"acme-ner\", \"hooks\": [\"wire.detect\"], \"roles\": [\"NAME_CUE\", \"VALUE\"], \"store\": {\"kind\": \"POSTGRES\", \"name\": \"app\"}, \"agents\": [\"agent:product_a\"], \"change\": {}, \"egress\": [\"ner.acme.example:443\"], \"signer\": \"UNKNOWN\", \"version\": \"1.4.0\", \"endpoint\": {\"host\": \"ner.acme.example:443\", \"kind\": \"REMOTE\"}, \"instance\": \"default\", \"expiresAt\": \"2026-11-21T08:30:00.000000Z\", \"approvalId\": \"0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7f\", \"requestedBy\": \"agent:product_a\", \"manifestSha256\": \"3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\", \"settingsSha256\": \"45ae5c4f1d0beea85ea5c512afbf5f3257de0ca877d54f77ce7cb355ee0476c4\"}",
+      "challenge": "fTvvYo-7Yx_0tpo_P4PHqGL9q8FezUrxRtDpTwIRXL0",
       "settings": "{\"auth\": {\"credentialFile\": \"/etc/basalt/plugins/acme-ner.token\"}, \"config\": {\"languages\": [\"en\", \"id\"]}, \"timeoutMs\": 2000}",
       "expect": {
         "settingsMatch": true,
@@ -109,7 +114,8 @@
     },
     {
       "name": "settings-mismatch",
-      "pending": true,
+      "binding": "{\"kind\": \"PLUGIN\", \"name\": \"acme-ner\", \"hooks\": [\"wire.detect\"], \"roles\": [\"NAME_CUE\", \"VALUE\"], \"store\": {\"kind\": \"POSTGRES\", \"name\": \"app\"}, \"agents\": [\"agent:product_a\"], \"egress\": [\"ner.acme.example:443\"], \"signer\": \"UNKNOWN\", \"version\": \"1.4.0\", \"endpoint\": {\"host\": \"ner.acme.example:443\", \"kind\": \"REMOTE\"}, \"instance\": \"default\", \"expiresAt\": \"2026-11-20T09:16:40.000001Z\", \"approvalId\": \"0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7c\", \"requestedBy\": \"agent:product_a\", \"manifestSha256\": \"3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\", \"settingsSha256\": \"45ae5c4f1d0beea85ea5c512afbf5f3257de0ca877d54f77ce7cb355ee0476c4\"}",
+      "challenge": "3yAUIQZrQhjtZ2XiYUOJbP7aJT7u2cm8tvdi1GaIPCE",
       "settings": "{\"auth\": {\"credentialFile\": \"/etc/basalt/plugins/acme-ner.token\"}, \"config\": {\"languages\": [\"en\", \"id\", \"ms\"]}, \"timeoutMs\": 2000}",
       "expect": {
         "settingsMatch": false,
@@ -118,7 +124,8 @@
     },
     {
       "name": "wrong-kind",
-      "pending": true,
+      "binding": "{\"kind\": \"APPROVE\", \"name\": \"acme-ner\", \"hooks\": [\"wire.detect\"], \"roles\": [\"NAME_CUE\", \"VALUE\"], \"store\": {\"kind\": \"POSTGRES\", \"name\": \"app\"}, \"agents\": [\"agent:product_a\"], \"egress\": [\"ner.acme.example:443\"], \"signer\": \"UNKNOWN\", \"version\": \"1.4.0\", \"endpoint\": {\"host\": \"ner.acme.example:443\", \"kind\": \"REMOTE\"}, \"instance\": \"default\", \"expiresAt\": \"2026-11-20T09:16:40.000001Z\", \"approvalId\": \"0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7c\", \"requestedBy\": \"agent:product_a\", \"manifestSha256\": \"3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\", \"settingsSha256\": \"45ae5c4f1d0beea85ea5c512afbf5f3257de0ca877d54f77ce7cb355ee0476c4\"}",
+      "challenge": "4M7UTc_hIw2M6VRr5gbHFs-_aTaxQDiLX_m1rvHOe0M",
       "settings": "{\"auth\": {\"credentialFile\": \"/etc/basalt/plugins/acme-ner.token\"}, \"config\": {\"languages\": [\"en\", \"id\"]}, \"timeoutMs\": 2000}",
       "expect": {
         "error": "WRONG_KIND"

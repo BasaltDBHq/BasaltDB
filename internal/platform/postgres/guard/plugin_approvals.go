@@ -17,8 +17,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
-// OpenPluginApproval opens a plugin approval for the agents in d, every one
-// an agent role of q's database, with the entry's settings. Postgres
+// OpenPluginApproval opens a plugin approval for the agents in d, each
+// agent:<name> of an agent role of q's database, with the entry's settings. Postgres
 // validates both, builds the binding and settings texts, cancels an
 // earlier pending approval of the same (name, instance) and appends
 // PLUGIN_APPROVAL_PENDING to the caller's ledger. Refusals: BS008

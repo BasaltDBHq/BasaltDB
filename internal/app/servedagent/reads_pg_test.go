@@ -92,9 +92,9 @@ func TestWriteRecordsWhatItWasBasedOn(t *testing.T) {
 	version := "xmin:" + xmin(t, d, "public.leads", 4)
 
 	detail := readDetail(t, d, str(t, read["changeId"]))
-	require.Equal(t, []any{map[string]any{"table": "public.leads", "key": map[string]any{"id": float64(4)}, "version": version}},
+	require.Equal(t, []any{map[string]any{"resource": "public.leads", "key": map[string]any{"id": float64(4)}, "version": version}},
 		detail["versions"])
-	require.Equal(t, []any{"leads"}, detail["tables"])
+	require.Equal(t, []any{"leads"}, detail["resources"])
 
 	body, isError := h.call(t, "write", map[string]any{
 		"sql": "UPDATE leads SET status = 'merged' WHERE id = 4", "intent": "Lead 4 duplicates lead 3", "runId": runID,
@@ -142,12 +142,12 @@ func TestJoinsAndAggregatesAreRecorded(t *testing.T) {
 	require.True(t, ok)
 	require.Len(t, row, 3)
 	detail := readDetail(t, d, str(t, join["changeId"]))
-	require.ElementsMatch(t, []any{"leads", "lead_notes"}, detail["tables"])
+	require.ElementsMatch(t, []any{"leads", "lead_notes"}, detail["resources"])
 	require.Len(t, detail["versions"], 4, "two rows, each with a lead and a note")
 
 	agg := h.mustQuery(t, map[string]any{"sql": "SELECT count(id) AS n FROM lead_notes WHERE lead_id = 1", "runId": runID})
 	detail = readDetail(t, d, str(t, agg["changeId"]))
-	require.Equal(t, []any{"lead_notes"}, detail["tables"])
+	require.Equal(t, []any{"lead_notes"}, detail["resources"])
 	require.Empty(t, detail["versions"], "an aggregate has no row identity; its statement and tables are recorded")
 	require.InDelta(t, 1, detail["rows"], 0)
 
@@ -173,7 +173,7 @@ func TestReadsOutsideARunAreRecorded(t *testing.T) {
 	require.NoError(t, d.Admin.QueryRow(context.Background(),
 		`SELECT op, status, rows, run_id::text FROM basalt_meta.changes WHERE change_id = $1`, str(t, body["changeId"])).
 		Scan(&op, &status, &rows, &run))
-	require.Equal(t, []any{"SELECT", "APPLIED", 3}, []any{op, status, rows})
+	require.Equal(t, []any{"READ", "APPLIED", 3}, []any{op, status, rows})
 	require.Nil(t, run)
 	require.Len(t, readDetail(t, d, str(t, body["changeId"]))["versions"], 3)
 }

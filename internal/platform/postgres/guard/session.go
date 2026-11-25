@@ -127,10 +127,17 @@ func FinishChange(ctx context.Context, tx pgx.Tx, f Finish) (uuid.UUID, error) {
 		f.Op, f.Statement, params, f.Duration.Milliseconds()))
 }
 
+// opRead is Basalt's op for a read, and storeVerbRead Postgres's word for
+// it (CONTRACT.md, Stores, Operations).
+const (
+	opRead        = "READ"
+	storeVerbRead = "SELECT"
+)
+
 // Refusal is an action the engine or the guard refused.
 type Refusal struct {
 	Intent    Intent
-	Op        string // SELECT, INSERT, UPDATE, DELETE or OTHER
+	Op        string // SELECT (a read), INSERT, UPDATE, DELETE or OTHER
 	Statement string
 	Params    []any
 	Code      string
@@ -142,11 +149,15 @@ type Refusal struct {
 // new transaction (or autocommit) after the refused one rolled back. A NUL,
 // which Postgres text and jsonb cannot hold, is stored as U+FFFD in every
 // text field and parameter (storable), so a NUL an agent sends cannot keep
-// its refused attempt out of the ledger.
+// its refused attempt out of the ledger. A read is recorded with Basalt's
+// op READ (CONTRACT.md, Stores, Operations); SELECT is the store's verb.
 func RecordRefusal(ctx context.Context, q Querier, r Refusal) (uuid.UUID, error) {
 	params, err := paramsJSON(r.Params)
 	if err != nil {
 		return uuid.Nil, err
+	}
+	if r.Op == storeVerbRead {
+		r.Op = opRead
 	}
 	return returnUUID(ctx, q, sq.Expr(
 		"basalt_meta.record_refusal(?::uuid, ?::uuid, ?, ?, ?, nullif(?::jsonb, 'null'), ?, ?, ?::int)",

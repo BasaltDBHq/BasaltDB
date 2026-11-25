@@ -139,11 +139,11 @@ func TestPrepareRevertStoresBinding(t *testing.T) {
 	req := revert.Request{RevertID: p.RevertID, Binding: p.BindingText, Lines: p.Lines}
 	b, err := req.Check()
 	require.NoError(t, err, "the Go codec accepts what Postgres built")
-	require.Equal(t, revert.Select{Scope: revert.ScopeRun, ScopeID: in.RunID, Agents: []string{a.Role}}, b.Select)
+	require.Equal(t, revert.Select{Scope: revert.ScopeRun, ScopeID: in.RunID, Agents: []string{a.Name}}, b.Select)
 	require.Nil(t, b.Proposed, "proposed is omitted while it equals select")
 	require.False(t, b.Widened)
 	require.Nil(t, b.AgentRows)
-	require.Equal(t, a.Role, b.RequestedBy)
+	require.Equal(t, a.Name, b.RequestedBy)
 	require.Equal(t, "Undo the bulk update", b.Intent)
 	require.Equal(t, 1, b.Rows)
 	require.Equal(t, 1, b.Skipped)

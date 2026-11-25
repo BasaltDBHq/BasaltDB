@@ -773,12 +773,10 @@ func pageLevel(b approvalBinding) int {
 	}
 }
 
-// shortAgent is a role's name after "_agent_", as the pages show it.
-func shortAgent(role string) string {
-	if i := strings.Index(role, "_agent_"); i > 0 {
-		return role[i+len("_agent_"):]
-	}
-	return role
+// shortAgent is an agent's name after "agent:", as the pages show it
+// (CONTRACT.md, Stores, Agent names).
+func shortAgent(agent string) string {
+	return strings.TrimPrefix(agent, "agent:")
 }
 
 func shortAgents(roles []string) string {
@@ -1162,7 +1160,7 @@ func TestPluginApprovalVectors(t *testing.T) {
 		// agents or describe only the request.
 		var detail map[string]json.RawMessage
 		require.NoError(t, json.Unmarshal([]byte(v.Binding), &detail))
-		for _, k := range []string{"kind", "database", "requestedBy", "agents", "change"} {
+		for _, k := range []string{"kind", "store", "requestedBy", "agents", "change"} {
 			delete(detail, k)
 		}
 		event := func(kind string) []byte {
@@ -1175,7 +1173,7 @@ func TestPluginApprovalVectors(t *testing.T) {
 		detail["credentialId"] = json.RawMessage(`"q3Jv8sLk2mT0xYp1aBcD9w"`)
 		detail["bindingSha256"] = json.RawMessage(fmt.Sprintf("%q", fmt.Sprintf("%x", sum)))
 		require.NoError(t, validate(eventSchema, event("PLUGIN_APPROVED")), v.Name)
-		detail["agents"] = json.RawMessage(`["basalt_agent_product_a"]`)
+		detail["agents"] = json.RawMessage(`["agent:product_a"]`)
 		require.Error(t, validate(eventSchema, event("PLUGIN_APPROVED")), "%s: no agent's ledger names another agent", v.Name)
 	}
 	require.Equal(t, map[int]bool{1: true, 2: true, 3: true}, levels, "one vector per page level")

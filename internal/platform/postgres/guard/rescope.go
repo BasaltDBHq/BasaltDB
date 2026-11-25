@@ -20,6 +20,52 @@ type rescopeProof struct {
 	Signature         passkey.Bytes `json:"signature"`
 }
 
+// selectJSON is a revert scope descriptor as rescope_revert reads it
+// (CONTRACT.md, Revert, revert-select.schema.json): agents agent:<name>
+// and resources.
+type selectJSON struct {
+	Scope     revert.Scope `json:"scope"`
+	ScopeID   uuid.UUID    `json:"scopeId"`
+	Agents    []string     `json:"agents"`
+	Runs      []uuid.UUID  `json:"runs"`
+	Resources []string     `json:"resources"`
+}
+
+// rescopedJSON is rescope_revert's and reset_revert's answer as the guard
+// writes it: its catalog lists resources (revert-scope-response.schema.json).
+type rescopedJSON struct {
+	action.RescopedRevert
+	Catalog *struct {
+		Agents    []action.CatalogAgent `json:"agents"`
+		Runs      []action.CatalogRun   `json:"runs"`
+		Resources []struct {
+			Resource string `json:"resource"`
+			Rows     int    `json:"rows"`
+		} `json:"resources"`
+		ChangeAgents map[uuid.UUID]string `json:"changeAgents,omitempty"`
+	} `json:"catalog,omitempty"`
+}
+
+// decodeRescoped reads rescope_revert's or reset_revert's jsonb answer.
+func decodeRescoped(raw []byte) (action.RescopedRevert, error) {
+	var in rescopedJSON
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return action.RescopedRevert{}, fmt.Errorf("decode rescope answer: %w", err)
+	}
+	out := in.RescopedRevert
+	out.Catalog = nil
+	if c := in.Catalog; c != nil {
+		out.Catalog = &action.RevertCatalog{
+			Agents: c.Agents, Runs: c.Runs, ChangeAgents: c.ChangeAgents,
+			Tables: make([]action.CatalogTable, 0, len(c.Resources)),
+		}
+		for _, r := range c.Resources {
+			out.Catalog.Tables = append(out.Catalog.Tables, action.CatalogTable{Table: r.Resource, Rows: r.Rows})
+		}
+	}
+	return out, nil
+}
+
 // RescopeRevert changes the scope of the caller's own pending revert
 // (basalt_meta.rescope_revert). Inside the caller's own work it needs
 // nothing while nobody widened the revert; anything wider, and anything
@@ -27,7 +73,10 @@ type rescopeProof struct {
 // REVERT_INVALID detail RevertWidenRefused otherwise. Run it in its own
 // transaction.
 func RescopeRevert(ctx context.Context, q Querier, req action.RescopeRequest) (action.RescopedRevert, error) {
-	sel, err := json.Marshal(req.Select)
+	sel, err := json.Marshal(selectJSON{
+		Scope: req.Select.Scope, ScopeID: req.Select.ScopeID, Agents: req.Select.Agents,
+		Runs: req.Select.Runs, Resources: req.Select.Tables,
+	})
 	if err != nil {
 		return action.RescopedRevert{}, err
 	}
@@ -39,14 +88,14 @@ func RescopeRevert(ctx context.Context, q Querier, req action.RescopeRequest) (a
 		}
 		proof = b
 	}
-	var out action.RescopedRevert
+	var raw []byte
 	// Plain SQL: one function call returning jsonb.
 	err = q.QueryRow(ctx, `SELECT basalt_meta.rescope_revert($1::uuid, $2::jsonb, $3::jsonb, $4::bytea, $5::bytea)`,
-		req.RevertID.String(), string(sel), proof, req.RescopeKey, req.Token).Scan(&out)
+		req.RevertID.String(), string(sel), proof, req.RescopeKey, req.Token).Scan(&raw)
 	if err != nil {
 		return action.RescopedRevert{}, err
 	}
-	return out, nil
+	return decodeRescoped(raw)
 }
 
 // RescopeOwn changes the scope of the caller's own pending revert to s, the
@@ -60,20 +109,24 @@ func RescopeOwn(ctx context.Context, q Querier, revertID uuid.UUID, s action.Sco
 	if err != nil {
 		return action.PreparedRevert{}, err
 	}
-	var out action.RescopedRevert
+	var raw []byte
 	// Plain SQL: one function call over a built descriptor, returning jsonb.
 	err = q.QueryRow(ctx, `SELECT basalt_meta.rescope_revert($5::uuid, `+ownSelect+`, NULL, NULL, NULL)`,
-		append(args, revertID.String())...).Scan(&out)
+		append(args, revertID.String())...).Scan(&raw)
 	if err != nil {
 		return action.PreparedRevert{}, err
 	}
-	b, err := revert.ParseBinding(out.BindingText)
+	out, err := decodeRescoped(raw)
 	if err != nil {
-		return action.PreparedRevert{}, fmt.Errorf("guard returned a bad revert binding: %w", err)
+		return action.PreparedRevert{}, err
+	}
+	batched, err := bindingBatched(out.BindingText)
+	if err != nil {
+		return action.PreparedRevert{}, err
 	}
 	return action.PreparedRevert{
 		RevertID: out.RevertID, BindingText: out.BindingText, ExpiresAt: out.ExpiresAt, Lines: out.Lines,
-		Batched: b.Batched,
+		Batched: batched,
 	}, nil
 }
 
@@ -82,13 +135,13 @@ func RescopeOwn(ctx context.Context, q Querier, revertID uuid.UUID, s action.Sco
 // revert: the person's scope, ceiling and token are dropped and the reset
 // is recorded (REVERT_RESET).
 func ResetRevert(ctx context.Context, q Querier, revertID uuid.UUID) (action.RescopedRevert, error) {
-	var out action.RescopedRevert
+	var raw []byte
 	// Plain SQL: one function call returning jsonb.
-	err := q.QueryRow(ctx, `SELECT basalt_meta.reset_revert($1::uuid)`, revertID.String()).Scan(&out)
+	err := q.QueryRow(ctx, `SELECT basalt_meta.reset_revert($1::uuid)`, revertID.String()).Scan(&raw)
 	if err != nil {
 		return action.RescopedRevert{}, err
 	}
-	return out, nil
+	return decodeRescoped(raw)
 }
 
 // RevertNonce is the rescope nonce of the caller's own revert, which the

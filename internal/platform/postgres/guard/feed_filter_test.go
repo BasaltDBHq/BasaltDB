@@ -31,10 +31,10 @@ func (c *captureQuery) Query(_ context.Context, sql string, _ ...any) (pgx.Rows,
 func (c *captureQuery) QueryRow(context.Context, string, ...any) pgx.Row { return nil }
 
 // A feed filter with no Include flags reads no unapplied CHANGE and no
-// refused SELECT; each flag drops its clause.
+// refused read (op READ); each flag drops its clause.
 func TestReadFeedRowsFilterFlags(t *testing.T) {
 	const applied = "detail ->> 'status' = 'APPLIED'"
-	const notSelect = "op IS DISTINCT FROM 'SELECT'"
+	const notSelect = "op IS DISTINCT FROM 'READ'"
 	for _, c := range []struct {
 		f                    guardmodel.FeedFilter
 		applied, notSelected bool

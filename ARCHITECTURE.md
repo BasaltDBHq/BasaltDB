@@ -75,6 +75,23 @@ Three tests in `internal/app` scan the source rather than import graphs. Each on
 - **Credential read guard** (`TestRootCredentialReadsAreChecked`): every read of an agent's credential file, in the same files, either happens in a function that calls `pgdial.CheckForeignDSN` or is listed with the reason root never connects with what another user wrote there. `TestCredentialReaderTableIsReal` holds the table of reader functions to functions that exist.
 - **Agent-facing text** (`TestAgentFacingTextIsAgentLed`): the MCP instructions, tool schemas in `api/mcp`, next steps, engine strings and the agent docs never steer an agent to a `basalt init` that takes the admin connection string anywhere but a setup page. It checks the Go strings of the packages an agent can read, so a new package that writes agent-facing text goes in its list.
 
+## The agent domain is store-neutral
+
+The agent's use cases (`internal/agent`, the root package) work on any store: today Postgres, later stores that do not speak SQL. They reach the store through one `agent.StoreSet` that `internal/app` builds for the store's kind, and the types its ports are written in live in `internal/core/agentstore`. A held write also reaches it through the `Approvals` port: the hold's columns and its preview (`HoldColumns`, `Preview`) come from the approval domain, which speaks SQL today.
+
+- The service passes a request (`agentstore.Request`) on and records it, and never reads its text. Checking it, the texts of its refusals and the store's resource names belong to the store's `Language` (for SQL, `internal/agent/out/sqllang`).
+- Resources and fields are opaque refs (`agentstore.ResourceRef`, `FieldRef`) the store makes up; the service compares them, never parses them. The store fills describe's content; the service decides what is hidden: a field the agent cannot read or that is classed SECRET, and every identity, feature and expression that touches one.
+- The tools the agent is served come from the store's `Family`, and the service may read the store's `Capabilities`; it never switches on the kind.
+
+`TestAgentDomainIsStoreNeutral` (`internal/testkit/archtest`) holds the root package's non-test files to it: no direct import of `core/sqlguard`, `platform/postgres` or the pgx packages, no `$1`-style placeholder or `pg_` name in a string, and no identifier with `OID`, `Attnum` or `pg_`. It fails when it scans no file, and each entry in its allowlist carries the reason it may stay. It checks direct imports only: through `internal/pii` the package still reaches `core/sqlguard`, which is work still to do. `TestDocumentStoreRunsTheAgentThroughThePorts` and the describe tests next to it run the service over an in-memory document store with a JSON filter language, through the ports only.
+
+To add a store:
+
+1. Name its kind in `core/action`, and the `Family` it belongs to in `internal/app` (`storeFamily`). A family that is not SQL is a new `Family` in `core/agentstore`, and its tools are a contract change first, then `internal/agent/in/agentmcp`.
+2. Write its adapters: the `Language` (check a request, the refusal and step texts, resource names), `Data` (read, write, the approved write, limits), `Catalog` (resources, one resource's `agentstore.Detail`, search, the structure lines), its `Ledger`, and its PII `Classes`; `Visibility` only when the store can hide items from the agent.
+3. Serve the store's hold columns and preview of a held write, through the approval domain today.
+4. Build the `StoreSet` for the kind in `internal/app`. Change nothing in `internal/agent`: a change there that only one store needs belongs in that store's adapter.
+
 ## Core
 
 `internal/core` holds code that is pure: it does no I/O. It has three kinds of package.
@@ -131,6 +148,7 @@ A codec function is a function of a decision package that only decodes, parses o
 | `toolresult` | agent | types | 2 | - | - |
 | `servicespec` | engine service | types | 2 | - | - |
 | `guidance` | agent | types | 2 | - | - |
+| `agentstore` | agent | types | 2 | - | - |
 
 ## Known violations
 

@@ -2,9 +2,7 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 
 	ledgersvc "github.com/basaltdbhq/basaltdb/internal/ledger"
@@ -13,44 +11,20 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
-// Limits of the guard's validating ledger functions (CONTRACT.md,
-// basalt_meta): statements and parameters up to 64 KiB, reasons up to
-// 2000 bytes.
-const (
-	maxParamsBytes = 64 << 10
-	maxReasonBytes = 2000
-)
-
-// statementChecker checks a statement against the engine's SQL policy for
-// a tool, and returns it as the store will run it, or an
-// *action.RefusalError.
-type statementChecker interface {
-	Check(sql string, tool action.Tool) (action.Statement, error)
-}
-
-// WriteStore is the part of the agent's store the query and write tools
-// run on.
-type WriteStore interface {
-	statementChecker
-	// Read runs one read, with the versions of the rows of the statement's
-	// sources it can identify.
-	Read(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error)
-	// Write runs one write through the guard.
-	Write(ctx context.Context, in action.Intent, op action.Op, sql string, params []any) (action.WriteResult, error)
-	// WriteApproved is Write under the person's signed approval.
-	WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any) (action.WriteResult, error)
-}
+// maxReasonBytes is the limit of the guard's validating ledger functions
+// (CONTRACT.md, basalt_meta) on a refusal's reason: up to 2000 bytes.
+const maxReasonBytes = 2000
 
 // WriteParams are one write call's validated arguments.
 type WriteParams struct {
-	SQL    string
-	Params []any
-	Intent string
-	RunID  uuid.UUID // uuid.Nil starts a one-write run with the intent
+	Request agentstore.Request
+	Intent  string
+	RunID   uuid.UUID // uuid.Nil starts a one-write run with the intent
 	// ApprovalID applies a held write the person approved on the page.
 	ApprovalID uuid.UUID
 	// Wait is how long to wait for the person to sign a held write before
@@ -71,7 +45,7 @@ type WriteOutcome struct {
 	Receipt *linksvc.Receipt
 }
 
-// Write checks sql against the policy and runs it through the guard with
+// Write checks the request against the policy and runs it through the guard with
 // the intent. A refused or failed write is recorded as a REFUSED change.
 func (wc *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error) {
 	if p.ApprovalID != uuid.Nil {
@@ -83,15 +57,12 @@ func (wc *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, erro
 	}
 	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
 	start := wc.core.Now()
-	stmt, err := wc.write.Store.Check(p.SQL, action.ToolWrite)
-	if err == nil {
-		err = checkArgs(stmt, p.Params)
-	}
+	stmt, err := wc.store.Language.Check(p.Request, action.ToolWrite)
 	op := stmt.Op
 	if err != nil {
-		return WriteOutcome{}, wc.refused(ctx, in, op, p.SQL, p.Params, start, err)
+		return WriteOutcome{}, wc.refused(ctx, in, op, p.Request, start, err)
 	}
-	res, err := wc.write.Store.Write(ctx, in, op, p.SQL, p.Params)
+	res, err := wc.store.Data.Write(ctx, in, p.Request, stmt)
 	if errors.Is(err, action.ErrApprovalRequired) {
 		id, expires, err := wc.hold(ctx, in, p, stmt, start)
 		if id == uuid.Nil {
@@ -117,7 +88,7 @@ func (wc *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, erro
 		return out, waitErr
 	}
 	if err != nil {
-		return WriteOutcome{}, wc.refused(ctx, in, op, p.SQL, p.Params, start, err)
+		return WriteOutcome{}, wc.refused(ctx, in, op, p.Request, start, err)
 	}
 	return WriteOutcome{WriteResult: res, RunID: run.ID, Op: op, Warnings: wc.rlsWarnings(ctx, stmt.Tables, res.Rows)}, nil
 }
@@ -125,7 +96,7 @@ func (wc *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, erro
 // writeRun finds the named run, or starts a one-write run.
 func (wc *Service) writeRun(ctx context.Context, p WriteParams) (action.Run, error) {
 	if p.RunID != uuid.Nil {
-		return ledgersvc.FindRun(ctx, wc.core.Store, p.RunID)
+		return ledgersvc.FindRun(ctx, wc.store.Ledger, p.RunID)
 	}
 	info, err := wc.startRun(ctx, p.Intent, uuid.Nil)
 	if err != nil {
@@ -154,18 +125,4 @@ func refusalOp(op action.Op) action.Op {
 		return action.OpOther
 	}
 	return action.OpOther
-}
-
-// checkArgs checks the parameters match the statement's placeholders and
-// fit the guard's ledger limit.
-func checkArgs(stmt action.Statement, params []any) error {
-	if stmt.ParamCount != len(params) {
-		return &guidance.ArgumentError{Message: fmt.Sprintf("the statement uses %d parameters ($1..$%d) but %d were given",
-			stmt.ParamCount, stmt.ParamCount, len(params))}
-	}
-	raw, err := json.Marshal(params)
-	if err != nil || len(raw) > maxParamsBytes {
-		return &guidance.ArgumentError{Message: "params must encode to at most 64 KiB of JSON"}
-	}
-	return nil
 }

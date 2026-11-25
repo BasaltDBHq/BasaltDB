@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	ledgersvc "github.com/basaltdbhq/basaltdb/internal/ledger"
@@ -44,7 +45,7 @@ func (wc *Service) startRun(ctx context.Context, intent string, taskID uuid.UUID
 		taskID = newID()
 	}
 	run := RunInfo{RunID: newID(), TaskID: taskID, Intent: intent, StartedAt: wc.core.Now().UTC()}
-	if err := wc.core.Store.StartRun(ctx, action.Intent{RunID: run.RunID, TaskID: taskID, Text: intent}); err != nil {
+	if err := wc.store.Ledger.StartRun(ctx, action.Intent{RunID: run.RunID, TaskID: taskID, Text: intent}); err != nil {
 		return RunInfo{}, err
 	}
 	return run, nil
@@ -52,9 +53,8 @@ func (wc *Service) startRun(ctx context.Context, intent string, taskID uuid.UUID
 
 // QueryParams are one query call's validated arguments.
 type QueryParams struct {
-	SQL    string
-	Params []any
-	RunID  uuid.UUID // uuid.Nil when the read is outside a run
+	Request agentstore.Request
+	RunID   uuid.UUID // uuid.Nil when the read is outside a run
 }
 
 // QueryOutcome is one recorded read.
@@ -64,40 +64,37 @@ type QueryOutcome struct {
 	Warnings []toolresult.Warning
 }
 
-// Query checks sql against the policy, runs it read-only within the limits
+// Query checks the request against the policy, runs it read-only within the limits
 // and records the read with the version of each row it could identify. A
 // refused or failed statement is recorded as a REFUSED change. A read that
 // cannot be recorded is not returned: the ledger must know what the agent
 // saw.
 func (wc *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, error) {
-	run, err := ledgersvc.FindRun(ctx, wc.core.Store, p.RunID)
+	run, err := ledgersvc.FindRun(ctx, wc.store.Ledger, p.RunID)
 	if err != nil {
 		return QueryOutcome{}, err
 	}
 	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: run.Intent}
 	start := wc.core.Now()
-	stmt, err := wc.write.Store.Check(p.SQL, action.ToolQuery)
-	if err == nil {
-		err = checkArgs(stmt, p.Params)
-	}
+	stmt, err := wc.store.Language.Check(p.Request, action.ToolQuery)
 	if err != nil {
-		return QueryOutcome{}, wc.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return QueryOutcome{}, wc.refused(ctx, in, stmt.Op, p.Request, start, err)
 	}
-	res, err := wc.write.Store.Read(ctx, p.SQL, p.Params, stmt)
+	res, err := wc.store.Data.Read(ctx, p.Request, stmt)
 	if err != nil {
-		return QueryOutcome{}, wc.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return QueryOutcome{}, wc.refused(ctx, in, stmt.Op, p.Request, start, err)
 	}
 	// The values of IDENTIFIER columns go in the dictionary before the rows
 	// leave the engine (M5.1 plan, section 6). One that cannot be added
 	// keeps the rows from the agent.
-	if err := wc.write.PII.Observe(ctx, res.Columns, res.Rows); err != nil {
+	if err := wc.pii.Observe(ctx, res.Columns, res.Rows); err != nil {
 		wc.core.Log.Error("pii: the read's values could not be added to the dictionary; its rows are withheld", "err", err)
 		// An engine failure, not the agent's SQL: INTERNAL even when a
 		// Postgres error (a map reload) caused it. The cause is logged above.
 		return QueryOutcome{}, &toolresult.ToolError{Code: guidance.CodeInternal, Message: "internal engine error"}
 	}
-	change, err := wc.core.Store.RecordRead(ctx, action.Read{
-		RunID: run.ID, Statement: p.SQL, Params: p.Params, Tables: stmt.Tables,
+	change, err := wc.store.Ledger.RecordRead(ctx, action.Read{
+		RunID: run.ID, Statement: p.Request.Text, Params: p.Request.Params, Tables: stmt.Tables,
 		Rows: len(res.Rows), Duration: res.Duration, Versions: res.Versions,
 	})
 	if err != nil {
@@ -108,7 +105,7 @@ func (wc *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, erro
 
 // ListRuns returns one page of the agent's own runs with what each did.
 func (wc *Service) ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error) {
-	return wc.core.Store.ListRuns(ctx, p)
+	return wc.store.Ledger.ListRuns(ctx, p)
 }
 
 // recorded reports whether a failure is an action the ledger keeps as
@@ -125,16 +122,16 @@ func recorded(code string) bool {
 // refused records a REFUSED change for err when it is an action the ledger
 // keeps, and returns err. A failure to record is logged; the agent still
 // gets the original refusal.
-func (wc *Service) refused(ctx context.Context, in action.Intent, op action.Op, sql string, params []any, start time.Time, err error) error {
+func (wc *Service) refused(ctx context.Context, in action.Intent, op action.Op, req agentstore.Request, start time.Time, err error) error {
 	te := guidance.MessageTooLarge(actionTool(op), err, wc.core.Errors.ToolError(err))
 	if !recorded(te.Code) {
 		return err
 	}
 	r := action.Refusal{
-		Intent: in, Op: refusalOp(op), Statement: sql, Params: params,
+		Intent: in, Op: refusalOp(op), Statement: req.Text, Params: req.Params,
 		Code: te.Code, Reason: truncate(te.Message, maxReasonBytes), Duration: wc.core.Now().Sub(start),
 	}
-	if recErr := wc.core.Store.RecordRefusal(context.WithoutCancel(ctx), r); recErr != nil {
+	if recErr := wc.store.Ledger.RecordRefusal(context.WithoutCancel(ctx), r); recErr != nil {
 		wc.core.Log.Error("record refusal", "code", te.Code, "err", recErr)
 	}
 	return err

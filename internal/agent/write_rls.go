@@ -8,17 +8,18 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
-// rlsWarnings is the RLS_HIDES_ROWS warning for each of tables that row-level
-// security hides from the agent, when the statement returned or changed no
-// row: an empty result there says nothing about the data. A check that fails
-// is logged and gives no warning: the call itself worked.
+// rlsWarnings is the RLS_HIDES_ROWS warning for each of tables that the
+// store's Visibility (row-level security) hides from the agent, when the
+// statement returned or changed no row: an empty result there says nothing
+// about the data. A check that fails is logged and gives no warning: the
+// call itself worked. A store without Visibility hides nothing.
 func (wc *Service) rlsWarnings(ctx context.Context, tables []string, rows int) []toolresult.Warning {
-	if rows > 0 {
+	if rows > 0 || wc.store.Visibility == nil {
 		return nil
 	}
 	var out []toolresult.Warning
 	for _, table := range tables {
-		name, err := wc.write.RLS.Hides(ctx, table)
+		name, err := wc.store.Visibility.Hides(ctx, table)
 		if err != nil {
 			wc.core.Log.Error("check row-level security", "table", table, "err", err)
 			continue

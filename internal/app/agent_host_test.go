@@ -31,7 +31,7 @@ func testDeps() Deps {
 	var d Deps
 	d.Core.ServiceManager = testManager()
 	d.Core.Errors = testErrors()
-	d.Write.Record = func(ch action.Change, rows []action.RowChange) any { return ledger.RecordFromDomain(ch, rows) }
+	d.Agent.Record = func(ch action.Change, rows []action.RowChange) any { return ledger.RecordFromDomain(ch, rows) }
 	d.Approval.ErrNotFound = ledger.ErrApprovalNotFound
 	d.Approval.SortSpec = ledger.ApprovalSortSpec
 	d.Revert.ErrNotFound = ledger.ErrRevertNotFound
@@ -61,7 +61,7 @@ func testDeps() Deps {
 
 // useStore binds every port of d that reads the agent's store to s.
 func useStore(d *Deps, s SQLStore) {
-	d.Core.Store, d.Write.Store, d.Approval.Store, d.Revert.Store, d.Status.Passkeys = s, s, s, s, s
+	d.Core.Store, d.Agent.Data, d.Approval.Store, d.Revert.Store, d.Status.Passkeys = s, s, s, s, s
 }
 
 func testManager() guidance.ServiceManager {
@@ -118,7 +118,7 @@ func TestNewServiceRequiresEveryAdapterPort(t *testing.T) {
 	missing := Deps{}.missing()
 	for _, name := range []string{
 		"Core.ServiceManager", "Core.Errors.InvalidParams", "Core.Errors.InvalidIntent", "Core.Errors.RowTooLarge",
-		"Write.Record", "Approval.ErrNotFound", "Revert.ErrNotFound", "Revert.AfterAnswer", "Revert.RotateSession",
+		"Agent.Record", "Approval.ErrNotFound", "Revert.ErrNotFound", "Revert.AfterAnswer", "Revert.RotateSession",
 		"Delivery.VaultConflict", "Delivery.ErrVaultNotConnected", "Status.CrashReports",
 		"Status.LatestGuardVersion", "Status.UpdateMessage", "Status.StartHoldOffUntil",
 	} {

@@ -39,7 +39,7 @@ func newPGAgent(t *testing.T, url string, conns int32) pgAgent {
 func testAgentDeps(name string, store SQLStore) Deps {
 	d := AgentHostDeps()
 	d.Core.Name, d.Core.Log, d.Core.Now = name, quietLog(), time.Now
-	d.Core.Store, d.Write.Store, d.Approval.Store, d.Revert.Store, d.Status.Passkeys = store, store, store, store, store
+	d.Core.Store, d.Agent.Data, d.Approval.Store, d.Revert.Store, d.Status.Passkeys = store, store, store, store, store
 	return d
 }
 

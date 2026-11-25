@@ -82,17 +82,17 @@
         "additionalProperties": false,
         "description": "OVERVIEW.",
         "required": [
-          "schemas",
-          "tables",
+          "namespaces",
+          "resources",
           "notGranted"
         ],
         "properties": {
-          "schemas": {
+          "namespaces": {
             "type": "integer",
             "minimum": 0,
-            "description": "Visible schemas."
+            "description": "Visible namespaces: Postgres schemas."
           },
-          "tables": {
+          "resources": {
             "type": "integer",
             "minimum": 0,
             "description": "Visible tables, views, materialized views and partitioned parents."
@@ -134,42 +134,42 @@
           "$ref": "#/$defs/searchItem"
         }
       },
-      "schemas": {
+      "namespaces": {
         "type": "array",
         "maxItems": 50,
-        "description": "OVERVIEW with more than 50 visible tables: one item per schema, at most 50: the ones with the most visible tables first (ties by schema name). With more than 50 visible schemas the rest are counted in otherSchemas, not listed. Search for them.",
+        "description": "OVERVIEW with more than 50 visible tables: one item per schema, at most 50: the ones with the most visible tables first (ties by schema name). With more than 50 visible schemas the rest are counted in otherNamespaces, not listed. Search for them.",
         "items": {
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "schema",
-            "tables"
+            "namespace",
+            "resources"
           ],
           "properties": {
-            "schema": {
+            "namespace": {
               "type": "string"
             },
-            "tables": {
+            "resources": {
               "type": "integer",
               "minimum": 0
             }
           }
         }
       },
-      "otherSchemas": {
+      "otherNamespaces": {
         "type": "object",
         "additionalProperties": false,
-        "description": "OVERVIEW with more than 50 visible schemas: the schemas not listed in schemas, and the visible tables in them. Absent otherwise.",
+        "description": "OVERVIEW with more than 50 visible schemas: the schemas not listed in namespaces, and the visible tables in them. Absent otherwise.",
         "required": [
-          "schemas",
-          "tables"
+          "namespaces",
+          "resources"
         ],
         "properties": {
-          "schemas": {
+          "namespaces": {
             "type": "integer",
             "minimum": 1
           },
-          "tables": {
+          "resources": {
             "type": "integer",
             "minimum": 1
           }

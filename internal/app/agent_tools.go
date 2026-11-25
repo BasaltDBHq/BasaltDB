@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
 	"github.com/basaltdbhq/basaltdb/internal/agent/in/agentmcp"
 	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalmcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -21,8 +20,8 @@ import (
 
 // AgentTools are the tools of svc as the MCP server serves them: every
 // contract in api/mcp that is IMPLEMENTED, each listed with the contract's
-// description and input schema, and query and write only for a store that
-// speaks SQL (CONTRACT.md, Stores). Each tool's call goes through
+// description and input schema, and query and write only for a store of
+// the SQL family (CONTRACT.md, Stores). Each tool's call goes through
 // agentmcp.Wrap; the lists join in the served order.
 func AgentTools(svc *Service) []mcpserver.Tool {
 	if svc == nil {
@@ -31,10 +30,10 @@ func AgentTools(svc *Service) []mcpserver.Tool {
 	mount := func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool {
 		return contractTool(name, agentmcp.Wrap(svc, name, call))
 	}
-	agent := agentTools{Service: svc.agent, core: &svc.deps.Core}
+	agent := svc.agent
 	tools := agentmcp.RunStartTools(agent, mount)
 	for _, list := range [][]mcpserver.Tool{
-		agentmcp.WriteTools(agent, mount), ledgermcp.Tools(ledgerRuns{Reads: svc.ledger, write: &svc.deps.Write}, mount), agentmcp.RunTools(agent, mount),
+		agentmcp.WriteTools(agent, mount), ledgermcp.Tools(ledgerRuns{Reads: svc.ledger, agent: &svc.deps.Agent}, mount), agentmcp.RunTools(agent, mount),
 		approvalmcp.Tools(svc.approval, mount), revertmcp.Tools(svc.revert, mount), pluginmcp.Tools(pluginRequester{svc.plugin}, mount),
 		agentmcp.DescribeTools(agent, mount), statusmcp.Tools(svc.status, mount), handoffmcp.Tools(mount),
 	} {
@@ -43,28 +42,17 @@ func AgentTools(svc *Service) []mcpserver.Tool {
 	return tools
 }
 
-// agentTools is the agent use case as its tools call it, with the kind of
-// the agent's store.
-type agentTools struct {
-	*agentsvc.Service
-	core *coreDeps
-}
-
-// StoreKind is the kind of the agent's store: query and write are served
-// only for one that speaks SQL.
-func (a agentTools) StoreKind() action.StoreKind { return a.core.Store.Kind() }
-
 // ledgerRuns is the ledger's read side as run_history calls it, with the
 // wire record the ledger renders.
 type ledgerRuns struct {
 	*ledgersvc.Reads
-	write *agentsvc.WriteDeps
+	agent *agentDeps
 }
 
 // Record is the wire record of one change and its rows, as the ledger
 // renders it (run_history).
 func (l ledgerRuns) Record(ch action.Change, rows []action.RowChange) any {
-	return l.write.Record(ch, rows)
+	return l.agent.Record(ch, rows)
 }
 
 // pluginRequester is the plugin use case as request_plugin calls it.

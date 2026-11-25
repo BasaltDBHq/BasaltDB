@@ -1,8 +1,8 @@
 {
   "counts": {
+    "namespaces": 2,
     "notGranted": 1,
-    "schemas": 2,
-    "tables": 3
+    "resources": 3
   },
   "fingerprint": "<fingerprint>",
   "form": "OVERVIEW",

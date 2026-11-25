@@ -71,14 +71,15 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 func TestPreviewRevertTimeLimitNamesTheStatementTimeout(t *testing.T) {
 	t.Parallel()
 	s := newService(t, "linux", "", withStatementTimeout(5*time.Second))
-	scope := action.Scope{Kind: revert.ScopeRun, ID: uuid.Must(uuid.NewV7())}
+	// A fixed id: a UUIDv7 starts with the clock, which can contain "100".
+	scope := action.Scope{Kind: revert.ScopeRun, ID: uuid.MustParse("0190a2b3-4c5d-7e6f-8a9b-0c1d2e3f4a5b")}
 
 	preview := testErrors().ToolError(s.prepareTimeout(guidance.ToolPreviewRevert, scope, "57014"))
 	require.Equal(t, guidance.CodeQueryTimeout, preview.Code)
 	require.Equal(t, guidance.ReasonTimeLimit, preview.Reason)
 	require.Equal(t, "previewing the revert of run "+scope.ID.String()+" took longer than the agent's statement timeout of 5 seconds; "+
 		"nothing was previewed. A narrower revert, with runs or tables, may fit.", preview.Message)
-	require.NotContains(t, preview.Message, "100")
+	require.NotContains(t, preview.Message, "100 seconds")
 
 	request := testErrors().ToolError(s.prepareTimeout(guidance.ToolRequestRevert, scope, "57014"))
 	require.Contains(t, request.Message, "took longer than the 100 seconds an MCP call may take")

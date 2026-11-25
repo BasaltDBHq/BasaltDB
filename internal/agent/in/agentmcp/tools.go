@@ -12,16 +12,17 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
 // Agent is the agent use case as its tools call it: runs, reads, writes and
-// the database's description, the kind of store it serves, and describe's
-// own error mapping.
+// the database's description, the family of the store it serves, and
+// describe's own error mapping.
 type Agent interface {
-	StoreKind() action.StoreKind
+	Family() agentstore.Family
 	StartRun(ctx context.Context, intent string, taskID uuid.UUID) (agentsvc.RunInfo, error)
 	Query(ctx context.Context, p agentsvc.QueryParams) (agentsvc.QueryOutcome, error)
 	Write(ctx context.Context, p agentsvc.WriteParams) (agentsvc.WriteOutcome, error)
@@ -38,12 +39,6 @@ type Agent interface {
 func RunStartTools(svc Agent, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool) []mcpserver.Tool {
 	h := handlers{svc: svc}
 	return []mcpserver.Tool{mount("run_start", h.runStart)}
-}
-
-// speaksSQL reports whether a store of kind runs SQL: the query and write
-// tools are served for it, in its dialect.
-func speaksSQL(kind action.StoreKind) bool {
-	return kind == action.StorePostgres || kind == action.StoreMySQL
 }
 
 type handlers struct {
@@ -125,7 +120,7 @@ func (h handlers) query(ctx context.Context, raw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, &guidance.ArgumentError{Message: err.Error()}
 	}
-	res, err := h.svc.Query(ctx, agentsvc.QueryParams{SQL: args.SQL, Params: params, RunID: uniqueid.Optional(args.RunID)})
+	res, err := h.svc.Query(ctx, agentsvc.QueryParams{Request: agentstore.Request{Text: args.SQL, Params: params}, RunID: uniqueid.Optional(args.RunID)})
 	if err != nil {
 		return nil, err
 	}

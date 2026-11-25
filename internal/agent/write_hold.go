@@ -27,29 +27,29 @@ import (
 // approval id and expiry with the APPROVAL_REQUIRED error, or uuid.Nil and
 // the error that kept it from being held.
 func (wc *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stmt action.Statement, start time.Time) (uuid.UUID, time.Time, error) {
-	assigned, err := wc.approvals.HoldColumns(ctx, p.SQL, p.Params)
+	assigned, err := wc.approvals.HoldColumns(ctx, p.Request)
 	var notRepeatable *action.RefusalError
 	if errors.As(err, &notRepeatable) {
-		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.Request, start, err)
 	}
 	if err != nil {
 		return uuid.Nil, time.Time{}, err
 	}
-	lines, err := wc.approvals.Preview(ctx, in, p.SQL, p.Params, assigned)
+	lines, err := wc.approvals.Preview(ctx, in, p.Request, assigned)
 	if err != nil {
-		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.Request, start, err)
 	}
 	if len(lines) == 0 {
 		// The rows went away between the attempt and the preview.
 		return uuid.Nil, time.Time{}, &toolresult.ToolError{Code: guidance.CodeSQLError, Reason: guidance.ReasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
 	}
 	if te := approvalsvc.HoldTooLarge(lines, nil); te != nil {
-		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
+		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.Request, start, te)
 	}
-	held, err := wc.approvals.Hold(ctx, in, action.HoldRequest{Statement: p.SQL, Params: p.Params, Assigned: assigned, Lines: lines})
+	held, err := wc.approvals.Hold(ctx, in, action.HoldRequest{Statement: p.Request.Text, Params: p.Request.Params, Assigned: assigned, Lines: lines})
 	if err != nil {
 		if te := approvalsvc.HoldTooLarge(lines, err); te != nil {
-			return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
+			return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.Request, start, te)
 		}
 		return uuid.Nil, time.Time{}, err
 	}
@@ -62,7 +62,7 @@ func (wc *Service) hold(ctx context.Context, in action.Intent, p WriteParams, st
 	// short one, which works only on this machine (CONTRACT.md, Link
 	// secrets).
 	sent := linksvc.HeldNotice{
-		ApprovalID: held.ApprovalID, Agent: wc.core.Name, Intent: p.Intent, Statement: p.SQL,
+		ApprovalID: held.ApprovalID, Agent: wc.core.Name, Intent: p.Intent, Statement: p.Request.Text,
 		Rows: len(lines), Headline: notice.Headline, ExpiresAt: held.ExpiresAt, ApprovalURL: notice.LongURL,
 		ShortURL: notice.ShortURL,
 	}
@@ -79,7 +79,7 @@ func (wc *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutco
 	if p.RunID == uuid.Nil {
 		return WriteOutcome{}, &guidance.ArgumentError{Message: "approvalId needs the runId the write was held in"}
 	}
-	run, err := ledgersvc.FindRun(ctx, wc.core.Store, p.RunID)
+	run, err := ledgersvc.FindRun(ctx, wc.store.Ledger, p.RunID)
 	if err != nil {
 		return WriteOutcome{}, err
 	}
@@ -112,14 +112,14 @@ func (wc *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutco
 	}
 	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
 	start := wc.core.Now()
-	stmt, err := wc.write.Store.Check(p.SQL, action.ToolWrite)
+	stmt, err := wc.store.Language.Check(p.Request, action.ToolWrite)
 	op := stmt.Op
 	if err != nil {
-		return WriteOutcome{}, wc.refused(ctx, in, op, p.SQL, p.Params, start, err)
+		return WriteOutcome{}, wc.refused(ctx, in, op, p.Request, start, err)
 	}
-	res, err := wc.write.Store.WriteApproved(ctx, in, a.ID, op, p.SQL, p.Params)
+	res, err := wc.store.Data.WriteApproved(ctx, in, a.ID, p.Request, stmt)
 	if err != nil {
-		return WriteOutcome{}, wc.withApprovalLink(ctx, a, wc.refused(ctx, in, op, p.SQL, p.Params, start, err))
+		return WriteOutcome{}, wc.withApprovalLink(ctx, a, wc.refused(ctx, in, op, p.Request, start, err))
 	}
 	return WriteOutcome{
 		WriteResult: res, RunID: run.ID, Op: op, ApprovalID: a.ID,
@@ -156,7 +156,7 @@ func sameAsHeld(a action.Approval, p WriteParams) error {
 		return &toolresult.ToolError{Code: guidance.CodeApprovalExpired, Message: fmt.Sprintf("approval %s expired at %s; the write stays blocked", a.ID, guidance.TimeText(a.ExpiresAt))}
 	case a.RunID != p.RunID:
 		return approvalsvc.DifferentWrite(a, "approval %s belongs to run %s", a.ID, a.RunID)
-	case a.Statement != p.SQL || !sameParams(a.Params, p.Params):
+	case a.Statement != p.Request.Text || !sameParams(a.Params, p.Request.Params):
 		return approvalsvc.DifferentWrite(a, "sql and params must be exactly those of the held write")
 	}
 	return nil

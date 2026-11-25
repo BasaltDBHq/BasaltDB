@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -23,7 +24,7 @@ import (
 
 // UseStore binds every port of d that reads the agent's store to s.
 func UseStore(d *app.Deps, s app.SQLStore) {
-	d.Core.Store, d.Write.Store, d.Approval.Store, d.Revert.Store, d.Status.Passkeys = s, s, s, s, s
+	d.Core.Store, d.Agent.Data, d.Approval.Store, d.Revert.Store, d.Status.Passkeys = s, s, s, s, s
 }
 
 // ToolError and ServiceManager are the adapters' values, as the
@@ -111,6 +112,7 @@ func PgService(t *testing.T, url string, opts ...PgOption) PgEnv {
 	d := app.AgentHostDeps()
 	d.Core.Name, d.Core.Log, d.Core.Now = "bot", slog.New(slog.DiscardHandler), time.Now
 	UseStore(&d, store)
+	d.Agent.Limits = action.Limits(w.limits)
 	for _, f := range w.deps {
 		f(&d, pool)
 	}

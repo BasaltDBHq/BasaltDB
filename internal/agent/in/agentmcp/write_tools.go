@@ -9,6 +9,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -71,7 +72,7 @@ func (h handlers) write(ctx context.Context, raw json.RawMessage) (any, error) {
 		return nil, &guidance.ArgumentError{Message: err.Error()}
 	}
 	out, err := h.svc.Write(ctx, agentsvc.WriteParams{
-		SQL: args.SQL, Params: params, Intent: args.Intent, RunID: uniqueid.Optional(args.RunID),
+		Request: agentstore.Request{Text: args.SQL, Params: params}, Intent: args.Intent, RunID: uniqueid.Optional(args.RunID),
 		ApprovalID: uniqueid.Optional(args.ApprovalID), Wait: args.wait(),
 	})
 	if err != nil {
@@ -93,10 +94,10 @@ func (a writeArgs) wait() time.Duration {
 	return guidance.DefaultApprovalWait
 }
 
-// WriteTools are the tools of a store that speaks SQL: query and write;
-// none for another store (CONTRACT.md, Stores).
+// WriteTools are the tools of a store of the SQL family: query and write;
+// none for a store of another family (CONTRACT.md, Stores).
 func WriteTools(svc Agent, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool) []mcpserver.Tool {
-	if !speaksSQL(svc.StoreKind()) {
+	if svc.Family() != agentstore.FamilySQL {
 		return nil
 	}
 	h := handlers{svc: svc}

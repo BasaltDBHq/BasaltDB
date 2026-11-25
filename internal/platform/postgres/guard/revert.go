@@ -17,7 +17,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pglargevalue"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/wiretime"
 )
 
 // ownSelect is the SQL expression of the calling role's own descriptor for
@@ -26,10 +25,6 @@ import (
 // the one Postgres authenticated, never an argument.
 const ownSelect = `jsonb_build_object('scope', $1::text, 'scopeId', $2::text, ` +
 	`'agents', jsonb_build_array(basalt_meta.agent_name()), 'runs', $3::jsonb, 'resources', $4::jsonb)`
-
-// RevertLineValues are the fields of a revert line that hold row values:
-// the ones an agent's read shows in the wire format (wiretime.Fields).
-var RevertLineValues = []string{"key", "now", "set"}
 
 // scopeArgs are the ownSelect arguments of s. A nil list is JSON null (all).
 func scopeArgs(s action.Scope) ([]any, error) {
@@ -102,8 +97,7 @@ func PreviewRevertPage(ctx context.Context, q Querier, s action.Scope, after str
 			return action.PreviewPage{}, err
 		}
 		if text != nil {
-			// The hash is the signed text's; only the values shown change.
-			out.Page = append(out.Page, action.PreviewLine{Text: wiretime.Fields(*text, RevertLineValues...), Hash: *hash})
+			out.Page = append(out.Page, action.PreviewLine{Text: *text, Hash: *hash})
 		}
 	}
 	if err := rows.Err(); err != nil {

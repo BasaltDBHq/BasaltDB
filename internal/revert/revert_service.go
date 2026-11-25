@@ -69,7 +69,7 @@ func (rc *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (Re
 		if err != nil {
 			return RevertPreview{}, fmt.Errorf("guard returned a bad revert line: %w", err)
 		}
-		out.Page.Items = append(out.Page.Items, l.ForDisplay())
+		out.Page.Items = append(out.Page.Items, l.ForDisplay(rc.store.ShowValues))
 	}
 	if pv.More {
 		out.Page.NextCursor = pagination.EncodeNameCursor(pv.Page[len(pv.Page)-1].Hash)
@@ -157,7 +157,7 @@ func (rc *Service) RevertPlan(ctx context.Context, p action.RevertLineParams) (R
 			if err != nil {
 				return RevertPlan{}, fmt.Errorf("guard returned a bad revert line %d: %w", l.No, err)
 			}
-			shown := parsed.ForDisplay()
+			shown := parsed.ForDisplay(rc.store.ShowValues)
 			line.Plan = &shown
 		}
 		out.Page.Items = append(out.Page.Items, line)

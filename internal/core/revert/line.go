@@ -133,11 +133,18 @@ func ParseMarkedLine(text string) (Line, error) {
 	return l, nil
 }
 
-// ForDisplay returns the line with the marks of its large values. Its row
-// values are already as the wire format has them: the store writes them so
-// on the line an agent reads (ParseMarkedLine), and the signed text, which
-// the passkey signature and the hashes cover, is never changed.
-func (l Line) ForDisplay() Line {
+// ForDisplay returns the line with its row values as the wire format has
+// them: show turns a row image as the store wrote it into that form (for
+// Postgres, a timestamptz as RFC 3339 UTC); nil leaves it as written. The
+// signed text, which the passkey signature and the hashes cover, is never
+// changed: only what is shown.
+//
+// Marks are measured on the text as signed, before the values are shown
+// another way: they must match the agent's marker.
+func (l Line) ForDisplay(show func(json.RawMessage) json.RawMessage) Line {
 	l.Marks = largevalue.Marks{Key: imageMarks(l.Key), Before: imageMarks(l.Now), After: imageMarks(l.Set)}
+	if show != nil {
+		l.Key, l.Now, l.Set = show(l.Key), show(l.Now), show(l.Set)
+	}
 	return l
 }

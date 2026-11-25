@@ -169,31 +169,6 @@ func TestMarkedRevertLinesCutChangeIDs(t *testing.T) {
 
 func itoa(i int) string { return strconv.Itoa(i) }
 
-// TestPreviewLinesShowTimestampsAsUTC: the preview an agent reads has its
-// row values as the wire format has them (a timestamptz as RFC 3339 UTC,
-// with a Z), not as Postgres prints them inside the guard.
-func TestPreviewLinesShowTimestampsAsUTC(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t)
-	d.Exec(t, `CREATE TABLE public.visits (id int PRIMARY KEY, at timestamptz);
-		INSERT INTO public.visits VALUES (1, '2026-11-12 14:08:04+02')`)
-	tables := []string{"public.visits"}
-	a := d.NewAgent(t, "bot", tables, tables)
-	in := newRun(t, a, "move the visit")
-	ctx := context.Background()
-	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.visits SET at = '2026-11-12 16:00:00.5+02' WHERE id = 1`))
-	pv, err := guard.PreviewRevertPage(ctx, a.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "", 10)
-	require.NoError(t, err)
-	require.Len(t, pv.Page, 1)
-	var line struct {
-		Now map[string]any `json:"now"`
-		Set map[string]any `json:"set"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(pv.Page[0].Text), &line))
-	require.Equal(t, "2026-11-12T14:00:00.5Z", line.Now["at"], "the row as it is now")
-	require.Equal(t, "2026-11-12T12:08:04Z", line.Set["at"], "the value the revert restores")
-}
-
 // guardPrepare prepares a revert of run as the agent, as basalt revert
 // does on the agent's credential.
 func guardPrepare(t *testing.T, a *guardtest.Agent, run uuid.UUID) (uuid.UUID, error) {

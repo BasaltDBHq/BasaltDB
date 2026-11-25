@@ -67,23 +67,3 @@ func TestMap(t *testing.T) {
 	require.Equal(t, []any{"2026-11-12T12:08:04Z"}, m["l"])
 	require.Nil(t, Map(nil))
 }
-
-// Fields rewrites the timestamps in the named fields of a revert line only:
-// numbers keep their spelling, other fields their text, and a line with
-// nothing to rewrite comes back as given.
-func TestFields(t *testing.T) {
-	t.Parallel()
-	text := `{"op": "UPDATE", "key": {"id": 1}, "now": {"at": "2026-11-12T14:08:04+02:00"}, "set": {"n": 12345678901234567890, "at": "2026-11-12T14:00:00.5+02:00"}, "resource": "public.leads", "note": "2026-11-12T14:08:04+02:00"}`
-	var shown map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal([]byte(Fields(text, "key", "now", "set")), &shown))
-	require.JSONEq(t, `{"at":"2026-11-12T12:08:04Z"}`, string(shown["now"]))
-	require.JSONEq(t, `{"at":"2026-11-12T12:00:00.5Z","n":12345678901234567890}`, string(shown["set"]))
-	require.Contains(t, string(shown["set"]), "12345678901234567890")
-	require.JSONEq(t, `{"id":1}`, string(shown["key"]))
-	require.JSONEq(t, `"2026-11-12T14:08:04+02:00"`, string(shown["note"]), "a field not named is left alone")
-	require.JSONEq(t, `"public.leads"`, string(shown["resource"]))
-
-	plain := `{"op": "DELETE", "key": {"id": 1}, "now": {"at": "2026-11-12T12:08:04Z"}}`
-	require.Equal(t, plain, Fields(plain, "key", "now", "set"), "nothing to rewrite: the text as given")
-	require.Equal(t, "not json", Fields("not json", "key"))
-}

@@ -4,6 +4,7 @@ import (
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/wiretime"
 )
 
 // revertDeps is what reverts use: the revert's store, from which the
@@ -21,7 +22,7 @@ type revertDeps struct {
 // limits. Postgres is the only store built: its prepare runs under the
 // limit of one MCP call.
 func (s *Service) revertStoreSet() revertsvc.StoreSet {
-	set := revertsvc.StoreSet{Limits: revertsvc.Limits{Prepare: guardmodel.MCPPrepareTimeout}}
+	set := revertsvc.StoreSet{Limits: revertsvc.Limits{Prepare: guardmodel.MCPPrepareTimeout}, ShowValues: wiretime.JSON}
 	if r := s.deps.Revert.Store; r != nil {
 		set.Records, set.Undo, set.Proofs = r, r, r
 	}

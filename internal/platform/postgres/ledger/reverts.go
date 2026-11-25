@@ -14,7 +14,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pglargevalue"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/wiretime"
 )
 
 // ErrRevertNotFound is a revert id the calling role did not prepare.
@@ -113,15 +112,7 @@ func ListRevertLinesMarked(ctx context.Context, q guard.Querier, p action.Revert
 		SELECT p.line_no, CASE WHEN p.lv_more THEN '' ELSE coalesce(e.line::text, p.line) END, p.outcome, p.conflict, p.sql_state, p.batch
 		FROM lv_page p LEFT JOIN lv_lines e ON e.item = p.line_no
 		ORDER BY p.line_no`
-	out, err := collectRevertLines(ctx, q, p, sql, args)
-	if err != nil {
-		return out, err
-	}
-	// The agent reads the row values as the wire format has them.
-	for i := range out.Items {
-		out.Items[i].Text = wiretime.Fields(out.Items[i].Text, guard.RevertLineValues...)
-	}
-	return out, nil
+	return collectRevertLines(ctx, q, p, sql, args)
 }
 
 // revertLinePage is the SQL of one page of a plan's lines, one more than

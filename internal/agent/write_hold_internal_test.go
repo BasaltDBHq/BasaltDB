@@ -114,10 +114,16 @@ func TestDifferentWriteStepKeepsExactNumbers(t *testing.T) {
 		Request: action.HeldRequest{Kind: "SQL", Text: "DELETE FROM public.leads WHERE id = $1", Params: json.RawMessage(`[9007199254740993]`)},
 	}
 
-	args := wc.heldArgs(held)
-	raw, err := json.Marshal(args)
+	// A call with another text gets DIFFERENT_WRITE, whose step sends the
+	// held write back.
+	other := WriteParams{RunID: held.RunID, Request: agentstore.Request{Text: "DELETE FROM public.leads WHERE id = 1"}}
+	var te *toolresult.ToolError
+	require.ErrorAs(t, wc.sameAsHeld(held, other), &te)
+	require.Equal(t, guidance.ReasonDifferentWrite, te.Reason)
+	require.Len(t, te.NextSteps, 1)
+	raw, err := json.Marshal(te.NextSteps[0].Arguments)
 	require.NoError(t, err)
-	require.Contains(t, string(raw), `[9007199254740993]`)
+	require.Contains(t, string(raw), `"params":[9007199254740993]`)
 
 	// The agent sends the step's arguments back as the write tool decodes
 	// them (numbers kept exact).

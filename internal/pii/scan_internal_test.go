@@ -181,11 +181,11 @@ func TestScanFailsClosedAndWarns(t *testing.T) {
 	boom := errors.New("conn closed")
 	fields.errs["r2"] = boom
 	fields.rows["r1"] = [][]any{{"e@corp.ee"}}
-	for i := range failWarnAfter {
+	for i := range FailWarnAfter {
 		_, err := s.Cycle(context.Background())
 		require.ErrorIs(t, err, boom)
 		require.EqualError(t, err, "agent bot: scan db.users: conn closed")
-		require.Equal(t, i == failWarnAfter-1, strings.Contains(out.String(), "has not been rebuilt"), "cycle %d", i)
+		require.Equal(t, i == FailWarnAfter-1, strings.Contains(out.String(), "has not been rebuilt"), "cycle %d", i)
 	}
 	require.True(t, hasEmail(dict, keys, "a@corp.ee"), "the previous base stays")
 	require.False(t, hasEmail(dict, keys, "e@corp.ee"), "the aborted build is not committed")
@@ -201,7 +201,7 @@ func TestScanOverBudget(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, dict.Add(corepii.EntityEmail, "delta@corp.ee", ""))
 
-	tiny := NewScanner(dict, s.sources, ScanOptions{MaxMemoryBytes: 2 * bytesPerAddBound}, slog.New(slog.DiscardHandler))
+	tiny := NewScanner(dict, s.sources, ScanOptions{MaxMemoryBytes: 2 * BytesPerAddBound}, slog.New(slog.DiscardHandler))
 	_, err = tiny.Cycle(context.Background())
 	require.ErrorIs(t, err, ErrScanOverBudget)
 	require.True(t, hasEmail(dict, keys, "a@corp.ee"))

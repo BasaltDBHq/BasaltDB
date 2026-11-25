@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -30,22 +31,38 @@ type storeRule struct {
 	selectors map[string]*regexp.Regexp
 	// allowed are findings that may stay, each with its reason.
 	allowed map[string]string
+	// allowedDeps are store packages the domain may still reach through
+	// another package, by import path, each with its reason.
+	allowedDeps map[string]string
 }
 
+// storeBoundImports are a store's packages: the SQL guard, the Postgres
+// adapters, the driver, and the shared helpers that speak SQL. A
+// store-neutral domain imports none of them, directly or through another
+// package.
 var storeBoundImports = []string{
 	modulePath + "/internal/core/sqlguard",
 	modulePath + "/internal/platform/postgres",
+	modulePath + "/internal/lib/sqlport",
+	modulePath + "/internal/lib/pgquerier",
 	"github.com/jackc/pgx",
 	"github.com/jackc/pgconn",
+	"github.com/Masterminds/squirrel",
+}
+
+// storeBound reports whether p is one of storeBoundImports or below one.
+func storeBound(p string) bool {
+	return slices.ContainsFunc(storeBoundImports, func(b string) bool { return p == b || strings.HasPrefix(p, b+"/") })
 }
 
 // agentStoreRule holds internal/agent to its store's ports.
 var agentStoreRule = storeRule{
-	dir:     filepath.Join("internal", "agent"),
-	imports: storeBoundImports,
-	ident:   regexp.MustCompile(`OID|Oid|Attnum|attnum|pg_`),
-	text:    regexp.MustCompile(`\$[0-9]|pg_`),
-	allowed: map[string]string{},
+	dir:         filepath.Join("internal", "agent"),
+	imports:     storeBoundImports,
+	ident:       regexp.MustCompile(`OID|Oid|Attnum|attnum|pg_`),
+	text:        regexp.MustCompile(`\$[0-9]|pg_`),
+	allowed:     map[string]string{},
+	allowedDeps: map[string]string{},
 }
 
 // revertStoreRule holds internal/revert to its store's ports: it decides on
@@ -63,8 +80,26 @@ var revertStoreRule = storeRule{
 		modulePath + "/internal/core/guardmodel": regexp.MustCompile(`^(Code.*|Scope.*|.*Refused)$`),
 		modulePath + "/internal/core/action":     regexp.MustCompile(`^StoreError$`),
 	},
-	allowed: map[string]string{},
+	allowed:     map[string]string{},
+	allowedDeps: map[string]string{},
 }
+
+// piiStoreRule holds internal/pii to its store's ports (Classes, Fields and
+// the sampler): it never names a store's catalog, keys, row positions or
+// error codes, and never writes a statement.
+var piiStoreRule = storeRule{
+	dir:     filepath.Join("internal", "pii"),
+	imports: storeBoundImports,
+	ident:   regexp.MustCompile(`OID|Oid|Attnum|attnum|SQLState|relkind|ctid|pg_`),
+	// A SQLSTATE is five digits or capitals starting with a digit, such as
+	// 42P01.
+	text:        regexp.MustCompile(`pg_|basalt_meta|\$[0-9]|\b[0-9][0-9A-Z]{4}\b`),
+	allowed:     map[string]string{},
+	allowedDeps: map[string]string{},
+}
+
+// storeRules are the store-neutral domains.
+var storeRules = []storeRule{agentStoreRule, revertStoreRule, piiStoreRule}
 
 // importName is the name a file refers to the import s by.
 func importName(s *ast.ImportSpec) string {
@@ -174,9 +209,117 @@ func requireStoreNeutral(t *testing.T, rule storeRule, hint string) {
 	}
 }
 
+// storeChains walks graph (package to its imports) from root and returns
+// each store package it reaches, with the shortest import chain to it. It
+// does not walk past a store package.
+func storeChains(graph map[string][]string, root string) map[string]string {
+	out := map[string]string{}
+	parent := map[string]string{root: ""}
+	queue := []string{root}
+	for len(queue) > 0 {
+		p := queue[0]
+		queue = queue[1:]
+		for _, q := range graph[p] {
+			if _, seen := parent[q]; seen {
+				continue
+			}
+			parent[q] = p
+			if storeBound(q) {
+				chain := q
+				for c := p; c != ""; c = parent[c] {
+					chain = c + " -> " + chain
+				}
+				out[q] = strings.ReplaceAll(chain, modulePath+"/", "")
+				continue
+			}
+			queue = append(queue, q)
+		}
+	}
+	return out
+}
+
+// requireNoStoreDeps checks that rule's root package reaches no store
+// package through its imports, on linux and darwin: it fails when go list
+// does not list the package, on a store package the allowlist does not
+// name, and on an allowlist entry with no reason or no finding.
+func requireNoStoreDeps(t *testing.T, rule storeRule) {
+	t.Helper()
+	root := moduleRoot(t)
+	rel := strings.TrimPrefix(filepath.ToSlash(rule.dir), "internal/")
+	pkg := modulePath + "/internal/" + rel
+	for _, goos := range []string{"linux", "darwin"} {
+		graph := listGraph(t, root, goos, rel)
+		if _, ok := graph[pkg]; !ok {
+			t.Fatalf("go list -deps ./internal/%s (GOOS=%s) did not list the package itself: the check reads nothing", rel, goos)
+		}
+		chains := storeChains(graph, pkg)
+		found := make([]string, 0, len(chains))
+		for p := range chains {
+			found = append(found, p)
+		}
+		slices.Sort(found)
+		for _, problem := range checkStoreNeutral(found, rule.allowedDeps) {
+			if chain, ok := chains[problem]; ok {
+				problem = chain
+			}
+			t.Errorf("%s reaches a store package (GOOS=%s): %s\n\tthe domain reaches its store only through its ports; move the store code into the store's adapter", rule.dir, goos, problem)
+		}
+	}
+}
+
+// The store-neutral domains reach no store package, directly or through
+// another package.
+func TestStoreNeutralDomainsLinkNoStorePackage(t *testing.T) {
+	for _, rule := range storeRules {
+		t.Run(filepath.Base(rule.dir), func(t *testing.T) { requireNoStoreDeps(t, rule) })
+	}
+}
+
+// The chain search finds a store package however deep, gives the shortest
+// chain, stops at the store package, and leaves a name that only starts
+// like one alone.
+func TestStoreChainsFollowTheRule(t *testing.T) {
+	m := modulePath + "/"
+	sq := "github.com/Masterminds/squirrel"
+	graph := map[string][]string{
+		m + "internal/a":                       {"fmt", m + "internal/lib/x", m + "internal/lib/y"},
+		m + "internal/lib/x":                   {m + "internal/lib/z"},
+		m + "internal/lib/z":                   {sq},
+		m + "internal/lib/y":                   {sq, m + "internal/core/sqlguardian"},
+		sq:                                     {"github.com/lann/builder"},
+		m + "internal/core/sqlguardian":        {"fmt"},
+		m + "internal/b":                       {m + "internal/lib/w"},
+		m + "internal/lib/w":                   {m + "internal/platform/postgres/pgpii", "github.com/jackc/pgx/v5/pgconn"},
+		m + "internal/platform/postgres/pgpii": {m + "internal/lib/sqlport"},
+		m + "internal/c":                       {"fmt", m + "internal/core/piistore"},
+	}
+	got := storeChains(graph, m+"internal/a")
+	want := map[string]string{sq: "internal/a -> internal/lib/y -> " + sq}
+	if !maps.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	got = storeChains(graph, m+"internal/b")
+	want = map[string]string{
+		m + "internal/platform/postgres/pgpii": "internal/b -> internal/lib/w -> internal/platform/postgres/pgpii",
+		"github.com/jackc/pgx/v5/pgconn":       "internal/b -> internal/lib/w -> github.com/jackc/pgx/v5/pgconn",
+	}
+	if !maps.Equal(got, want) {
+		t.Errorf("got %q, want %q (the walk stops at a store package)", got, want)
+	}
+	if got := storeChains(graph, m+"internal/c"); len(got) != 0 {
+		t.Errorf("a clean graph must pass; got %q", got)
+	}
+}
+
 func TestAgentDomainIsStoreNeutral(t *testing.T) {
 	requireStoreNeutral(t, agentStoreRule,
 		"the agent domain reaches its store only through its ports; put store code in an adapter (internal/agent/out/...) or the wiring")
+}
+
+func TestPIIDomainIsStoreNeutral(t *testing.T) {
+	requireStoreNeutral(t, piiStoreRule,
+		"the pii domain reaches its store only through Classes, Fields and the sampler; "+
+			"put store code in the store's adapter (for Postgres, internal/platform/postgres/pgpii)")
 }
 
 func TestRevertDomainIsStoreNeutral(t *testing.T) {
@@ -311,6 +454,56 @@ func widenRefused() {}
 		`a.go: text "57014"`,
 		`a.go: text "SELECT xmin FROM t"`,
 		`a.go: text "canceled (SQLSTATE 40P01)"`,
+	}
+	if !slices.Equal(findings, want) {
+		t.Errorf("findings:\n%s\nwant:\n%s", strings.Join(findings, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// The pii rule finds the store's packages, catalog words, statements and
+// codes, and leaves the classifier's own words and numbers alone.
+func TestPIIStoreRuleCatchesViolations(t *testing.T) {
+	dir := fixture(t, map[string]string{
+		"a.go": `package a
+
+import (
+	sq "github.com/Masterminds/squirrel"
+	_ "` + modulePath + `/internal/lib/sqlport"
+	_ "` + modulePath + `/internal/lib/pgquerier"
+)
+
+type col struct{ TableOid uint32; relkind string }
+
+var (
+	_   = sq.Select
+	_   = "SELECT email FROM basalt_meta.agent_pii_columns WHERE ctid > $1"
+	_   = "undefined table (SQLSTATE 42P01)"
+	ctid = 0
+
+	// Allowed: the classifier's own words and numbers.
+	_ = "email"
+	_ = "at most 1000 values"
+	_ = "+372 5555 1234"
+	_ = "kind of a void field"
+)
+`,
+	})
+	findings, files, err := storeNeutralFindings(dir, piiStoreRule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files != 1 {
+		t.Fatalf("scanned %d files, want 1", files)
+	}
+	want := []string{
+		`a.go: identifier TableOid`,
+		`a.go: identifier ctid`,
+		`a.go: identifier relkind`,
+		`a.go: import github.com/Masterminds/squirrel`,
+		`a.go: import ` + modulePath + `/internal/lib/pgquerier`,
+		`a.go: import ` + modulePath + `/internal/lib/sqlport`,
+		`a.go: text "SELECT email FROM basalt_meta.agent_pii_columns WHERE ctid > $1"`,
+		`a.go: text "undefined table (SQLSTATE 42P01)"`,
 	}
 	if !slices.Equal(findings, want) {
 		t.Errorf("findings:\n%s\nwant:\n%s", strings.Join(findings, "\n"), strings.Join(want, "\n"))

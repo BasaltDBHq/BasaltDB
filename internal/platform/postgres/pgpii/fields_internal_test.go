@@ -66,6 +66,7 @@ type scanPool struct {
 	pageErr  error
 	txs      []*pageTx
 	queries  []string
+	args     [][]any // each page's bound arguments, after the result format
 	execArgs [][]any
 }
 
@@ -109,6 +110,7 @@ func (t *pageTx) Query(_ context.Context, sql string, args ...any) (pgx.Rows, er
 		return nil, errors.New("a page must read in text format")
 	}
 	t.p.queries = append(t.p.queries, sql)
+	t.p.args = append(t.p.args, args[1:])
 	if t.p.pageErr != nil {
 		return nil, t.p.pageErr
 	}
@@ -168,6 +170,7 @@ func TestReadPagesByKey(t *testing.T) {
 		`SELECT "id", "t", "j", "jb" FROM "public"."people" ORDER BY "id" LIMIT 2`,
 		`SELECT "id", "t", "j", "jb" FROM "public"."people" WHERE ("id") > (CAST($1 AS bigint)) ORDER BY "id" LIMIT 2`,
 	}, pool.queries)
+	require.Equal(t, [][]any{{}, {"2"}}, pool.args, "the second page is bound after the first page's last key")
 	require.Equal(t, [][]any{{limits.StatementTimeoutSetting()}, {limits.StatementTimeoutSetting()}}, pool.execArgs)
 }
 

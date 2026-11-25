@@ -90,7 +90,7 @@ func changePage(p action.ChangeListParams) (string, []any, bool, error) {
 	if p.RunID != uuid.Nil {
 		b = b.Where(sq.Eq{colRunID: p.RunID.String()})
 	}
-	b, err = pagination.ApplyIDKeyset(b, colChangeID, sort.Desc, p.Cursor)
+	b, err = applyIDKeyset(b, colChangeID, sort.Desc, p.Cursor)
 	if err != nil {
 		return "", nil, false, fmt.Errorf("%w: %w", ErrInvalidParams, err)
 	}

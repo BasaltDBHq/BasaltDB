@@ -108,12 +108,12 @@ func TestListRunsCountsWhatEachRunDid(t *testing.T) {
 	} {
 		require.Equal(t, json.Number(want), run[field], field)
 	}
-	require.Equal(t, []any{"public.leads"}, run["tables"])
-	require.NotContains(t, run, "tablesTruncated")
+	require.Equal(t, []any{"public.leads"}, run["resources"])
+	require.NotContains(t, run, "resourcesTruncated")
 
 	none := list[1]
 	require.NotContains(t, none, "lastChangeAt", "a run with no change record")
-	require.Equal(t, []any{}, none["tables"])
+	require.Equal(t, []any{}, none["resources"])
 	for _, field := range []string{"applied", "held", "refused", "reverted", "reads", "rowsWritten"} {
 		require.Equal(t, json.Number("0"), none[field], field)
 	}
@@ -257,10 +257,10 @@ func TestListRunsTablesTruncated(t *testing.T) {
 	for i := 1; i <= 10; i++ {
 		want = append(want, fmt.Sprintf("public.t%02d", i))
 	}
-	require.Equal(t, want, list[0]["tables"])
-	require.NotContains(t, list[0], "tablesTruncated", "exactly ten is not truncated")
-	require.Equal(t, want, list[1]["tables"])
-	require.Equal(t, true, list[1]["tablesTruncated"])
+	require.Equal(t, want, list[0]["resources"])
+	require.NotContains(t, list[0], "resourcesTruncated", "exactly ten is not truncated")
+	require.Equal(t, want, list[1]["resources"])
+	require.Equal(t, true, list[1]["resourcesTruncated"])
 	require.Equal(t, json.Number("12"), list[1]["applied"])
 	require.Equal(t, json.Number("12"), list[1]["rowsWritten"])
 }

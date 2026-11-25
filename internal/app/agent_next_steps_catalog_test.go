@@ -215,9 +215,9 @@ func catalogCases() map[string]catalogCase {
 			}),
 		},
 
-		stepcatalogtest.CaseKey("SQL_ERROR", "", ""):            {"write", writeArgs0, pgFail("42703", `column "x" does not exist`, "")},
-		stepcatalogtest.CaseKey("SQL_ERROR", "NO_ROWS_NOW", ""): {"write", writeArgs0, asToolError(&toolresult.ToolError{Code: guidance.CodeSQLError, Reason: guidance.ReasonNoRowsNow, Message: "changes no rows now"})},
-		stepcatalogtest.CaseKey("INVALID_ARGUMENT", "", ""):     {"write", writeArgs0, plain(&guidance.ArgumentError{Message: "invalid arguments"})},
+		stepcatalogtest.CaseKey("STORE_ERROR", "", ""):            {"write", writeArgs0, pgFail("42703", `column "x" does not exist`, "")},
+		stepcatalogtest.CaseKey("STORE_ERROR", "NO_ROWS_NOW", ""): {"write", writeArgs0, asToolError(&toolresult.ToolError{Code: guidance.CodeStoreError, Reason: guidance.ReasonNoRowsNow, Message: "changes no rows now"})},
+		stepcatalogtest.CaseKey("INVALID_ARGUMENT", "", ""):       {"write", writeArgs0, plain(&guidance.ArgumentError{Message: "invalid arguments"})},
 		stepcatalogtest.CaseKey("INVALID_ARGUMENT", "STALE_CURSOR", ""): {
 			"run_history",
 			map[string]any{"runId": caseRunID, "cursor": "x"},

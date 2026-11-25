@@ -701,7 +701,7 @@ func (e *errCatalog) Search(context.Context, string, []pgcatalog.ColumnKey, *pgc
 
 // TestDescribeErrorsStayInTheContract: describe declares INVALID_ARGUMENT,
 // NOT_FOUND, QUERY_TIMEOUT, UNAVAILABLE and INTERNAL only, so any other
-// Postgres error reading the catalog is INTERNAL, never SQL_ERROR or
+// Postgres error reading the catalog is INTERNAL, never STORE_ERROR or
 // PERMISSION_DENIED; a timeout stays QUERY_TIMEOUT with a step that fits the
 // form, and an unreachable database stays UNAVAILABLE.
 func TestDescribeErrorsStayInTheContract(t *testing.T) {

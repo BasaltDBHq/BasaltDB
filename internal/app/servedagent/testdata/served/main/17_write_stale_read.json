@@ -24,7 +24,7 @@
         "tool": "write"
       }
     ],
-    "sqlState": "BS004"
+    "storeCode": "BS004"
   },
   "isError": true,
   "tool": "write"

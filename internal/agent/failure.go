@@ -96,7 +96,7 @@ func (s *Service) errorGuidance(te *toolresult.ToolError, f guidance.Failure) ([
 			break
 		}
 		person = notFoundSteps(b, te, f)
-	case guidance.CodeSQLError:
+	case guidance.CodeStoreError:
 		sqlErrorSteps(b, te, f)
 	case guidance.CodeInvalidArgument:
 		person = guidance.InvalidArgumentSteps(b, te, f)

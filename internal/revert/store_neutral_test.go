@@ -1092,8 +1092,8 @@ func TestObjectStoreRefusalsGiveThePostgresAnswers(t *testing.T) {
 				wantMessage = strings.ReplaceAll(want.Message, pg.detail, c.detail)
 			}
 			require.Equal(t, wantMessage, got.Message)
-			require.Equal(t, pg.code, want.SQLState)
-			require.Equal(t, c.code, got.SQLState, "the store's own code, passed on as it is")
+			require.Equal(t, pg.code, want.StoreCode)
+			require.Equal(t, c.code, got.StoreCode, "the store's own code, passed on as it is")
 			if c.reason == action.RevertTimedOut && strings.Contains(c.name, "request_revert") {
 				require.Contains(t, got.Message, strconv.Itoa(int(objPrepareLimit.Seconds()))+" seconds", "the store's own time limit")
 			}

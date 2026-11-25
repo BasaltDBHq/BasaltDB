@@ -14,32 +14,32 @@ import (
 
 // runSummaryDTO is one list_runs item (api/mcp/tools/list_runs.json).
 type runSummaryDTO struct {
-	RunID           string   `json:"runId"`
-	TaskID          string   `json:"taskId"`
-	Intent          string   `json:"intent"`
-	StartedAt       string   `json:"startedAt"`
-	LastChangeAt    string   `json:"lastChangeAt,omitempty"`
-	Applied         int      `json:"applied"`
-	Held            int      `json:"held"`
-	Refused         int      `json:"refused"`
-	Reverted        int      `json:"reverted"`
-	Reads           int      `json:"reads"`
-	RowsWritten     int      `json:"rowsWritten"`
-	Tables          []string `json:"tables"`
-	TablesTruncated bool     `json:"tablesTruncated,omitempty"`
+	RunID              string   `json:"runId"`
+	TaskID             string   `json:"taskId"`
+	Intent             string   `json:"intent"`
+	StartedAt          string   `json:"startedAt"`
+	LastChangeAt       string   `json:"lastChangeAt,omitempty"`
+	Applied            int      `json:"applied"`
+	Held               int      `json:"held"`
+	Refused            int      `json:"refused"`
+	Reverted           int      `json:"reverted"`
+	Reads              int      `json:"reads"`
+	RowsWritten        int      `json:"rowsWritten"`
+	Resources          []string `json:"resources"`
+	ResourcesTruncated bool     `json:"resourcesTruncated,omitempty"`
 }
 
 func runSummaryFromDomain(r action.RunSummary) runSummaryDTO {
 	out := runSummaryDTO{
 		RunID: r.ID.String(), TaskID: r.TaskID.UUID.String(), Intent: r.Intent, StartedAt: guidance.TimeText(r.StartedAt),
 		Applied: r.Applied, Held: r.Held, Refused: r.Refused, Reverted: r.Reverted, Reads: r.Reads,
-		RowsWritten: r.RowsWritten, Tables: r.Tables, TablesTruncated: r.TablesTruncated,
+		RowsWritten: r.RowsWritten, Resources: r.Resources, ResourcesTruncated: r.ResourcesTruncated,
 	}
 	if r.LastChangeAt != nil {
 		out.LastChangeAt = guidance.TimeText(*r.LastChangeAt)
 	}
-	if out.Tables == nil {
-		out.Tables = []string{}
+	if out.Resources == nil {
+		out.Resources = []string{}
 	}
 	return out
 }

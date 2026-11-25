@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
@@ -120,7 +121,7 @@ func (m madeNotice) event(install uuid.UUID) (json.RawMessage, error) {
 	n := m.n
 	held := n.ApprovalID != uuid.Nil
 	d := noticeData{
-		Kind: string(n.Kind), Agent: m.agent, Headline: n.Headline,
+		Kind: string(n.Kind), Agent: approval.AgentName(m.agent), Headline: n.Headline,
 		ExpiresAt: n.ExpiresAt.UTC().Format(feedTimeLayout),
 	}
 	var typ string
@@ -150,7 +151,7 @@ func (m madeNotice) event(install uuid.UUID) (json.RawMessage, error) {
 	d.Instruction = noticeInstructions[held][d.LinkOpens]
 	return pluginproto.Marshal(noticeEvent{
 		SpecVersion: cloudEventsSpecVersion, ID: m.id.String(), Source: feedSource(install), Type: typ,
-		Time: m.at.UTC().Format(feedTimeLayout), Subject: m.agent, DataContentType: feedDataContentType, Data: d,
+		Time: m.at.UTC().Format(feedTimeLayout), Subject: d.Agent, DataContentType: feedDataContentType, Data: d,
 	})
 }
 

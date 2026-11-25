@@ -14,20 +14,26 @@
         "durationMs": "<durationMs>",
         "intent": "Leads 21 to 31 went cold",
         "op": "UPDATE",
-        "params": [
-          "closed",
-          21,
-          31
-        ],
         "reason": {
           "code": "APPROVAL_INVALID",
           "message": "APPROVAL_INVALID: not approved yet: the person has not signed it with their passkey"
         },
+        "request": {
+          "kind": "SQL",
+          "params": [
+            "closed",
+            21,
+            31
+          ],
+          "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3"
+        },
         "rowChanges": [],
         "rows": 0,
-        "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3",
         "status": "REFUSED",
-        "target": {}
+        "store": {
+          "kind": "POSTGRES",
+          "verb": "UPDATE"
+        }
       },
       {
         "actor": {
@@ -42,19 +48,25 @@
         "durationMs": "<durationMs>",
         "intent": "No answer",
         "op": "UPDATE",
-        "params": [
-          "lost",
-          42
-        ],
         "reason": {
           "code": "STALE_READ",
           "message": "STALE_READ: public.leads {\"id\": 42} read at xmin <n>, now <n> (hint: read the row again in this run, then decide)"
         },
+        "request": {
+          "kind": "SQL",
+          "params": [
+            "lost",
+            42
+          ],
+          "statement": "UPDATE leads SET status = $1 WHERE id = $2"
+        },
         "rowChanges": [],
         "rows": 0,
-        "statement": "UPDATE leads SET status = $1 WHERE id = $2",
         "status": "REFUSED",
-        "target": {}
+        "store": {
+          "kind": "POSTGRES",
+          "verb": "UPDATE"
+        }
       },
       {
         "actor": {
@@ -68,16 +80,22 @@
         "changeId": "<id-6>",
         "durationMs": "<durationMs>",
         "intent": "Tidy the lead list",
-        "op": "SELECT",
-        "params": [
-          42
-        ],
+        "op": "READ",
+        "request": {
+          "kind": "SQL",
+          "params": [
+            42
+          ],
+          "statement": "SELECT id, status FROM leads WHERE id = $1"
+        },
+        "resource": "leads",
         "rowChanges": [],
         "rows": 1,
-        "statement": "SELECT id, status FROM leads WHERE id = $1",
+        "shape": "RECORD",
         "status": "APPLIED",
-        "target": {
-          "table": "leads"
+        "store": {
+          "kind": "POSTGRES",
+          "verb": "SELECT"
         }
       },
       {
@@ -93,16 +111,22 @@
         "durationMs": "<durationMs>",
         "intent": "Set a column that is not there",
         "op": "UPDATE",
-        "params": [],
         "reason": {
-          "code": "SQL_ERROR",
+          "code": "STORE_ERROR",
           "message": "column \"nope\" of relation \"leads\" does not exist"
+        },
+        "request": {
+          "kind": "SQL",
+          "params": [],
+          "statement": "UPDATE leads SET nope = 1 WHERE id = 5"
         },
         "rowChanges": [],
         "rows": 0,
-        "statement": "UPDATE leads SET nope = 1 WHERE id = 5",
         "status": "REFUSED",
-        "target": {}
+        "store": {
+          "kind": "POSTGRES",
+          "verb": "UPDATE"
+        }
       },
       {
         "actor": {
@@ -117,16 +141,22 @@
         "durationMs": "<durationMs>",
         "intent": "Pay nobody",
         "op": "UPDATE",
-        "params": [],
         "reason": {
           "code": "PERMISSION_DENIED",
           "message": "permission denied for table payroll"
         },
+        "request": {
+          "kind": "SQL",
+          "params": [],
+          "statement": "UPDATE payroll SET amount = 0"
+        },
         "rowChanges": [],
         "rows": 0,
-        "statement": "UPDATE payroll SET amount = 0",
         "status": "REFUSED",
-        "target": {}
+        "store": {
+          "kind": "POSTGRES",
+          "verb": "UPDATE"
+        }
       },
       {
         "actor": {
@@ -141,16 +171,21 @@
         "durationMs": "<durationMs>",
         "intent": "Tidy up",
         "op": "OTHER",
-        "params": [],
         "reason": {
           "code": "STATEMENT_REFUSED",
           "message": "DDL_NOT_ALLOWED: DropStmt"
         },
+        "request": {
+          "kind": "SQL",
+          "params": [],
+          "statement": "DROP TABLE leads"
+        },
         "rowChanges": [],
         "rows": 0,
-        "statement": "DROP TABLE leads",
         "status": "REFUSED",
-        "target": {}
+        "store": {
+          "kind": "POSTGRES"
+        }
       },
       {
         "actor": {
@@ -165,16 +200,22 @@
         "durationMs": "<durationMs>",
         "intent": "Reset every score",
         "op": "UPDATE",
-        "params": [],
         "reason": {
           "code": "ROW_LIMIT_EXCEEDED",
           "message": "ROW_LIMIT_EXCEEDED: more than 50 rows in one action (cascades included)"
         },
+        "request": {
+          "kind": "SQL",
+          "params": [],
+          "statement": "UPDATE leads SET score = 1 WHERE id <= 60"
+        },
         "rowChanges": [],
         "rows": 0,
-        "statement": "UPDATE leads SET score = 1 WHERE id <= 60",
         "status": "REFUSED",
-        "target": {}
+        "store": {
+          "kind": "POSTGRES",
+          "verb": "UPDATE"
+        }
       },
       {
         "actor": {
@@ -188,17 +229,23 @@
         "changeId": "<id-16>",
         "intent": "Leads 21 to 31 went cold",
         "op": "UPDATE",
-        "params": [
-          "closed",
-          21,
-          31
-        ],
+        "request": {
+          "kind": "SQL",
+          "params": [
+            "closed",
+            21,
+            31
+          ],
+          "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3"
+        },
+        "resource": "public.leads",
         "rowChanges": [],
         "rows": 11,
-        "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3",
+        "shape": "RECORD",
         "status": "APPROVAL_PENDING",
-        "target": {
-          "table": "public.leads"
+        "store": {
+          "kind": "POSTGRES",
+          "verb": "UPDATE"
         }
       },
       {
@@ -214,10 +261,15 @@
         "durationMs": "<durationMs>",
         "intent": "Lead 4 duplicates lead 3",
         "op": "UPDATE",
-        "params": [
-          "merged",
-          4
-        ],
+        "request": {
+          "kind": "SQL",
+          "params": [
+            "merged",
+            4
+          ],
+          "statement": "UPDATE leads SET status = $1 WHERE id = $2"
+        },
+        "resource": "public.leads",
         "rowChanges": [
           {
             "after": {
@@ -240,14 +292,16 @@
             "op": "UPDATE",
             "pruned": false,
             "redacted": false,
-            "table": "public.leads"
+            "resource": "public.leads",
+            "shape": "RECORD"
           }
         ],
         "rows": 1,
-        "statement": "UPDATE leads SET status = $1 WHERE id = $2",
+        "shape": "RECORD",
         "status": "APPLIED",
-        "target": {
-          "table": "public.leads"
+        "store": {
+          "kind": "POSTGRES",
+          "verb": "UPDATE"
         }
       },
       {
@@ -262,17 +316,23 @@
         "changeId": "<id-17>",
         "durationMs": "<durationMs>",
         "intent": "Tidy the lead list",
-        "op": "SELECT",
-        "params": [],
+        "op": "READ",
         "reason": {
           "code": "PERMISSION_DENIED",
           "message": "permission denied for table payroll"
         },
+        "request": {
+          "kind": "SQL",
+          "params": [],
+          "statement": "SELECT amount FROM payroll"
+        },
         "rowChanges": [],
         "rows": 0,
-        "statement": "SELECT amount FROM payroll",
         "status": "REFUSED",
-        "target": {}
+        "store": {
+          "kind": "POSTGRES",
+          "verb": "SELECT"
+        }
       },
       {
         "actor": {
@@ -286,17 +346,23 @@
         "changeId": "<id-18>",
         "durationMs": "<durationMs>",
         "intent": "Tidy the lead list",
-        "op": "SELECT",
-        "params": [],
+        "op": "READ",
         "reason": {
-          "code": "SQL_ERROR",
+          "code": "STORE_ERROR",
           "message": "column \"nope\" does not exist"
+        },
+        "request": {
+          "kind": "SQL",
+          "params": [],
+          "statement": "SELECT nope FROM leads"
         },
         "rowChanges": [],
         "rows": 0,
-        "statement": "SELECT nope FROM leads",
         "status": "REFUSED",
-        "target": {}
+        "store": {
+          "kind": "POSTGRES",
+          "verb": "SELECT"
+        }
       },
       {
         "actor": {
@@ -310,17 +376,23 @@
         "changeId": "<id-19>",
         "durationMs": "<durationMs>",
         "intent": "Tidy the lead list",
-        "op": "SELECT",
-        "params": [],
+        "op": "READ",
         "reason": {
           "code": "QUERY_TIMEOUT",
           "message": "the query returned more rows than the read row limit; add a LIMIT or a narrower WHERE"
         },
+        "request": {
+          "kind": "SQL",
+          "params": [],
+          "statement": "SELECT g FROM generate_series(1, 1001) g"
+        },
         "rowChanges": [],
         "rows": 0,
-        "statement": "SELECT g FROM generate_series(1, 1001) g",
         "status": "REFUSED",
-        "target": {}
+        "store": {
+          "kind": "POSTGRES",
+          "verb": "SELECT"
+        }
       },
       {
         "actor": {
@@ -335,16 +407,21 @@
         "durationMs": "<durationMs>",
         "intent": "Tidy the lead list",
         "op": "OTHER",
-        "params": [],
         "reason": {
           "code": "STATEMENT_REFUSED",
           "message": "DDL_NOT_ALLOWED: DropStmt"
         },
+        "request": {
+          "kind": "SQL",
+          "params": [],
+          "statement": "DROP TABLE leads"
+        },
         "rowChanges": [],
         "rows": 0,
-        "statement": "DROP TABLE leads",
         "status": "REFUSED",
-        "target": {}
+        "store": {
+          "kind": "POSTGRES"
+        }
       },
       {
         "actor": {
@@ -358,14 +435,20 @@
         "changeId": "<id-3>",
         "durationMs": "<durationMs>",
         "intent": "Tidy the lead list",
-        "op": "SELECT",
-        "params": [],
+        "op": "READ",
+        "request": {
+          "kind": "SQL",
+          "params": [],
+          "statement": "SELECT id, status FROM leads WHERE id <= 3 ORDER BY id"
+        },
+        "resource": "leads",
         "rowChanges": [],
         "rows": 3,
-        "statement": "SELECT id, status FROM leads WHERE id <= 3 ORDER BY id",
+        "shape": "RECORD",
         "status": "APPLIED",
-        "target": {
-          "table": "leads"
+        "store": {
+          "kind": "POSTGRES",
+          "verb": "SELECT"
         }
       }
     ]

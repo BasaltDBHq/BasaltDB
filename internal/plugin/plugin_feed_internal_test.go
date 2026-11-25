@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
@@ -130,6 +131,11 @@ func (p *feedPlugin) Call(ctx context.Context, method string, params, result any
 	c.agent, c.events, c.mode = req.Agent, req.Events, mode
 	p.calls = append(p.calls, c)
 	p.mu.Unlock()
+	if len(c.events) == 0 {
+		// A request the plugin cannot read fails the call, and the test
+		// through invalid, instead of the plugin indexing an empty batch.
+		return pluginmodel.Fail(pluginmodel.ClassBadResponse)
+	}
 
 	var last int64
 	switch mode {
@@ -150,6 +156,10 @@ func (p *feedPlugin) Call(ctx context.Context, method string, params, result any
 
 func (p *feedPlugin) Close() error { return nil }
 
+// isFor reports whether c was sent for agent, its name in engine.json: the
+// params name it agent:<name>.
+func (c gotCall) isFor(agent string) bool { return c.agent == approval.AgentName(agent) }
+
 // received are the calls so far.
 func (p *feedPlugin) received() []gotCall {
 	p.mu.Lock()
@@ -162,7 +172,7 @@ func (p *feedPlugin) received() []gotCall {
 func (p *feedPlugin) seqsFor(agent string) []int64 {
 	var out []int64
 	for _, c := range p.received() {
-		if c.agent != agent {
+		if !c.isFor(agent) {
 			continue
 		}
 		for _, e := range c.events {
@@ -337,7 +347,7 @@ func (e *feedEnv) applied(agent string) int64 {
 	e.t.Helper()
 	return e.appendRow(agent, guardmodel.KindChange, "UPDATE", uuid.Must(uuid.NewV7()), map[string]any{
 		"runId": uuid.Must(uuid.NewV7()), "taskId": nil, "intent": "set the score", "statement": "UPDATE public.leads SET score = 1",
-		"table": "public.leads", "rows": 1, "cascadedRows": 0, "durationMs": 3, "status": "APPLIED",
+		"resource": "public.leads", "rows": 1, "cascadedRows": 0, "durationMs": 3, "status": "APPLIED",
 	})
 }
 
@@ -373,7 +383,7 @@ func (g gotEvent) afterSeq() (int64, bool) {
 // afterSeq is after, and the call that carried it.
 func (p *feedPlugin) skippedAfter(agent string, after int64) (gotCall, gotEvent, bool) {
 	for _, c := range p.received() {
-		if c.agent != agent {
+		if !c.isFor(agent) {
 			continue
 		}
 		for _, e := range c.events {
@@ -409,7 +419,7 @@ func waitSkipped(t *testing.T, p *feedPlugin, agent string, after int64) (gotCal
 func assertNoLaterSeqBefore(t *testing.T, p *feedPlugin, agent string, marker gotEvent) {
 	t.Helper()
 	for _, c := range p.received() {
-		if c.agent != agent {
+		if !c.isFor(agent) {
 			continue
 		}
 		for _, e := range c.events {
@@ -456,8 +466,8 @@ func TestFeedDeliversInOrder(t *testing.T) {
 			require.Equal(t, fmt.Sprintf("%s:%d", install, ev.seq()), ev.ID)
 			require.Equal(t, "urn:uuid:"+install.String(), ev.Source)
 			require.Equal(t, "dev.basaltdb.write.applied", ev.Type)
-			require.Equal(t, "product_a", ev.Subject)
-			require.Equal(t, "product_a", ev.Data["agent"])
+			require.Equal(t, "agent:product_a", ev.Subject)
+			require.Equal(t, "agent:product_a", ev.Data["agent"])
 		}
 	}
 	calls := p.received()

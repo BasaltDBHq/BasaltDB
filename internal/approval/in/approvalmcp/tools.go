@@ -12,6 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertmcp"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -44,34 +45,43 @@ type listPendingArgs struct {
 
 // pendingDTO is one item of list_pending's output.
 type pendingDTO struct {
-	Kind            string                `json:"kind"`
-	ApprovalID      string                `json:"approvalId"`
-	RunID           string                `json:"runId"`
-	TaskID          string                `json:"taskId,omitempty"`
-	Intent          string                `json:"intent"`
-	Statement       string                `json:"statement,omitempty"`
-	Params          json.RawMessage       `json:"params,omitempty"`
-	AssignedColumns []string              `json:"assignedColumns"`
-	Rows            int                   `json:"rows"`
-	Status          string                `json:"status"`
-	CreatedAt       string                `json:"createdAt"`
-	ExpiresAt       string                `json:"expiresAt"`
-	ApprovalURL     string                `json:"approvalUrl"`
-	RequestFile     *links.RequestFile    `json:"requestFile,omitempty"`
-	Headline        string                `json:"headline"`
-	PersonMessage   string                `json:"personMessage"`
-	NextSteps       []toolresult.NextStep `json:"nextSteps,omitempty"`
-	Links           []toolresult.Link     `json:"links,omitempty"`
+	Kind           string                `json:"kind"`
+	ApprovalID     string                `json:"approvalId"`
+	RunID          string                `json:"runId"`
+	TaskID         string                `json:"taskId,omitempty"`
+	Intent         string                `json:"intent"`
+	Request        pendingRequestDTO     `json:"request"`
+	AssignedFields []string              `json:"assignedFields"`
+	Rows           int                   `json:"rows"`
+	Status         string                `json:"status"`
+	CreatedAt      string                `json:"createdAt"`
+	ExpiresAt      string                `json:"expiresAt"`
+	ApprovalURL    string                `json:"approvalUrl"`
+	RequestFile    *links.RequestFile    `json:"requestFile,omitempty"`
+	Headline       string                `json:"headline"`
+	PersonMessage  string                `json:"personMessage"`
+	NextSteps      []toolresult.NextStep `json:"nextSteps,omitempty"`
+	Links          []toolresult.Link     `json:"links,omitempty"`
 	// LargeValues names the statement or params left out (CONTRACT.md,
 	// Large values).
 	LargeValues []largevalue.Entry `json:"largeValues,omitempty"`
 }
 
+// pendingRequestDTO is a held write's request by family (CONTRACT.md,
+// Stores, Request families), as the approval binds it: for SQL the
+// statement and its params, either absent when left out as a large value.
+type pendingRequestDTO struct {
+	Kind      string          `json:"kind"`
+	Params    json.RawMessage `json:"params,omitempty"`
+	Statement string          `json:"statement,omitempty"`
+}
+
 func pendingFromDomain(p approvalsvc.PendingItem) pendingDTO {
 	d := pendingDTO{
 		Kind:       guidance.KindApproval,
-		ApprovalID: p.ID.String(), RunID: p.RunID.String(), Intent: p.Intent, Statement: p.Statement,
-		Params: p.Params, AssignedColumns: p.Assigned, Rows: p.Rows, Status: p.Status,
+		ApprovalID: p.ID.String(), RunID: p.RunID.String(), Intent: p.Intent,
+		Request:        pendingRequestDTO{Kind: approval.RequestSQL, Params: p.Params, Statement: p.Statement},
+		AssignedFields: p.Assigned, Rows: p.Rows, Status: p.Status,
 		CreatedAt: guidance.TimeText(p.CreatedAt), ExpiresAt: guidance.TimeText(p.ExpiresAt), ApprovalURL: p.Notice.ApprovalURL, RequestFile: p.Notice.RequestFile,
 		Headline: p.Notice.Headline, PersonMessage: p.PersonMessage, Links: p.Links, NextSteps: p.NextSteps,
 		LargeValues: p.LargeValues,

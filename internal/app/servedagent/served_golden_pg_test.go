@@ -167,7 +167,7 @@ func servedMainScenario(t *testing.T) (*servedGolden, agentEnv) {
 	g.callErr("query_row_limit", "query", map[string]any{
 		"sql": "SELECT g FROM generate_series(1, 1001) g", "runId": runID,
 	}, "QUERY_TIMEOUT")
-	g.callErr("query_bad_column", "query", map[string]any{"sql": "SELECT nope FROM leads", "runId": runID}, "SQL_ERROR")
+	g.callErr("query_bad_column", "query", map[string]any{"sql": "SELECT nope FROM leads", "runId": runID}, "STORE_ERROR")
 	g.callErr("query_not_granted", "query", map[string]any{"sql": "SELECT amount FROM payroll", "runId": runID}, "PERMISSION_DENIED")
 	g.callErr("query_no_sql", "query", map[string]any{"runId": runID}, "INVALID_ARGUMENT")
 
@@ -195,7 +195,7 @@ func servedMainScenario(t *testing.T) (*servedGolden, agentEnv) {
 	}, "PERMISSION_DENIED")
 	g.callErr("write_bad_column", "write", map[string]any{
 		"sql": "UPDATE leads SET nope = 1 WHERE id = 5", "intent": "Set a column that is not there", "runId": runID,
-	}, "SQL_ERROR")
+	}, "STORE_ERROR")
 	g.callErr("write_no_sql", "write", map[string]any{"intent": "Nothing", "runId": runID}, "INVALID_ARGUMENT")
 
 	// A stale write: the agent read row 42, a person changed it, the agent writes.

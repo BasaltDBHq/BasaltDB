@@ -155,5 +155,5 @@ func TestRevertRefusalKeepsTheStoreError(t *testing.T) {
 	var se *action.StoreError
 	require.ErrorAs(t, out, &se)
 	require.Equal(t, action.CodeRevertInvalid, se.Code)
-	require.Equal(t, "BS005", se.SQLState)
+	require.Equal(t, "BS005", se.StoreCode)
 }

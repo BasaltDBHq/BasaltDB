@@ -22,15 +22,15 @@ var (
 
 // StoreError is a failure the store answered with, mapped by the store's
 // adapter to the contract: Code and Reason are the tool error's, Message
-// its text. SQLState, Detail and Hint are the store's own, LedgerCode the
-// ledger's code for its own refusals ("" for any other failure). Error is
+// its text. StoreCode (in Postgres the SQLSTATE), Detail and Hint are the
+// store's own, LedgerCode the ledger's code for its own refusals ("" for any other failure). Error is
 // the store's original text, and Unwrap the original error, which is
 // required.
 type StoreError struct {
 	Code       string
 	Reason     string
 	Message    string
-	SQLState   string
+	StoreCode  string
 	Detail     string
 	Hint       string
 	LedgerCode string

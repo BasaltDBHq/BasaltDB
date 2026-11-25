@@ -11,7 +11,7 @@
       }
     ],
     "reason": "NOT_THIS_AGENT",
-    "sqlState": "BS005"
+    "storeCode": "BS005"
   },
   "isError": true,
   "tool": "apply_revert_batch"

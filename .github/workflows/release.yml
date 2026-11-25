@@ -27,6 +27,7 @@ jobs:
   kind:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       kind: ${{ steps.kind.outputs.kind }}
       stable: ${{ steps.kind.outputs.stable }}
@@ -63,6 +64,7 @@ jobs:
     needs: kind
     if: needs.kind.outputs.kind == 'rc'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       # Keyless signing: cosign trades the job's OIDC token for a short-lived
@@ -214,6 +216,7 @@ jobs:
     needs: [kind, e2e]
     if: needs.kind.outputs.kind == 'rc'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:
@@ -252,6 +255,7 @@ jobs:
     needs: kind
     if: needs.kind.outputs.kind == 'tag'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       actions: read
@@ -267,6 +271,7 @@ jobs:
     needs: [kind, gate]
     if: needs.kind.outputs.kind == 'tag'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
       # Keyless signing: cosign trades the job's OIDC token for a short-lived
@@ -344,6 +349,7 @@ jobs:
     if: needs.kind.outputs.kind == 'tag' && vars.PUBLISH_NPM == 'true'
     needs: [kind, release]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -377,6 +383,7 @@ jobs:
       && (needs.npm.result == 'success' || needs.npm.result == 'skipped')
     needs: [kind, release, npm]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -403,6 +410,7 @@ jobs:
     if: needs.kind.outputs.kind == 'tag'
     needs: [kind, release]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:

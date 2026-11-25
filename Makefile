@@ -37,11 +37,13 @@ GO_VERSION := $(shell awk '/^toolchain go/{sub(/^go/,"",$$2); print $$2; f=1} /^
 # make ci still runs all of them through the test target.
 SHARD ?= rest
 SHARD_JSON ?=
+# Per package binary timeout of go test; CI passes 6m so a stuck test fails fast.
+SHARD_TIMEOUT ?= 15m
 
 .PHONY: test-shard
 test-shard: bin/gotestsum portal-build ## Race tests for one shard: make test-shard SHARD=1 (or rest)
 	@pkgs=$$(sh scripts/test-packages.sh $(SHARD)) && \
-	$(GOTESTSUM) $(if $(SHARD_JSON),--jsonfile $(SHARD_JSON)) --format pkgname-and-test-fails --hide-summary=skipped -- -race -count=1 -timeout 15m $$pkgs
+	$(GOTESTSUM) $(if $(SHARD_JSON),--jsonfile $(SHARD_JSON)) --format pkgname-and-test-fails --hide-summary=skipped -- -race -count=1 -timeout $(SHARD_TIMEOUT) $$pkgs
 
 .PHONY: shard-check
 shard-check: ## Every Go package is in exactly one CI test shard

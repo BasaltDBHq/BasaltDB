@@ -60,8 +60,9 @@ const (
 	versionRevertFilterName
 	// versionStoreNeutral writes every text a person signs, and the
 	// ledger's fields, in the store-neutral form (CONTRACT.md, Stores),
-	// names agents agent:<name> from a record of their names, and keeps the
-	// old chain form for rows written before it: schema/020 to 023.
+	// and names agents agent:<name> from a record of their names. Clean
+	// state: the chain does not verify rows written before it, so an
+	// install from before reinstalls: schema/020 to 023.
 	versionStoreNeutral
 )
 

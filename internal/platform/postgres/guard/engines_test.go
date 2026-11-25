@@ -98,8 +98,11 @@ func TestEngineAddressRemovedUpgrade(t *testing.T) {
 	require.NotNil(t, rec)
 
 	restore()
+	// Up to the version before StoreNeutralVersion: the chain does not
+	// verify rows hashed before that version (clean state).
+	guardtest.UpToVersion(t, guard.StoreNeutralVersion-1)
 	d.NewAgent(t, "bot", leads, leads)
-	require.Equal(t, guard.LatestVersion(), scalarOf[int](t, d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
+	require.Equal(t, guard.StoreNeutralVersion-1, scalarOf[int](t, d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
 	engines, err := guard.Engines(ctx, a.Conn, false)
 	require.NoError(t, err)
 	require.Len(t, engines, 2)

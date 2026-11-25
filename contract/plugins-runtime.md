@@ -75,7 +75,7 @@ Every event is one CloudEvents 1.0 event in its JSON form, with these attributes
 | Ledger kind | `type` | `data` besides `installId`, `seq`, `agent` |
 |---|---|---|
 | `CHANGE` whose detail `status` is `APPLIED` | `dev.basaltdb.write.applied` | `changeId`; `runId` and `taskId` when it ran in a run and task; `op` (`INSERT`, `UPDATE`, `DELETE`) and `store` (`{kind, verb}`); `resource`, the request's own resource, when it changed a row; `rows` (rows written, cascades included) and `cascadedRows` |
-| `REFUSED` whose `op` is not `READ` | `dev.basaltdb.write.refused` | `changeId`; `runId`, `taskId` when present; `op` (`INSERT`, `UPDATE`, `DELETE`, `OTHER`) and `store` (`{kind, verb}`, `verb` only when the request parsed); `reasonCode`, the refusal's error code, when it is one of [Error codes](error-codes.md#error-codes) |
+| `REFUSED` whose `op` is not `READ` | `dev.basaltdb.write.refused` | `changeId`; `runId`, `taskId` when present; `op` (`INSERT`, `UPDATE`, `DELETE`, `OTHER`) and `store` (`{kind, verb}`, `verb` absent on `OTHER` when the store did not give its command ([Operations](stores.md#operations))); `reasonCode`, the refusal's error code, when it is one of [Error codes](error-codes.md#error-codes) |
 | `APPROVAL_PENDING` | `dev.basaltdb.write.held` | `changeId` (the held change), `approvalId`, `runId`; `taskId` when present; `op` (the request's own resource's) and `store` (`{kind, verb}`), `rows` (the rows it changes, cascades included), `expiresAt` |
 | `APPROVED` | `dev.basaltdb.approval.signed` | `changeId` (the held change), `approvalId` |
 | `REVERT_PENDING` | `dev.basaltdb.revert.prepared` | `revertId` |

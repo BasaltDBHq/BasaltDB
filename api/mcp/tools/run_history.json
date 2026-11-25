@@ -157,7 +157,7 @@
               },
               "verb": {
                 "type": "string",
-                "description": "The store's own word for the request's operation (CONTRACT.md, Stores, Operations): in Postgres the statement's command, SELECT for a read; absent when the request did not parse."
+                "description": "The store's own word for the request's operation (CONTRACT.md, Stores, Operations): in Postgres the statement's command, SELECT for a read. Absent in exactly two cases: on REVERT, and on OTHER when the store did not give its command."
               }
             }
           },

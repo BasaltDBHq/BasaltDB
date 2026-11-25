@@ -1,7 +1,8 @@
 -- Version 10: store-neutral texts (CONTRACT.md, Stores, What every store
 -- writes). This file: the agent names the guard writes into texts, and
 -- the ledger's store-neutral fields. Breaking and clean state: rows and
--- texts written before stay as they are and are never read in the new form.
+-- texts written before stay as they are and are never read in the new form,
+-- and the chain does not verify them: an install from before reinstalls.
 
 -- Each agent's name, recorded with its role when basalt init sets the agent
 -- up (planAgent), so a text names it agent:<name> and never strips a prefix
@@ -62,35 +63,30 @@ END $$;
 
 -- The ledger's store-neutral fields (CONTRACT.md, basalt_meta, Ledger
 -- fields): verb, the store's word for op, beside op and table_name (the
--- resource). chain_form says which canonical form hashed the row: 1 for
--- every row written before this version, 2 from it on (_append).
+-- resource).
 ALTER TABLE basalt_meta.ledger ADD COLUMN IF NOT EXISTS verb text;
-ALTER TABLE basalt_meta.ledger ADD COLUMN IF NOT EXISTS chain_form smallint NOT NULL DEFAULT 1;
 
--- canonical_n of the chain (CONTRACT.md, basalt_meta, Ledger fields): from
--- this version on it names resource, op and verb. A row written before it
--- (chain_form 1) keeps the form it was hashed in, so the chain an install
--- had still verifies; its stored fields are not read in the new form.
+-- canonical_n of the chain (CONTRACT.md, basalt_meta, Ledger fields): it
+-- names resource, op and verb. Clean state: a row written before this
+-- version was hashed in the earlier form and does not verify in this one,
+-- so an install from before it reinstalls basalt_meta.
 CREATE OR REPLACE FUNCTION basalt_meta._canonical(l basalt_meta.ledger) RETURNS bytea
 LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, pg_temp AS $$
-    SELECT convert_to(CASE WHEN l.chain_form = 2 THEN jsonb_build_object(
+    SELECT convert_to(jsonb_build_object(
         'seq', l.seq, 'at', (extract(epoch FROM l.at) * 1000000)::bigint, 'agent', l.agent,
         'changeId', l.change_id, 'kind', l.kind, 'resource', l.table_name, 'tableOid', l.table_oid::bigint,
         'op', l.op, 'verb', l.verb, 'key', l.row_key, 'valuesHash', encode(l.values_hash, 'hex'),
         'depth', l.depth, 'detail', l.detail
-    ) ELSE jsonb_build_object(
-        'seq', l.seq, 'at', (extract(epoch FROM l.at) * 1000000)::bigint, 'agent', l.agent,
-        'changeId', l.change_id, 'kind', l.kind, 'table', l.table_name, 'tableOid', l.table_oid::bigint,
-        'op', l.op, 'key', l.row_key, 'valuesHash', encode(l.values_hash, 'hex'),
-        'depth', l.depth, 'detail', l.detail
-    ) END::text, 'UTF8')
+    )::text, 'UTF8')
 $$;
 
 -- Every ledger row, in the store-neutral form: op is Basalt's (READ for a
 -- read) and verb the store's word for it, derived here from op since every
 -- caller passes Basalt's op: INSERT, UPDATE and DELETE are Postgres's own
--- commands, a read is SELECT. OTHER (DDL) and REVERT have no verb the
--- guard can know, and kinds with no op have none.
+-- commands, a read is SELECT. verb is NULL in exactly two cases with an
+-- op: REVERT, Basalt's own action, which no store command names; and
+-- OTHER (DDL), whose command tag the guard has only from an event trigger
+-- (TG_TAG), and the guard has none. Kinds with no op have no verb.
 CREATE OR REPLACE FUNCTION basalt_meta._append(
     p_agent name, p_change_id uuid, p_kind text, p_table regclass, p_op text,
     p_key jsonb, p_old jsonb, p_new jsonb, p_depth int, p_detail jsonb
@@ -120,7 +116,6 @@ BEGIN
     l.depth := p_depth;
     l.detail := p_detail;
     l.prev_hash := h.hash;
-    l.chain_form := 2;
     l.hash := sha256(h.hash || basalt_meta._canonical(l));
     INSERT INTO basalt_meta.ledger VALUES (l.*);
     UPDATE basalt_meta.chain_head SET seq = l.seq, hash = l.hash WHERE id;

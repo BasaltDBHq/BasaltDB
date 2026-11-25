@@ -104,8 +104,6 @@ func TestStoreNeutralLedgerFields(t *testing.T) {
 	require.Equal(t, "READ", scalarOf[string](t, d.Admin, `SELECT op FROM basalt_meta.changes WHERE change_id = $1`, read))
 	require.Equal(t, "UPDATE UPDATE", scalarOf[string](t, d.Admin,
 		`SELECT op || ' ' || verb FROM basalt_meta.ledger WHERE kind = 'ROW_CHANGE' AND row_key = '{"id": 150}'::jsonb`))
-	require.Zero(t, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger WHERE chain_form <> 2`),
-		"a new install writes only the new form")
 	requireIntact(t, a.Conn)
 
 	// The chain covers verb: changing it breaks the chain.
@@ -115,10 +113,10 @@ func TestStoreNeutralLedgerFields(t *testing.T) {
 	require.False(t, st.Intact)
 }
 
-// An install from before version 10 upgrades with no row rewritten: its
-// agents get their names, its rows keep the chain form they were hashed in,
-// and the chain still verifies across both forms.
-func TestStoreNeutralUpgradeKeepsTheChain(t *testing.T) {
+// An install from before version 10 upgrades with no row rewritten and
+// its agents get their names. Clean state: the chain does not verify the
+// rows hashed before the upgrade, so such an install reinstalls.
+func TestStoreNeutralUpgradeNamesTheAgents(t *testing.T) {
 	ctx := context.Background()
 	restore := guardtest.UpToVersion(t, guard.StoreNeutralVersion-1)
 	d := guardtest.New(t).WithDemo(t)
@@ -126,6 +124,7 @@ func TestStoreNeutralUpgradeKeepsTheChain(t *testing.T) {
 	in := newRun(t, a, "Before the upgrade")
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'b' WHERE id = 5`))
 	before := count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger`)
+	requireIntact(t, a.Conn)
 
 	restore()
 	// Version 10's SQL alone, so the names come from the migration and not
@@ -133,10 +132,8 @@ func TestStoreNeutralUpgradeKeepsTheChain(t *testing.T) {
 	d.Exec(t, "BEGIN; SET LOCAL ROLE "+d.Names.Guard()+"; SET LOCAL search_path = pg_catalog, pg_temp;"+guard.StoreNeutralSQL(d.Names)+"COMMIT;")
 	require.Equal(t, "bot", scalarOf[string](t, d.Admin, `SELECT name FROM basalt_meta.agent_names WHERE role = $1`, a.Role),
 		"the migration records the agents set up before it")
-	require.Equal(t, before, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger WHERE chain_form = 1`))
-	requireIntact(t, a.Conn)
-
-	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'c' WHERE id = 6`))
-	require.Positive(t, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger WHERE chain_form = 2`))
-	requireIntact(t, a.Conn)
+	require.Equal(t, before, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger`), "no row is written or rewritten")
+	st, err := guard.VerifyChain(ctx, a.Conn)
+	require.NoError(t, err)
+	require.False(t, st.Intact, "rows hashed before the upgrade do not verify in the new form")
 }

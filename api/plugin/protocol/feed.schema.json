@@ -106,7 +106,7 @@
         "runId": { "$ref": "#/$defs/uuid" },
         "taskId": { "$ref": "#/$defs/uuid" },
         "op": { "enum": ["INSERT", "UPDATE", "DELETE", "OTHER"] },
-        "store": { "description": "verb only when the request parsed.", "$ref": "#/$defs/storeMaybeVerb" },
+        "store": { "description": "verb absent on OTHER when the store did not give its command (CONTRACT.md, Stores, Operations).", "$ref": "#/$defs/storeMaybeVerb" },
         "reasonCode": {
           "description": "The refusal's error code, when it is one of the codes of CONTRACT.md, Error codes. Never its message.",
           "type": "string",

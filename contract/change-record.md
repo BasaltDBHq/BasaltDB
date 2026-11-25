@@ -28,7 +28,7 @@ One record per action an agent asks for, whether applied, held or refused. It ha
 |---|---|
 | `status` | `APPLIED`, `APPROVAL_PENDING`, `REFUSED`, `APPROVAL_EXPIRED`, `REVERTED` |
 | `op` | Basalt's ([Operations](stores.md#operations)): `READ`, `INSERT`, `UPDATE`, `DELETE`, `OTHER` (a refused request that is none of these), `REVERT` (M3: a person's revert) |
-| `store` | `{kind, verb}`: the store's kind and its own word for the request's operation ([Operations](stores.md#operations): in Postgres the statement's command, `SELECT` for a read); `verb` is absent when the request did not parse |
+| `store` | `{kind, verb}`: the store's kind and its own word for the request's operation ([Operations](stores.md#operations): in Postgres the statement's command, `SELECT` for a read); `verb` is absent in exactly two cases: on `REVERT`, and on `OTHER` when the store did not give its command |
 | `request` | The request by family ([Request families](stores.md#request-families)): for `SQL`, `{kind, params, statement}` |
 | `resource`, `shape`, `key` | What the action targets: the request's own resource and its shape, and, optionally, `key`, the target's identity fields. `resource` is absent when the action named none, and `shape` is absent exactly when `resource` is |
 | `actor.kind` | `AGENT`, `PERSON` |

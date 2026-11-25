@@ -156,9 +156,9 @@ func TestSignedLinesDoNotDependOnTheSessionZone(t *testing.T) {
 		store := postgres.NewStore(zonedPool(t, a.URL, zone), limits, time.Now)
 		in := action.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Move events"}
 		require.NoError(t, store.StartRun(ctx, in))
-		lines, err := store.Preview(ctx, in, update, nil, nil)
+		p, err := store.Preview(ctx, in, action.Request{Text: update})
 		require.NoError(t, err)
-		held = append(held, lines)
+		held = append(held, p.Lines)
 
 		// The row images the guard stores, read back as revert lines.
 		run := write(t, store, `UPDATE public.events SET note = note || '.' WHERE id = 1`)

@@ -52,10 +52,10 @@ func (s *Store) previewRaw(ctx context.Context, in action.Intent, sql string, pa
 }
 
 // revealHeldRaw is RevealHeld before MapError.
-func (s *Store) revealHeldRaw(ctx context.Context, id uuid.UUID, in action.Intent, req approval.HeldRequest,
+func (s *Store) revealHeldRaw(ctx context.Context, id uuid.UUID, run action.HeldRun,
 	proof passkey.Assertion, key []byte,
 ) ([]approval.RevealedRow, error) {
-	held, err := heldStatement(req)
+	held, err := heldStatement(run.Request)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func (s *Store) revealHeldRaw(ctx context.Context, id uuid.UUID, in action.Inten
 	defer clear(ticket)
 	var rows []approval.RevealedRow
 	err = pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
-		if err := guard.BeginPreview(ctx, tx, guardIntent(in), s.limits.StatementTimeout); err != nil {
+		if err := guard.BeginPreview(ctx, tx, guardIntent(run.Intent), s.limits.StatementTimeout); err != nil {
 			return err
 		}
 		if _, _, _, err := runText(ctx, tx, held.sql, held.params, s.limits.ReadRowLimit, 0); err != nil {
@@ -116,9 +116,13 @@ func heldStatement(req approval.HeldRequest) (revealRun, error) {
 	return revealRun{op: stmt.Op, sql: req.Statement, params: params}, nil
 }
 
-// holdRaw is Hold before MapError.
+// holdRaw is Hold before MapError. The guard's verb is Basalt's op: for
+// the three ops a write is held for (INSERT, UPDATE, DELETE) the word is
+// the same.
 func (s *Store) holdRaw(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error) {
-	h, err := guard.Hold(ctx, s.db, guardIntent(in), s.limits.StatementTimeout, guard.HoldRequest(r))
+	h, err := guard.Hold(ctx, s.db, guardIntent(in), s.limits.StatementTimeout, guard.HoldRequest{
+		Verb: string(r.Op), Statement: r.Request.Text, Params: r.Request.Params, Assigned: r.Assigned, Lines: r.Lines,
+	})
 	return action.Held(h), err
 }
 

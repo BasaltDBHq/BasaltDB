@@ -41,13 +41,8 @@ func (ac *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret stri
 	return linksvc.CheckedAnswer(a.Lines, rows)
 }
 
-// HeldRun is what re-runs a held write: the run, task and intent it was
-// held in, from the binding's shared part, and the binding's request as
-// the person signed it, which only the store reads.
-type HeldRun struct {
-	Intent  action.Intent
-	Request approval.HeldRequest
-}
+// HeldRun is what re-runs a held write (action.HeldRun).
+type HeldRun = action.HeldRun
 
 // heldWrite reads the held write from approval a's binding.
 func heldWrite(a action.Approval) (HeldRun, error) {

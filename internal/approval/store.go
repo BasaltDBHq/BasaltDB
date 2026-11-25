@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
@@ -37,11 +38,14 @@ type Records interface {
 
 // Holds is the agent's side: holding a write for the person's approval.
 type Holds interface {
-	// HoldColumns returns the columns whose new values the person's
-	// approval binds for a held write, or an *action.RefusalError
-	// (NOT_REPEATABLE) for a write that cannot be run again the same way.
-	HoldColumns(ctx context.Context, sql string, params []any) ([]string, error)
-	Preview(ctx context.Context, in action.Intent, sql string, params []any, assigned []string) ([]string, error)
+	// Preview runs a held write in a preview that changes nothing and
+	// returns its lines and the fields whose new values the person's
+	// approval binds. It refuses a write that cannot be run again the same
+	// way with an *action.RefusalError (NOT_REPEATABLE), and marks an error
+	// of the preview run as *action.PreviewFailedError; any other error (the
+	// store's catalog read failing) comes unmarked.
+	Preview(ctx context.Context, in action.Intent, req agentstore.Request) (action.HeldPreview, error)
+	// Hold stores a held write for the person's approval.
 	Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error)
 }
 

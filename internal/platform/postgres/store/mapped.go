@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -108,13 +109,23 @@ func (r *Reader) Read(ctx context.Context, sql string, params []any, stmt action
 	return r0, MapError(err)
 }
 
-// Preview runs a held write in a preview transaction (basalt.mode =
-// PREVIEW) on the agent's credential and returns its preview lines; the
-// transaction always rolls back. assigned names the columns whose new
-// values the approval binds.
-func (s *Store) Preview(ctx context.Context, in action.Intent, sql string, params []any, assigned []string) ([]string, error) {
-	r0, err := s.previewRaw(ctx, in, sql, params, assigned)
-	return r0, MapError(err)
+// Preview previews a held write. It refuses a write whose values change
+// between runs (*action.RefusalError NOT_REPEATABLE), works out the columns
+// whose new values the approval binds (holdColumns, which may read the
+// catalog), then runs the write in a preview transaction (basalt.mode =
+// PREVIEW) on the agent's credential that always rolls back, and returns
+// the columns with the preview lines. An error of the preview run is marked
+// *action.PreviewFailedError; a catalog read's error is not.
+func (s *Store) Preview(ctx context.Context, in action.Intent, req agentstore.Request) (action.HeldPreview, error) {
+	assigned, err := s.holdColumns(ctx, req.Text, req.Params)
+	if err != nil {
+		return action.HeldPreview{}, err
+	}
+	lines, err := s.previewRaw(ctx, in, req.Text, req.Params, assigned)
+	if err != nil {
+		return action.HeldPreview{}, &action.PreviewFailedError{Err: MapError(err)}
+	}
+	return action.HeldPreview{Assigned: assigned, Lines: lines}, nil
 }
 
 // RevealHeld checks the person's reveal proof for a held write
@@ -124,8 +135,8 @@ func (s *Store) Preview(ctx context.Context, in action.Intent, sql string, param
 // them), and reads the held approval's hidden rows with the reveal's ticket
 // (basalt_meta.reveal_approval_rows). The ticket lives in this call only;
 // the transaction always rolls back.
-func (s *Store) RevealHeld(ctx context.Context, id uuid.UUID, in action.Intent, req approval.HeldRequest, proof passkey.Assertion, key []byte) ([]approval.RevealedRow, error) {
-	r0, err := s.revealHeldRaw(ctx, id, in, req, proof, key)
+func (s *Store) RevealHeld(ctx context.Context, id uuid.UUID, run action.HeldRun, proof passkey.Assertion, key []byte) ([]approval.RevealedRow, error) {
+	r0, err := s.revealHeldRaw(ctx, id, run, proof, key)
 	return r0, revealApprovalRefusal(MapError(err))
 }
 

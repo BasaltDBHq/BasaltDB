@@ -69,9 +69,10 @@ func (e raceEnv) hold(t *testing.T, lead int) heldDelete {
 	in := action.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Drop lead " + strconv.Itoa(lead)}
 	require.NoError(t, e.store.StartRun(ctx, in))
 	params := []any{json.Number(strconv.Itoa(lead))}
-	lines, err := e.store.Preview(ctx, in, dropLeadSQL, params, []string{})
+	req := action.Request{Text: dropLeadSQL, Params: params}
+	p, err := e.store.Preview(ctx, in, req)
 	require.NoError(t, err)
-	held, err := e.store.Hold(ctx, in, action.HoldRequest{Statement: dropLeadSQL, Params: params, Assigned: []string{}, Lines: lines})
+	held, err := e.store.Hold(ctx, in, action.HoldRequest{Op: action.OpDelete, Request: req, Assigned: p.Assigned, Lines: p.Lines})
 	require.NoError(t, err)
 	return heldDelete{in: in, params: params, held: held}
 }
@@ -126,7 +127,7 @@ func (e raceEnv) revealApproval(h heldDelete, as passkey.Assertion, key []byte) 
 	for _, p := range h.params {
 		req.Params = append(req.Params, json.RawMessage(p.(json.Number)))
 	}
-	return e.store.RevealHeld(context.Background(), h.held.ApprovalID, h.in, req, as, key)
+	return e.store.RevealHeld(context.Background(), h.held.ApprovalID, action.HeldRun{Intent: h.in, Request: req}, as, key)
 }
 
 // lockRow locks one row of a basalt_meta table in a transaction on its own

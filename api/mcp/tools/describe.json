@@ -483,11 +483,11 @@
     "$defs": {
       "actions": {
         "type": "array",
-        "description": "What this agent may do, from its grants.",
+        "description": "What this agent may do, from its grants, as Basalt's ops: READ (in Postgres the SELECT grant), INSERT, UPDATE, DELETE.",
         "items": {
           "type": "string",
           "enum": [
-            "SELECT",
+            "READ",
             "INSERT",
             "UPDATE",
             "DELETE"

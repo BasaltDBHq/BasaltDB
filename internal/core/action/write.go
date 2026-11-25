@@ -20,7 +20,7 @@ type WriteResult struct {
 // record.
 type Refusal struct {
 	Intent Intent
-	// Op is OpSelect, OpInsert, OpUpdate, OpDelete or OpOther.
+	// Op is OpRead, OpInsert, OpUpdate, OpDelete or OpOther.
 	Op        Op
 	Statement string
 	Params    []any

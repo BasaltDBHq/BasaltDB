@@ -31,7 +31,7 @@ func (c *checker) Check(sql string, tool action.Tool) (action.Statement, error) 
 
 func TestCheckPassesTheTextToTheStoreCheck(t *testing.T) {
 	t.Parallel()
-	c := &checker{stmt: action.Statement{Op: action.OpSelect, ParamCount: 1, Tables: []string{"public.t"}}}
+	c := &checker{stmt: action.Statement{Op: action.OpRead, ParamCount: 1, Tables: []string{"public.t"}}}
 	stmt, err := sqllang.New(c).Check(agentstore.Request{Text: "SELECT $1", Params: []any{1}}, action.ToolQuery)
 	require.NoError(t, err)
 	require.Equal(t, c.stmt, stmt)
@@ -62,7 +62,7 @@ func TestCheckCountsPlaceholders(t *testing.T) {
 
 func TestCheckLimitsParamsTo64KiB(t *testing.T) {
 	t.Parallel()
-	c := &checker{stmt: action.Statement{Op: action.OpSelect, ParamCount: 1}}
+	c := &checker{stmt: action.Statement{Op: action.OpRead, ParamCount: 1}}
 	// A string of n bytes encodes to n+4 bytes of JSON: ["..."].
 	fits := strings.Repeat("a", 64<<10-4)
 	_, err := sqllang.New(c).Check(agentstore.Request{Text: "SELECT $1", Params: []any{fits}}, action.ToolQuery)

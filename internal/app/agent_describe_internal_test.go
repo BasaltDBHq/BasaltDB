@@ -289,7 +289,7 @@ func TestHideColumnsDropsIndexesKeysAndExpressions(t *testing.T) {
 		"direction": "INCOMING", "fields": []any{"id"}, "resource": "shop.lines",
 		"onDelete": "CASCADE", "onUpdate": "NO_ACTION",
 	}}, fks)
-	require.Equal(t, []any{"SELECT", "UPDATE"}, m["actions"])
+	require.Equal(t, []any{"READ", "UPDATE"}, m["actions"])
 	require.NotNil(t, m["policy"])
 	require.Equal(t, map[string]any{
 		"estimatedRows": 12.0, "resourceBytes": 8192.0, "totalBytes": 32768.0,
@@ -321,6 +321,7 @@ func TestReadOnlyTableHasNullPolicy(t *testing.T) {
 	body, isError := callDescribe(t, describeService(t, cat, classes, ""), map[string]any{"resource": "shop.orders"})
 	require.False(t, isError, body)
 	m := decodeBody(t, body)
+	require.Equal(t, []any{"READ"}, m["actions"])
 	require.Contains(t, m, "policy")
 	require.Nil(t, m["policy"])
 }
@@ -334,7 +335,7 @@ func TestUnguardedWritableTableHasNullPolicy(t *testing.T) {
 	body, isError := callDescribe(t, describeService(t, cat, classes, ""), map[string]any{"resource": "shop.orders"})
 	require.False(t, isError, body)
 	m := decodeBody(t, body)
-	require.Equal(t, []any{"SELECT", "UPDATE"}, m["actions"])
+	require.Equal(t, []any{"READ", "UPDATE"}, m["actions"])
 	require.Contains(t, m, "policy")
 	require.Nil(t, m["policy"])
 }
@@ -367,7 +368,7 @@ func TestOverviewSmallListsResources(t *testing.T) {
 	require.Equal(t, map[string]any{"namespaces": 2.0, "resources": 50.0, "notGranted": 0.0}, m["counts"])
 	require.Equal(t, map[string]any{"kind": "POSTGRES", "database": "app", "host": "db.example.com"}, m["store"])
 	first := m["resources"].([]any)[0].(map[string]any)
-	require.Equal(t, map[string]any{"resource": "app.t001", "kind": "TABLE", "estimatedRows": 12.0, "access": []any{"SELECT"}}, first)
+	require.Equal(t, map[string]any{"resource": "app.t001", "kind": "TABLE", "estimatedRows": 12.0, "access": []any{"READ"}}, first)
 	limits := m["limits"].(map[string]any)
 	require.EqualValues(t, sqlguard.DefaultReadRowLimit, limits["readRowLimit"])
 	require.EqualValues(t, sqlguard.DefaultStatementTimeout.Milliseconds(), limits["statementTimeoutMs"])
@@ -854,7 +855,7 @@ func TestResourceFingerprintsArePinned(t *testing.T) {
 	}
 
 	cat, classes := ordersCatalog()
-	require.Equal(t, "dfa169ce7e1f7686bef01459c1f0e2c9171043ddeb28138792a20d8964ebac2a", fp(cat, classes, "shop.orders"), "hidden columns, indexes and keys")
+	require.Equal(t, "6415fa1490f34af7f3d2d355af20f3159810ae9cfc9e95c60686ef61d97792f8", fp(cat, classes, "shop.orders"), "hidden columns, indexes and keys")
 
 	cat, classes = ordersCatalog()
 	d := cat.details[ordersOID]
@@ -862,7 +863,7 @@ func TestResourceFingerprintsArePinned(t *testing.T) {
 	d.Indexes[0].Definition += " WHERE id < 5 & true"
 	d.Comment = "<orders> & co"
 	cat.details[ordersOID] = d
-	require.Equal(t, "d406030013d5ce4dbd524196fcee155d5f6433f72979688997f5332e909f5b45", fp(cat, classes, "shop.orders"), "escaped text and index counters")
+	require.Equal(t, "ca88eaedfda5d5468f27bc11b7abbf29697b7e9afa1bcd9ead4a3d607774a25a", fp(cat, classes, "shop.orders"), "escaped text and index counters")
 
 	open := openDetail()
 	cat = &fakeCatalog{visible: []pgcatalog.Relation{open.Relation}, details: map[uint32]pgcatalog.Detail{200: open}}

@@ -6,7 +6,7 @@ type Op string
 // The ops of a statement. OpOther is the op a refusal is recorded with when
 // the statement is not one of the four the ledger records by name.
 const (
-	OpSelect Op = "SELECT"
+	OpRead   Op = "READ"
 	OpInsert Op = "INSERT"
 	OpUpdate Op = "UPDATE"
 	OpDelete Op = "DELETE"

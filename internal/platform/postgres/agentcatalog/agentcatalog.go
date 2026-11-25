@@ -168,12 +168,21 @@ func ParseFieldRef(ref agentstore.FieldRef) (pgcatalog.ColumnKey, error) {
 	return pgcatalog.ColumnKey{OID: uint32(oid), Attnum: int16(attnum)}, nil
 }
 
+// pgAction is Basalt's op for a Postgres table privilege: SELECT is a READ,
+// and INSERT, UPDATE and DELETE are named alike.
+func pgAction(privilege string) action.Op {
+	if privilege == "SELECT" {
+		return action.OpRead
+	}
+	return action.Op(privilege)
+}
+
 func pgResource(r pgcatalog.Relation) agentstore.Resource {
 	var actions []action.Op
 	if r.Privileges != nil {
 		actions = make([]action.Op, len(r.Privileges))
 		for i, p := range r.Privileges {
-			actions[i] = action.Op(p)
+			actions[i] = pgAction(p)
 		}
 	}
 	return agentstore.Resource{

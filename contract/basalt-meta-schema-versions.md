@@ -76,3 +76,11 @@ The direct transport is [removed](cli.md#removed), and with it the engine addres
 | `record_engine(public_key bytea) returns text` | Replaces `record_engine(public_key bytea, url text)`, which is dropped. Owned by `<prefix>_guard`, `EXECUTE` revoked from `PUBLIC`. Inserts a new key with an `ENGINE_RECORDED` row (detail `engineId`, `by`), changes nothing for a key already recorded, and refuses a revoked key (`ENGINE_REVOKED`) and a malformed one (`ENGINE_KEY`) |
 | `revoke_engine(engine_id text) returns int` | Replaced (owner and grants kept). Its `ENGINE_REVOKED` detail no longer names `url` |
 | `_engine_url_ok(text)` | Dropped |
+
+### Schema version 9: revert filter name
+
+A `tables` entry of a [revert scope descriptor](revert.md#the-scope-descriptor) that is not one `schema.table` name gets its own `BS011` detail, `NAME`, and a hint that names it ([Guard errors](basalt-meta.md#guard-errors)), so the agent knows which entry of its `resources` filter to drop and the engine tells this refusal apart by the detail, not by the hint's words. File `019_revert_filter_name.sql`. **Non-breaking** (AE-11): on a guard without it every tool is served as before, with `GUARD_UPGRADE_AVAILABLE`; a badly formed name there is refused as `SHAPE` with the hint `tables are schema.table names`, which the engine answers like any `SHAPE` (`INVALID_ARGUMENT` with no reason, "the revert scope was refused: " and the hint). Idempotent.
+
+| Object | Change |
+|---|---|
+| `_revert_select_norm(p jsonb) returns jsonb` | Replaced (owner, `IMMUTABLE` and `SET search_path = pg_catalog, pg_temp` kept). A `tables` string entry that does not match `schema.table` is refused `BS011` detail `NAME`, hint "`<entry>` is not a schema.table name" for the first such entry in the caller's order, the entry cut to 127 characters followed by `...` when longer. A `tables` entry that is not a string, and every other shape refusal, keep `SHAPE` and their hints. `preview_revert`, `prepare_revert` and `rescope_revert` call it, so all three answer `NAME` |

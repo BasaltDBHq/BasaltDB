@@ -69,7 +69,7 @@ func (c Catalog) Find(ctx context.Context, namespace, name string) (agentstore.R
 }
 
 func (c Catalog) Describe(ctx context.Context, ref agentstore.ResourceRef) (agentstore.Detail, error) {
-	oid, err := pgOID(ref)
+	oid, err := ResourceOID(ref)
 	if err != nil {
 		return agentstore.Detail{}, err
 	}
@@ -81,7 +81,7 @@ func (c Catalog) Describe(ctx context.Context, ref agentstore.ResourceRef) (agen
 }
 
 func (c Catalog) Guarded(ctx context.Context, ref agentstore.ResourceRef) (bool, error) {
-	oid, err := pgOID(ref)
+	oid, err := ResourceOID(ref)
 	if err != nil {
 		return false, err
 	}
@@ -118,8 +118,8 @@ func (c Catalog) Database() string { return c.pg.Database() }
 
 func (c Catalog) Host() string { return c.pg.Host() }
 
-// pgResourceRef is a table's ref: its OID.
-func pgResourceRef(oid uint32) agentstore.ResourceRef {
+// ResourceRef is a table's ref: its OID.
+func ResourceRef(oid uint32) agentstore.ResourceRef {
 	return agentstore.ResourceRef(strconv.FormatUint(uint64(oid), 10))
 }
 
@@ -139,12 +139,12 @@ func pgFieldRefs(oid uint32, attnums []int16) []agentstore.FieldRef {
 	return out
 }
 
-// pgOID reads a resource ref back. A ref this adapter did not write is an
-// engine defect, never a guess.
-func pgOID(ref agentstore.ResourceRef) (uint32, error) {
+// ResourceOID reads a resource ref back. A ref this adapter did not write
+// is an engine defect, never a guess.
+func ResourceOID(ref agentstore.ResourceRef) (uint32, error) {
 	oid, err := strconv.ParseUint(string(ref), 10, 32)
-	if err != nil || pgResourceRef(uint32(oid)) != ref {
-		return 0, fmt.Errorf("describe: %q is not a Postgres resource ref", ref)
+	if err != nil || ResourceRef(uint32(oid)) != ref {
+		return 0, fmt.Errorf("%q is not a Postgres resource ref", ref)
 	}
 	return uint32(oid), nil
 }
@@ -177,7 +177,7 @@ func pgResource(r pgcatalog.Relation) agentstore.Resource {
 		}
 	}
 	return agentstore.Resource{
-		Ref: pgResourceRef(r.OID), Namespace: r.Schema, Name: r.Name, Kind: r.Kind,
+		Ref: ResourceRef(r.OID), Namespace: r.Schema, Name: r.Name, Kind: r.Kind,
 		Estimate: r.EstimatedRows, Comment: r.Comment, Actions: actions,
 	}
 }

@@ -9,7 +9,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/lib/sqlport"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/agentcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgpii"
 )
 
@@ -19,10 +18,7 @@ import (
 func resultFields(cols []action.Column) []piistore.ResultField {
 	out := make([]piistore.ResultField, len(cols))
 	for i, c := range cols {
-		out[i].Key = c.Name
-		if c.TableOID != 0 {
-			out[i].Ref = agentcatalog.FieldRef(c.TableOID, c.Attnum)
-		}
+		out[i] = piistore.ResultField{Ref: c.Ref, Key: c.Name}
 	}
 	return out
 }

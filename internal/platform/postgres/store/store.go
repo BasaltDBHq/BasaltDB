@@ -147,7 +147,11 @@ func (s *Store) countRows(ctx context.Context, tx pgx.Tx, change uuid.UUID, rows
 
 // recordReadRaw is RecordRead before MapError.
 func (s *Store) recordReadRaw(ctx context.Context, r action.Read) (uuid.UUID, error) {
-	return guard.RecordRead(ctx, s.db, guardRead(r))
+	gr, err := guardRead(r)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return guard.RecordRead(ctx, s.db, gr)
 }
 
 // recordRefusalRaw is RecordRefusal before MapError.

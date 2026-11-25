@@ -203,15 +203,12 @@ func TestValuesReadAreInTheDictionaryAndTokenizedConsistently(t *testing.T) {
 	require.Contains(t, first, tok.Surface())
 }
 
-// resultFields names a Postgres result's fields, as internal/app does for
-// the observer: oid 0 (a computed column) has no ref.
+// resultFields names a result's fields, as internal/app does for the
+// observer: a computed column has no ref.
 func resultFields(cols []action.Column) []piistore.ResultField {
 	out := make([]piistore.ResultField, len(cols))
 	for i, c := range cols {
-		out[i].Key = c.Name
-		if c.TableOID != 0 {
-			out[i].Ref = agentcatalog.FieldRef(c.TableOID, c.Attnum)
-		}
+		out[i] = piistore.ResultField{Ref: c.Ref, Key: c.Name}
 	}
 	return out
 }

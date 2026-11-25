@@ -129,8 +129,21 @@ func (r storeRule) in(dir string) storeRule {
 	return r
 }
 
+// actionStoreRule holds internal/core/action, the types every domain's
+// store ports speak, to the store's opaque refs: a read's columns and row
+// versions name fields and resources by FieldRef and ResourceRef, never by
+// a store's own numbers.
+var actionStoreRule = storeRule{
+	dir:         filepath.Join("internal", "core", "action"),
+	imports:     storeBoundImports,
+	ident:       regexp.MustCompile(`OID|Oid|Attnum|attnum|pg_`),
+	text:        regexp.MustCompile(`pg_`),
+	allowed:     map[string]string{},
+	allowedDeps: map[string]string{},
+}
+
 // storeRules are the store-neutral domains.
-var storeRules = []storeRule{agentStoreRule, revertStoreRule, piiStoreRule, approvalStoreRule, approvalMCPStoreRule}
+var storeRules = []storeRule{agentStoreRule, revertStoreRule, piiStoreRule, approvalStoreRule, approvalMCPStoreRule, actionStoreRule}
 
 // importName is the name a file refers to the import s by.
 func importName(s *ast.ImportSpec) string {
@@ -345,6 +358,12 @@ func TestStoreChainsFollowTheRule(t *testing.T) {
 func TestAgentDomainIsStoreNeutral(t *testing.T) {
 	requireStoreNeutral(t, agentStoreRule,
 		"the agent domain reaches its store only through its ports; put store code in an adapter (internal/agent/out/...) or the wiring")
+}
+
+func TestActionTypesAreStoreNeutral(t *testing.T) {
+	requireStoreNeutral(t, actionStoreRule,
+		"the action types name a store's fields and resources by action.FieldRef and action.ResourceRef; "+
+			"the store's adapter writes and reads them (for Postgres, internal/platform/postgres/agentcatalog)")
 }
 
 func TestPIIDomainIsStoreNeutral(t *testing.T) {

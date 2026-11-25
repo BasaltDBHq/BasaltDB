@@ -17,7 +17,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/pii/out/dictfile"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/agentcatalog"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
@@ -173,7 +172,7 @@ func TestScanTextMatchesTheQueryTool(t *testing.T) {
 	require.NoError(t, err)
 	fields := make([]piistore.ResultField, len(res.Columns))
 	for i, c := range res.Columns {
-		fields[i] = piistore.ResultField{Ref: agentcatalog.FieldRef(c.TableOID, c.Attnum), Key: c.Name}
+		fields[i] = piistore.ResultField{Ref: c.Ref, Key: c.Name}
 	}
 	obs := pii.NewObserver(pii.NewMap(slog.New(slog.DiscardHandler)), read).On(Classes(f.pool))
 	require.NoError(t, obs.Observe(ctx, fields, res.Rows))

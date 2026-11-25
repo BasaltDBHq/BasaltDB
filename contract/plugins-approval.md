@@ -67,7 +67,7 @@ The binding text is the text `open_plugin_approval` builds from the detail the c
 | `kind` | `PLUGIN` | no |
 | `approvalId` | the approval's id | no |
 | `store` | `{kind, name}`: the store's kind and the name it gives what the agents are bound to (`current_database()` in Postgres), for display | no |
-| `expiresAt` | RFC 3339 UTC with microseconds, 24 hours after the approval was opened | no |
+| `expiresAt` | Exactly `YYYY-MM-DDTHH:MM:SS.ffffffZ` ([Text rules](stores.md#text-rules)), 24 hours after the approval was opened | no |
 | `requestedBy` | the agent that opened it, `agent:<name>` (from the role that is `session_user`): which agent asked | no |
 | `agents` | the agents of this store the entry will serve, each `agent:<name>` whose role is a member of `<prefix>_agents`; at least one | the agent is in it |
 | `name`, `instance`, `version`, `manifestSha256` | of the installed copy | yes |

@@ -72,7 +72,7 @@ Every text that describes a change to the person's data, whatever store holds it
 
 `op` is Basalt's safety class. The store's own word for the operation goes beside it, in `store.verb`. Which operation it names depends on the text:
 
-- **On a line** (a preview line, a revert line, a ledger `ROW_CHANGE` row), `verb` is the store's word for that line's own `op`, which can differ from the request's. In Postgres it is `INSERT`, `UPDATE` or `DELETE`: a child row set to `NULL` by `ON DELETE SET NULL` under a `DELETE` has `op` `UPDATE` and `verb` `UPDATE`, a row an `INSERT … ON CONFLICT DO UPDATE` updated has `UPDATE`, and a revert line's `verb` names its inverse write.
+- **On a line** (a preview line or a revert line, the texts the [text rules](#text-rules) cover), `verb` is the store's word for that line's own `op`, which can differ from the request's. In Postgres it is `INSERT`, `UPDATE` or `DELETE`: a child row set to `NULL` by `ON DELETE SET NULL` under a `DELETE` has `op` `UPDATE` and `verb` `UPDATE`, a row an `INSERT … ON CONFLICT DO UPDATE` updated has `UPDATE`, and a revert line's `verb` names its inverse write. A ledger `ROW_CHANGE` row, one per row written, takes its `verb` the same way, from its own `op`.
 - **On a change record, a feed event and the ledger's other rows** (`CHANGE`, `READ`, `REFUSED`), `verb` is the request's own command: in Postgres the statement's command, `SELECT`, `INSERT`, `UPDATE`, `DELETE` or the DDL command; in MongoDB `insertOne`, `find`, ….
 
 | `op` | Means |

@@ -80,7 +80,8 @@
     "expiresAt": {
       "type": "string",
       "format": "date-time",
-      "description": "RFC 3339 UTC with microseconds, 1 hour after prepare_revert, or after the latest rescope or reset."
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$",
+      "description": "Exactly YYYY-MM-DDTHH:MM:SS.ffffffZ: UTC, six fraction digits, Z (the text rules), 1 hour after prepare_revert, or after the latest rescope or reset."
     },
     "requestedBy": {
       "$ref": "#/$defs/agentName",

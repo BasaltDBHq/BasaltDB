@@ -41,7 +41,7 @@
     "expiresAt": {
       "type": "string",
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$",
-      "description": "RFC 3339 UTC with microseconds: 24 hours after the approval was opened. A signed approval does not expire; this bounds only the wait for the signature."
+      "description": "Exactly YYYY-MM-DDTHH:MM:SS.ffffffZ: UTC, six fraction digits, Z (the text rules): 24 hours after the approval was opened. A signed approval does not expire; this bounds only the wait for the signature."
     },
     "requestedBy": {
       "$ref": "#/$defs/agent",

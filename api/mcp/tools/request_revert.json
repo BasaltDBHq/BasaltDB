@@ -153,7 +153,7 @@
       "revertUrl": {
         "type": "string",
         "format": "uri",
-        "description": "When the revert was just requested, or with reissueLink while PENDING: the revert page, the short link http://localhost:<port>/reverts/<revertId>#s=<secret> when the engine serves the local pages, else the long link <base>/reverts/<revertId>#1.<request>. Absent otherwise: the link already given keeps working. When that long link is over the link budget: the hash link <base>/reverts/<revertId>#h=<h>, with requestFile beside it."
+        "description": "When the revert was just requested, or with reissueLink while PENDING: the revert page, the short link http://localhost:<port>/reverts/<revertId>#s=<secret> when the engine serves the local pages, else the long link <base>/reverts/<revertId>#2.<request>. Absent otherwise: the link already given keeps working. When that long link is over the link budget: the hash link <base>/reverts/<revertId>#h=<h>, with requestFile beside it."
       },
       "requestFile": {
         "$ref": "../links/request-file.schema.json",

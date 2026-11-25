@@ -216,7 +216,8 @@ func TestRevertFiltersCap(t *testing.T) {
 }
 
 // runs goes only with taskId: with a change or a run it is SCOPE_FILTER,
-// and the wait form takes no filter at all.
+// and the wait form takes no filter at all. A table name the store cannot
+// use is SCOPE_FILTER with the store's text.
 func TestRevertRunsFilterNeedsATask(t *testing.T) {
 	t.Parallel()
 	env := filterHarness(t)
@@ -235,13 +236,22 @@ func TestRevertRunsFilterNeedsATask(t *testing.T) {
 		for _, args := range []map[string]any{
 			{"taskId": env.taskID, "runs": []any{}},
 			{"taskId": env.taskID, "tables": []any{}},
-			{"taskId": env.taskID, "tables": []any{"leads"}},
-			{"taskId": env.taskID, "tables": []any{"public.leads;drop"}},
 			{"taskId": env.taskID, "runs": []any{"not-a-uuid"}},
 			{"taskId": env.taskID, "runs": []any{env.run1, env.run1}},
 		} {
 			body, isError := env.call(t, tool, args)
 			requireErrorSteps(t, body, isError, "INVALID_ARGUMENT", "")
+		}
+		// A table name the tool passes through unchanged: the store
+		// refuses it, and the agent gets the store's refusal as its filter
+		// refused (SCOPE_FILTER).
+		for name, want := range map[string]string{
+			"leads":             "tables are schema.table names",
+			"public.leads;drop": "public.leads;drop has no change of yours in this scope",
+		} {
+			body, isError := env.call(t, tool, map[string]any{"taskId": env.taskID, "tables": []any{name}})
+			requireErrorSteps(t, body, isError, "INVALID_ARGUMENT", "SCOPE_FILTER")
+			require.Contains(t, str(t, body["message"]), want, "%s %s", tool, name)
 		}
 	}
 	id := uuid.Must(uuid.NewV7()).String()

@@ -269,7 +269,6 @@
           "tables": {
             "description": "1 to 20 schema.table names, each a table you wrote in this scope; the preview holds only their lines. Absent: every table.",
             "items": {
-              "pattern": "^[^.\\s;]+\\.[^.\\s;]+$",
               "type": "string"
             },
             "maxItems": 20,
@@ -391,7 +390,6 @@
           "tables": {
             "description": "With changeId, runId or taskId, 1 to 20 schema.table names, each a table you wrote in this scope; the revert holds only their lines. Absent: every table.",
             "items": {
-              "pattern": "^[^.\\s;]+\\.[^.\\s;]+$",
               "type": "string"
             },
             "maxItems": 20,

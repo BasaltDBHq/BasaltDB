@@ -56,7 +56,8 @@ const (
 	RevertNotOwnChange RevertReason = "NOT_OWN_CHANGE"
 	RevertNotOwnRun    RevertReason = "NOT_OWN_RUN"
 	RevertNotOwnTask   RevertReason = "NOT_OWN_TASK"
-	// RevertFilter is a filter naming work that is not the agent's.
+	// RevertFilter is a filter naming work that is not the agent's, or
+	// a name the store cannot use.
 	RevertFilter RevertReason = "FILTER"
 	// RevertFilterCap is a filter over its length limit.
 	RevertFilterCap RevertReason = "FILTER_CAP"

@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - `describe`'s overview names what it counts in words that fit any store: `counts.schemas` is now `counts.namespaces`, `counts.tables` is `counts.resources`, the large overview's `schemas` list is `namespaces`, each item `{ namespace, resources }` (was `{ schema, tables }`), and `otherSchemas` is `otherNamespaces`, `{ namespaces, resources }` (was `{ schemas, tables }`). The resource and search forms do not change. An agent or tool that reads these keys needs the new names.
+- A badly formed table name in the `tables` filter of `preview_revert` or `request_revert` now gets the database's own refusal: `INVALID_ARGUMENT` reason `SCOPE_FILTER` with the store's text ("tables are schema.table names"), where it was `INVALID_ARGUMENT` with no reason and the tool's own message. The tool schemas no longer carry a name pattern for `tables`. A name with a semicolon, such as `public.leads;drop`, is no longer refused up front: it reads "`public.leads;drop` has no change of yours in this scope", like any table the agent did not write.
 
 ## [0.1.0-alpha] - 2026-11-24
 

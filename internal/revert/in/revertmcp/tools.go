@@ -7,7 +7,6 @@ package revertmcp
 import (
 	"context"
 	"encoding/json"
-	"regexp"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
@@ -59,17 +58,14 @@ type scopeIDs struct {
 	Tables   []string `json:"tables" validate:"omitempty,unique"`
 }
 
-// filterTable is a schema.table name as the tools' tables filter takes it:
-// no whitespace, no semicolon, one dot.
-var filterTable = regexp.MustCompile(`^[^.\s;]+\.[^.\s;]+$`)
-
 // hasFilters reports whether the arguments carry a runs or tables filter.
 func (a scopeIDs) hasFilters() bool { return a.Runs != nil || a.Tables != nil }
 
 // filtered narrows scope by the runs and tables filters. It refuses what
 // the arguments alone show is outside the agent's own work or over the cap;
-// whether each run and table is the agent's own Postgres checks, and the
-// engine maps its refusal (scopeRefused).
+// the table names pass through as the agent wrote them. Whether each name
+// is well formed, and whether each run and table is the agent's own, the
+// store checks, and the engine maps its refusal (scopeRefused).
 func (a scopeIDs) filtered(scope action.Scope) (action.Scope, error) {
 	if a.Runs != nil && scope.Kind != revert.ScopeTask {
 		return action.Scope{}, &guidance.ArgumentError{Reason: guidance.ReasonScopeFilter, Message: "invalid arguments: runs goes only with " +
@@ -81,11 +77,6 @@ func (a scopeIDs) filtered(scope action.Scope) (action.Scope, error) {
 	if (a.Runs != nil && len(a.Runs) == 0) || (a.Tables != nil && len(a.Tables) == 0) {
 		return action.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: runs and tables list at least one entry; leave " +
 			"a filter out for all of your work in the scope"}
-	}
-	for _, t := range a.Tables {
-		if !filterTable.MatchString(t) {
-			return action.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: tables are schema.table names, such as public.leads"}
-		}
 	}
 	for _, id := range a.Runs {
 		scope.Runs = append(scope.Runs, uuid.MustParse(id))

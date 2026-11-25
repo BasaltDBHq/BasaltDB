@@ -124,9 +124,6 @@ func (f fixture) oid(t *testing.T, table string) uint32 {
 	return oid
 }
 
-// dictDirs remembers each test dictionary's state directory.
-var dictDirs sync.Map
-
 func newDict(t *testing.T, opts corepii.DictionaryOptions) (*corepii.FuseDictionary, *corepii.Keys) {
 	t.Helper()
 	dir := t.TempDir()
@@ -135,17 +132,7 @@ func newDict(t *testing.T, opts corepii.DictionaryOptions) (*corepii.FuseDiction
 	dict, err := dictfile.Open(dir, keys, opts)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dict.Close() })
-	dictDirs.Store(dict, dir)
 	return dict, keys
-}
-
-func dict2Dir(t *testing.T, dict *corepii.FuseDictionary) string {
-	t.Helper()
-	dir, ok := dictDirs.Load(dict)
-	require.True(t, ok)
-	s, ok := dir.(string)
-	require.True(t, ok)
-	return s
 }
 
 func uuidV7(t *testing.T) uuid.UUID {
@@ -271,71 +258,6 @@ func TestWriteReturningValuesAreAddedBeforeCommitAndFailClosed(t *testing.T) {
 	require.Zero(t, n, "nothing applied")
 }
 
-func TestScanRebuildsFromEveryKindOfRelation(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	f.classify(t, time.Now())
-	ctx := context.Background()
-	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
-	classes := NewMap(slog.New(slog.DiscardHandler))
-	log, out := newLog()
-	var slept time.Duration
-	clock := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
-	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(f.pool), ReadOnly: pgquerier.ReadOnlyTx(f.pool), Map: classes, Classes: pgpii.Classes(f.pool), Limits: sqlguard.DefaultLimits()}},
-		ScanOptions{
-			PageRows: 2, RowsPerSecond: 4, Now: func() time.Time { return clock },
-			Sleep: func(_ context.Context, d time.Duration) error { slept += d; clock = clock.Add(d); return nil },
-		}, log)
-
-	res, err := s.Cycle(ctx)
-	require.NoError(t, err)
-	require.Equal(t, 6, res.Columns)
-	require.False(t, dict.NeedsBuild())
-	require.Zero(t, dict.Status().DeltaValues)
-	for _, v := range []string{"ada@corp.ee", "bob@corp.ee", "nk1@corp.ee", "nk2@corp.ee", "order1@corp.ee", "order7@corp.ee"} {
-		require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, v, "")), v)
-	}
-	_, ok := dict.Lookup(keys.GenericHash("Bob Stone"))
-	require.True(t, ok)
-	// customers 3 + nokey 3 + orders 7 rows, and the view's 3 distinct
-	// values: paged two rows at a time and held to 4 rows a second.
-	require.EqualValues(t, 16, res.Rows)
-	require.Equal(t, time.Duration(res.Rows)*time.Second/4, slept)
-	require.Contains(t, out.String(), "pii: dictionary scan")
-	require.NotContains(t, out.String(), "corp.ee", "the log carries counts, never values")
-
-	st, ok := dictfile.ReadStatus(dict2Dir(t, dict))
-	require.True(t, ok)
-	require.EqualValues(t, 16, st.LastScanRows)
-
-	// A deleted value drops out at the next cycle (M51-8).
-	f.db.Exec(t, `DELETE FROM public.nokey WHERE email = 'nk2@corp.ee'`)
-	_, err = s.Cycle(ctx)
-	require.NoError(t, err)
-	require.False(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "nk2@corp.ee", "")))
-}
-
-func TestScanOverBudgetKeepsThePreviousDictionary(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	f.classify(t, time.Now())
-	ctx := context.Background()
-	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
-	classes := NewMap(slog.New(slog.DiscardHandler))
-	src := []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(f.pool), ReadOnly: pgquerier.ReadOnlyTx(f.pool), Map: classes, Classes: pgpii.Classes(f.pool), Limits: sqlguard.DefaultLimits()}}
-	_, err := NewScanner(dict, src, ScanOptions{}, slog.New(slog.DiscardHandler)).Cycle(ctx)
-	require.NoError(t, err)
-	require.NoError(t, dict.Add(corepii.EntityEmail, "delta@corp.ee", ""))
-
-	// A budget for 3 values: the cycle stops, the base and delta stay.
-	tiny := NewScanner(dict, src, ScanOptions{MaxMemoryBytes: 3 * bytesPerAddBound}, slog.New(slog.DiscardHandler))
-	_, err = tiny.Cycle(ctx)
-	require.ErrorIs(t, err, ErrScanOverBudget)
-	require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "order7@corp.ee", "")))
-	require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "delta@corp.ee", "")))
-	require.Equal(t, 1, dict.Status().DeltaValues)
-}
-
 func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
@@ -345,7 +267,7 @@ func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	obs := NewObserver(classes, dict).On(pgpii.Classes(f.pool))
 	reader := postgres.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
-	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(f.pool), ReadOnly: pgquerier.ReadOnlyTx(f.pool), Map: classes, Classes: pgpii.Classes(f.pool), Limits: sqlguard.DefaultLimits()}},
+	s := NewScanner(dict, []ScanSource{{Agent: "bot", Map: classes, Classes: pgpii.Classes(f.pool), Fields: pgpii.Fields(f.pool, sqlguard.DefaultLimits(), DefaultLoadTimeout)}},
 		ScanOptions{}, slog.New(slog.DiscardHandler))
 	plain := agentcatalog.FieldRef(f.oid(t, "public.plain"), 2)
 

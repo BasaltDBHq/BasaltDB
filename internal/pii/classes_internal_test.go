@@ -98,7 +98,8 @@ func TestConcurrentSharedLoadsAreOneFlight(t *testing.T) {
 		})
 	}
 	<-store.entered
-	time.Sleep(50 * time.Millisecond) // let the others join the flight
+	// Release the read once the 7 others have joined the flight.
+	require.Eventually(t, func() bool { return m.joins.Load() == 7 }, 10*time.Second, time.Millisecond)
 	close(store.gate)
 	wg.Wait()
 	close(errs)

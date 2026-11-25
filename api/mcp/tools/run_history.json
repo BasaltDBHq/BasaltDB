@@ -326,7 +326,7 @@
           "version": {
             "type": "string",
             "minLength": 1,
-            "description": "The store's version of the row, an opaque string the store writes and compares: xmin:<n> in Postgres (CONTRACT.md, Stores, Versions)."
+            "description": "The store's version of the row, an opaque string the store writes and compares: xmin:<n> in Postgres (CONTRACT.md, Stores)."
           },
           "changeId": {
             "type": "string",

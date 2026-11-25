@@ -309,7 +309,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "acme-ner", b.Name)
 	require.Equal(t, "1.0.0", b.Version)
-	require.Equal(t, []string{f.roles["bot"].Role}, b.Agents)
+	require.Equal(t, []string{f.roles["bot"].Name}, b.Agents)
 	require.NotEmpty(t, req.CredentialIDs)
 
 	// The session is for this plugin approval only.

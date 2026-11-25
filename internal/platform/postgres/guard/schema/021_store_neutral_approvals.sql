@@ -40,7 +40,8 @@ $$;
 -- built here, so the engine cannot choose what the passkey signs beyond the
 -- statement, parameters and lines, which the commit check recomputes.
 -- p_op is the request's own command (INSERT, UPDATE or DELETE), the verb
--- of its APPROVAL_PENDING row; the earlier form, without it, is dropped.
+-- of its APPROVAL_PENDING row: NULL takes the first line's op, any other
+-- value is refused. The earlier form, without it, is dropped.
 DROP FUNCTION IF EXISTS basalt_meta.hold_action(text, jsonb, text[], text[]);
 CREATE OR REPLACE FUNCTION basalt_meta.hold_action(p_op text, p_statement text, p_params jsonb, p_assigned text[], p_lines text[])
 RETURNS TABLE (approval_id uuid, binding_text text, expires_at timestamptz)
@@ -72,6 +73,9 @@ BEGIN
         PERFORM basalt_meta._invalid('basalt.run_id is required: an approval belongs to a run');
     END IF;
     v_task := basalt_meta._run_task(v_run, basalt_meta._setting_uuid('basalt.task_id'));
+    IF p_op IS NOT NULL AND p_op NOT IN ('INSERT', 'UPDATE', 'DELETE') THEN
+        PERFORM basalt_meta._invalid('op must be INSERT, UPDATE, DELETE or NULL');
+    END IF;
     PERFORM basalt_meta._check_text('statement', p_statement, 65536, true);
     PERFORM basalt_meta._check_text('params', p_params::text, 65536, false);
     IF p_params IS NOT NULL AND jsonb_typeof(p_params) <> 'array' THEN
@@ -135,7 +139,7 @@ BEGIN
         jsonb_build_object('approvalId', v_id, 'runId', v_run, 'taskId', v_task, 'intent', v_intent,
                            'statement', p_statement, 'rows', v_rows, 'rowsHash', encode(v_hash, 'hex'),
                            'expiresAt', v_expires),
-        CASE WHEN p_op IN ('INSERT', 'UPDATE', 'DELETE') THEN p_op END);
+        p_op);
     approval_id := v_id;
     binding_text := v_text;
     expires_at := v_expires;

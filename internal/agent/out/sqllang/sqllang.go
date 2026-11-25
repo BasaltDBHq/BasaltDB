@@ -100,6 +100,16 @@ func (Language) ReadRow(target string, key map[string]any) agentstore.Request {
 	return agentstore.Request{Text: "SELECT * FROM " + target + " WHERE " + strings.Join(conds, " AND "), Params: params}
 }
 
+// Args is req as the query and write tools take it: its text as sql, and
+// its parameters as params only when there are some.
+func (Language) Args(req agentstore.Request) map[string]any {
+	args := map[string]any{"sql": req.Text}
+	if len(req.Params) > 0 {
+		args["params"] = req.Params
+	}
+	return args
+}
+
 // sanitizeIdent quotes a column name for the SQL a step suggests: in double
 // quotes, a double quote doubled and a NUL dropped.
 func sanitizeIdent(name string) string {

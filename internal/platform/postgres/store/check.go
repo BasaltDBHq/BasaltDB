@@ -23,20 +23,12 @@ func Check(sql string, tool action.Tool) (action.Statement, error) {
 	return statementOf(stmt), refusalOf(err)
 }
 
-// HoldColumns returns the columns whose new values the person's approval
+// holdColumns returns the columns whose new values the person's approval
 // binds for a held write: the ones it assigns, or for an INSERT without a
 // column list every column of its table (TableColumns). A write whose
 // values change between runs is refused (*action.RefusalError
 // NOT_REPEATABLE): a held write is run again when the person signs.
-func (s *Store) HoldColumns(ctx context.Context, sql string, params []any) ([]string, error) {
-	return HoldColumns(ctx, sql, params, s.TableColumns)
-}
-
-// HoldColumns is Store.HoldColumns with the table's columns read by
-// tableColumns.
-func HoldColumns(ctx context.Context, sql string, params []any,
-	tableColumns func(ctx context.Context, table string) ([]string, error),
-) ([]string, error) {
+func (s *Store) holdColumns(ctx context.Context, sql string, params []any) ([]string, error) {
 	h, err := sqlguard.CheckRepeatable(sql, params)
 	if err != nil {
 		return nil, refusalOf(err)
@@ -44,7 +36,7 @@ func HoldColumns(ctx context.Context, sql string, params []any,
 	if h.Assigned != nil {
 		return h.Assigned, nil
 	}
-	return tableColumns(ctx, h.Table)
+	return s.TableColumns(ctx, h.Table)
 }
 
 // statementOf is the checked statement as the service takes it: the row

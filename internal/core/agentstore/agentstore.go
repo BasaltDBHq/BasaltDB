@@ -18,10 +18,15 @@ const FamilySQL Family = "SQL"
 
 // Request is one request in the store's language: its text and its
 // parameters. The agent service passes it on and records it, and never reads
-// Text. Postgres: SQL text with $n parameters.
-type Request struct {
-	Text   string
-	Params []any
+// Text. Postgres: SQL text with $n parameters. It is action.Request, so a
+// held write's request reaches the approval's store as the agent sent it.
+type Request = action.Request
+
+// RequestArgs names a request's arguments the way its store family's
+// tools take them, for a next step that calls a tool with it.
+type RequestArgs interface {
+	// Args is req as the family's query and write tools take it.
+	Args(req Request) map[string]any
 }
 
 // ResourceRef names one resource (a table, a collection, a bucket) as its

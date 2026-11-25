@@ -49,7 +49,7 @@ Planned (owner decisions AE-1 to AE-14). Every error body and every result the a
 | `STATEMENT_REFUSED` | `NOT_REPEATABLE` | — | A `REVISE_CALL` |
 | `STATEMENT_REFUSED` | `NO_PRIMARY_KEY` | — | A `STOP`; +pm |
 | `STATEMENT_REFUSED` | `NOT_ALLOWED` | — | A `STOP` |
-| `STATEMENT_REFUSED` | `HOLD_TOO_LARGE` | — | A `STOP`, A `ASK_PERSON` (the person makes the change, or the agent writes fewer rows per write, each held; on a guard before version 37, the person upgrades the guard and the agent sends the write again); +pm |
+| `STATEMENT_REFUSED` | `HOLD_TOO_LARGE` | — | A `STOP`, A `ASK_PERSON` (the person makes the change, or the agent writes fewer rows per write, each held); +pm |
 | `ROW_LIMIT_EXCEEDED` | — | — | A `STOP`, A `ASK_PERSON`, A `RETRY_SMALLER_BATCHES` (`maxRows` 50, only on an explicit yes); +pm |
 | `QUERY_TIMEOUT` | `ROW_LIMIT` | — | A `REVISE_CALL` |
 | `QUERY_TIMEOUT` | `SIZE_LIMIT` | — | A `REVISE_CALL` (select fewer or shorter columns, for example `left(col, 200)`, or fewer rows; for `run_history`, `list_pending`, `preview_revert`, `revert_plan` and `describe`, a smaller `limit`, down to 1) |

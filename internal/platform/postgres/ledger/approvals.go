@@ -35,8 +35,12 @@ var ApprovalSortSpec = ChangeSortSpec
 // colApprovalID is the approval id column of basalt_meta.agent_approvals.
 const colApprovalID = "approval_id"
 
+// requestKind is the held request's family, as the binding names it
+// (request.kind); empty once the binding is pruned.
+const requestKind = "coalesce(binding_text::jsonb #>> '{request,kind}', '') AS request_kind"
+
 func approvalSelect(ctx context.Context) sq.SelectBuilder {
-	return withRequest(ctx, psql.Select(colApprovalID, colRunID, "task_id", "intent", "coalesce(statement, '') AS statement", "params",
+	return withRequest(ctx, psql.Select(colApprovalID, colRunID, "task_id", "intent", requestKind, "coalesce(statement, '') AS statement", "params",
 		"assigned_columns", "rows", "status", "created_at", "expires_at", "approved_at",
 		"coalesce(binding_text, '') AS binding_text").
 		From("basalt_meta.agent_approvals"))
@@ -50,7 +54,7 @@ func scanApproval(row pgx.CollectableRow) (action.Approval, error) {
 
 func approvalDest(a *action.Approval) []any {
 	return []any{
-		&a.ID, &a.RunID, &a.TaskID, &a.Intent, &a.Statement, &a.Params, &a.Assigned, &a.Rows, &a.Status,
+		&a.ID, &a.RunID, &a.TaskID, &a.Intent, &a.Request.Kind, &a.Request.Text, &a.Request.Params, &a.Assigned, &a.Rows, &a.Status,
 		&a.CreatedAt, &a.ExpiresAt, &a.ApprovedAt, &a.BindingText, &a.Lines, &a.LinesLeftOut, &a.LinesCost,
 	}
 }
@@ -74,7 +78,7 @@ func markedApprovals(page string, desc bool, limit int) string {
 	if desc {
 		order += descending
 	}
-	return markedPage(page, colApprovalID, order, limit, "p.approval_id", "p.run_id", "p.task_id", "p.intent", markedStatement,
+	return markedPage(page, colApprovalID, order, limit, "p.approval_id", "p.run_id", "p.task_id", "p.intent", "p.request_kind", markedStatement,
 		markedParams, "p.assigned_columns", "p.rows", "p.status", "p.created_at", "p.expires_at", "p.approved_at",
 		pageOnly("p.binding_text", "''"), pageOnly("p.lines", "'{}'::text[]"), "p.lines_left_out", "p.lines_cost", markedLarge)
 }

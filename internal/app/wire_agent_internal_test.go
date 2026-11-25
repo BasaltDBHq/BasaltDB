@@ -22,7 +22,7 @@ func TestAgentHostDepsFillsEveryAdapterPort(t *testing.T) {
 	require.NotEmpty(t, msg, "an empty Deps must be refused")
 	supplied := []string{
 		"Core.Errors.InvalidParams", "Core.Errors.InvalidIntent", "Core.Errors.RowTooLarge", "Core.ServiceManager",
-		"Agent.Record", "Approval.ErrNotFound", "Revert.AfterAnswer", "Revert.RotateSession",
+		"Agent.Record", "Revert.AfterAnswer", "Revert.RotateSession",
 		"Delivery.VaultConflict", "Delivery.ErrVaultNotConnected", "Status.CrashReports",
 		"Status.LatestGuardVersion", "Status.UpdateMessage", "Status.StartHoldOffUntil",
 	}

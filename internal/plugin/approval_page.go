@@ -183,8 +183,17 @@ func (pc *Service) pluginRelayError(ctx context.Context, id uuid.UUID, err error
 			"The plugin approval was signed with a passkey this database does not accept (unknown or revoked), so nothing was "+
 				"approved. Ask the agent for a link to register the passkey you use, then try again on this page.", steps)
 	case pluginmodel.ApprovalBadSignature:
+		return pluginBadSignature(msg)
+	default:
+		// A reason this page does not name yet: the store refused the
+		// signature, so it is answered as one the guard did not accept.
+		return pluginBadSignature(msg)
 	}
-	// A signature the guard did not accept.
+}
+
+// pluginBadSignature is the page's answer for a signature the guard did
+// not accept.
+func pluginBadSignature(msg string) error {
 	return pluginPageError(guidance.CodeApprovalInvalid, guidance.ReasonBadSignature, msg,
 		"The plugin approval code did not verify, so nothing was approved. Approve again on this page.", nil)
 }

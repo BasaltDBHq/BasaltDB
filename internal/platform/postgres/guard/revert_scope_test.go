@@ -230,12 +230,17 @@ func TestRevertScopeFilters(t *testing.T) {
 	require.Equal(t, unknownTable, tableText("public.lead_notes"))
 	require.Contains(t, unknownTable, "<table> has no change of yours in this scope")
 	// lead_owner in run A: bot wrote it in the task (run B), so it is
-	// inside the scope; a filter that leaves no line is NOTHING_TO_REVERT.
+	// inside the scope; a filter that leaves no line is NOTHING_TO_REVERT,
+	// typed READS_ONLY with the sentence as its hint (version 11).
 	empty := e.taskScope()
 	empty.Runs = []uuid.UUID{e.botA.RunID}
 	empty.Tables = []string{"public.lead_owner"}
 	_, err = guard.PreviewRevert(ctx, e.bot.Conn, empty)
 	requireCode(t, err, guardmodel.CodeNothingToRevert)
+	var pg *pgconn.PgError
+	require.ErrorAs(t, err, &pg)
+	require.Equal(t, guardmodel.NothingReadsOnly, pg.Detail)
+	require.Contains(t, pg.Hint, "changed no rows that a revert could restore")
 }
 
 // The descriptor's shape is checked from the descriptor alone: the
@@ -298,6 +303,36 @@ func TestRevertScopeBadTableNameNamed(t *testing.T) {
 	for name, tc := range cases {
 		for call, err := range map[string]error{"preview": rawPreview(e.bot.Conn, sel(tc.tables)), "prepare": rawPrepare(e.bot.Conn, sel(tc.tables))} {
 			requireScopeRefused(t, err, guardmodel.ScopeName)
+			_, hint, _ := guard.ScopeRefusal(err)
+			require.Equal(t, tc.hint, hint, "%s: %s", name, call)
+		}
+	}
+}
+
+// A refusal for an agents, runs or resources entry of the wrong kind names
+// the first such entry in the caller's order, a non-string as JSON, cut to
+// 127 characters (version 11). The detail stays SHAPE.
+func TestRevertScopeBadEntryNamed(t *testing.T) {
+	t.Parallel()
+	e := newScopeTask(t)
+	sel := func(agents, runs, resources string) string {
+		return fmt.Sprintf(`{"scope": "TASK", "scopeId": %q, "agents": %s, "runs": %s, "resources": %s}`, e.task, agents, runs, resources)
+	}
+	bot := fmt.Sprintf("%q", e.bot.Name)
+	run := fmt.Sprintf("%q", e.botA.RunID)
+	long := strings.Repeat("x", 200)
+	cases := map[string]struct{ sel, hint string }{
+		"a bad agent":             {sel(`["bot"]`, "null", "null"), "bot is not an agent:<name> name"},
+		"the first agent":         {sel("["+bot+`, "zz", "aa"]`, "null", "null"), "zz is not an agent:<name> name"},
+		"an agent not a string":   {sel(`[7]`, "null", "null"), "7 is not an agent:<name> name"},
+		"a bad run":               {sel("["+bot+"]", "["+run+`, "x"]`, "null"), "x is not a run id"},
+		"a run not a string":      {sel("["+bot+"]", `[{"id": 1}]`, "null"), `{"id": 1} is not a run id`},
+		"a long run is cut":       {sel("["+bot+"]", fmt.Sprintf("[%q]", long), "null"), long[:127] + "... is not a run id"},
+		"a resource not a string": {sel("["+bot+"]", "null", `["public.leads", 1]`), "1 is not a schema.table name"},
+	}
+	for name, tc := range cases {
+		for call, err := range map[string]error{"preview": rawPreview(e.bot.Conn, tc.sel), "prepare": rawPrepare(e.bot.Conn, tc.sel)} {
+			requireScopeRefused(t, err, guardmodel.ScopeShape)
 			_, hint, _ := guard.ScopeRefusal(err)
 			require.Equal(t, tc.hint, hint, "%s: %s", name, call)
 		}

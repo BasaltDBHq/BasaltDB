@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"strconv"
-	"strings"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
@@ -248,6 +247,24 @@ var scopeReasons = map[string]action.RevertReason{
 	guardmodel.ScopeFilterCap:    action.RevertFilterCap,
 }
 
+// nothingSentence is the guard's sentence for a NOTHING_TO_REVERT: the
+// hint of a typed detail (READS_ONLY), the detail otherwise.
+func nothingSentence(se *action.StoreError) string {
+	if se.Detail == guardmodel.NothingReadsOnly {
+		return se.Hint
+	}
+	return se.Detail
+}
+
+// applyReasons are the revert reasons of apply_revert's typed
+// REVERT_INVALID details.
+var applyReasons = map[string]action.RevertReason{
+	guardmodel.RevertAlreadyApplied: action.RevertAlreadySigned,
+	guardmodel.RevertAlreadySigned:  action.RevertAlreadySigned,
+	guardmodel.RevertPasskeyRevoked: action.RevertPasskeyRevoked,
+	guardmodel.RevertRowsChanged:    action.RevertRowsChanged,
+}
+
 // guardAnswer is the store error in err, mapped by MapError, nil when err
 // has none.
 func guardAnswer(err error) *action.StoreError {
@@ -285,8 +302,9 @@ func findRevertRefusal(err error) error {
 // prepareRefusal maps PreviewRevert's and PrepareRevert's errors: a scope
 // the guard refused, by its detail (the hint says why; NAME, a badly formed
 // table name, is the agent's filter refused for its form), nothing to
-// revert (the scope changed no rows, or every row would be skipped; the
-// detail is the guard's whole message), and the time limit.
+// revert (detail READS_ONLY: the scope changed no rows; any other: every
+// row would be skipped), and the time limit. A nothing to revert keeps the
+// guard's whole answer as its detail: its code and the sentence.
 func prepareRefusal(err error) error {
 	se := guardAnswer(err)
 	if se == nil {
@@ -300,7 +318,7 @@ func prepareRefusal(err error) error {
 		}
 		return refusal(err, reason, se.Hint)
 	case guardmodel.CodeNothingToRevert:
-		if strings.Contains(se.Message, "changed no rows") {
+		if se.Detail == guardmodel.NothingReadsOnly {
 			return refusal(err, action.RevertReadsOnly, se.Message)
 		}
 		return refusal(err, action.RevertNothing, se.Message)
@@ -314,8 +332,8 @@ func prepareRefusal(err error) error {
 
 // applyRevertRefusal maps ApplyRevert's errors: an expired revert, a
 // signed revert with no row to restore, and every REVERT_INVALID, told
-// apart by the guard's detail in this order; any other detail is a
-// signature the guard did not accept.
+// apart by the guard's typed detail (applyReasons), the hint the sentence;
+// any other detail is a signature the guard did not accept.
 func applyRevertRefusal(err error) error {
 	se := guardAnswer(err)
 	if se == nil {
@@ -326,17 +344,12 @@ func applyRevertRefusal(err error) error {
 	case code == guardmodel.CodeRevertExpired:
 		return refusal(err, action.RevertExpiredReason, se.Detail)
 	case code == guardmodel.CodeNothingToRevert:
-		return refusal(err, action.RevertNothing, se.Detail)
+		return refusal(err, action.RevertNothing, nothingSentence(se))
 	case code != guardmodel.CodeRevertInvalid:
 		return err
 	}
-	switch {
-	case strings.Contains(se.Detail, "rows changed since"):
-		return refusal(err, action.RevertRowsChanged, se.Detail)
-	case strings.Contains(se.Detail, "passkey revoked"):
-		return refusal(err, action.RevertPasskeyRevoked, se.Detail)
-	case strings.Contains(se.Detail, "already"):
-		return refusal(err, action.RevertAlreadySigned, se.Detail)
+	if reason, ok := applyReasons[se.Detail]; ok {
+		return refusal(err, reason, se.Hint)
 	}
 	return refusal(err, action.RevertSignature, se.Detail)
 }

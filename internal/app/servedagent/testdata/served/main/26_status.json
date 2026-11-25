@@ -7,8 +7,8 @@
       "reachable": true
     },
     "guard": {
-      "build": 10,
-      "installed": 10,
+      "build": 11,
+      "installed": 11,
       "state": "OK"
     },
     "operatedBy": "PERSON",

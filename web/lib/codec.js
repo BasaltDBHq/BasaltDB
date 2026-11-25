@@ -5,7 +5,8 @@
 // their testdata/fixtures.json.
 //
 // Rule: the binding text and the lines are hashed and parsed exactly as
-// received, never re-serialized. Postgres built them; the passkey signs
+// received, never re-serialized. The store built them (CONTRACT.md, Stores,
+// Text rules); the passkey signs
 // sha256 of the binding text's UTF-8 bytes. A format 2 link carries them in
 // compact form, rebuilt byte for byte by compact.js before anything else.
 
@@ -18,11 +19,9 @@ import { DeflateError, deflateEnd } from "./deflate.js";
 export const PROD_RP_ID = "basaltvault.app";
 export const PORTAL = "https://portal.basaltvault.app";
 
-// Approval and revert links: format 2 (the compact request) is what the
-// engine writes; format 1 is still read.
-export const REQUEST_FORMAT_1 = "1.";
+// Approval, revert and plugin approval links: format 2 (the compact
+// request) only. A format 1 link (#1.) is not read (clean state).
 export const REQUEST_FORMAT_2 = "2.";
-const REQUEST_FORMATS = [REQUEST_FORMAT_1, REQUEST_FORMAT_2];
 export const REGISTRATION_REQUEST_PREFIX = "1.";
 export const REGISTRATION_RESPONSE_PREFIX = "basalt-passkey.1.";
 
@@ -206,28 +205,22 @@ function asTruncated(step) {
   }
 }
 
-// decodeRequest decodes an approval or revert link fragment, with or
-// without '#', in either format: format + base64url(deflate-raw(json)). It
-// returns the format 1 request, an object with exactly the required and
-// optional keys; for format 2 it rebuilds the binding text and at most
-// maxLines lines, and takes the id (idKey) from the binding. A fragment that
-// is empty or does not decode (base64url, deflate-raw, UTF-8, JSON) throws
-// TruncatedLinkError.
-async function decodeRequest(fragment, what, { idKey, maxLines, required, optional, parse }) {
+// decodeRequest decodes an approval, revert or plugin approval link
+// fragment, with or without '#': "2." + base64url(deflate-raw(json)). It
+// rebuilds the binding text and at most maxLines lines, and takes the id
+// (idKey) from the binding. A fragment that is empty or does not decode
+// (base64url, deflate-raw, UTF-8, JSON) throws TruncatedLinkError.
+async function decodeRequest(fragment, what, { idKey, maxLines, parse }) {
   const text = String(fragment).replace(/^#/, "");
-  if (REQUEST_FORMATS.some((f) => f.startsWith(text))) throw new TruncatedLinkError(`${what} is empty`);
-  const format = REQUEST_FORMATS.find((f) => text.startsWith(f));
-  if (format === undefined) throw new CodeError(`${what} must start with "${REQUEST_FORMAT_1}" or "${REQUEST_FORMAT_2}"`);
-  const payload = stripPrefix(text, format, what);
+  if (REQUEST_FORMAT_2.startsWith(text)) throw new TruncatedLinkError(`${what} is empty`);
+  const payload = stripPrefix(text, REQUEST_FORMAT_2, what);
   const compressed = asTruncated(() => b64urlDecode(payload));
   const raw = await inflateRaw(compressed, what);
   const json = asTruncated(() => parseJSON(fromUtf8(raw), what));
-  if (format === REQUEST_FORMAT_1) return strictObject(json, what, required, optional);
   return expandCompact(json, what, idKey, maxLines, parse);
 }
 
-// expandCompact turns a format 2 payload into the format 1 request: the
-// first text is the binding, the rest are the lines. The check that
+// expandCompact turns a format 2 payload into the request: the first text is the binding, the rest are the lines. The check that
 // follows parses the binding again and refuses it there.
 function expandCompact(json, what, idKey, maxLines, parse) {
   // The binding travels as the first text.
@@ -299,9 +292,60 @@ function decodeCredentialIds(ids) {
 }
 
 const BINDING_FIELDS = [
-  "kind", "approvalId", "database", "agent", "runId", "intent", "statement",
-  "params", "assignedColumns", "rows", "rowsHash", "expiresAt",
+  "kind", "approvalId", "store", "agent", "runId", "intent", "request",
+  "assignedFields", "rows", "rowsHash", "expiresAt",
 ];
+
+// Agent names (CONTRACT.md, Stores, Agent names): every text names an agent
+// agent:<name>, never the store's login for it.
+const AGENT_TEXT = /^agent:[a-z][a-z0-9_]*$/;
+const MAX_AGENT_TEXT = 69;
+const agentText = (value, what) => requireMatch(value, AGENT_TEXT, what, MAX_AGENT_TEXT);
+
+// A store kind is SCREAMING_SNAKE_CASE. The page uses it as a label only,
+// so a store it has never heard of in a known shape and request family is
+// drawn and signed like any other.
+const STORE_KIND = /^[A-Z][A-Z0-9_]*$/;
+const STORE_NAMES = { POSTGRES: "Postgres", MYSQL: "MySQL" };
+
+// storeName is the store as text names it ("Postgres checks these exact
+// rows again"), from store.kind: a known kind by its name, any other in
+// words (MONGO_DB is "Mongo db").
+export function storeName(kind) {
+  if (STORE_NAMES[kind]) return STORE_NAMES[kind];
+  const words = String(kind).toLowerCase().replaceAll("_", " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+// storeText is a binding's store as the page shows it: the store's name
+// from its kind, then the name the store gives what the agent is bound to
+// ("Postgres · app").
+export function storeText(store) {
+  return `${storeName(store.kind)} \u00b7 ${store.name}`;
+}
+
+// parseBindingStore checks a binding's store part: {kind, name}.
+function parseBindingStore(value) {
+  const st = strictObject(value, "binding store", ["kind", "name"]);
+  requireMatch(st.kind, STORE_KIND, "binding store kind");
+  if (typeof st.name !== "string" || st.name === "") throw new CodeError("binding store name is not valid");
+  return st;
+}
+
+// Request families (CONTRACT.md, Stores, Request families): the page has a
+// view for SQL only. A request of another family is parsed as far as its
+// kind, drawn as unknown, and never offered for signing.
+export const REQUEST_SQL = "SQL";
+
+function parseHeldRequest(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new CodeError("binding request is not an object");
+  requireMatch(value.kind, STORE_KIND, "binding request kind");
+  if (value.kind !== REQUEST_SQL) return value;
+  const r = strictObject(value, "binding request", ["kind", "statement", "params"]);
+  requireString(r.statement, "binding request statement");
+  if (!Array.isArray(r.params)) throw new CodeError("binding request params must be an array");
+  return r;
+}
 
 // parseBinding parses the binding text for display. The text itself is what
 // gets signed.
@@ -313,13 +357,52 @@ export function parseBinding(text) {
   }
   requireRowsHash(b.rowsHash);
   if (!UUID.test(b.approvalId)) throw new CodeError("binding approvalId is not a uuid");
-  if (!Array.isArray(b.params) || !Array.isArray(b.assignedColumns)) {
-    throw new CodeError("binding params and assignedColumns must be arrays");
-  }
+  parseBindingStore(b.store);
+  agentText(b.agent, "binding agent");
+  parseHeldRequest(b.request);
+  if (!Array.isArray(b.assignedFields)) throw new CodeError("binding assignedFields must be an array");
+  requireMatch(b.expiresAt, MICRO_TIME, "binding expiresAt");
   return { ...b, expiresAt: parseExpiry(b.expiresAt) };
 }
 
 const OPS = new Set(["INSERT", "UPDATE", "DELETE"]);
+
+// Shapes (CONTRACT.md, Stores, Shapes): the page draws RECORD. OBJECT is
+// reserved and any other shape unknown: a text with one is shown as far as
+// the page can and never offered for signing.
+export const SHAPE_RECORD = "RECORD";
+
+// parseLineStore checks a line's store part: {kind, verb}, and on a revert
+// line code (the store's error code, or null).
+function parseLineStore(value, what, withCode) {
+  const st = strictObject(value, `${what} store`, withCode ? ["code", "kind", "verb"] : ["kind", "verb"]);
+  requireMatch(st.kind, STORE_KIND, `${what} store kind`);
+  if (typeof st.verb !== "string" || st.verb === "") throw new CodeError(`${what} store verb is not valid`);
+  if (withCode && st.code !== null) requireString(st.code, `${what} store code`);
+  return st;
+}
+
+function requireShape(value, what) {
+  if (typeof value !== "string" || value === "") throw new CodeError(`${what} shape is not valid`);
+  return value;
+}
+
+// signingRefusal is why the page cannot offer a checked approval or revert
+// request for signing, or null when it can: a line in a shape the page
+// cannot draw (OBJECT today, or one it does not know), or an approval's
+// request of a family it has no view for (CONTRACT.md, Approvals, What a
+// page draws). The page still shows what it can and says why.
+export function signingRefusal(req) {
+  const kind = req.binding.request?.kind;
+  if (kind !== undefined && kind !== REQUEST_SQL) {
+    return `This page cannot show a ${kind} request, so it cannot offer it for signing. Ask the agent to send it where it can be read.`;
+  }
+  const other = req.lines.find((l) => l.shape !== SHAPE_RECORD);
+  if (other) {
+    return `This page cannot show rows of shape ${other.shape}, so it cannot offer them for signing. Ask the agent to send it where it can be read.`;
+  }
+  return null;
+}
 
 // JSON_SPACE is the whitespace JSON allows between tokens.
 const JSON_SPACE = " \t\n\r";
@@ -397,12 +480,14 @@ export function displayValue(value, text) {
   return text ?? JSON.stringify(value);
 }
 
-// paramsText is a binding's params as the exact text the passkey signs, so
-// the page shows 9007199254740993 and 1e400 as they are (JSON.parse turns
-// them into 9007199254740992 and Infinity, which JSON.stringify prints as
-// null). Only for a binding parseBinding has accepted.
+// paramsText is an SQL request's params as the exact text the passkey
+// signs, so the page shows 9007199254740993 and 1e400 as they are
+// (JSON.parse turns them into 9007199254740992 and Infinity, which
+// JSON.stringify prints as null). Only for a binding parseBinding has
+// accepted.
 export function paramsText(bindingText) {
-  return memberTexts(bindingText).get("params") ?? "[]";
+  const request = memberTexts(bindingText).get("request");
+  return (request === undefined ? undefined : memberTexts(request).get("params")) ?? "[]";
 }
 
 // HIDDEN matches what hides text or changes how it reads: controls (C0, DEL,
@@ -448,13 +533,17 @@ export function parseLine(text) {
   const raw = parseJSON(requireString(text, "preview line"), "preview line");
   const redacted = raw !== null && typeof raw === "object" && raw.redacted === true;
   const l = redacted
-    ? strictObject(raw, "preview line", ["op", "table", "rowHash", "cascaded", "redacted"])
-    : strictObject(raw, "preview line", ["op", "key", "old", "set", "table", "cascaded"]);
+    ? strictObject(raw, "preview line", ["op", "shape", "store", "resource", "rowHash", "cascaded", "redacted"])
+    : strictObject(raw, "preview line", ["op", "key", "old", "set", "shape", "store", "resource", "cascaded"]);
   if (!OPS.has(l.op)) throw new CodeError(`preview line op "${l.op}"`);
-  requireString(l.table, "preview line table");
+  requireShape(l.shape, "preview line");
+  const store = parseLineStore(l.store, "preview line", false);
+  if (typeof l.resource !== "string" || l.resource === "") throw new CodeError("preview line resource is not valid");
   return {
     op: l.op,
-    table: l.table,
+    shape: l.shape,
+    store,
+    resource: l.resource,
     cascaded: l.cascaded === true,
     redacted,
     rowHash: redacted ? l.rowHash : null,
@@ -471,7 +560,7 @@ export function parseLine(text) {
 // signature.
 export async function parseApprovalRequest(fragment) {
   return checkApprovalRequest(await decodeRequest(fragment, "approval request", {
-    idKey: "approvalId", maxLines: MAX_ROWS, required: APPROVAL_REQUEST_FIELDS, optional: ["credentialIds"], parse: parseBinding,
+    idKey: "approvalId", maxLines: MAX_ROWS, parse: parseBinding,
   }));
 }
 
@@ -508,8 +597,8 @@ export async function checkApprovalRequest(value) {
 }
 
 // checkColumns reads the optional, unsigned column order the engine serves
-// for the page's display (CONTRACT.md, Local pages): table name to its
-// column names in table order, each name once (the first place it is
+// for the page's display (CONTRACT.md, Local pages): resource to its
+// field names in the resource's order, each name once (the first place it is
 // listed). A Map; empty when absent.
 function checkColumns(req, what) {
   const out = new Map();
@@ -544,16 +633,16 @@ function assertionJSON(id, { credentialId, authenticatorData, clientDataJson, si
 }
 
 const REVERT_BINDING_FIELDS = [
-  "kind", "revertId", "database", "select", "widened", "intent",
+  "kind", "revertId", "store", "select", "widened", "intent",
   "rows", "skipped", "rowsHash", "expiresAt", "requestedBy",
 ];
-const REVERT_SELECT_FIELDS = ["scope", "scopeId", "agents", "runs", "tables"];
+const REVERT_SELECT_FIELDS = ["scope", "scopeId", "agents", "runs", "resources"];
 const REVERT_SCOPES = new Set(["CHANGE", "RUN", "TASK"]);
-// Runs and tables a scope descriptor lists at most (owner, Q10).
+// Runs and resources a scope descriptor lists at most (owner, Q10).
 const MAX_REVERT_FILTER = 20;
 const REVERT_ACTIONS = new Set(["RESTORE", "SKIP"]);
 const REVERT_CONFLICTS = new Set([
-  "CHANGED_AFTER", "ROW_GONE", "KEY_TAKEN", "ALREADY_REVERTED",
+  "CHANGED_AFTER", "TARGET_GONE", "KEY_TAKEN", "ALREADY_REVERTED",
   "VALUES_PRUNED", "SCHEMA_CHANGED", "CASCADE", "CONSTRAINT",
 ]);
 
@@ -563,12 +652,13 @@ function parseRevertSelect(value, what) {
   const s = strictObject(value, what, REVERT_SELECT_FIELDS);
   if (!REVERT_SCOPES.has(s.scope)) throw new CodeError(`${what} scope "${s.scope}"`);
   if (!UUID.test(s.scopeId)) throw new CodeError(`${what} scopeId must be a uuid`);
-  for (const key of ["agents", "runs", "tables"]) {
+  for (const key of ["agents", "runs", "resources"]) {
     const list = s[key];
     if (list === null) continue;
     if (!Array.isArray(list) || list.length === 0 || !list.every((x) => typeof x === "string" && x !== "")) {
       throw new CodeError(`${what} ${key} must be null or a list of at least one`);
     }
+    if (key === "agents") list.forEach((a) => agentText(a, `${what} agents item`));
     if (key !== "agents" && list.length > MAX_REVERT_FILTER) {
       throw new CodeError(`${what} lists more than ${MAX_REVERT_FILTER} ${key}`);
     }
@@ -584,11 +674,21 @@ export function parseRevertBinding(text) {
     ["proposed", "agentRows", "batched", "sampleHash"]);
   if (b.kind !== KIND_REVERT) throw new CodeError(`binding kind "${b.kind}"`);
   if (!UUID.test(b.revertId)) throw new CodeError("binding revertId must be a uuid");
+  parseBindingStore(b.store);
+  agentText(b.requestedBy, "binding requestedBy");
+  requireMatch(b.expiresAt, MICRO_TIME, "binding expiresAt");
   parseRevertSelect(b.select, "binding select");
   if ("proposed" in b) parseRevertSelect(b.proposed, "binding proposed");
   const widened = b.select.agents === null || b.select.agents.some((a) => a !== b.requestedBy);
   if (b.widened !== widened) throw new CodeError(`binding widened ${b.widened} does not match its select and requestedBy`);
   if (widened !== ("agentRows" in b)) throw new CodeError("binding agentRows goes with widened, and only with it");
+  if (widened) {
+    if (b.agentRows === null || typeof b.agentRows !== "object" || Array.isArray(b.agentRows)) throw new CodeError("binding agentRows is not an object");
+    for (const [agent, n] of Object.entries(b.agentRows)) {
+      agentText(agent, "binding agentRows key");
+      if (!Number.isInteger(n) || n < 0) throw new CodeError(`binding agentRows ${agent} is not a count`);
+    }
+  }
   if (!Number.isInteger(b.skipped) || b.skipped < 0) throw new CodeError(`binding skipped ${b.skipped}`);
   // A task proposal with no line of the agent's own is stored for the
   // person to widen; it has nothing to sign as it is.
@@ -618,20 +718,24 @@ export function parseRevertLine(text) {
   const raw = parseJSON(requireString(text, "revert line"), "revert line");
   const redacted = raw !== null && typeof raw === "object" && raw.redacted === true;
   const l = redacted
-    ? strictObject(raw, "revert line", ["op", "table", "action", "rowHash", "cascaded", "conflict", "redacted", "changeIds"])
-    : strictObject(raw, "revert line", ["op", "key", "now", "set", "table", "action", "cascaded", "conflict", "sqlState", "changeIds"]);
+    ? strictObject(raw, "revert line", ["op", "shape", "store", "resource", "action", "rowHash", "cascaded", "conflict", "redacted", "changeIds"])
+    : strictObject(raw, "revert line", ["op", "key", "now", "set", "shape", "store", "resource", "action", "cascaded", "conflict", "changeIds"]);
   if (!OPS.has(l.op)) throw new CodeError(`revert line op "${l.op}"`);
-  requireString(l.table, "revert line table");
+  requireShape(l.shape, "revert line");
+  const store = parseLineStore(l.store, "revert line", true);
+  if (typeof l.resource !== "string" || l.resource === "") throw new CodeError("revert line resource is not valid");
   if (!Array.isArray(l.changeIds) || l.changeIds.length === 0) throw new CodeError("revert line names no change");
   if (!REVERT_ACTIONS.has(l.action)) throw new CodeError(`revert line action "${l.action}"`);
   if (l.action === "RESTORE" && l.conflict !== null) throw new CodeError(`RESTORE line with conflict "${l.conflict}"`);
   if (l.action === "SKIP" && !REVERT_CONFLICTS.has(l.conflict)) throw new CodeError("SKIP line without a known conflict");
   return {
     op: l.op,
-    table: l.table,
+    shape: l.shape,
+    store,
+    resource: l.resource,
     action: l.action,
     conflict: l.conflict,
-    sqlState: redacted ? null : l.sqlState,
+    storeCode: store.code ?? null,
     cascaded: l.cascaded === true,
     changeIds: l.changeIds,
     redacted,
@@ -649,7 +753,7 @@ export function parseRevertLine(text) {
 // then may the page ask for a signature.
 export async function parseRevertRequest(fragment) {
   return checkRevertRequest(await decodeRequest(fragment, "revert request", {
-    idKey: "revertId", maxLines: MAX_REVERT_LINES, required: REVERT_REQUEST_FIELDS, optional: ["credentialIds"], parse: parseRevertBinding,
+    idKey: "revertId", maxLines: MAX_REVERT_LINES, parse: parseRevertBinding,
   }));
 }
 
@@ -799,7 +903,7 @@ export class PluginLinkError extends CodeError {
 }
 
 const PLUGIN_BINDING_REQUIRED = [
-  "kind", "approvalId", "database", "expiresAt", "requestedBy", "agents", "name", "instance",
+  "kind", "approvalId", "store", "expiresAt", "requestedBy", "agents", "name", "instance",
   "version", "manifestSha256", "settingsSha256", "hooks", "egress", "endpoint", "signer",
 ];
 const PLUGIN_BINDING_OPTIONAL = ["roles", "isolation", "signerKeyId", "change"];
@@ -820,8 +924,6 @@ const ISOLATION_FILES = new Set(["OS_USER", "NONE"]);
 const ISOLATION_NETWORK = new Set(["ENFORCED", "DECLARED", "NOT_ENFORCED"]);
 const WIRE_DETECT = "wire.detect";
 
-const ROLE_NAME = /^[a-z_][a-z0-9_]*$/;
-const MAX_ROLE_NAME = 63;
 const PLUGIN_NAME = /^[a-z][a-z0-9-]{1,39}$/;
 const PLUGIN_INSTANCE = /^[a-z][a-z0-9_]{0,31}$/;
 const SEMVER = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
@@ -850,7 +952,6 @@ function requireList(value, what, min, check) {
 const inSet = (set) => (value, what) => {
   if (!set.has(value)) throw new CodeError(`${what} is not a value this page knows`);
 };
-const roleName = (value, what) => requireMatch(value, ROLE_NAME, what, MAX_ROLE_NAME);
 const hostPort = (value, what) => requireMatch(value, HOST_PORT, what, MAX_HOST_PORT);
 
 function checkEndpoint(value, what) {
@@ -879,7 +980,7 @@ function checkChange(value) {
     hooksAdded: inSet(PLUGIN_HOOKS), hooksRemoved: inSet(PLUGIN_HOOKS),
     rolesAdded: inSet(PLUGIN_ROLES), rolesRemoved: inSet(PLUGIN_ROLES),
     egressAdded: hostPort, egressRemoved: hostPort,
-    agentsAdded: roleName, agentsRemoved: roleName,
+    agentsAdded: agentText, agentsRemoved: agentText,
   };
   for (const [key, check] of Object.entries(lists)) {
     if (key in c) requireList(c[key], `binding change ${key}`, 1, check);
@@ -904,10 +1005,10 @@ export function parsePluginBinding(text) {
   if (raw.kind !== KIND_PLUGIN) throw new PluginLinkError(WRONG_KIND, "the binding is not a plugin approval");
   const b = strictObject(raw, "binding", PLUGIN_BINDING_REQUIRED, PLUGIN_BINDING_OPTIONAL);
   requireMatch(b.approvalId, UUID, "binding approvalId");
-  requireString(b.database, "binding database");
+  parseBindingStore(b.store);
   requireMatch(b.expiresAt, MICRO_TIME, "binding expiresAt");
-  roleName(b.requestedBy, "binding requestedBy");
-  requireList(b.agents, "binding agents", 1, roleName);
+  agentText(b.requestedBy, "binding requestedBy");
+  requireList(b.agents, "binding agents", 1, agentText);
   requireMatch(b.name, PLUGIN_NAME, "binding name");
   requireMatch(b.instance, PLUGIN_INSTANCE, "binding instance");
   requireMatch(b.version, SEMVER, "binding version", MAX_VERSION);
@@ -976,10 +1077,8 @@ export async function checkPluginRequest(value) {
 // settings) and optionally the database's credential ids; then
 // checkPluginRequest.
 export async function parsePluginRequest(fragment) {
-  const text = String(fragment).replace(/^#/, "");
-  if (text.startsWith(REQUEST_FORMAT_1)) throw new CodeError(`a plugin approval link is format "${REQUEST_FORMAT_2}" only`);
-  const r = await decodeRequest(text, "plugin approval request", {
-    idKey: "approvalId", maxLines: 1, required: [], optional: [], parse: (t) => JSON.parse(t),
+  const r = await decodeRequest(fragment, "plugin approval request", {
+    idKey: "approvalId", maxLines: 1, parse: (t) => JSON.parse(t),
   });
   const req = { approvalId: r.approvalId, binding: r.binding, settings: r.lines[0] };
   if ("credentialIds" in r) req.credentialIds = r.credentialIds;

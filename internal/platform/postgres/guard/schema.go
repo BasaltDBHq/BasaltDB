@@ -58,7 +58,17 @@ const (
 	// descriptor that is not one schema.table name with its own detail,
 	// NAME, naming the entry: schema/019.
 	versionRevertFilterName
+	// versionStoreNeutral writes every text a person signs, and the
+	// ledger's fields, in the store-neutral form (CONTRACT.md, Stores),
+	// and names agents agent:<name> from a record of their names. Clean
+	// state: the chain does not verify rows written before it, so an
+	// install from before reinstalls: schema/020 to 023.
+	versionStoreNeutral
 )
+
+// StoreNeutralVersion is the basalt_meta version that writes store-neutral
+// texts and records agent names. Breaking: an engine needs it.
+const StoreNeutralVersion = versionStoreNeutral
 
 // EngineAddressRemovedVersion is the basalt_meta version whose
 // record_engine takes the key alone.
@@ -76,7 +86,7 @@ const PluginApprovalsVersion = versionPluginApprovals
 // versionFiles is how many schema files each version runs, in version
 // order: a new version appends its own schema files after the last and its
 // count here, and every earlier version keeps the files it has.
-var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, versionPluginEvents: 1, versionPluginTrustRemoved: 1, versionPluginApprovals: 1, versionTrustPins: 1, versionSetupCodeLife: 1, versionEngineAddressRemoved: 1, versionRevertFilterName: 1}
+var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, versionPluginEvents: 1, versionPluginTrustRemoved: 1, versionPluginApprovals: 1, versionTrustPins: 1, versionSetupCodeLife: 1, versionEngineAddressRemoved: 1, versionRevertFilterName: 1, versionStoreNeutral: storeNeutralFiles}
 
 // nonBreakingVersions are the versions an engine serves an agent without
 // (migration.nonBreaking). versionPluginEvents: without it the engine
@@ -104,6 +114,11 @@ var nonBreakingVersions = map[int]bool{
 
 // guardFiles is how many schema files version 1 has: 001 to 011.
 const guardFiles = 11
+
+// storeNeutralFiles is how many schema files versionStoreNeutral has: 020
+// (agent names and the ledger), 021 (approvals), 022 (reverts) and 023
+// (plugin approvals).
+const storeNeutralFiles = 4
 
 // migrations lists every version in order.
 var migrations = mustSplitMigrations(schema, versionFiles)

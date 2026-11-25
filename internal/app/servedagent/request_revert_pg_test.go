@@ -230,7 +230,7 @@ func TestRequestRevertOfOwnTask(t *testing.T) {
 	_, b, err := reverttest.ParseRequest(link[strings.Index(link, "#")+1:])
 	require.NoError(t, err)
 	require.Equal(t, revert.ScopeTask, b.Select.Scope)
-	require.Equal(t, []string{env.a.Role}, b.Select.Agents, "the proposal holds only the requesting agent")
+	require.Equal(t, []string{env.a.Name}, b.Select.Agents, "the proposal holds only the requesting agent")
 	require.Equal(t, "won", leadStatus(t, d, 81), "a request reverts nothing")
 }
 

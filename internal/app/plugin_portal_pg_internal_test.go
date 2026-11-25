@@ -87,7 +87,7 @@ func newPortalFixture(t *testing.T, name string, set func(*config.Config)) *port
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	cc := pool.Config().ConnConfig
-	agents := map[string]plugin.KeptAgent{name: plugin.NewKeptAgent(pool, cc.Host, cc.Port, cc.Database, cc.User)}
+	agents := map[string]plugin.KeptAgent{name: plugin.NewKeptAgent(pool, cc.Host, cc.Port, cc.Database)}
 	f.cfg.Agents = append(f.cfg.Agents, config.Agent{Name: name, OSUser: me.Username})
 	raw, err := json.Marshal(f.cfg)
 	require.NoError(t, err)
@@ -309,7 +309,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "acme-ner", b.Name)
 	require.Equal(t, "1.0.0", b.Version)
-	require.Equal(t, []string{f.roles["bot"].Role}, b.Agents)
+	require.Equal(t, []string{f.roles["bot"].Name}, b.Agents)
 	require.NotEmpty(t, req.CredentialIDs)
 
 	// The session is for this plugin approval only.

@@ -62,8 +62,11 @@ func PreviewLines(ctx context.Context, tx pgx.Tx, assigned []string) ([]string, 
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
-// HoldRequest is a write to hold for the person's approval.
+// HoldRequest is a write to hold for the person's approval. Verb is the
+// statement's own command (INSERT, UPDATE or DELETE), the verb of its
+// APPROVAL_PENDING ledger row; empty derives it from the first line's op.
 type HoldRequest struct {
+	Verb      string
 	Statement string
 	Params    []any
 	Assigned  []string
@@ -96,8 +99,8 @@ func Hold(ctx context.Context, db TxBeginner, in Intent, timeout time.Duration, 
 		}
 		// Plain SQL: a set-returning function in FROM.
 		return tx.QueryRow(ctx, `SELECT h.approval_id, h.binding_text, h.expires_at
-			FROM basalt_meta.hold_action($1, nullif($2::jsonb, 'null'), $3::text[], $4::text[]) AS h`,
-			r.Statement, params, assigned, r.Lines).Scan(&h.ApprovalID, &h.BindingText, &h.ExpiresAt)
+			FROM basalt_meta.hold_action(nullif($1, ''), $2, nullif($3::jsonb, 'null'), $4::text[], $5::text[]) AS h`,
+			r.Verb, r.Statement, params, assigned, r.Lines).Scan(&h.ApprovalID, &h.BindingText, &h.ExpiresAt)
 	})
 	if err != nil {
 		return Held{}, err

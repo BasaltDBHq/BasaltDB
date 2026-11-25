@@ -683,7 +683,7 @@ func (rc *Service) revertNotice(ctx context.Context, r action.Revert) (revertLin
 // bindingHeadline is the headline of a revert not widened, from its
 // binding: the scope and filters it covers and its totals.
 func bindingHeadline(b revert.Binding, r action.Revert) string {
-	filters := filterText(action.Scope{Runs: b.Select.Runs, Tables: b.Select.Tables})
+	filters := filterText(action.Scope{Runs: b.Select.Runs, Tables: b.Select.Resources})
 	return fmt.Sprintf("Revert of %s %s%s: %d rows to restore, %d left as they are (changed after the agent).",
 		strings.ToLower(string(b.Select.Scope)), b.Select.ScopeID, filters, r.Rows, r.Skipped)
 }

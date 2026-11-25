@@ -419,7 +419,7 @@ func TestRevealRevertRowsMatchTheTable(t *testing.T) {
 	tables := map[int]string{}
 	for i := range want {
 		var l struct {
-			Table string `json:"table"`
+			Table string `json:"resource"`
 		}
 		require.NoError(t, json.Unmarshal([]byte(prep.Lines[i]), &l))
 		tables[i] = l.Table

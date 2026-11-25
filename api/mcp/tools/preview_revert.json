@@ -79,7 +79,7 @@
       },
       "select": {
         "$ref": "../revert/revert-select.schema.json",
-        "description": "Planned (revert scope, RS-3): the scope descriptor the preview covers, as the store normalized it: agents is exactly [your role]; its runs and tables keys hold your runs and resources filters, or null."
+        "description": "Planned (revert scope, RS-3): the scope descriptor the preview covers, as the store normalized it: agents is exactly [agent:<your name>]; its runs and resources keys hold your runs and resources filters, or null."
       },
       "rows": {
         "type": "integer",
@@ -145,7 +145,7 @@
               "type": "string",
               "enum": [
                 "CHANGED_AFTER",
-                "ROW_GONE",
+                "TARGET_GONE",
                 "KEY_TAKEN",
                 "ALREADY_REVERTED",
                 "VALUES_PRUNED",

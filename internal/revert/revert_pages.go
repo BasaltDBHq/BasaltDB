@@ -50,9 +50,16 @@ func (rc *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret strin
 		req := st.request
 		req.CredentialIDs, req.RescopeNonce, req.RevealNonce = ids, nonce, reveal
 		req.Columns = rc.delivery.ColumnsOf(ctx, req.Lines)
+		if err := approval.CheckTexts(req.Binding, req.Lines...); err != nil {
+			return revert.Request{}, err
+		}
 		return req, nil
 	case r.Widened:
 		return revert.Request{}, widenAgain(nonce)
+	}
+	// The engine relays only texts that follow the text rules.
+	if err := approval.CheckTexts(r.BindingText, r.Lines...); err != nil {
+		return revert.Request{}, err
 	}
 	return revert.Request{
 		RevertID: r.ID, Binding: r.BindingText, Lines: r.Lines, RescopeNonce: nonce, RevealNonce: reveal, CredentialIDs: ids,

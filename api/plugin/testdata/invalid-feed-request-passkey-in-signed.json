@@ -1,5 +1,5 @@
 {
-  "agent": "product_a",
+  "agent": "agent:product_a",
   "events": [
     {
       "specversion": "1.0",
@@ -7,12 +7,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.approval.signed",
       "time": "2026-11-19T06:05:40Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 4230,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "changeId": "0193a1b3-0000-7000-8000-000000000003",
         "approvalId": "0193a1b3-1111-7000-8000-000000000001",
         "credentialId": "AQID"

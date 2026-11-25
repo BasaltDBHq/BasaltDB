@@ -53,7 +53,7 @@ func TestObserveFeedTakesOnlyASeqOfTheBatch(t *testing.T) {
 	if err != nil || got != 12 {
 		t.Fatalf("lastSeq %d, %v", got, err)
 	}
-	if sent.Agent != "product_a" || string(sent.Events) != string(batch(10, 12, 15)) {
+	if sent.Agent != "agent:product_a" || string(sent.Events) != string(batch(10, 12, 15)) {
 		t.Fatalf("sent %+v", sent)
 	}
 
@@ -124,7 +124,7 @@ func TestDeliverApprovalSendsTheNotice(t *testing.T) {
 	if err := h.DeliverApproval(context.Background(), e.Key, "product_a", notice); err != nil {
 		t.Fatal(err)
 	}
-	if sent.Agent != "product_a" || string(sent.Event) != string(notice) {
+	if sent.Agent != "agent:product_a" || string(sent.Event) != string(notice) {
 		t.Fatalf("sent %+v", sent)
 	}
 	if err := h.DeliverApproval(context.Background(), e.Key, "client_x", notice); !errors.Is(err, pluginmodel.ErrAgentNotListed) {

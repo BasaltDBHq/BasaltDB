@@ -38,13 +38,12 @@ const (
 )
 
 // KeptAgent is one agent as the plugin methods reach it: its own pool and
-// the database and role its credential names.
+// the database its credential names.
 type KeptAgent struct {
 	db       Querier
 	host     string
 	port     uint16
 	database string
-	role     string
 }
 
 // KeptPlugins serves the person socket's plugin methods on a service
@@ -446,7 +445,7 @@ type keptGroup struct {
 	host, database string
 	port           uint16
 	install        uuid.UUID
-	agents, roles  []string
+	agents         []string
 }
 
 // groups groups agents by the database their credentials connect to, and
@@ -470,7 +469,6 @@ func (s *KeptPlugins) groups(ctx context.Context, agents []string) ([]*keptGroup
 			groups = append(groups, g)
 		}
 		g.agents = append(g.agents, name)
-		g.roles = append(g.roles, a.role)
 	}
 	errs := make([]error, len(groups))
 	var wg sync.WaitGroup
@@ -494,7 +492,6 @@ func (s *KeptPlugins) groups(ctx context.Context, agents []string) ([]*keptGroup
 	for _, g := range groups {
 		if into, ok := first[g.install]; ok {
 			into.agents = append(into.agents, g.agents...)
-			into.roles = append(into.roles, g.roles...)
 			continue
 		}
 		first[g.install] = g
@@ -589,7 +586,7 @@ func (s *KeptPlugins) openApprovals(ctx context.Context, groups []*keptGroup, p 
 			item := PluginOpenedApproval{Database: PluginDatabase{Host: g.host, Name: g.database}, Agents: slices.Clone(g.agents)}
 			ctx, cancel := context.WithTimeout(ctx, keptDatabaseTimeout)
 			defer cancel()
-			opened, err := s.ports.Guard.OpenPluginApproval(ctx, s.agents[g.agents[0]].db, PluginApprovalDetail(p.Key(), v, g.roles), p.ApprovalSettings())
+			opened, err := s.ports.Guard.OpenPluginApproval(ctx, s.agents[g.agents[0]].db, PluginApprovalDetail(p.Key(), v, g.agents), p.ApprovalSettings())
 			if err != nil {
 				item.Refused = keptOpenRefusal(s.ports.Guard, err, s.ports.approvalsVersion())
 			} else {

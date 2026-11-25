@@ -43,7 +43,8 @@ const (
 
 // PluginApprovalDetail is what open_plugin_approval takes: the binding's
 // keys agents to signerKeyId (CONTRACT.md, What a plugin approval binds).
-// Agents are role names of this database. The guard refuses unsorted
+// Agents are agent:<name> names of this database's agents (CONTRACT.md,
+// Stores, Agent names). The guard refuses unsorted
 // lists; OpenPluginApproval sorts copies of them first.
 type PluginApprovalDetail struct {
 	Agents         []string `json:"agents"`

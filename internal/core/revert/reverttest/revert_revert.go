@@ -42,15 +42,13 @@ func fromCompact(binding string, lines []string, ids []passkey.Bytes) revert.Req
 	return r
 }
 
-// ParseRequest decodes a revert link fragment of either format, with or
-// without '#', and checks it (Check).
+// ParseRequest decodes a revert link fragment, with or without '#', and
+// checks it (Check). A format 2 link carries only texts and credential
+// ids, never the engine's rescopeNonce, revealNonce or columns.
 func ParseRequest(fragment string) (revert.Request, revert.Binding, error) {
 	r, err := linkcodec.DecodeRequest(fragment, revert.MaxLines, fromCompact)
 	if err != nil {
 		return revert.Request{}, revert.Binding{}, revert.Invalid("revert request %v", err)
-	}
-	if r.RescopeNonce != nil || r.RevealNonce != nil || r.Columns != nil {
-		return revert.Request{}, revert.Binding{}, revert.Invalid("a link carries no rescopeNonce, revealNonce or columns: only the engine serves them")
 	}
 	b, err := r.Check()
 	if err != nil {

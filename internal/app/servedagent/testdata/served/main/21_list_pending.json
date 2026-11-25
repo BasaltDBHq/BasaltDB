@@ -4,7 +4,7 @@
       {
         "approvalId": "<id-5>",
         "approvalUrl": "http://localhost:8787/approvals/<id-5>#<fragment>",
-        "assignedColumns": [
+        "assignedFields": [
           "status"
         ],
         "createdAt": "<time>",
@@ -26,15 +26,18 @@
             "url": "http://localhost:8787/approvals/<id-5>#<fragment>"
           }
         ],
-        "params": [
-          "closed",
-          21,
-          31
-        ],
         "personMessage": "Held for your approval: Update 11 rows in public·leads.\nReview only: this link cannot be signed. Ask the agent for a new link later.\n\nhttp://localhost:8787/approvals/<id-5>#<fragment>\n\nExpires <time>.",
+        "request": {
+          "kind": "SQL",
+          "params": [
+            "closed",
+            21,
+            31
+          ],
+          "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3"
+        },
         "rows": 11,
         "runId": "<id-1>",
-        "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3",
         "status": "PENDING",
         "taskId": "<id-2>"
       }

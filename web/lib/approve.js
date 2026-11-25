@@ -9,9 +9,13 @@ import {
   KIND_APPROVE,
   approvalResponseJSON,
   checkApprovalRequest,
+  REQUEST_SQL,
   paramsText,
   parseApprovalRequest,
   relyingParty,
+  signingRefusal,
+  storeName,
+  storeText,
   visibleText,
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
@@ -49,7 +53,13 @@ function hex(bytes) {
 // signedText is the footer: the hash the passkey signs, shortened.
 export function signedText(challenge, rows) {
   const h = hex(challenge);
-  return `You sign sha256:${h.slice(0, 4)}\u2026${h.slice(-4)} over the statement, its parameters and these ${rows === 1 ? "1 row" : `${rows} rows`}.`;
+  return `You sign sha256:${h.slice(0, 4)}\u2026${h.slice(-4)} over the request and these ${rows === 1 ? "1 row" : `${rows} rows`}.`;
+}
+
+// linesNote is the note above the rows: what is highlighted, and that the
+// store (named from store.kind) checks the rows again.
+export function linesNote(storeKind) {
+  return `Highlighted values are what the request sets. ${storeName(storeKind)} checks these exact rows again before the change commits.`;
 }
 
 // ID_SHOWN is how much of the approval id the top bar shows; all of it on hover.
@@ -65,15 +75,20 @@ function renderSummary(req, summary) {
   $("item-id").title = req.approvalId;
   $("headline").textContent = visibleText(headline(summary));
   $("headline").classList.toggle("cascades", summary.cascadedRows > 0);
-  // The agent by its name, derived from the signed role (basalt_agent_bot
-  // is bot), with the whole role on hover.
+  // The agent by its name (agent:bot is bot), with the signed text on hover.
   $("agent").textContent = visibleText(agentName(b.agent));
   $("agent").title = visibleText(b.agent);
-  $("database").textContent = visibleText(b.database);
+  $("store").textContent = visibleText(storeText(b.store));
   $("intent").textContent = visibleText(b.intent);
-  $("statement").textContent = visibleText(b.statement, { lines: true });
-  // The signed text, not JSON.parse's rounding of it (paramsText).
-  $("params").textContent = visibleText(paramsText(req.bindingText));
+  $("lines-note").textContent = linesNote(b.store.kind);
+  // One request view per family: SQL only. Another family is not drawn,
+  // and signingRefusal says why.
+  $("request-sql").hidden = b.request.kind !== REQUEST_SQL;
+  if (b.request.kind === REQUEST_SQL) {
+    $("statement").textContent = visibleText(b.request.statement, { lines: true });
+    // The signed text, not JSON.parse's rounding of it (paramsText).
+    $("params").textContent = visibleText(paramsText(req.bindingText));
+  }
   $("rows").textContent = String(b.rows);
   $("expires").textContent = b.expiresAt.toLocaleString();
   const now = new Date();
@@ -206,6 +221,11 @@ const describe = (err) => linkFailure(err, "approval", APPROVE_REOPEN);
 const ENGINE_BUTTONS = ["reveal"];
 
 function renderLines(state) {
+  // Lines in a shape the page cannot draw are not drawn as records.
+  if (signingRefusal(state.req) !== null) {
+    $("lines").replaceChildren();
+    return;
+  }
   const longLink = state.relay === null;
   const shown = state.valuesHidden ? new Map() : state.shown;
   $("lines").replaceChildren(...lineGroups(state.req.lines, shown, longLink, state.req.columns));
@@ -272,6 +292,12 @@ async function main() {
   renderLines(state);
   wireReveal(rp, state);
   $("main").hidden = false;
+  const refusal = signingRefusal(req);
+  if (refusal !== null) {
+    $("approve").disabled = true;
+    $("status").textContent = refusal;
+    return;
+  }
   if (req.binding.expiresAt.getTime() <= Date.now()) {
     $("approve").disabled = true;
     $("status").textContent = "This approval expired. The write stays blocked; the agent has to ask again.";

@@ -22,7 +22,7 @@ const (
 	CodeRevertExpired    = action.CodeRevertExpired
 	CodePermissionDenied = action.CodePermissionDenied
 	CodeNotFound         = "NOT_FOUND"
-	CodeSQLError         = action.CodeSQLError
+	CodeStoreError       = action.CodeStoreError
 	CodeInvalidArgument  = "INVALID_ARGUMENT"
 	CodeUnavailable      = action.CodeUnavailable
 	CodeInternal         = action.CodeInternal

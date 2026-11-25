@@ -13,9 +13,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 )
 
-// MaxRunTables is how many tables a run summary names (list_runs); a run
-// that wrote to more is marked TablesTruncated.
-const MaxRunTables = 10
+// MaxRunResources is how many resources a run summary names (list_runs); a
+// run that wrote to more is marked ResourcesTruncated.
+const MaxRunResources = 10
 
 // runIDColumn is the run list's sort and keyset column.
 const runIDColumn = "r.run_id"
@@ -39,12 +39,12 @@ var runAggregate = sq.Select(
 	"COUNT(c.change_id) FILTER (WHERE c.status = 'APPROVAL_PENDING') AS held",
 	"COUNT(c.change_id) FILTER (WHERE c.status = 'REFUSED') AS refused",
 	"COUNT(c.change_id) FILTER (WHERE c.status = 'REVERTED' AND "+writeOps+") AS reverted",
-	"COUNT(c.change_id) FILTER (WHERE c.status = 'APPLIED' AND c.op = 'SELECT') AS reads",
+	"COUNT(c.change_id) FILTER (WHERE c.status = 'APPLIED' AND c.op = 'READ') AS reads",
 	"coalesce(sum(c.rows) FILTER (WHERE "+writtenWrite+"), 0) AS rows_written",
-	// One more table than a summary names, to tell a run that wrote to
-	// more than MaxRunTables.
-	fmt.Sprintf("coalesce((array_agg(DISTINCT c.table_name ORDER BY c.table_name) FILTER (WHERE %s AND c.table_name IS NOT NULL))[1:%d], '{}') AS tables",
-		writtenWrite, MaxRunTables+1),
+	// One more resource than a summary names, to tell a run that wrote to
+	// more than MaxRunResources.
+	fmt.Sprintf("coalesce((array_agg(DISTINCT c.table_name ORDER BY c.table_name) FILTER (WHERE %s AND c.table_name IS NOT NULL))[1:%d], '{}') AS resources",
+		writtenWrite, MaxRunResources+1),
 ).From("basalt_meta.agent_changes c").Where("c.run_id = r.run_id")
 
 // listRunsRaw is ListRuns before MapError.
@@ -61,7 +61,7 @@ func (s *Store) listRunsRaw(ctx context.Context, p action.RunListParams) (pagina
 		order += " DESC"
 	}
 	b := psql.Select(runIDColumn, "r.task_id", "r.intent", "r.started_at", "a.last_change_at",
-		"a.applied", "a.held", "a.refused", "a.reverted", "a.reads", "a.rows_written", "a.tables").
+		"a.applied", "a.held", "a.refused", "a.reverted", "a.reads", "a.rows_written", "a.resources").
 		From("basalt_meta.agent_runs r").
 		JoinClause(runAggregate.Prefix("CROSS JOIN LATERAL (").Suffix(") a")).
 		OrderBy(order).
@@ -119,9 +119,9 @@ func runKeyset(b sq.SelectBuilder, desc bool, cursor string) (sq.SelectBuilder, 
 func scanRunSummary(row pgx.CollectableRow) (action.RunSummary, error) {
 	var r action.RunSummary
 	err := row.Scan(&r.ID, &r.TaskID, &r.Intent, &r.StartedAt, &r.LastChangeAt,
-		&r.Applied, &r.Held, &r.Refused, &r.Reverted, &r.Reads, &r.RowsWritten, &r.Tables)
-	if len(r.Tables) > MaxRunTables {
-		r.Tables, r.TablesTruncated = r.Tables[:MaxRunTables], true
+		&r.Applied, &r.Held, &r.Refused, &r.Reverted, &r.Reads, &r.RowsWritten, &r.Resources)
+	if len(r.Resources) > MaxRunResources {
+		r.Resources, r.ResourcesTruncated = r.Resources[:MaxRunResources], true
 	}
 	return r, err
 }

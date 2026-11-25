@@ -19,13 +19,16 @@ type ChangeListParams struct {
 
 // Change is one change record (CONTRACT.md "The change record").
 type Change struct {
-	ID           uuid.UUID
-	At           time.Time
-	Agent        string
-	RunID        uuid.NullUUID
-	TaskID       uuid.NullUUID
-	Intent       string
-	Op           string
+	ID     uuid.UUID
+	At     time.Time
+	Agent  string
+	RunID  uuid.NullUUID
+	TaskID uuid.NullUUID
+	Intent string
+	Op     string
+	// Verb is the store's own word for the request's operation (CONTRACT.md,
+	// Stores, Operations), "" on REVERT and on an OTHER with no command.
+	Verb         string
 	Table        string
 	Statement    string
 	Params       json.RawMessage

@@ -150,7 +150,7 @@
     "QUERY_TIMEOUT",
     "PERMISSION_DENIED",
     "NOT_FOUND",
-    "SQL_ERROR",
+    "STORE_ERROR",
     "UNAVAILABLE",
     "INTERNAL"
   ]

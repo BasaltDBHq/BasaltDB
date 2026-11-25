@@ -83,7 +83,7 @@ func MapError(err error) error {
 // storeError is pe, found in err, as the contract's error.
 func storeError(err error, pe *pgconn.PgError) *action.StoreError {
 	se := &action.StoreError{
-		Code: action.CodeSQLError, Message: pe.Message, SQLState: pe.Code, Detail: pe.Detail, Hint: pe.Hint, Err: err,
+		Code: action.CodeStoreError, Message: pe.Message, StoreCode: pe.Code, Detail: pe.Detail, Hint: pe.Hint, Err: err,
 	}
 	gc, isGuard := guard.CodeOf(pe)
 	if isGuard {

@@ -193,19 +193,19 @@ func TestRecordReadWritesAChangeAndALedgerRow(t *testing.T) {
 	var rows int
 	require.NoError(t, a.Conn.QueryRow(ctx, `SELECT op, status, intent, rows FROM basalt_meta.agent_changes WHERE change_id = $1`,
 		change).Scan(&op, &st, &intent, &rows))
-	require.Equal(t, []any{"SELECT", "APPLIED", "Count open leads", 3}, []any{op, st, intent, rows})
+	require.Equal(t, []any{"READ", "APPLIED", "Count open leads", 3}, []any{op, st, intent, rows})
 
 	var detail map[string]any
 	require.NoError(t, a.Conn.QueryRow(ctx, `SELECT detail FROM basalt_meta.agent_ledger WHERE kind = 'READ' AND change_id = $1`,
 		change).Scan(&detail))
 	require.Equal(t, in.RunID.String(), detail["runId"])
-	require.Equal(t, []any{"leads"}, detail["tables"])
+	require.Equal(t, []any{"leads"}, detail["resources"])
 	versions, ok := detail["versions"].([]any)
 	require.True(t, ok)
 	require.Len(t, versions, 3)
 	first, ok := versions[0].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "public.leads", first["table"])
+	require.Equal(t, "public.leads", first["resource"])
 	require.Regexp(t, `^xmin:[0-9]+$`, first["version"])
 	requireIntact(t, a.Conn)
 

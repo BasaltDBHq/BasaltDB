@@ -36,7 +36,8 @@ func requireChangeAgents(t *testing.T, d *guardtest.DB, out action.RescopedRever
 	require.NotNil(t, out.Catalog)
 	got := map[string]int{}
 	for id, agent := range out.Catalog.ChangeAgents {
-		require.Equal(t, scalarOf[string](t, d.Admin, `SELECT agent::text FROM basalt_meta.changes WHERE change_id = $1`, id), agent, "change %s", id)
+		require.Equal(t, scalarOf[string](t, d.Admin, `SELECT 'agent:' || n.name FROM basalt_meta.changes c
+			JOIN basalt_meta.agent_names n ON n.role = c.agent WHERE c.change_id = $1`, id), agent, "change %s", id)
 		got[agent]++
 	}
 	require.Equal(t, want, got)
@@ -54,14 +55,14 @@ func TestRescopeCatalogChangeAgents(t *testing.T) {
 	ctx := context.Background()
 
 	wide := e.widen(t, e.every())
-	requireChangeAgents(t, e.d, wide, map[string]int{e.bot.Role: 3, e.helper.Role: 2})
+	requireChangeAgents(t, e.d, wide, map[string]int{e.bot.Name: 3, e.helper.Name: 2})
 	require.Len(t, lineChangeIDs(t, wide.Lines), 5)
 
-	helperOnly := revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}}
+	helperOnly := revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Name}}
 	narrow, err := guard.RescopeRevert(ctx, e.bot.Conn,
 		action.RescopeRequest{RevertID: e.prep.RevertID, Select: helperOnly, Token: []byte(wide.ScopeToken)})
 	require.NoError(t, err)
-	requireChangeAgents(t, e.d, narrow, map[string]int{e.bot.Role: 3, e.helper.Role: 2})
+	requireChangeAgents(t, e.d, narrow, map[string]int{e.bot.Name: 3, e.helper.Name: 2})
 	require.Equal(t, wide.Catalog.ChangeAgents, narrow.Catalog.ChangeAgents)
 }
 

@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
+import { rebuildTexts } from "./compact.js";
 
 import {
   CodeError,
@@ -30,8 +31,12 @@ const fixtures = JSON.parse(
   readFileSync(new URL("../../internal/core/revert/testdata/fixtures.json", import.meta.url), "utf8"),
 );
 
-function requestFragment(obj) {
-  return "1." + b64urlEncode(deflateRawSync(Buffer.from(JSON.stringify(obj))));
+// decodeFragment is the request a format 2 fragment carries, as the engine
+// serves it: the binding text, then the lines, rebuilt.
+function decodeFragment(fragment) {
+  const payload = JSON.parse(inflateRawSync(Buffer.from(fragment.slice(2), "base64url")).toString("utf8"));
+  const [binding, ...lines] = rebuildTexts(payload, MAX_REVERT_LINES + 1);
+  return { revertId: JSON.parse(binding).revertId, binding, lines };
 }
 
 test("revert request from Go decodes and checks", async () => {
@@ -43,7 +48,7 @@ test("revert request from Go decodes and checks", async () => {
   assert.equal(req.binding.widened, false);
   assert.equal(req.binding.rows, 3);
   assert.equal(req.binding.skipped, 1);
-  assert.deepEqual(req.binding.select.agents, ["basalt_agent_bot"]);
+  assert.deepEqual(req.binding.select.agents, ["agent:bot"]);
   assert.equal(req.binding.expiresAt.toISOString(), "2026-11-11T07:02:11.123Z");
   assert.equal(b64urlEncode(req.challenge), f.challenge);
   assert.deepEqual(req.credentialIds.map(b64urlEncode), f.credentialIds);
@@ -68,7 +73,8 @@ test("the engine's revert request may carry the next widen's nonce; a long link 
   assert.equal(req.rescopeNonce, nonce);
   assert.equal((await checkRevertRequest(base)).rescopeNonce, null);
   await assert.rejects(checkRevertRequest({ ...base, rescopeNonce: "short" }), /rescopeNonce/);
-  await assert.rejects(parseRevertRequest(requestFragment({ ...base, rescopeNonce: nonce })), /unknown field/);
+  // Format 2 has no place for a nonce: a long link never carries one.
+  assert.equal((await parseRevertRequest(f.fragment)).rescopeNonce, null);
 });
 
 test("revert request refuses anything that does not match the binding", async () => {
@@ -93,14 +99,16 @@ test("revert request refuses anything that does not match the binding", async ()
     ],
   ];
   for (const [name, obj, want] of cases) {
-    await assert.rejects(parseRevertRequest(requestFragment(obj)), (err) => {
+    await assert.rejects(checkRevertRequest((obj)), (err) => {
       assert.ok(err instanceof CodeError, name);
       assert.match(err.message, want, name);
       return true;
     });
   }
   await assert.rejects(parseRevertRequest("3." + f.fragment.slice(2)), /must start with/);
-  await assert.rejects(parseRevertRequest("1.@@"), /base64url/);
+  await assert.rejects(parseRevertRequest("2.@@"), /base64url/);
+  const format1 = "1." + b64urlEncode(deflateRawSync(Buffer.from(JSON.stringify(base))));
+  await assert.rejects(parseRevertRequest(format1), /must start with "2\."/, "format 1 is not read");
 });
 
 test("a revert link is not an approval link and the other way round", async () => {
@@ -116,11 +124,13 @@ test("revert binding limits", () => {
   assert.throws(() => parseRevertBinding(b.replace('"skipped": 1', '"skipped": 998')), /out of 1..1000/);
   assert.throws(() => parseRevertBinding(b.replace('"rows": 3', '"rows": 0')), /rows 0/);
   assert.throws(() => parseRevertBinding(b.replace('"RUN"', '"DATABASE"')), /scope/);
-  assert.throws(() => parseRevertBinding(b.replace('["basalt_agent_bot"]', "[]")), /agents/);
+  assert.throws(() => parseRevertBinding(b.replace('["agent:bot"]', "[]")), /agents/);
   assert.throws(() => parseRevertBinding(b.replace('"widened": false', '"widened": false, "scope": "RUN"')), /unknown field "scope"/);
-  assert.throws(() => parseRevertBinding(b.replace('"tables": null', '"tables": null, "store": "x"')), /unknown field "store"/);
+  assert.throws(() => parseRevertBinding(b.replace('"resources": null', '"resources": null, "tables": null')), /unknown field "tables"/);
+  assert.throws(() => parseRevertBinding(b.replace('"requestedBy": "agent:bot"', '"requestedBy": "basalt_agent_bot"')), /requestedBy/);
+  assert.throws(() => parseRevertBinding(b.replace('"store": {"kind": "POSTGRES", "name": "app"}, ', "")), /missing "store"/);
   assert.throws(() => parseRevertBinding(b.replace('"runs": null', `"runs": ["${fixtures.request.revertId}"]`)), /lists runs/);
-  assert.throws(() => parseRevertBinding(b.replace('["basalt_agent_bot"]', '["basalt_agent_bot", "basalt_agent_sync"]')), /widened false/);
+  assert.throws(() => parseRevertBinding(b.replace('["agent:bot"]', '["agent:bot", "agent:sync"]')), /widened false/);
   assert.throws(() => parseRevertBinding(b.replace('"widened": false', '"widened": false, "agentRows": {"x": 1}')), /agentRows/);
   assert.throws(() => parseRevertBinding(b.replace('"rows": 3', '"rows": 0').replace('"skipped": 1', '"skipped": 0')), /rows 0/);
   assert.equal(MAX_REVERT_LINES, 1000);
@@ -128,10 +138,12 @@ test("revert binding limits", () => {
 
 test("a widened select and an empty task proposal parse", () => {
   const b = fixtures.request.binding;
-  const widened = parseRevertBinding(b.replace('["basalt_agent_bot"]', "null")
-    .replace('"widened": false', '"widened": true, "agentRows": {"basalt_agent_bot": 3, "basalt_agent_sync": 1}'));
+  const widened = parseRevertBinding(b.replace('["agent:bot"]', "null")
+    .replace('"widened": false', '"widened": true, "agentRows": {"agent:bot": 3, "agent:sync": 1}'));
+  assert.throws(() => parseRevertBinding(b.replace('["agent:bot"]', "null")
+    .replace('"widened": false', '"widened": true, "agentRows": {"basalt_agent_bot": 3}')), /agentRows key/);
   assert.equal(widened.select.agents, null);
-  assert.deepEqual(Object.keys(widened.agentRows), ["basalt_agent_bot", "basalt_agent_sync"]);
+  assert.deepEqual(Object.keys(widened.agentRows), ["agent:bot", "agent:sync"]);
   const empty = parseRevertBinding(b.replace('"scope": "RUN"', '"scope": "TASK"').replace('"rows": 3', '"rows": 0')
     .replace('"skipped": 1', '"skipped": 0'));
   assert.equal(empty.rows + empty.skipped, 0);
@@ -149,7 +161,7 @@ test("a large plan's link carries its sample (N12-4)", async () => {
   assert.equal(MAX_REVERT_BATCH, 200);
   assert.equal(REVERT_APPLY_HOURS, 24);
 
-  const decoded = JSON.parse(inflateRawSync(Buffer.from(f.fragment.slice(2), "base64url")).toString("utf8"));
+  const decoded = decodeFragment(f.fragment);
   const changed = [...decoded.lines];
   changed[500] = changed[500].replace('"agent"', '"person"');
   const reordered = [decoded.lines[f.skipped], ...decoded.lines.slice(0, f.skipped), ...decoded.lines.slice(f.skipped + 1)];
@@ -160,7 +172,7 @@ test("a large plan's link carries its sample (N12-4)", async () => {
     ["restores first", { ...decoded, lines: reordered }, /sampleHash/],
   ];
   for (const [name, obj, want] of cases) {
-    await assert.rejects(parseRevertRequest(requestFragment(obj)), (err) => {
+    await assert.rejects(checkRevertRequest((obj)), (err) => {
       assert.ok(err instanceof CodeError, name);
       assert.match(err.message, want, name);
       return true;
@@ -188,25 +200,25 @@ test("a large plan's sample keeps room for restored rows (RSS-1)", async () => {
 
   // The sample before RSS-1 (1000 SKIP lines, no RESTORE line) is refused,
   // even with a binding whose sampleHash matches it.
-  const decoded = JSON.parse(inflateRawSync(Buffer.from(f.fragment.slice(2), "base64url")).toString("utf8"));
+  const decoded = decodeFragment(f.fragment);
   const skips = decoded.lines.filter((l) => l.includes('"action": "SKIP"'));
   const old = [...skips, ...skips.slice(0, 50)];
   const binding = decoded.binding.replace(/"sampleHash": "[0-9a-f]+"/, `"sampleHash": "${await rowsHash(old)}"`);
   await assert.rejects(
-    parseRevertRequest(requestFragment({ ...decoded, binding, lines: old })),
+    checkRevertRequest(({ ...decoded, binding, lines: old })),
     /request has 1000 SKIP lines, the binding's sample 950/,
   );
 });
 
 test("the batchedSkips sample round-trips in format 2 (RSS-1)", async () => {
   const f = fixtures.batchedSkips;
-  assert.ok(f.fragment2.startsWith("2."));
-  const v1 = await parseRevertRequest("#" + f.fragment);
-  const v2 = await parseRevertRequest("#" + f.fragment2);
-  assert.equal(v2.bindingText, v1.bindingText);
-  assert.deepEqual(v2.lines, v1.lines);
-  assert.deepEqual(v2.credentialIds, [], "format 2 carries no credential ids");
-  assert.deepEqual(revertShown(v2), { restoreShown: 50, skipShown: 950, restoreHidden: 0, skipHidden: 550 });
+  assert.ok(f.fragment.startsWith("2."));
+  const fromLink = await parseRevertRequest("#" + f.fragment);
+  const served = await checkRevertRequest(decodeFragment(f.fragment));
+  assert.equal(served.bindingText, fromLink.bindingText);
+  assert.deepEqual(served.lines, fromLink.lines);
+  assert.deepEqual(fromLink.credentialIds, [], "this link carries no credential ids");
+  assert.deepEqual(revertShown(fromLink), { restoreShown: 50, skipShown: 950, restoreHidden: 0, skipHidden: 550 });
 });
 
 test("hidden counts come only from signed data", async () => {
@@ -219,9 +231,9 @@ test("hidden counts come only from signed data", async () => {
   // A link cannot add its own coverage figures: the request is strict, so
   // an unsigned field such as sampleCoverage is refused before anything is
   // shown, and revertShown reads only the binding and the checked lines.
-  const decoded = JSON.parse(inflateRawSync(Buffer.from(fixtures.batchedSkips.fragment.slice(2), "base64url")).toString("utf8"));
+  const decoded = decodeFragment(fixtures.batchedSkips.fragment);
   const forged = { ...decoded, sampleCoverage: { hiddenRestores: 0, hiddenSkips: 0 } };
-  await assert.rejects(parseRevertRequest(requestFragment(forged)), /sampleCoverage|unknown field/);
+  await assert.rejects(checkRevertRequest((forged)), /sampleCoverage|unknown field/);
   const extra = { ...req, sampleCoverage: { hiddenRestores: 0, hiddenSkips: 0 } };
   assert.deepEqual(revertShown(extra), revertShown(req));
 });
@@ -230,9 +242,11 @@ test("revert lines", () => {
   const ok = fixtures.request.lines[2];
   assert.throws(() => parseRevertLine(ok.replace('"op": "UPDATE"', '"op": "MERGE"')), /op/);
   assert.throws(() => parseRevertLine(ok.replace('"RESTORE"', '"MAYBE"')), /action/);
-  assert.throws(() => parseRevertLine(ok.replace('"conflict": null', '"conflict": "ROW_GONE"')), /RESTORE line/);
+  assert.throws(() => parseRevertLine(ok.replace('"conflict": null', '"conflict": "TARGET_GONE"')), /RESTORE line/);
+  assert.throws(() => parseRevertLine(ok.replace('"RESTORE"', '"SKIP"').replace('"conflict": null', '"conflict": "ROW_GONE"')), /SKIP line/, "the old name is not read");
+  assert.throws(() => parseRevertLine(ok.replace('"code": null, ', "")), /missing "code"/);
   assert.throws(() => parseRevertLine(ok.replace('"RESTORE"', '"SKIP"')), /SKIP line/);
-  assert.throws(() => parseRevertLine(ok.replace('"table": "public.leads", ', "")), /missing/);
+  assert.throws(() => parseRevertLine(ok.replace('"resource": "public.leads", ', "")), /missing/);
   assert.throws(
     () => parseRevertLine('{"op": "DELETE", "key": {"id": 3}, "old": {"id": 3}, "set": null, "table": "t", "cascaded": false}'),
     /unknown field|missing/,
@@ -310,7 +324,7 @@ test("a skipped row that is gone shows its key, not empty cells", async () => {
   globalThis.document = { createElement: fakeElement };
   const req = await parseRevertRequest("#" + fixtures.request.fragment);
   const skip = req.lines[3];
-  const gone = { ...skip, conflict: "ROW_GONE", now: null };
+  const gone = { ...skip, conflict: "TARGET_GONE", now: null };
   const text = rowKeyText(gone);
   assert.ok(text.startsWith("Row "), text);
   for (const col of Object.keys(skip.key)) {
@@ -339,7 +353,7 @@ test("every conflict kind shows the row now, or its key when it is gone, whateve
   const skip = req.lines[3];
   const reasons = {
     CHANGED_AFTER: "Changed after the agent. Kept as it is now.",
-    ROW_GONE: "No longer there, or not visible to the revert.",
+    TARGET_GONE: "No longer there, or not visible to the revert.",
     KEY_TAKEN: "Another row now has this key.",
     ALREADY_REVERTED: "Already reverted.",
     VALUES_PRUNED: "Older than 30 days: the old values are gone.",
@@ -376,15 +390,15 @@ test("a changed column shows the value now struck through and the value it goes 
 
 test("a row from another agent than the requester is tagged amber", () => {
   globalThis.document = { createElement: fakeElement };
-  const own = agentTag({ role: "basalt_agent_bot", other: false });
+  const own = agentTag({ role: "agent:bot", other: false });
   assert.equal(own.className, "ag");
   assert.equal(own.textContent, "bot");
-  assert.equal(own.title, "basalt_agent_bot");
-  const other = agentTag({ role: "basalt_agent_sync", other: true });
+  assert.equal(own.title, "agent:bot");
+  const other = agentTag({ role: "agent:sync", other: true });
   assert.equal(other.className, "ag other");
   assert.equal(other.textContent, "sync");
   // A role name is shown as text with its hidden characters escaped.
-  assert.equal(agentTag({ role: "basalt_agent_a‮b", other: true }).textContent, "a<U+202E>b");
+  assert.equal(agentTag({ role: "agent:a‮b", other: true }).textContent, "a<U+202E>b");
 });
 
 test("with per-row agents each row carries its own tag, amber for another agent", async () => {
@@ -394,8 +408,8 @@ test("with per-row agents each row carries its own tag, amber for another agent"
   const skip = req.lines[3];
   const agents = (line) =>
     line === restore
-      ? [{ role: "basalt_agent_bot", other: false }]
-      : [{ role: "basalt_agent_bot", other: false }, { role: "basalt_agent_sync", other: true }];
+      ? [{ role: "agent:bot", other: false }]
+      : [{ role: "agent:bot", other: false }, { role: "agent:sync", other: true }];
   for (const [line, want] of [[restore, [["ag", "bot"]]], [skip, [["ag", "bot"], ["ag other", "sync"]]]]) {
     const groups = lineGroups([{ line, index: 0 }], null, new Map(), false, new Map(), agents);
     const head = groups[0].children[0];
@@ -418,15 +432,15 @@ test("with per-row agents each row carries its own tag, amber for another agent"
 
 test("another agent's tag says so in words, not only in amber", () => {
   globalThis.document = { createElement: fakeElement };
-  assert.equal(agentTag({ role: "basalt_agent_bot", other: false }).title, "basalt_agent_bot");
-  assert.equal(agentTag({ role: "basalt_agent_sync", other: true }).title, "basalt_agent_sync, not the agent that asked for this revert");
+  assert.equal(agentTag({ role: "agent:bot", other: false }).title, "agent:bot");
+  assert.equal(agentTag({ role: "agent:sync", other: true }).title, "agent:sync, not the agent that asked for this revert");
 });
 
 test("two different values over 1 MiB of the same size: the changed column is still highlighted", () => {
   globalThis.document = { createElement: fakeElement };
   const size = (1 << 20) + 10;
   const line = {
-    op: "UPDATE", table: "public.docs", action: "RESTORE", cascaded: false, redacted: false, conflict: null, sqlState: null,
+    op: "UPDATE", resource: "public.docs", action: "RESTORE", cascaded: false, redacted: false, conflict: null, storeCode: null,
     key: { id: 1 }, now: { id: 1, body: "a".repeat(size) }, set: { id: 1, body: "b".repeat(size) }, texts: null, changeIds: [],
   };
   const { rows } = tableRows(line);

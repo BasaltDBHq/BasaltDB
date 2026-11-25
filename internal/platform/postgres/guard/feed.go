@@ -21,8 +21,8 @@ func ReadFeedRows(ctx context.Context, q Querier, after int64, limit int, f guar
 	if limit <= 0 {
 		return nil, nil
 	}
-	b := psql.Select("seq", "at", ledgerKind, "change_id", "op",
-		"detail ->> 'runId'", "detail ->> 'taskId'", "detail ->> 'table'", "detail ->> 'rows'", "detail ->> 'cascadedRows'",
+	b := psql.Select("seq", "at", ledgerKind, "change_id", "op", "verb",
+		"detail ->> 'runId'", "detail ->> 'taskId'", "detail ->> 'resource'", "detail ->> 'rows'", "detail ->> 'cascadedRows'",
 		"detail ->> 'approvalId'", "detail ->> 'expiresAt'", "detail ->> 'revertId'", "detail ->> 'code'").
 		From("basalt_meta.agent_ledger").
 		Where(sq.Gt{"seq": after}).
@@ -31,7 +31,7 @@ func ReadFeedRows(ctx context.Context, q Querier, after int64, limit int, f guar
 		b = b.Where(sq.Expr("(kind <> ? OR detail ->> 'status' = 'APPLIED')", guardmodel.KindChange))
 	}
 	if !f.IncludeRefusedReads {
-		b = b.Where(sq.Expr("(kind <> ? OR op IS DISTINCT FROM 'SELECT')", guardmodel.KindRefused))
+		b = b.Where(sq.Expr("(kind <> ? OR op IS DISTINCT FROM 'READ')", guardmodel.KindRefused))
 	}
 	sql, args, err := b.OrderBy("seq").Limit(uint64(limit)).ToSql()
 	if err != nil {
@@ -43,7 +43,7 @@ func ReadFeedRows(ctx context.Context, q Querier, after int64, limit int, f guar
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (guardmodel.FeedRow, error) {
 		var r guardmodel.FeedRow
-		err := row.Scan(&r.Seq, &r.At, &r.Kind, &r.ChangeID, &r.Op,
+		err := row.Scan(&r.Seq, &r.At, &r.Kind, &r.ChangeID, &r.Op, &r.Verb,
 			&r.RunID, &r.TaskID, &r.Table, &r.Rows, &r.CascadedRows,
 			&r.ApprovalID, &r.ExpiresAt, &r.RevertID, &r.Code)
 		return r, err

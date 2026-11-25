@@ -49,7 +49,7 @@ func sampleReceipt(k *channel.EngineKeys) channel.Receipt {
 	return channel.Receipt{
 		Kind: channel.ReceiptApproval, ItemID: "0192f3a0-7c1e-7b2a-9c4d-5e6f708192a3", Status: channel.ReceiptApproved,
 		Headline: "Update 3 rows in public.orders", RowsHash: strings.Repeat("ab", 32),
-		Agent: "billing-bot", EngineID: k.EngineID(), At: "2026-11-12T09:30:00Z",
+		Agent: "agent:billing_bot", EngineID: k.EngineID(), At: "2026-11-12T09:30:00Z",
 	}
 }
 

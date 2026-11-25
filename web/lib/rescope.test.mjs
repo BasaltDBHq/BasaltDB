@@ -5,7 +5,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { inflateRawSync } from "node:zlib";
 
 import { b64urlDecode, b64urlEncode, hex, parseRevertBinding, parseRevertRequest } from "./codec.js";
 import {
@@ -31,7 +30,8 @@ const TASK = "0193a4c2-7d1e-7c3a-9f00-0000000000c1";
 
 // requestObject is the fixture request as the engine serves it.
 function requestObject() {
-  return JSON.parse(inflateRawSync(Buffer.from(fixtures.request.fragment.slice(2), "base64url")).toString("utf8"));
+  const { revertId, binding, lines, credentialIds } = fixtures.request;
+  return credentialIds ? { revertId, binding, lines, credentialIds } : { revertId, binding, lines };
 }
 
 // taskRequest is the fixture's proposal as a task scope, with the nonce the
@@ -61,7 +61,7 @@ test("the widen challenge matches Go's for the shared fixtures", async () => {
 
 test("the widen select is every agent, run and table of the task", () => {
   const b = parseRevertBinding(fixtures.request.binding.replace('"scope": "RUN"', '"scope": "TASK"'));
-  assert.deepEqual(widenSelect(b), { scope: "TASK", scopeId: b.select.scopeId, agents: null, runs: null, tables: null });
+  assert.deepEqual(widenSelect(b), { scope: "TASK", scopeId: b.select.scopeId, agents: null, runs: null, resources: null });
 });
 
 test("Include other agents' changes is offered only for a task, from the engine, before a widen", async () => {
@@ -70,7 +70,7 @@ test("Include other agents' changes is offered only for a task, from the engine,
   assert.equal(canWiden(req, relay, null), true);
   assert.equal(canWiden(req, null, null), false, "a long link has no engine");
   assert.equal(canWiden({ ...req, rescopeNonce: null }, relay, null), false, "no nonce, no proof");
-  assert.equal(canWiden(req, relay, { agents: [], runs: [], tables: [] }), false, "already widened");
+  assert.equal(canWiden(req, relay, { agents: [], runs: [], resources: [] }), false, "already widened");
   const run = await parseRevertRequest("#" + fixtures.request.fragment);
   assert.equal(canWiden({ ...run, rescopeNonce: NONCE }, relay, null), false, "a run is one agent's");
 });
@@ -83,7 +83,7 @@ test("a new link secret is 16 random bytes", () => {
 });
 
 test("the scope body carries the proof fields as base64url, and nothing else", () => {
-  const select = { scope: "TASK", scopeId: TASK, agents: null, runs: null, tables: null };
+  const select = { scope: "TASK", scopeId: TASK, agents: null, runs: null, resources: null };
   assert.equal(scopeBody(select), JSON.stringify({ select }));
   const proof = {
     credentialId: new Uint8Array([1, 2]),
@@ -100,21 +100,21 @@ test("the scope body carries the proof fields as base64url, and nothing else", (
 
 test("the catalog is checked before the page uses it", () => {
   const ok = {
-    agents: [{ agent: "basalt_agent_bot", changes: 2 }],
-    runs: [{ runId: TASK, agent: "basalt_agent_bot", startedAt: "2026-11-11T06:00:00Z", changes: 2 }],
-    tables: [{ table: "public.leads", rows: 3 }],
+    agents: [{ agent: "agent:bot", changes: 2 }],
+    runs: [{ runId: TASK, agent: "agent:bot", startedAt: "2026-11-11T06:00:00Z", changes: 2 }],
+    resources: [{ resource: "public.leads", rows: 3 }],
   };
   const c = parseCatalog(ok);
   assert.equal(c.runs[0].startedAt.toISOString(), "2026-11-11T06:00:00.000Z");
   assert.equal(parseCatalog(undefined), null);
   assert.throws(() => parseCatalog({ ...ok, extra: 1 }), /catalog/);
   assert.throws(() => parseCatalog({ ...ok, runs: [{ ...ok.runs[0], runId: "x" }] }), /catalog/);
-  assert.throws(() => parseCatalog({ ...ok, tables: [{ table: "public.leads", rows: -1 }] }), /catalog/);
+  assert.throws(() => parseCatalog({ ...ok, resources: [{ resource: "public.leads", rows: -1 }] }), /catalog/);
   assert.equal(c.changeAgents, null, "a guard older than version 32 sends no map");
 
-  const mapped = parseCatalog({ ...ok, changeAgents: { [TASK]: "basalt_agent_bot" } });
-  assert.deepEqual([...mapped.changeAgents], [[TASK, "basalt_agent_bot"]]);
-  assert.throws(() => parseCatalog({ ...ok, changeAgents: { "not-a-uuid": "basalt_agent_bot" } }), /catalog/);
+  const mapped = parseCatalog({ ...ok, changeAgents: { [TASK]: "agent:bot" } });
+  assert.deepEqual([...mapped.changeAgents], [[TASK, "agent:bot"]]);
+  assert.throws(() => parseCatalog({ ...ok, changeAgents: { "not-a-uuid": "agent:bot" } }), /catalog/);
   assert.throws(() => parseCatalog({ ...ok, changeAgents: { [TASK]: "" } }), /catalog/);
   assert.throws(() => parseCatalog({ ...ok, changeAgents: [] }), /catalog/);
   assert.throws(() => parseCatalog({ ...ok, changeAgents: null }), /catalog/);
@@ -149,9 +149,9 @@ function fakePasskey() {
 }
 
 const CATALOG = {
-  agents: [{ agent: "basalt_agent_bot", changes: 2 }, { agent: "basalt_agent_sync", changes: 1 }],
-  runs: [{ runId: TASK, agent: "basalt_agent_sync", startedAt: "2026-11-11T06:00:00Z", changes: 1 }],
-  tables: [{ table: "public.leads", rows: 3 }],
+  agents: [{ agent: "agent:bot", changes: 2 }, { agent: "agent:sync", changes: 1 }],
+  runs: [{ runId: TASK, agent: "agent:sync", startedAt: "2026-11-11T06:00:00Z", changes: 1 }],
+  resources: [{ resource: "public.leads", rows: 3 }],
 };
 
 test("a widen asks the passkey over the widen challenge, then posts the proof with the new secret to the engine only", async () => {
@@ -208,7 +208,7 @@ test("no passkey, no widen: a cancelled prompt sends nothing", async () => {
 test("a narrow posts only the select, never a proof or secret, under the current link", async () => {
   const { obj, req } = await taskRequest();
   const engine = fakeEngine(async () => ({ status: 200, body: { request: obj } }));
-  const select = { ...widenSelect(req.binding), agents: ["basalt_agent_bot"], tables: ["public.leads"] };
+  const select = { ...widenSelect(req.binding), agents: ["agent:bot"], resources: ["public.leads"] };
   const out = await narrow({ req, secret: "s", session: sameOriginSession(engine.fetchFn), select });
   assert.equal(engine.calls.length, 1);
   assert.equal(engine.calls[0].init.headers["basalt-link-secret"], "s");

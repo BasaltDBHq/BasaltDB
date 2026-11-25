@@ -390,7 +390,7 @@ func TestBatchedParentsBeforeChildren(t *testing.T) {
 	// Every file's line comes after its folder's line.
 	require.Equal(t, parents*children, count(t, a.Conn, `SELECT count(f.line_no)::int
 		FROM basalt_meta.agent_revert_lines f JOIN basalt_meta.agent_revert_lines p
-		  ON p.revert_id = f.revert_id AND p.line::jsonb ->> 'table' = 'public.folders'
+		  ON p.revert_id = f.revert_id AND p.line::jsonb ->> 'resource' = 'public.folders'
 		 AND p.line::jsonb -> 'key' ->> 'id' = f.line::jsonb -> 'set' ->> 'folder_id'
-		WHERE f.revert_id = $1 AND f.line::jsonb ->> 'table' = 'public.files' AND p.line_no < f.line_no`, prep.RevertID))
+		WHERE f.revert_id = $1 AND f.line::jsonb ->> 'resource' = 'public.files' AND p.line_no < f.line_no`, prep.RevertID))
 }

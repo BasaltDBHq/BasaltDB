@@ -1,5 +1,5 @@
 {
-  "agent": "product_a",
+  "agent": "agent:product_a",
   "events": [
     {
       "specversion": "1.0",
@@ -7,12 +7,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1000,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -22,12 +22,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1001,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -37,12 +37,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1002,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -52,12 +52,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1003,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -67,12 +67,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1004,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -82,12 +82,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1005,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -97,12 +97,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1006,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -112,12 +112,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1007,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -127,12 +127,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1008,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -142,12 +142,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1009,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -157,12 +157,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1010,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -172,12 +172,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1011,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -187,12 +187,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1012,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -202,12 +202,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1013,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -217,12 +217,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1014,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -232,12 +232,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1015,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -247,12 +247,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1016,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -262,12 +262,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1017,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -277,12 +277,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1018,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -292,12 +292,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1019,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -307,12 +307,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1020,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -322,12 +322,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1021,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -337,12 +337,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1022,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -352,12 +352,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1023,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -367,12 +367,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1024,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -382,12 +382,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1025,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -397,12 +397,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1026,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -412,12 +412,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1027,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -427,12 +427,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1028,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -442,12 +442,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1029,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -457,12 +457,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1030,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -472,12 +472,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1031,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -487,12 +487,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1032,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -502,12 +502,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1033,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -517,12 +517,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1034,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -532,12 +532,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1035,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -547,12 +547,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1036,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -562,12 +562,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1037,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -577,12 +577,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1038,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -592,12 +592,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1039,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -607,12 +607,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1040,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -622,12 +622,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1041,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -637,12 +637,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1042,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -652,12 +652,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1043,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -667,12 +667,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1044,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -682,12 +682,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1045,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -697,12 +697,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1046,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -712,12 +712,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1047,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -727,12 +727,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1048,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -742,12 +742,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1049,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -757,12 +757,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1050,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -772,12 +772,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1051,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -787,12 +787,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1052,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -802,12 +802,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1053,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -817,12 +817,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1054,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -832,12 +832,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1055,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -847,12 +847,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1056,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -862,12 +862,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1057,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -877,12 +877,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1058,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -892,12 +892,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1059,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -907,12 +907,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1060,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -922,12 +922,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1061,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -937,12 +937,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1062,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -952,12 +952,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1063,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -967,12 +967,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1064,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -982,12 +982,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1065,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -997,12 +997,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1066,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1012,12 +1012,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1067,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1027,12 +1027,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1068,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1042,12 +1042,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1069,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1057,12 +1057,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1070,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1072,12 +1072,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1071,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1087,12 +1087,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1072,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1102,12 +1102,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1073,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1117,12 +1117,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1074,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1132,12 +1132,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1075,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1147,12 +1147,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1076,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1162,12 +1162,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1077,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1177,12 +1177,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1078,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1192,12 +1192,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1079,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1207,12 +1207,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1080,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1222,12 +1222,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1081,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1237,12 +1237,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1082,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1252,12 +1252,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1083,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1267,12 +1267,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1084,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1282,12 +1282,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1085,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1297,12 +1297,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1086,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1312,12 +1312,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1087,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1327,12 +1327,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1088,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1342,12 +1342,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1089,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1357,12 +1357,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1090,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1372,12 +1372,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1091,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1387,12 +1387,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1092,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1402,12 +1402,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1093,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1417,12 +1417,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1094,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1432,12 +1432,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1095,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1447,12 +1447,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1096,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1462,12 +1462,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1097,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1477,12 +1477,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1098,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1492,12 +1492,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1099,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     },
@@ -1507,12 +1507,12 @@
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
       "type": "dev.basaltdb.revert.prepared",
       "time": "2026-11-19T07:00:00Z",
-      "subject": "product_a",
+      "subject": "agent:product_a",
       "datacontenttype": "application/json",
       "data": {
         "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
         "seq": 1100,
-        "agent": "product_a",
+        "agent": "agent:product_a",
         "revertId": "0193a1b3-2222-7000-8000-000000000001"
       }
     }

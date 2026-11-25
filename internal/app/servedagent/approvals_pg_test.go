@@ -301,7 +301,7 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	pendingSteps := requireToolSteps(t, list[0], "list_pending", "PENDING")
 	require.Equal(t, link, pendingSteps[0]["url"])
 	require.Nil(t, pendingSteps[0]["command"], "the step is the link alone")
-	require.Equal(t, []any{"status"}, list[0]["assignedColumns"])
+	require.Equal(t, []any{"status"}, list[0]["assignedFields"])
 
 	withApproval := func(extra map[string]any) map[string]any {
 		out := map[string]any{"approvalId": approvalID}

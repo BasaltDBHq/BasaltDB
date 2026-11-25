@@ -117,8 +117,8 @@ func TestApprovalFlow(t *testing.T) {
 	b, err := req.Check()
 	require.NoError(t, err, "the Go codec accepts what Postgres built")
 	require.Equal(t, in.RunID, b.RunID)
-	require.Equal(t, a.Role, b.Agent)
-	require.Equal(t, stmt, b.Statement)
+	require.Equal(t, a.Name, b.Agent)
+	require.Equal(t, stmt, b.Request.Statement)
 	require.WithinDuration(t, time.Now().Add(24*time.Hour), held.ExpiresAt, time.Minute)
 	require.Equal(t, "APPROVAL_PENDING", scalarOf[string](t, a.Conn,
 		`SELECT status FROM basalt_meta.agent_changes WHERE approval_id = $1`, held.ApprovalID))
@@ -320,7 +320,7 @@ func TestHoldValidation(t *testing.T) {
 	a := d.NewAgent(t, "bot", leads, leads)
 	in := newRun(t, a, "validation")
 	line := func(id int) string {
-		return `{"op": "DELETE", "key": {"id": ` + big.NewInt(int64(id)).String() + `}, "old": null, "set": null, "table": "public.leads", "cascaded": false}`
+		return `{"op": "DELETE", "key": {"id": ` + big.NewInt(int64(id)).String() + `}, "old": null, "set": null, "resource": "public.leads", "cascaded": false}`
 	}
 	many := make([]string, 51)
 	for i := range many {
@@ -334,9 +334,9 @@ func TestHoldValidation(t *testing.T) {
 	}{
 		{"no lines", in, nil, nil},
 		{"over 50 lines", in, nil, many},
-		{"not jsonb text", in, nil, []string{`{"op":"DELETE","table":"t"}`}},
+		{"not jsonb text", in, nil, []string{`{"op":"DELETE","resource":"t"}`}},
 		{"out of order", in, nil, []string{line(20), line(10)}},
-		{"only cascaded lines", in, nil, []string{`{"op": "DELETE", "key": {"id": 1}, "old": null, "set": null, "table": "t", "cascaded": true}`}},
+		{"only cascaded lines", in, nil, []string{`{"op": "DELETE", "key": {"id": 1}, "old": null, "set": null, "resource": "t", "cascaded": true}`}},
 		{"duplicate assigned columns", in, []string{"a", "a"}, []string{line(1)}},
 	}
 	for _, tc := range cases {

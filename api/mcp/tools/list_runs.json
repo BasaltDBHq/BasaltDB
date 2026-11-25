@@ -2,7 +2,7 @@
   "name": "list_runs",
   "status": "IMPLEMENTED",
   "milestone": "M4.1",
-  "description": "This agent's own runs, newest first, with what each did: its intent, when it started, how many changes it applied, held, had refused or saw reverted, the rows it wrote and the tables it wrote to. Use it to find the run the person means (\"what you did yesterday on leads\") before run_history, preview_revert and request_revert. Without startTime or endTime you get the newest runs; you do not have to ask the person for a period. startTime and endTime filter on the run's start. Only runs of this agent are listed. Cursor-paginated.",
+  "description": "This agent's own runs, newest first, with what each did: its intent, when it started, how many changes it applied, held, had refused or saw reverted, the rows it wrote and the resources it wrote to. Use it to find the run the person means (\"what you did yesterday on leads\") before run_history, preview_revert and request_revert. Without startTime or endTime you get the newest runs; you do not have to ask the person for a period. startTime and endTime filter on the run's start. Only runs of this agent are listed. Cursor-paginated.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -56,7 +56,7 @@
             "reverted",
             "reads",
             "rowsWritten",
-            "tables"
+            "resources"
           ],
           "properties": {
             "runId": {
@@ -102,24 +102,24 @@
             "reads": {
               "type": "integer",
               "minimum": 0,
-              "description": "Reads recorded in the run (op SELECT)."
+              "description": "Reads recorded in the run (op READ)."
             },
             "rowsWritten": {
               "type": "integer",
               "minimum": 0,
               "description": "Rows written by the applied and reverted writes, cascaded rows included."
             },
-            "tables": {
+            "resources": {
               "type": "array",
               "maxItems": 10,
               "items": {
                 "type": "string"
               },
-              "description": "Tables the run wrote to (schema.table), at most 10, in name order."
+              "description": "Resources the run wrote to, in the store's form (schema.table in Postgres) (CONTRACT.md, Stores, What every store writes), at most 10, in name order."
             },
-            "tablesTruncated": {
+            "resourcesTruncated": {
               "type": "boolean",
-              "description": "True when the run wrote to more than 10 tables; run_history has them all."
+              "description": "True when the run wrote to more than 10 resources; run_history has them all."
             }
           }
         }

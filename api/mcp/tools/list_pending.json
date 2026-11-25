@@ -67,6 +67,7 @@
                 "approvalId",
                 "runId",
                 "intent",
+                "request",
                 "rows",
                 "status",
                 "createdAt",
@@ -92,20 +93,36 @@
                 "intent": {
                   "type": "string"
                 },
-                "statement": {
-                  "type": "string",
-                  "description": "The held statement; absent when it is left out as a large value (in practice never: write takes at most 16384 characters of sql), named in largeValues."
+                "request": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "The held request by family (CONTRACT.md, Stores, Request families), as the approval binds it.",
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "SQL"
+                      ]
+                    },
+                    "statement": {
+                      "type": "string",
+                      "description": "The held statement; absent when it is left out as a large value (in practice never: write takes at most 16384 characters of sql), named in largeValues."
+                    },
+                    "params": {
+                      "type": "array",
+                      "description": "Values bound to $1, $2, ...; absent when left out as a large value, named in largeValues."
+                    }
+                  }
                 },
-                "params": {
-                  "type": "array",
-                  "description": "Values bound to $1, $2, ..."
-                },
-                "assignedColumns": {
+                "assignedFields": {
                   "type": "array",
                   "items": {
                     "type": "string"
                   },
-                  "description": "Columns whose new values the approval binds (CONTRACT.md, Approvals)."
+                  "description": "Fields whose new values the approval binds, the binding's assignedFields (CONTRACT.md, Approvals)."
                 },
                 "rows": {
                   "type": "integer",
@@ -130,7 +147,7 @@
                 "approvalUrl": {
                   "type": "string",
                   "format": "uri",
-                  "description": "The approval page for this held write: with reissueLink and when the engine serves the local pages, a newly issued short link http://localhost:<port>/approvals/<approvalId>#s=<secret> (the earlier one stops working); otherwise <base>/approvals/<approvalId>#1.<request> (base: the engine config's pagesUrl). When that long link is over the link budget: the hash link <base>/approvals/<approvalId>#h=<h>, with requestFile beside it, except while the engine serves the local pages and reissueLink is not set: then the long link, no requestFile, and the OPEN_LINK step has no url (the person has the short link)."
+                  "description": "The approval page for this held write: with reissueLink and when the engine serves the local pages, a newly issued short link http://localhost:<port>/approvals/<approvalId>#s=<secret> (the earlier one stops working); otherwise <base>/approvals/<approvalId>#2.<request> (base: the engine config's pagesUrl). When that long link is over the link budget: the hash link <base>/approvals/<approvalId>#h=<h>, with requestFile beside it, except while the engine serves the local pages and reissueLink is not set: then the long link, no requestFile, and the OPEN_LINK step has no url (the person has the short link)."
                 },
                 "requestFile": {
                   "$ref": "../links/request-file.schema.json",
@@ -166,7 +183,7 @@
                   "items": {
                     "$ref": "../values/large-value.schema.json"
                   },
-                  "description": "CONTRACT.md, Large values: the values (statement, params) of this held write left out because they are too large for you to read, each with its size and sha256; absent when none was. A value left out is absent, never null: it is stored in full, and the approval binds the full value. Without the full params you cannot repeat this write to apply it: write it again as a new hold."
+                  "description": "CONTRACT.md, Large values: the values (request.statement, request.params) of this held write left out because they are too large for you to read, each with its size and sha256; absent when none was. A value left out is absent, never null: it is stored in full, and the approval binds the full value. Without the full params you cannot repeat this write to apply it: write it again as a new hold."
                 }
               },
               "additionalProperties": false

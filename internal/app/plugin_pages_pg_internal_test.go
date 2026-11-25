@@ -16,6 +16,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -123,7 +124,7 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 	}
 
 	timeout := 300
-	opened, err := guard.OpenPluginApproval(ctx, bot.Conn, pluginApprovalDetail("0.3.1", bot.Role, helper.Role),
+	opened, err := guard.OpenPluginApproval(ctx, bot.Conn, pluginApprovalDetail("0.3.1", bot.Name, helper.Name),
 		guardmodel.PluginSettings{TimeoutMs: &timeout})
 	require.NoError(t, err)
 
@@ -142,7 +143,7 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 	require.NoError(t, err, "the request is what Postgres built, settings matching the binding")
 	require.Equal(t, opened.BindingText, req.Binding)
 	require.Equal(t, opened.SettingsText, req.Settings)
-	require.Equal(t, []string{bot.Role, helper.Role}, b.Agents)
+	require.Equal(t, []string{bot.Name, helper.Name}, b.Agents)
 	require.Len(t, req.CredentialIDs, 1)
 	require.Equal(t, passkey.Bytes(person.ID), req.CredentialIDs[0])
 
@@ -173,10 +174,10 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 	require.Equal(t, "This plugin approval is already signed. The plugin starts within a few seconds of the signature.", out["personMessage"])
 
 	// A newer approval of the same entry cancels the pending one.
-	first, err := guard.OpenPluginApproval(ctx, bot.Conn, pluginApprovalDetail("0.3.2", bot.Role), guardmodel.PluginSettings{})
+	first, err := guard.OpenPluginApproval(ctx, bot.Conn, pluginApprovalDetail("0.3.2", bot.Name), guardmodel.PluginSettings{})
 	require.NoError(t, err)
 	firstSecret := p.link(first.ID)
-	second, err := guard.OpenPluginApproval(ctx, bot.Conn, pluginApprovalDetail("0.3.3", bot.Role), guardmodel.PluginSettings{})
+	second, err := guard.OpenPluginApproval(ctx, bot.Conn, pluginApprovalDetail("0.3.3", bot.Name), guardmodel.PluginSettings{})
 	require.NoError(t, err)
 	status, out = p.get(first.ID, firstSecret)
 	require.Equal(t, http.StatusConflict, status, out)
@@ -195,16 +196,17 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 
 	// An approval opened in the other database is that agent's alone.
 	p.offset.Store(0)
-	theirs, err := guard.OpenPluginApproval(ctx, other.Conn, pluginApprovalDetail("0.3.1", other.Role), guardmodel.PluginSettings{})
+	theirs, err := guard.OpenPluginApproval(ctx, other.Conn, pluginApprovalDetail("0.3.1", other.Name), guardmodel.PluginSettings{})
 	require.NoError(t, err)
 	status, out = p.get(theirs.ID, p.link(theirs.ID))
 	require.Equal(t, http.StatusOK, status, out)
-	require.Equal(t, other.Role, theirsRequestedBy(t, theirs.BindingText))
+	require.Equal(t, other.Name, theirsRequestedBy(t, theirs.BindingText))
 }
 
-// TestPluginRoutesOnOlderGuard: an agent whose guard predates plugin
-// approvals cannot hold one; the routes answer it as an unknown id, never
-// a failed read of a view that does not exist.
+// TestPluginRoutesOnOlderGuard: a guard that predates plugin approvals also
+// lacks a later breaking version, so this build cannot use it: the route
+// answers 503 GUARD_OUTDATED before any read, never a failed read of a view
+// that does not exist.
 func TestPluginRoutesOnOlderGuard(t *testing.T) {
 	restore := guardtest.UpToVersion(t, guard.PluginApprovalsVersion-1)
 	d := guardtest.New(t).WithDemo(t)
@@ -228,7 +230,8 @@ func TestPluginRoutesOnOlderGuard(t *testing.T) {
 	req.Header.Set(links.SecretHeader, secret)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
-	require.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), guidance.ReasonGuardOutdated, "the person is told the guard needs an update")
 }
 
 func pluginApprovedRows(t *testing.T, d *guardtest.DB, role string) int {

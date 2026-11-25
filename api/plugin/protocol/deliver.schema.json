@@ -8,7 +8,7 @@
       "type": "object",
       "required": ["agent", "event"],
       "properties": {
-        "agent": { "$ref": "feed.schema.json#/$defs/agent" },
+        "agent": { "$ref": "feed.schema.json#/$defs/agentName" },
         "event": { "$ref": "#/$defs/event" }
       }
     },
@@ -39,7 +39,7 @@
           "description": "When the engine made the notice: the moment the agent's answer was built.",
           "$ref": "feed.schema.json#/$defs/timestamp"
         },
-        "subject": { "$ref": "feed.schema.json#/$defs/agent" },
+        "subject": { "$ref": "feed.schema.json#/$defs/agentName" },
         "datacontenttype": { "const": "application/json" },
         "data": { "$ref": "#/$defs/notice" }
       },
@@ -58,7 +58,7 @@
           "description": "APPROVAL_REQUESTED: the engine held a write. REVERT_REQUESTED: the engine prepared a revert. LINK_REPLACED: the agent asked for a new link for a held write or a revert; the earlier one no longer works.",
           "enum": ["APPROVAL_REQUESTED", "REVERT_REQUESTED", "LINK_REPLACED"]
         },
-        "agent": { "$ref": "feed.schema.json#/$defs/agent" },
+        "agent": { "$ref": "feed.schema.json#/$defs/agentName" },
         "approvalId": { "description": "The held write's approval: present exactly when the item is a held write.", "$ref": "feed.schema.json#/$defs/uuid" },
         "revertId": { "description": "The revert: present exactly when the item is a revert.", "$ref": "feed.schema.json#/$defs/uuid" },
         "headline": {

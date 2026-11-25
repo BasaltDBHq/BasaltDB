@@ -134,7 +134,7 @@ func PlanInit(ctx context.Context, q Querier, opts guardmodel.InitOptions) (guar
 	}
 	add(recordInstall(versionAfter(version, opts.UpTo)))
 	if opts.Agent.Name != "" {
-		agent, err := planAgent(ctx, q, n, opts.Agent)
+		agent, err := planAgent(ctx, q, n, opts.Agent, versionAfter(version, opts.UpTo))
 		if err != nil {
 			return guardmodel.Script{}, err
 		}
@@ -184,7 +184,10 @@ RESET ROLE;`
 const attachAll = `
 SELECT count(1) FROM basalt_meta.attach_all();`
 
-func planAgent(ctx context.Context, q Querier, n guardmodel.Names, spec guardmodel.AgentSpec) ([]guardmodel.Statement, error) {
+// planAgent creates or rotates the agent role, grants its tables and, on a
+// guard at version (after the migrations) that keeps agent names, records
+// the agent's name with its role.
+func planAgent(ctx context.Context, q Querier, n guardmodel.Names, spec guardmodel.AgentSpec, version int) ([]guardmodel.Statement, error) {
 	role, err := n.Agent(spec.Name)
 	if err != nil {
 		return nil, err
@@ -216,6 +219,9 @@ func planAgent(ctx context.Context, q Querier, n guardmodel.Names, spec guardmod
 		out = append(out, guardmodel.Statement{SQL: renderSQL(n, fmt.Sprintf(agentChangeSQL, role))})
 	}
 	out = append(out, st)
+	if version >= versionStoreNeutral {
+		out = append(out, agentNameStatement(n, role, spec.Name))
+	}
 	if spec.Exact {
 		exact, err := agentExactStatement(role, spec)
 		if err != nil {
@@ -224,6 +230,19 @@ func planAgent(ctx context.Context, q Querier, n guardmodel.Names, spec guardmod
 		out = append(out, exact)
 	}
 	return append(out, grants...), nil
+}
+
+// agentNameSQL records an agent's name with its role (%[1]s, %[2]s: quoted
+// literals), as the owner, so the guard writes agent:<name> in texts from
+// it (CONTRACT.md, Stores, Agent names). A role keeps the name it has.
+const agentNameSQL = `
+SET LOCAL ROLE {{guard}};
+INSERT INTO basalt_meta.agent_names (role, name) VALUES (%[1]s, %[2]s) ON CONFLICT (role) DO NOTHING;
+RESET ROLE;`
+
+// agentNameStatement is agentNameSQL for role and the agent's name.
+func agentNameStatement(n guardmodel.Names, role, name string) guardmodel.Statement {
+	return guardmodel.Statement{SQL: renderSQL(n, fmt.Sprintf(agentNameSQL, quoteLiteral(role), quoteLiteral(name)))}
 }
 
 // agentExactStatement is agentExactSQL for role and spec's tables.

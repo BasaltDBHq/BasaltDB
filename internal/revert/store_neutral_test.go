@@ -34,6 +34,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
+	"github.com/basaltdbhq/basaltdb/internal/core/textrule/textruletest"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
@@ -51,8 +52,13 @@ import (
 // parsed a resource name, read a store code as a SQLSTATE or decided on the
 // store's error text, these tests would fail.
 
+// objVerbs are the object store's own words for a line's operation.
+var objVerbs = map[string]string{approval.OpInsert: "putObject", approval.OpUpdate: "putObject", approval.OpDelete: "deleteObject"}
+
 const (
 	objAgent = "docbot"
+	// objStoreKind is the store's kind, a label only.
+	objStoreKind = "OBJSTORE"
 	// objPrepareLimit is the store's own time limit on a prepare.
 	objPrepareLimit = 42 * time.Second
 	// codeKeyExists and codeDeadline are the store's own error codes.
@@ -304,7 +310,7 @@ func (s *objectStore) planLines(changes []objChange) []objLine {
 		f, l, cur := first[t], last[t], s.objects[t.resource][t.key]
 		line := revert.Line{
 			Op: approval.OpUpdate, Key: rawJSON(map[string]any{"_id": t.key}), Now: rawJSON(cur.doc), Set: rawJSON(f.before),
-			Table: t.resource, Action: revert.ActionRestore, ChangeIDs: ids[t],
+			Shape: approval.ShapeRecord, Resource: t.resource, Action: revert.ActionRestore, ChangeIDs: ids[t],
 		}
 		switch {
 		case f.before == nil:
@@ -312,6 +318,7 @@ func (s *objectStore) planLines(changes []objChange) []objLine {
 		case l.after == nil:
 			line.Op = approval.OpInsert
 		}
+		line.Store = revert.LineStore{Kind: objStoreKind, Verb: objVerbs[line.Op]}
 		ol := objLine{resource: t.resource, key: t.key, op: line.Op, set: f.before, version: l.version, restore: true}
 		switch {
 		case cur.version != l.version && line.Op == approval.OpInsert && cur.doc != nil:
@@ -322,14 +329,10 @@ func (s *objectStore) planLines(changes []objChange) []objLine {
 		if ol.conflict != "" {
 			ol.restore, line.Action, line.Conflict = false, revert.ActionSkip, &ol.conflict
 			if ol.code != "" {
-				line.SQLState = &ol.code
+				line.Store.Code = &ol.code
 			}
 		}
-		text, err := json.Marshal(line)
-		if err != nil {
-			panic(err)
-		}
-		ol.text = string(text)
+		ol.text = textruletest.MustText(line)
 		out = append(out, ol)
 	}
 	return out
@@ -480,10 +483,10 @@ func (s *objectStore) PrepareRevert(_ context.Context, scope action.Scope, inten
 	}
 	id := s.nextID()
 	b := revert.Binding{
-		Kind: revert.KindRevert, RevertID: id, Database: "media-archive",
-		Select: revert.Select{Scope: scope.Kind, ScopeID: scope.ID, Agents: []string{objAgent}, Runs: scope.Runs, Tables: scope.Tables},
+		Kind: revert.KindRevert, RevertID: id, Store: approval.BindingStore{Kind: objStoreKind, Name: "media-archive"},
+		Select: revert.Select{Scope: scope.Kind, ScopeID: scope.ID, Agents: []string{approval.AgentName(objAgent)}, Runs: scope.Runs, Resources: scope.Tables},
 		Intent: intent, Rows: restore, Skipped: len(lines) - restore, RowsHash: approval.RowsHash(texts),
-		ExpiresAt: objNow.Add(time.Hour), RequestedBy: objAgent,
+		ExpiresAt: objNow.Add(time.Hour), RequestedBy: approval.AgentName(objAgent),
 	}
 	shown := texts
 	if len(texts) > revert.MaxLines {
@@ -492,16 +495,16 @@ func (s *objectStore) PrepareRevert(_ context.Context, scope action.Scope, inten
 		}
 		b.Batched, b.SampleHash = true, approval.RowsHash(shown)
 	}
-	binding, err := json.Marshal(b)
+	binding, err := textruletest.Text(b)
 	if err != nil {
 		return action.PreparedRevert{}, err
 	}
 	s.reverts[id] = &objRevert{lines: lines, rec: action.Revert{
 		ID: id, Status: action.RevertPending, Scope: string(scope.Kind), ScopeID: scope.ID, Intent: intent,
-		Rows: b.Rows, Skipped: b.Skipped, ExpiresAt: b.ExpiresAt, BindingText: string(binding), Lines: shown,
+		Rows: b.Rows, Skipped: b.Skipped, ExpiresAt: b.ExpiresAt, BindingText: binding, Lines: shown,
 		Batched: b.Batched, CreatedAt: objNow,
 	}}
-	return action.PreparedRevert{RevertID: id, BindingText: string(binding), ExpiresAt: b.ExpiresAt, Batched: b.Batched, LineCount: len(lines)}, nil
+	return action.PreparedRevert{RevertID: id, BindingText: binding, ExpiresAt: b.ExpiresAt, Batched: b.Batched, LineCount: len(lines)}, nil
 }
 
 var errObjUnsupported = errors.New("the object store under test does not reset, rescope, reject or reveal a revert")
@@ -884,13 +887,13 @@ func TestObjectStoreRevertsARunThroughThePorts(t *testing.T) {
 	req, b, applied, receipt, err := h.personSigns(revertURL)
 	require.NoError(t, err)
 	require.Equal(t, approval.RowsHash(req.Lines), b.RowsHash)
-	require.Equal(t, []string{"media/photos"}, b.Select.Tables, "the binding signs the resources as the agent named them")
+	require.Equal(t, []string{"media/photos"}, b.Select.Resources, "the binding signs the resources as the agent named them")
 	require.Equal(t, 2, b.Rows)
 	require.Equal(t, 1, b.Skipped)
 	for _, text := range req.Lines {
 		l, err := revert.ParseLine(text)
 		require.NoError(t, err)
-		require.Equal(t, "media/photos", l.Table)
+		require.Equal(t, "media/photos", l.Resource)
 	}
 	require.Equal(t, 2, applied.Rows)
 	p, err := channeltest.VerifyReceipt(receipt.Token, h.keys.PublicKeySPKI())
@@ -1089,8 +1092,8 @@ func TestObjectStoreRefusalsGiveThePostgresAnswers(t *testing.T) {
 				wantMessage = strings.ReplaceAll(want.Message, pg.detail, c.detail)
 			}
 			require.Equal(t, wantMessage, got.Message)
-			require.Equal(t, pg.code, want.SQLState)
-			require.Equal(t, c.code, got.SQLState, "the store's own code, passed on as it is")
+			require.Equal(t, pg.code, want.StoreCode)
+			require.Equal(t, c.code, got.StoreCode, "the store's own code, passed on as it is")
 			if c.reason == action.RevertTimedOut && strings.Contains(c.name, "request_revert") {
 				require.Contains(t, got.Message, strconv.Itoa(int(objPrepareLimit.Seconds()))+" seconds", "the store's own time limit")
 			}

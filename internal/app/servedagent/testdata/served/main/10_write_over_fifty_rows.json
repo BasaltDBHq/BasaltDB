@@ -22,7 +22,7 @@
       }
     ],
     "personMessage": "The agent's write touches more than 50 rows (cascades included). It will ask you whether to run it in batches of up to 50 rows; you approve each batch with your passkey.",
-    "sqlState": "BS003"
+    "storeCode": "BS003"
   },
   "isError": true,
   "tool": "write"

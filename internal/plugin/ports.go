@@ -143,8 +143,8 @@ func NewAgentLedger(db Querier, admit func(context.Context) error, ports Ports) 
 
 // NewKeptAgent is an agent as the plugin methods reach it: its database
 // handle and where that is.
-func NewKeptAgent(db Querier, host string, port uint16, database, role string) KeptAgent {
-	return KeptAgent{db: db, host: host, port: port, database: database, role: role}
+func NewKeptAgent(db Querier, host string, port uint16, database string) KeptAgent {
+	return KeptAgent{db: db, host: host, port: port, database: database}
 }
 
 // NewRequests serve the agents' request_plugin calls: uids is every

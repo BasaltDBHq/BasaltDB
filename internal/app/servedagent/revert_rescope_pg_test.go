@@ -170,7 +170,7 @@ func (e *rescopeEnv) request(t *testing.T) (uuid.UUID, string) {
 }
 
 func (e *rescopeEnv) own() revert.Select {
-	return revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Role}}
+	return revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Name}}
 }
 
 // every is the whole task, every agent: wider than bot's own work.
@@ -274,14 +274,14 @@ func TestScopeRouteWidenRotatesTheLink(t *testing.T) {
 	b, err := wide.Request.Check()
 	require.NoError(t, err)
 	require.True(t, b.Widened)
-	require.Equal(t, map[string]int{e.bot.Role: 1, e.helper.Role: 1}, b.AgentRows)
+	require.Equal(t, map[string]int{e.bot.Name: 1, e.helper.Name: 1}, b.AgentRows)
 	require.NotNil(t, wide.Catalog)
 	require.Len(t, wide.Catalog.Agents, 2)
 	agents := map[string]int{}
 	for _, role := range wide.Catalog.ChangeAgents {
 		agents[role]++
 	}
-	require.Equal(t, map[string]int{e.bot.Role: 1, e.helper.Role: 1}, agents, "the proven answer maps each change to its agent")
+	require.Equal(t, map[string]int{e.bot.Name: 1, e.helper.Name: 1}, agents, "the proven answer maps each change to its agent")
 	require.NotEqual(t, own.Request.RescopeNonce, wide.Request.RescopeNonce, "the proof consumed the nonce")
 
 	// The agent's link is dead: read and relay alike read as an unknown id.
@@ -296,7 +296,7 @@ func TestScopeRouteWidenRotatesTheLink(t *testing.T) {
 	require.Equal(t, wide.Request.Lines, read.Lines)
 
 	// Narrow inside the person's scope: the engine adds the token.
-	helperOnly := revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}}
+	helperOnly := revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Name}}
 	var narrow scopeAnswer
 	require.Equal(t, http.StatusOK, e.p.post(scopePath(id), pageOrigin, newSecret, scopeBody(t, revertsvc.ScopeRequest{Select: helperOnly}), &narrow))
 	nb, err := narrow.Request.Check()
@@ -327,7 +327,7 @@ func TestScopeRouteRefusesEveryBadWidenAlike(t *testing.T) {
 	var in revertsvc.ScopeRequest
 	require.NoError(t, json.Unmarshal(swapped, &in))
 	in.NewSecret = newLinkSecret(t)
-	otherSelect := e.widenBody(t, e.person, id, nonce, revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}}, signedFor)
+	otherSelect := e.widenBody(t, e.person, id, nonce, revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Name}}, signedFor)
 	var other revertsvc.ScopeRequest
 	require.NoError(t, json.Unmarshal(otherSelect, &other))
 	other.Select = e.every()
@@ -338,10 +338,10 @@ func TestScopeRouteRefusesEveryBadWidenAlike(t *testing.T) {
 		"a proof for another secret":   scopeBody(t, in),
 		"a proof for another select":   scopeBody(t, other),
 		"a stale nonce":                e.widenBody(t, e.person, id, make([]byte, 16), e.every(), newLinkSecret(t)),
-		"another agent's run as own":   scopeBody(t, revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Role}, Runs: []uuid.UUID{uuid.Must(uuid.NewV7())}}}),
-		"the helper only, no proof":    scopeBody(t, revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}}}),
+		"another agent's run as own":   scopeBody(t, revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Name}, Runs: []uuid.UUID{uuid.Must(uuid.NewV7())}}}),
+		"the helper only, no proof":    scopeBody(t, revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Name}}}),
 		"another task, no proof":       scopeBody(t, revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: uuid.Must(uuid.NewV7())}}),
-		"a table bot never wrote, own": scopeBody(t, revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Role}, Tables: []string{"public.lead_owner"}}}),
+		"a table bot never wrote, own": scopeBody(t, revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Name}, Resources: []string{"public.lead_owner"}}}),
 	}
 	var first *pageError
 	for name, body := range cases {
@@ -362,7 +362,7 @@ func TestScopeRouteRefusesEveryBadWidenAlike(t *testing.T) {
 		"a secret without a proof": `{"select":{"scope":"TASK","scopeId":"` + e.task.String() + `","agents":null,"runs":null,"tables":null},"newSecret":"` + newLinkSecret(t) + `"}`,
 		"not json":                 `select`,
 		"twenty-one tables, with a proof": string(scopeBody(t, revertsvc.ScopeRequest{
-			Select:    revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Tables: manyTables(revert.MaxFilter + 1)},
+			Select:    revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Resources: manyTables(revert.MaxFilter + 1)},
 			NewSecret: newLinkSecret(t), Proof: &linksvc.ScopeProof{CredentialID: []byte{1}, AuthenticatorData: []byte{1}, ClientDataJSON: []byte{1}, Signature: []byte{1}},
 		})),
 	}
@@ -458,7 +458,7 @@ func TestScopeTokenIsLostOnRestart(t *testing.T) {
 	require.Equal(t, http.StatusConflict, e.p.get(revertPath(id), personSecret, &perr), "the lines were in memory only")
 	require.Equal(t, "REVERT_INVALID", perr.Code)
 	require.Contains(t, perr.PersonMessage, "Include other agents' changes again")
-	helperOnly := scopeBody(t, revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}}})
+	helperOnly := scopeBody(t, revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Name}}})
 	require.Equal(t, http.StatusConflict, e.p.post(scopePath(id), pageOrigin, personSecret, helperOnly, &perr), "no token, no narrow")
 	require.Equal(t, http.StatusConflict, e.p.post(scopePath(id), pageOrigin, personSecret, scopeBody(t, revertsvc.ScopeRequest{Select: e.own()}), &perr),
 		"after a widen even the agent's own work needs the token")
@@ -557,7 +557,7 @@ func TestConcurrentRescopesKeepTheLatest(t *testing.T) {
 	require.Equal(t, http.StatusOK, e.p.post(scopePath(id), pageOrigin, secret,
 		e.widenBody(t, e.person, id, e.nonce(t, id, secret), e.every(), personSecret), nil))
 	selects := [][]byte{
-		scopeBody(t, revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}}}),
+		scopeBody(t, revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Name}}}),
 		scopeBody(t, revertsvc.ScopeRequest{Select: e.every()}),
 	}
 	const posts = 8

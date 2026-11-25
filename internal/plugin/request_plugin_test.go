@@ -24,10 +24,10 @@ const (
 
 // pluginBinding is a level 3 binding (unknown publisher, local, not fenced
 // in) as open_plugin_approval returns it.
-const pluginBinding = `{"kind": "PLUGIN", "name": "local-ner", "hooks": ["wire.detect"], "roles": ["VALUE"], "agents": ["basalt_agent_bot"], ` +
-	`"egress": [], "signer": "UNKNOWN", "version": "0.3.1", "database": "app", "endpoint": {"kind": "LOCAL"}, "instance": "default", ` +
+const pluginBinding = `{"kind": "PLUGIN", "name": "local-ner", "hooks": ["wire.detect"], "roles": ["VALUE"], "store": {"kind": "POSTGRES", "name": "app"}, "agents": ["agent:bot"], ` +
+	`"egress": [], "signer": "UNKNOWN", "version": "0.3.1", "endpoint": {"kind": "LOCAL"}, "instance": "default", ` +
 	`"expiresAt": "2026-11-13T09:00:00.000000Z", "isolation": {"files": "NONE", "network": "NOT_ENFORCED"}, ` +
-	`"approvalId": "` + casePluginApproval + `", "requestedBy": "basalt_agent_bot", ` +
+	`"approvalId": "` + casePluginApproval + `", "requestedBy": "agent:bot", ` +
 	`"manifestSha256": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1", ` +
 	`"settingsSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"}`
 

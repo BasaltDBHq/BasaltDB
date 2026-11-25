@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -192,6 +193,11 @@ func (rc *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret strin
 	out, err := rc.store.Proofs.RescopeRevert(ctx, req, rc.store.Limits.Prepare)
 	if err != nil {
 		return ScopeResponse{}, rc.rescopeError(ctx, r, err)
+	}
+	// The person signs this text: relay it only if it follows the text
+	// rules, like every other relay path.
+	if err := approval.CheckTexts(out.BindingText, out.Lines...); err != nil {
+		return ScopeResponse{}, err
 	}
 	ids, err := rc.delivery.CredentialIDs(ctx)
 	if err != nil {

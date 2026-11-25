@@ -84,7 +84,7 @@ func ListChangesMarked(ctx context.Context, q guard.Querier, p action.ChangeList
 	}
 	sql := markedPage(page, colChangeID, order, p.Limit, "p.change_id", "p.at", "p.agent", "p.run_id", "p.task_id", "p.intent", "p.op",
 		"p.table_name", markedStatement, markedParams, "p.rows", "p.cascaded_rows", "p.duration_ms", "p.status", "p.code",
-		"p.reason", "p.actor_kind", "p.revert_id", "p.reverted_by", markedLarge)
+		"p.reason", "p.actor_kind", "p.revert_id", "p.reverted_by", "p.verb", markedLarge)
 	return collectChanges(ctx, q, p, sql, args, func(row pgx.CollectableRow, c *action.Change) error {
 		var large []byte
 		if err := row.Scan(append(changeDest(c), &large)...); err != nil {

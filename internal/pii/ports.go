@@ -6,8 +6,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/sqlport"
 )
 
-// Querier is the connection, pool or transaction a sample is read with,
-// seen through driver-free types (sqlport.Port). A pgx handle is handed
+// Querier is the connection, pool or transaction the dictionary scan reads
+// with, seen through driver-free types (sqlport.Port). A pgx handle is handed
 // over through pgquerier.Neutralize.
 type Querier = sqlport.Port
 
@@ -15,7 +15,7 @@ type Querier = sqlport.Port
 type Rows = sqlport.Rows
 
 // ReadOnlyTx runs fn in a read-only transaction that is always rolled back
-// (a sample changes nothing, so nothing is committed), and returns fn's
+// (a read changes nothing, so nothing is committed), and returns fn's
 // error or the error of beginning it.
 type ReadOnlyTx = func(ctx context.Context, fn func(Querier) error) error
 

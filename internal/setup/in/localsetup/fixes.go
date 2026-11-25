@@ -162,13 +162,11 @@ func (s *Service) checkLabels(ctx context.Context, conn *pgx.Conn, tx pgx.Tx, j 
 	if more {
 		cols = cols[:maxColumns]
 	}
-	sampled := make([]sampled, len(cols))
 	infos := make([]ColumnInfo, len(cols))
 	for i, c := range cols {
 		infos[i] = ColumnInfo{Table: c.TableName(), Column: c.Column, DataType: c.DataType, Class: c.Class, EntityType: c.EntityType, PhoneRegion: c.PhoneRegion}
-		sampled[i] = sampledColumn(infos[i], c.TableOID, c.Attnum)
 	}
-	s.suggest(ctx, conn, sampled, infos)
+	s.suggest(ctx, conn, infos)
 	out := fixAnswer(database, []string{
 		fmt.Sprintf("This labels the columns of the database %s that have no label yet. Labels apply to every agent on this database.", database),
 	}, fmt.Sprintf("-- column labels: the ones you set, written to basalt_meta.pii_columns (%d columns listed)\n", len(infos)))
@@ -347,12 +345,4 @@ func passkeyLabel(label string) string {
 		return "without a label"
 	}
 	return label
-}
-
-// sampledColumn is a listed column with its catalog reference, for the
-// classifier's sample.
-func sampledColumn(info ColumnInfo, oid uint32, attnum int16) sampled {
-	s := sampled{info: info}
-	s.ref.TableOID, s.ref.Attnum = oid, attnum
-	return s
 }

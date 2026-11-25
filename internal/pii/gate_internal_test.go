@@ -8,13 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 )
 
 // TestLongValuesGateBeforeEveryPublicRule: a column where at least 10% of
 // the values are phones is an identifier to review whatever fills the rest.
 func TestLongValuesGateBeforeEveryPublicRule(t *testing.T) {
 	t.Parallel()
-	col := Column{Schema: "public", Table: "t", Name: "ref", DataType: "text"}
+	col := Column{Namespace: "public", Resource: "t", Name: "ref", Kind: piistore.KindText, DataType: "text"}
 	a := make([]string, 0, 10)
 	for i := range 7 {
 		a = append(a, "+62812"+strconv.Itoa(30000000+i*7919))
@@ -28,7 +29,7 @@ func TestLongValuesGateBeforeEveryPublicRule(t *testing.T) {
 	got = Suggest(col, Sample{Values: b}, Options{})
 	require.Equal(t, []any{guardmodel.ClassIdentifier, true}, []any{got.Class, got.NeedsReview}, got.Reason)
 	// Small amounts alone stay PUBLIC.
-	require.Equal(t, guardmodel.ClassPublic, Suggest(Column{Name: "amount", DataType: "numeric"},
+	require.Equal(t, guardmodel.ClassPublic, Suggest(Column{Name: "amount", Kind: piistore.KindNumeric, DataType: "numeric"},
 		Sample{Values: []string{"1125.00", "3.75", "12.50"}}, Options{}).Class)
 }
 
@@ -49,19 +50,19 @@ func TestConsecutivePhonesAreNoSequence(t *testing.T) {
 		block(6281200000001, 2, 200),
 		block(6281200000001, 1, 5),
 	} {
-		for _, typ := range []string{"bigint", "text"} {
-			got := Suggest(Column{Schema: "public", Table: "t", Name: "ref", DataType: typ}, Sample{Values: vs}, Options{})
+		for typ, k := range map[string]piistore.Kind{"bigint": piistore.KindInt, "text": piistore.KindText} {
+			got := Suggest(Column{Namespace: "public", Resource: "t", Name: "ref", Kind: k, DataType: typ}, Sample{Values: vs}, Options{})
 			require.Equal(t, []any{guardmodel.ClassIdentifier, guardmodel.EntityPhone, "ID", true},
 				[]any{got.Class, got.EntityType, got.PhoneRegion, got.NeedsReview}, "%s %d values: %s", typ, len(vs), got.Reason)
 		}
 	}
 	require.Equal(t, Suggestion{Class: guardmodel.ClassPublic, Reason: reasonSequential},
-		Suggest(Column{Name: "order_number", DataType: "bigint"}, Sample{Values: block(1000, 1, 50)}, Options{}))
+		Suggest(Column{Name: "order_number", Kind: piistore.KindInt, DataType: "bigint"}, Sample{Values: block(1000, 1, 50)}, Options{}))
 	// A key holding MSISDNs is a phone to review; an identity is an id.
-	require.Equal(t, guardmodel.EntityPhone, Suggest(Column{Name: "ref", DataType: "bigint", Key: true},
+	require.Equal(t, guardmodel.EntityPhone, Suggest(Column{Name: "ref", Kind: piistore.KindInt, DataType: "bigint", Key: true},
 		Sample{Values: block(6281200000001, 1, 50)}, Options{}).EntityType)
 	// An identity filled with MSISDNs meets the gate too.
-	require.Equal(t, guardmodel.EntityPhone, Suggest(Column{Name: "ref", DataType: "bigint", Key: true, Generated: true},
+	require.Equal(t, guardmodel.EntityPhone, Suggest(Column{Name: "ref", Kind: piistore.KindInt, DataType: "bigint", Key: true, Generated: true},
 		Sample{Values: block(6281200000001, 1, 50)}, Options{}).EntityType)
 }
 
@@ -81,17 +82,17 @@ func TestKeysAreJudgedLikeAnyColumn(t *testing.T) {
 		col    Column
 		values []string
 	}{
-		{"text PK of 628… numbers", Column{Name: "id", DataType: "text", Key: true}, msisdns},
-		{"FK to users(phone)", Column{Name: "user_ref", DataType: "bigint", Key: true}, msisdns},
-		{"text PK of 16-digit accounts", Column{Name: "id", DataType: "text", Key: true}, accounts},
-		{"consecutive MSISDN bigint PK", Column{Name: "id", DataType: "bigint", Key: true}, msisdns},
+		{"text PK of 628… numbers", Column{Name: "id", Kind: piistore.KindText, DataType: "text", Key: true}, msisdns},
+		{"FK to users(phone)", Column{Name: "user_ref", Kind: piistore.KindInt, DataType: "bigint", Key: true}, msisdns},
+		{"text PK of 16-digit accounts", Column{Name: "id", Kind: piistore.KindText, DataType: "text", Key: true}, accounts},
+		{"consecutive MSISDN bigint PK", Column{Name: "id", Kind: piistore.KindInt, DataType: "bigint", Key: true}, msisdns},
 	} {
 		got := Suggest(tc.col, Sample{Values: tc.values}, Options{})
 		require.Equal(t, []any{guardmodel.ClassIdentifier, true}, []any{got.Class, got.NeedsReview}, "%s: %s", tc.name, got.Reason)
 	}
-	require.Equal(t, guardmodel.ClassPublic, Suggest(Column{Name: "id", DataType: "bigint", Key: true, Generated: true},
+	require.Equal(t, guardmodel.ClassPublic, Suggest(Column{Name: "id", Kind: piistore.KindInt, DataType: "bigint", Key: true, Generated: true},
 		Sample{Values: []string{"3", "17", "1200", "9"}}, Options{}).Class, "identity")
-	require.Equal(t, guardmodel.ClassPublic, Suggest(Column{Name: "id", DataType: "bigint", Key: true, Generated: true},
+	require.Equal(t, guardmodel.ClassPublic, Suggest(Column{Name: "id", Kind: piistore.KindInt, DataType: "bigint", Key: true, Generated: true},
 		Sample{}, Options{}).Class, "empty identity")
 	// The exemption never overrides a name rule, a validator or the gate.
 	for _, tc := range []struct {
@@ -100,16 +101,16 @@ func TestKeysAreJudgedLikeAnyColumn(t *testing.T) {
 		class  string
 		entity string
 	}{
-		{Column{Name: "zip", DataType: "integer", Key: true}, []string{"40115", "10110", "80361"}, guardmodel.ClassIdentifier, guardmodel.EntityAddress},
-		{Column{Name: "pin", DataType: "integer", Key: true}, []string{"4821", "1093", "7710"}, guardmodel.ClassSecret, ""},
-		{Column{Name: "phone", DataType: "bigint", Key: true, Generated: true}, msisdns, guardmodel.ClassIdentifier, guardmodel.EntityPhone},
-		{Column{Name: "contact", DataType: "text", Generated: true}, []string{"a@example.com", "b@example.org"}, guardmodel.ClassIdentifier, guardmodel.EntityEmail},
+		{Column{Name: "zip", Kind: piistore.KindInt, DataType: "integer", Key: true}, []string{"40115", "10110", "80361"}, guardmodel.ClassIdentifier, guardmodel.EntityAddress},
+		{Column{Name: "pin", Kind: piistore.KindInt, DataType: "integer", Key: true}, []string{"4821", "1093", "7710"}, guardmodel.ClassSecret, ""},
+		{Column{Name: "phone", Kind: piistore.KindInt, DataType: "bigint", Key: true, Generated: true}, msisdns, guardmodel.ClassIdentifier, guardmodel.EntityPhone},
+		{Column{Name: "contact", Kind: piistore.KindText, DataType: "text", Generated: true}, []string{"a@example.com", "b@example.org"}, guardmodel.ClassIdentifier, guardmodel.EntityEmail},
 	} {
 		got := Suggest(tc.col, Sample{Values: tc.values}, Options{})
 		require.Equal(t, []string{tc.class, tc.entity}, []string{got.Class, got.EntityType}, "%s: %s", tc.col.Name, got.Reason)
 	}
-	require.Equal(t, guardmodel.ClassPublic, Suggest(Column{Name: "id", DataType: "uuid", Key: true}, Sample{}, Options{}).Class, "uuid")
-	require.Equal(t, guardmodel.ClassPublic, Suggest(Column{Name: "id", DataType: "bigint", Key: true},
+	require.Equal(t, guardmodel.ClassPublic, Suggest(Column{Name: "id", Kind: piistore.KindOther, DataType: "uuid", Key: true}, Sample{}, Options{}).Class, "uuid")
+	require.Equal(t, guardmodel.ClassPublic, Suggest(Column{Name: "id", Kind: piistore.KindInt, DataType: "bigint", Key: true},
 		Sample{Values: []string{"7", "42", "99999"}}, Options{}).Class, "short integer key")
 }
 
@@ -158,7 +159,7 @@ func TestPhonesInAnyFillerAreNeverPublic(t *testing.T) {
 		}
 		rng.Shuffle(len(values), func(i, j int) { values[i], values[j] = values[j], values[i] })
 		for _, typ := range []string{"text", "character varying"} {
-			got := Suggest(Column{Schema: "public", Table: "t", Name: "ref", DataType: typ}, Sample{Values: values}, Options{})
+			got := Suggest(Column{Namespace: "public", Resource: "t", Name: "ref", Kind: piistore.KindText, DataType: typ}, Sample{Values: values}, Options{})
 			require.NotEqual(t, guardmodel.ClassPublic, got.Class, "%d of %d phones: %s", phonesN, n, got.Reason)
 		}
 	}

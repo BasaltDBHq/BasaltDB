@@ -17,7 +17,8 @@ type Result struct {
 	values     []string
 }
 
-// SampleFunc reads one column's sample (Sampler.Sample outside tests).
+// SampleFunc reads one column's sample (the store adapter's sampler
+// outside tests).
 type SampleFunc func(ctx context.Context, col Column) (Sample, error)
 
 // SuggestAll samples and scores every column. Phone-like columns are scored
@@ -31,7 +32,7 @@ func SuggestAll(ctx context.Context, cols []Column, sample SampleFunc, opts Opti
 	var phones []int
 	for i, col := range cols {
 		out[i].Column = col
-		if !Sampled(col.SampleType()) {
+		if !Sampled(col.Kind) {
 			out[i].Suggestion = Suggest(col, Sample{}, opts)
 			continue
 		}
@@ -62,7 +63,7 @@ func SuggestAll(ctx context.Context, cols []Column, sample SampleFunc, opts Opti
 // phoneLike is a column whose region inference may run: named as a phone,
 // or holding mostly phone-shaped values, bare runs of digits included.
 func phoneLike(col Column, values []string) bool {
-	if hit, ok := matchName(col.Name, kindOf(col.SampleType())); ok && hit.entity == guardmodel.EntityPhone {
+	if hit, ok := matchName(col.Name, col.Kind); ok && hit.entity == guardmodel.EntityPhone {
 		return true
 	}
 	c := 0

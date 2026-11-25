@@ -10,10 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgpii"
 )
 
 // want is a column's expected suggestion.
@@ -121,19 +123,13 @@ func suggestAll(t *testing.T, d *guardtest.DB, opts pii.Options, keep bool) []pi
 		st, err = guard.ReadClassification(ctx, tx, d.Names)
 		return err
 	}))
-	keys, err := pii.KeyColumns(ctx, pgquerier.Neutralize(d.Admin))
-	require.NoError(t, err)
-	bases, err := pii.BaseTypes(ctx, pgquerier.Neutralize(d.Admin))
-	require.NoError(t, err)
-	cols := make([]pii.Column, 0, len(st.Readable))
+	listed := make([]piistore.Column, 0, len(st.Readable))
 	for _, r := range st.Readable {
-		ref := pii.KeyRef{TableOID: r.TableOID, Attnum: r.Attnum}
-		cols = append(cols, pii.Column{
-			Schema: r.Schema, Table: r.Table, Name: r.Column, DataType: r.DataType,
-			Key: keys[ref].Key, Generated: keys[ref].Generated, BaseType: bases[ref],
-		})
+		listed = append(listed, piistore.Column{Namespace: r.Schema, Resource: r.Table, Name: r.Column, DataType: r.DataType})
 	}
-	sampler := pii.Sampler{ReadOnly: pgquerier.ReadOnlyTx(d.Admin), Timeout: 5 * time.Second}
+	cols, err := pgpii.Columns(ctx, pgquerier.Neutralize(d.Admin), listed)
+	require.NoError(t, err)
+	sampler := pgpii.Sampler{ReadOnly: pgquerier.ReadOnlyTx(d.Admin), Timeout: 5 * time.Second}
 	results, err := pii.SuggestAll(ctx, cols, sampler.Sample, opts,
 		func(pii.Column, pii.Suggestion) bool { return keep })
 	require.NoError(t, err)
@@ -199,42 +195,6 @@ func TestFixtureSchemaRoundTrip(t *testing.T) {
 	}
 }
 
-func TestSampleTimesOutAndIsReviewed(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t)
-	d.Exec(t, `CREATE VIEW public.slow AS SELECT pg_sleep(2)::text || 'x' AS v FROM generate_series(1, 3)`)
-	ctx := context.Background()
-	s, err := pii.Sampler{ReadOnly: pgquerier.ReadOnlyTx(d.Admin), Timeout: 50 * time.Millisecond}.Sample(ctx,
-		pii.Column{Schema: "public", Table: "slow", Name: "v", DataType: "text"})
-	require.NoError(t, err)
-	require.Equal(t, pii.UnavailableTimeout, s.Unavailable)
-	require.Empty(t, s.Values)
-	got := pii.Suggest(pii.Column{Schema: "public", Table: "slow", Name: "v", DataType: "text"}, s, pii.Options{})
-	require.Equal(t, pii.Suggestion{
-		Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityOther, NeedsReview: true,
-		Reason: "SAMPLE:timed out",
-	}, got)
-}
-
-// TestSampleErrorKeepsOnlyTheSQLState: an error that would quote a value
-// (invalid input syntax for type integer: "Blue Widget") leaves the column
-// for review with its SQLSTATE only.
-func TestSampleErrorKeepsOnlyTheSQLState(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t)
-	d.Exec(t, `CREATE TABLE public.items (id bigint, label text);
-		INSERT INTO public.items VALUES (1, 'Blue Widget');
-		CREATE VIEW public.bad AS SELECT label::integer AS n FROM public.items`)
-	col := pii.Column{Schema: "public", Table: "bad", Name: "n", DataType: "integer"}
-	s, err := pii.Sampler{ReadOnly: pgquerier.ReadOnlyTx(d.Admin), Timeout: 5 * time.Second}.Sample(context.Background(), col)
-	require.NoError(t, err)
-	require.Equal(t, pii.Sample{Unavailable: "error 22P02"}, s)
-	require.Equal(t, pii.Suggestion{
-		Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityOther, NeedsReview: true,
-		Reason: "SAMPLE:error 22P02",
-	}, pii.Suggest(col, s, pii.Options{}))
-}
-
 // TestDomainsAreJudgedByTheirBaseType: a domain over citext, and a domain
 // over a domain over text, are sampled as text.
 func TestDomainsAreJudgedByTheirBaseType(t *testing.T) {
@@ -245,33 +205,7 @@ func TestDomainsAreJudgedByTheirBaseType(t *testing.T) {
 		got[r.Column.FullName()] = r
 	}
 	require.Equal(t, "public.email_address", got["public.leads.primary_ref"].Column.DataType)
-	require.Equal(t, "citext", got["public.leads.primary_ref"].Column.BaseType)
-	require.Equal(t, "text", got["public.leads.alt_line"].Column.BaseType)
+	require.Equal(t, piistore.KindText, got["public.leads.primary_ref"].Column.Kind)
+	require.Equal(t, piistore.KindText, got["public.leads.alt_line"].Column.Kind)
 	require.Equal(t, guardmodel.EntityEmail, got["public.leads.primary_ref"].Suggestion.EntityType)
-}
-
-func TestSampleIsBounded(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t)
-	d.Exec(t, `CREATE TABLE public.big (v text); INSERT INTO public.big SELECT repeat('x', 5000) FROM generate_series(1, 1500)`)
-	s, err := pii.Sampler{ReadOnly: pgquerier.ReadOnlyTx(d.Admin), Timeout: 5 * time.Second}.Sample(context.Background(),
-		pii.Column{Schema: "public", Table: "big", Name: "v", DataType: "text"})
-	require.NoError(t, err)
-	require.Len(t, s.Values, pii.SampleRows)
-	for _, v := range s.Values {
-		require.LessOrEqual(t, len(v), 1024)
-	}
-}
-
-func TestSampleCutsEachValueToMaxChars(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t)
-	d.Exec(t, `CREATE TABLE public.wide (v text); INSERT INTO public.wide SELECT repeat('é', 5000) FROM generate_series(1, 5)`)
-	s, err := pii.Sampler{ReadOnly: pgquerier.ReadOnlyTx(d.Admin), Timeout: 5 * time.Second, MaxChars: 256}.Sample(context.Background(),
-		pii.Column{Schema: "public", Table: "wide", Name: "v", DataType: "text"})
-	require.NoError(t, err)
-	require.Len(t, s.Values, 5)
-	for _, v := range s.Values {
-		require.Equal(t, 256, len([]rune(v)), "characters, not bytes")
-	}
 }

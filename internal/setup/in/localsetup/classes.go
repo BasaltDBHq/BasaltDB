@@ -13,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
+	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
@@ -172,11 +172,10 @@ func (s *Service) writeLabels(ctx context.Context, tx pgx.Tx, names guardmodel.N
 	return n, nil
 }
 
-// columnsSQL reads the ordinary columns of the picked tables with their
-// table oid and attribute number, in table and column order, one more than
-// the cap.
+// columnsSQL reads the ordinary columns of the picked tables, in table and
+// column order, one more than the cap.
 const columnsSQL = `SELECT n.nspname::text || '.' || c.relname::text, a.attname::text,
-       pg_catalog.format_type(a.atttypid, NULL), c.oid::int8, a.attnum::int4
+       pg_catalog.format_type(a.atttypid, NULL)
   FROM pg_catalog.unnest($1::text[]) WITH ORDINALITY AS t(name, ord)
   JOIN pg_catalog.pg_namespace n ON n.nspname::text = pg_catalog.split_part(t.name, '.', 1)
   JOIN pg_catalog.pg_class c ON c.relnamespace = n.oid AND c.relname::text = pg_catalog.split_part(t.name, '.', 2)
@@ -199,16 +198,13 @@ func (s *Service) columns(ctx context.Context, conn *pgx.Conn, j job) ([]ColumnI
 	if err != nil {
 		return nil, false, err
 	}
-	var cols []sampled
+	var cols []ColumnInfo
 	for rows.Next() {
-		var c sampled
-		var oid int64
-		var attnum int32
-		if err := rows.Scan(&c.info.Table, &c.info.Column, &c.info.DataType, &oid, &attnum); err != nil {
+		var c ColumnInfo
+		if err := rows.Scan(&c.Table, &c.Column, &c.DataType); err != nil {
 			rows.Close()
 			return nil, false, err
 		}
-		c.ref = pii.KeyRef{TableOID: uint32(oid), Attnum: int16(attnum)}
 		cols = append(cols, c)
 	}
 	if err := rows.Err(); err != nil {
@@ -228,21 +224,15 @@ func (s *Service) columns(ctx context.Context, conn *pgx.Conn, j job) ([]ColumnI
 	}
 	out := make([]ColumnInfo, len(cols))
 	for i, c := range cols {
-		out[i] = c.info
-		l, ok := stored[[2]string{c.info.Table, c.info.Column}]
+		out[i] = c
+		l, ok := stored[[2]string{c.Table, c.Column}]
 		if !ok {
 			l = guardmodel.Label{Class: guardmodel.ClassUnclassified}
 		}
 		out[i].Class, out[i].EntityType, out[i].PhoneRegion = l.Class, l.EntityType, l.PhoneRegion
 	}
-	s.suggest(ctx, conn, cols, out)
+	s.suggest(ctx, conn, out)
 	return out, more, nil
-}
-
-// sampled is a listed column with its catalog reference.
-type sampled struct {
-	info ColumnInfo
-	ref  pii.KeyRef
 }
 
 // suggest samples each column and puts the classifier's suggestion into
@@ -250,33 +240,24 @@ type sampled struct {
 // stops after sampleBudget, and a column whose sample fails or runs out of
 // time gets no suggestion. The values stay in memory and are dropped as
 // each column is scored.
-func (s *Service) suggest(ctx context.Context, conn *pgx.Conn, cols []sampled, out []ColumnInfo) {
-	keys, err := pii.KeyColumns(ctx, pgquerier.Neutralize(conn))
-	if err != nil {
-		keys = nil
+func (s *Service) suggest(ctx context.Context, conn *pgx.Conn, out []ColumnInfo) {
+	listed := make([]piistore.Column, len(out))
+	for i, c := range out {
+		namespace, resource, _ := strings.Cut(c.Table, ".")
+		listed[i] = piistore.Column{Namespace: namespace, Resource: resource, Name: c.Column, DataType: c.DataType}
 	}
-	bases, err := pii.BaseTypes(ctx, pgquerier.Neutralize(conn))
-	if err != nil {
-		bases = nil
-	}
+	// A failed catalog read leaves the columns' keys unknown; each still
+	// carries its kind, so the check goes on.
+	cc, _ := s.be.PIIColumns(ctx, conn, listed)
 	sctx, cancel := context.WithTimeout(ctx, sampleBudget)
 	defer cancel()
-	sampler := pii.Sampler{ReadOnly: pgquerier.ReadOnlyTx(conn), Timeout: sampleStatementTimeout, MaxChars: sampleChars}
-	read := sampler.Sample
+	read := s.be.PIISampler(conn, sampleStatementTimeout, sampleChars)
 	if s.opts.SampleColumn != nil {
 		read = func(ctx context.Context, col pii.Column) (pii.Sample, error) {
 			return s.opts.SampleColumn(ctx, conn, col)
 		}
 	}
 	failed := map[string]bool{}
-	cc := make([]pii.Column, len(cols))
-	for i, c := range cols {
-		schema, table, _ := strings.Cut(c.info.Table, ".")
-		cc[i] = pii.Column{
-			Schema: schema, Table: table, Name: c.info.Column, DataType: c.info.DataType,
-			Key: keys[c.ref].Key, Generated: keys[c.ref].Generated, BaseType: bases[c.ref],
-		}
-	}
 	// A failed or timed-out sample is not an error of the check: the column
 	// gets no suggestion, and the driver's message (which can quote a value)
 	// is dropped.

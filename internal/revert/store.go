@@ -11,11 +11,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
-// StoreSet is the revert's store as the revert use case reads it, built by
-// the wiring for the store's kind and copied once when the service is
-// built. The service reads the store only through it.
+// StoreSet is the revert's store as the revert use case reads it: its limits
+// and ports, built by the wiring and copied once when the service is built.
+// The service reads the store only through it.
 type StoreSet struct {
-	// Kind is the kind of store the agent is bound to.
 	Limits  Limits
 	Records Records
 	Undo    Undo

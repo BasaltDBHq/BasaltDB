@@ -29,7 +29,7 @@ const (
 	// feedVerbMaxBytes is feed.schema.json's longest verb.
 	feedVerbMaxBytes = 64
 	// feedTimeLayout is RFC 3339 UTC with Z, fractional seconds kept when
-	// present (at most microseconds, as Postgres stores them).
+	// present (at most microseconds).
 	feedTimeLayout = "2006-01-02T15:04:05.999999Z"
 )
 
@@ -117,14 +117,14 @@ type feedStore struct {
 // event, or a field the schema needs that the row does not hold in the form
 // it fixes. Only what the row holds at its seq goes in, parsed and written
 // again, never copied as text: an id is a UUID, a count a number, a time
-// RFC 3339.
-func feedEventOf(install uuid.UUID, agent string, r guardmodel.FeedRow) (feedEvent, bool) {
+// RFC 3339. kind is the store the ledger is in (Guard.Kind).
+func feedEventOf(install uuid.UUID, agent string, kind action.StoreKind, r guardmodel.FeedRow) (feedEvent, bool) {
 	typ, ok := feedTypes[r.Kind]
 	if !ok || r.Seq <= 0 {
 		return feedEvent{}, false
 	}
 	d := feedData{InstallID: install.String(), Seq: r.Seq, Agent: approval.AgentName(agent)}
-	if !fillFeedData(&d, r) {
+	if !fillFeedData(&d, kind, r) {
 		return feedEvent{}, false
 	}
 	return feedEvent{
@@ -141,21 +141,21 @@ func feedEventOf(install uuid.UUID, agent string, r guardmodel.FeedRow) (feedEve
 
 // fillFeedData sets the fields of r's kind, and reports whether every field
 // the kind needs is there.
-func fillFeedData(d *feedData, r guardmodel.FeedRow) bool {
+func fillFeedData(d *feedData, kind action.StoreKind, r guardmodel.FeedRow) bool {
 	var ok bool
 	switch r.Kind {
 	case guardmodel.KindChange:
-		ok = fill(d.setChange(r), d.setRunTask(r), d.setOp(r, writeOps), d.setStore(r), d.setCounts(r))
+		ok = fill(d.setChange(r), d.setRunTask(r), d.setOp(r, writeOps), d.setStore(kind, r), d.setCounts(r))
 		if ok && r.Table != nil {
 			d.Resource, ok = feedResource(*r.Table)
 		}
 	case guardmodel.KindRefused:
-		ok = fill(d.setChange(r), d.setRunTask(r), d.setOp(r, refusedOps), d.setStore(r))
+		ok = fill(d.setChange(r), d.setRunTask(r), d.setOp(r, refusedOps), d.setStore(kind, r))
 		if ok && r.Code != nil && feedReasonCodes[*r.Code] {
 			d.ReasonCode = *r.Code
 		}
 	case guardmodel.KindApprovalPending:
-		ok = fill(d.setChange(r), d.setRunTask(r), d.setOp(r, writeOps), d.setStore(r), d.setHeldRows(r), d.setExpiry(r))
+		ok = fill(d.setChange(r), d.setRunTask(r), d.setOp(r, writeOps), d.setStore(kind, r), d.setHeldRows(r), d.setExpiry(r))
 		ok = ok && d.RunID != "" && setID(&d.ApprovalID, r.ApprovalID)
 	case guardmodel.KindApproved:
 		ok = d.setChange(r) && setID(&d.ApprovalID, r.ApprovalID)
@@ -201,8 +201,8 @@ func (d *feedData) setOp(r guardmodel.FeedRow, allowed []string) bool {
 // changed none.
 // setStore sets the store part after setOp: its verb is r's, required on
 // every op but OTHER, where the store may not have given its command.
-func (d *feedData) setStore(r guardmodel.FeedRow) bool {
-	s := &feedStore{Kind: string(action.StorePostgres)}
+func (d *feedData) setStore(kind action.StoreKind, r guardmodel.FeedRow) bool {
+	s := &feedStore{Kind: string(kind)}
 	switch {
 	case r.Verb != nil:
 		if len(*r.Verb) > feedVerbMaxBytes || !feedVerb.MatchString(*r.Verb) {

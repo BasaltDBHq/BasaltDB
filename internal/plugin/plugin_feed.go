@@ -354,11 +354,12 @@ func callFailure(err error) *string {
 }
 
 // dbFailure is a failed read's class: whether the database answered, and
-// its SQLSTATE when it did. Never its message, which can quote a value.
+// the store's own error code when it did. Never its message, which can
+// quote a value.
 func dbFailure(g Guard, err error) *string {
 	c := "NO_ANSWER"
-	if code, _, _, ok := dbError(g, err); ok {
-		c = "SQLSTATE " + code
+	if se := pluginmodel.StoreErrorOf(err); se != nil {
+		c = "STORE_CODE " + se.Code
 	} else if !transientErr(g, err) {
 		c = "UNREADABLE"
 	}
@@ -475,7 +476,7 @@ func (r *feedReader) readIn(ctx context.Context, tx guardmodel.FeedSnapshot) (fe
 	for _, row := range rows {
 		// A row the schema cannot carry is not sent (feedEventOf); the
 		// next answer moves the cursor past it.
-		if e, ok := feedEventOf(install, r.pair.agent, row); ok {
+		if e, ok := feedEventOf(install, r.pair.agent, r.ledger.ports.Guard.Kind(), row); ok {
 			out.events = append(out.events, e)
 		}
 	}

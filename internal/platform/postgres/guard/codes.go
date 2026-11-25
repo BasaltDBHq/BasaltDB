@@ -81,6 +81,20 @@ const RevealRefused = "REVEAL_REFUSED"
 // approval can no longer apply.
 const RevealRowsChanged = "ROWS_CHANGED"
 
+// Details of the guard's plugin approval refusals: NOT_ALLOWED (BS007) with
+// DetailUnknownAgent or DetailTooManyPending from open_plugin_approval,
+// APPROVAL_INVALID (BS005) with DetailApprovalNotFound,
+// DetailApprovalCancelled or DetailAlreadyApproved from
+// submit_plugin_approval. The plugin ledger and the store map them to the
+// plugin's typed answers (pluginmodel.StoreError, ApprovalRefusalError).
+const (
+	DetailUnknownAgent      = "UNKNOWN_AGENT"
+	DetailTooManyPending    = "TOO_MANY_PENDING"
+	DetailApprovalNotFound  = "NOT_FOUND"
+	DetailApprovalCancelled = "CANCELLED"
+	DetailAlreadyApproved   = "ALREADY_APPROVED"
+)
+
 // DetailHoldTooLarge is the detail of the guard's refusal of preview lines
 // over guardmodel.MaxHeldLinesBytes (BS007 NOT_ALLOWED).
 const DetailHoldTooLarge = "HOLD_TOO_LARGE"

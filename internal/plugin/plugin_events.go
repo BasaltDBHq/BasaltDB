@@ -49,25 +49,8 @@ const (
 		"restart the engine once the agent's database is reachable"
 )
 
-// SQLSTATEs that say the guard is older than schema version 3 or missing.
-const (
-	sqlstateUndefinedFunction = "42883"
-	sqlstateUndefinedTable    = "42P01"
-	sqlstateInvalidSchemaName = "3F000"
-)
-
 // ErrNotAdmitted: the agent is served status only (agent.Service.Admit).
 var ErrNotAdmitted = errors.New("the agent is served status only")
-
-// dbError is Guard.DBError for an error that may be nil, on a Guard that may
-// be unset (an agent with no connection has none): neither is a database
-// reply.
-func dbError(g Guard, err error) (code, message, detail string, ok bool) {
-	if g == nil || err == nil {
-		return "", "", "", false
-	}
-	return g.DBError(err)
-}
 
 // noAnswer is Guard.NoAnswer for an error that may be nil, on a Guard that
 // may be unset.
@@ -77,36 +60,33 @@ func noAnswer(g Guard, err error) bool {
 
 // unrecordedWhy is why a record could not be written, for the agent's
 // status: never the error's text, which could name a value.
-func unrecordedWhy(g Guard, err error) string {
+func unrecordedWhy(err error) string {
 	if errors.Is(err, ErrNotAdmitted) {
 		return whyNotAdmitted
 	}
-	code, _, _, ok := dbError(g, err)
-	if !ok {
+	se := pluginmodel.StoreErrorOf(err)
+	if se == nil {
 		return whyUnreachable
 	}
-	switch code {
-	case sqlstateUndefinedFunction:
+	switch se.Reason {
+	case pluginmodel.StoreGuardOutdated:
 		return whyNoPluginEvents
-	case sqlstateUndefinedTable, sqlstateInvalidSchemaName:
+	case pluginmodel.StoreGuardMissing:
 		return whyNoGuard
-	}
-	if g.IsGuardError(err) {
+	case pluginmodel.StoreRefused, pluginmodel.StoreTooManyPending, pluginmodel.StoreUnknownAgent:
 		return whyRefused
+	case pluginmodel.StoreAnswered:
 	}
 	return whyUnreachable
 }
 
 // transientErr reports whether err says only that the database did not
 // answer: no connection, a timeout, a connection lost. Any other failure,
-// a Postgres error, a refusal to admit the agent or a reply the engine
+// the store's answer, a refusal to admit the agent or a reply the engine
 // cannot read, decides.
 func transientErr(g Guard, err error) bool {
 	var ne net.Error
-	if err == nil || errors.Is(err, ErrNotAdmitted) {
-		return false
-	}
-	if _, _, _, isDB := dbError(g, err); isDB {
+	if err == nil || errors.Is(err, ErrNotAdmitted) || pluginmodel.StoreErrorOf(err) != nil {
 		return false
 	}
 	switch {
@@ -409,7 +389,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 	all := func(err error) agentPass {
 		out := make([]unrecordedEntry, 0, len(served))
 		for _, k := range served {
-			out = append(out, unrecordedEntry{key: k, why: unrecordedWhy(l.ports.Guard, err), transient: transientErr(l.ports.Guard, err)})
+			out = append(out, unrecordedEntry{key: k, why: unrecordedWhy(err), transient: transientErr(l.ports.Guard, err)})
 		}
 		return agentPass{withheld: out}
 	}
@@ -465,7 +445,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 			// ledger never shows an entry served without that key.
 			why := whyTrustUnread
 			if err, ok := unrecordedKeys[s]; ok {
-				why = unrecordedWhy(l.ports.Guard, err)
+				why = unrecordedWhy(err)
 			} else if want.trust.read {
 				// The store was read and no longer holds the key (it changed
 				// since the entry was verified at start).
@@ -477,7 +457,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 		if kind, ok := entryEvent(last, k, d); ok {
 			if err := l.ports.Guard.RecordPluginEntryEvent(ctx, db, kind, d); err != nil {
 				log.Error("plugin not served to this agent: its record could not be written", "plugin", k.String(), "event", kind, "err", err)
-				out.withheld = append(out.withheld, unrecordedEntry{key: k, why: unrecordedWhy(l.ports.Guard, err), transient: transientErr(l.ports.Guard, err)})
+				out.withheld = append(out.withheld, unrecordedEntry{key: k, why: unrecordedWhy(err), transient: transientErr(l.ports.Guard, err)})
 				continue
 			}
 		}

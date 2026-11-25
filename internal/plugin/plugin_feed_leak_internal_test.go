@@ -197,7 +197,7 @@ func TestFeedEventsMatchTheSchema(t *testing.T) {
 	events := make([]feedEvent, 0, 1+len(rows))
 	events = append(events, skippedEvent(install, "product_a", 0, 1))
 	for _, r := range rows {
-		ev, ok := feedEventOf(install, "product_a", r)
+		ev, ok := feedEventOf(install, "product_a", action.StorePostgres, r)
 		require.True(t, ok, r.Kind)
 		events = append(events, ev)
 	}
@@ -224,7 +224,7 @@ func TestFeedEventsMatchTheSchema(t *testing.T) {
 		{Seq: 1, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("UPDATE"), Verb: s("UP;DATE")},    // not a verb
 		{Seq: 0, At: at, Kind: guardmodel.KindRevertPending, RevertID: id()},
 	} {
-		_, ok := feedEventOf(install, "product_a", bad)
+		_, ok := feedEventOf(install, "product_a", action.StorePostgres, bad)
 		require.False(t, ok, "%+v", bad)
 	}
 }

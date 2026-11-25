@@ -169,9 +169,9 @@ func TestPluginApprovalRoundTrip(t *testing.T) {
 	require.Empty(t, recs)
 
 	_, err = guard.SubmitPluginApproval(ctx, a.Conn, resp)
-	requireGuardDetail(t, err, guard.CodeApprovalInvalid, guardmodel.DetailAlreadyApproved)
+	requireGuardDetail(t, err, guard.CodeApprovalInvalid, guard.DetailAlreadyApproved)
 	_, err = guard.SubmitPluginApproval(ctx, a.Conn, guardmodel.PluginApprovalResponse{ApprovalID: uuid.Must(uuid.NewV7()), Assertion: resp.Assertion})
-	requireGuardDetail(t, err, guard.CodeApprovalInvalid, guardmodel.DetailApprovalNotFound)
+	requireGuardDetail(t, err, guard.CodeApprovalInvalid, guard.DetailApprovalNotFound)
 	st, err := guard.VerifyChain(ctx, a.Conn)
 	require.NoError(t, err)
 	require.True(t, st.Intact)
@@ -329,7 +329,7 @@ func TestOpenRefusesUnknownAgent(t *testing.T) {
 	}
 	for _, name := range []string{"agent:nobody", "agent:fake_0", "agent:fake_1", "agent:fake_2", "agent:fake_3", "agent:fake_4"} {
 		_, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Name, name), guardmodel.PluginSettings{})
-		requireGuardDetail(t, err, guard.CodeNotAllowed, guardmodel.DetailUnknownAgent)
+		requireGuardDetail(t, err, guard.CodeNotAllowed, guard.DetailUnknownAgent)
 		require.NotContains(t, err.Error(), name, "the refusal never names the agent")
 	}
 	require.Zero(t, count(t, d.Admin, `SELECT count(*)::int FROM basalt_meta.plugin_approvals`))
@@ -446,7 +446,7 @@ func TestSecondPendingCancelsFirst(t *testing.T) {
 	require.Equal(t, string(guardmodel.PluginApprovalStatusCancelled), approvalStatus(t, a.Conn, first.ID))
 	require.Equal(t, string(guardmodel.PluginApprovalStatusPending), approvalStatus(t, a.Conn, otherOpened.ID))
 	_, err = guard.SubmitPluginApproval(ctx, a.Conn, signPlugin(t, p, first))
-	requireGuardDetail(t, err, guard.CodeApprovalInvalid, guardmodel.DetailApprovalCancelled)
+	requireGuardDetail(t, err, guard.CodeApprovalInvalid, guard.DetailApprovalCancelled)
 	require.Zero(t, ledgerKinds(t, d, a.Role, string(guardmodel.PluginApproved)))
 
 	// For a, the newest approval naming it is the cancelled one.
@@ -482,21 +482,21 @@ func TestPendingCap(t *testing.T) {
 		opened = append(opened, o)
 	}
 	_, err := guard.OpenPluginApproval(ctx, a.Conn, instance(8), guardmodel.PluginSettings{})
-	requireGuardDetail(t, err, guard.CodeNotAllowed, guardmodel.DetailTooManyPending)
+	requireGuardDetail(t, err, guard.CodeNotAllowed, guard.DetailTooManyPending)
 	require.Equal(t, 8, ledgerKinds(t, d, a.Role, string(guardmodel.PluginApprovalPending)), "the refusal writes nothing")
 
 	// Re-opening one of the eight replaces it.
 	_, err = guard.OpenPluginApproval(ctx, a.Conn, instance(0), guardmodel.PluginSettings{})
 	require.NoError(t, err)
 	_, err = guard.OpenPluginApproval(ctx, a.Conn, instance(8), guardmodel.PluginSettings{})
-	requireGuardDetail(t, err, guard.CodeNotAllowed, guardmodel.DetailTooManyPending)
+	requireGuardDetail(t, err, guard.CodeNotAllowed, guard.DetailTooManyPending)
 
 	// An expired one does not count.
 	d.Exec(t, `UPDATE basalt_meta.plugin_approvals SET expires_at = now() - interval '1 second' WHERE approval_id = $1`, opened[1].ID)
 	_, err = guard.OpenPluginApproval(ctx, a.Conn, instance(8), guardmodel.PluginSettings{})
 	require.NoError(t, err)
 	_, err = guard.OpenPluginApproval(ctx, a.Conn, instance(9), guardmodel.PluginSettings{})
-	requireGuardDetail(t, err, guard.CodeNotAllowed, guardmodel.DetailTooManyPending)
+	requireGuardDetail(t, err, guard.CodeNotAllowed, guard.DetailTooManyPending)
 
 	// A signed one does not count.
 	_, err = guard.SubmitPluginApproval(ctx, a.Conn, signPlugin(t, p, opened[2]))

@@ -39,9 +39,10 @@ func TestManifestMustFitItsLedgerRecord(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// jsonbSpaces counts the separators Postgres pads, never those in strings.
-func TestJSONBSpaces(t *testing.T) {
+// textRuleSpaces counts the separators the text rules pad, never those in
+// strings.
+func TestTextRuleSpaces(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, 4, jsonbSpaces([]byte(`{"a":"x:1,y","b":["c:2","d"]}`)))
-	require.Equal(t, 1, jsonbSpaces([]byte(`{"a\":,":1}`)))
+	require.Equal(t, 4, textRuleSpaces([]byte(`{"a":"x:1,y","b":["c:2","d"]}`)))
+	require.Equal(t, 1, textRuleSpaces([]byte(`{"a\":,":1}`)))
 }

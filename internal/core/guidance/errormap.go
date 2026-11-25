@@ -49,7 +49,7 @@ func (m ErrorMap) ToolError(err error) *toolresult.ToolError {
 		return &toolresult.ToolError{Code: CodeUnavailable, Reason: ReasonDatabaseNotConfirmed, Message: dn.Error()}
 	case errors.As(err, &ae):
 		return &toolresult.ToolError{Code: CodeInvalidArgument, Reason: ae.Reason, Message: ae.Message}
-	case Sentinel(err, m.InvalidParams), Sentinel(err, m.InvalidIntent):
+	case sentinel(err, m.InvalidParams), sentinel(err, m.InvalidIntent):
 		return &toolresult.ToolError{Code: CodeInvalidArgument, Reason: argumentReason(err), Message: err.Error()}
 	case errors.As(err, &pe):
 		return &toolresult.ToolError{Code: pe.Code, Reason: pe.Reason, Message: pe.Message, StoreCode: pe.StoreCode}
@@ -108,3 +108,8 @@ type DatabaseNotConfirmedError struct {
 func (e *DatabaseNotConfirmedError) Error() string {
 	return "the agent's database waits for the person's confirmation; no tool but status and confirm_database works until then"
 }
+
+// sentinel reports whether err is target, false for a nil target. NewService
+// refuses a Deps whose error values are nil, so the agent's own targets are
+// set; the zero ErrorMap that classifies machine errors names none.
+func sentinel(err, target error) bool { return target != nil && errors.Is(err, target) }

@@ -16,21 +16,6 @@ const (
 	PluginApproved        PluginEventKind = "PLUGIN_APPROVED"
 )
 
-// Details of the guard's plugin approval refusals: BS007 NOT_ALLOWED with
-// DetailUnknownAgent or DetailTooManyPending from open_plugin_approval,
-// BS005 APPROVAL_INVALID with DetailApprovalNotFound, DetailApprovalCancelled
-// or DetailAlreadyApproved from submit_plugin_approval. They are the
-// Postgres guard's details, here only because the plugin service still
-// reads them from the store's error; they move to the guard adapter when
-// the plugin's port answers typed refusals.
-const (
-	DetailUnknownAgent      = "UNKNOWN_AGENT"
-	DetailTooManyPending    = "TOO_MANY_PENDING"
-	DetailApprovalNotFound  = "NOT_FOUND"
-	DetailApprovalCancelled = "CANCELLED"
-	DetailAlreadyApproved   = "ALREADY_APPROVED"
-)
-
 // PluginApprovalStatus is a plugin approval's state in
 // agent_plugin_approvals.
 type PluginApprovalStatus string

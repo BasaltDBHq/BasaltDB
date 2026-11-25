@@ -171,7 +171,7 @@ func (s *Store) ReadPluginApproval(ctx context.Context, id uuid.UUID) (guardmode
 // Postgres (basalt_meta.submit_plugin_approval).
 func (s *Store) SubmitPluginApproval(ctx context.Context, r guardmodel.PluginApprovalResponse) (time.Time, error) {
 	r0, err := s.submitPluginApprovalRaw(ctx, r)
-	return r0, MapError(err)
+	return r0, pluginApprovalRefusal(MapError(err))
 }
 
 // FindApproval returns one of the agent's approvals.

@@ -120,7 +120,8 @@ func recordPluginEvents(ctx context.Context, cfg config.Config, configPath strin
 
 // pluginAdmit is svc's admission for plugin records: plugin.ErrNotAdmitted
 // when the agent is served status only (no guard, an outdated one, a pending
-// setup), the probe's error when its database does not answer.
+// setup), the probe's error when its database does not answer, mapped by the
+// plugin ledger when the database answered it.
 func pluginAdmit(svc *Service) func(context.Context) error {
 	return func(ctx context.Context) error {
 		err := svc.Admit(ctx)
@@ -129,7 +130,7 @@ func pluginAdmit(svc *Service) func(context.Context) error {
 		if errors.As(err, &te) || errors.As(err, &se) {
 			return fmt.Errorf("%w: %w", plugin.ErrNotAdmitted, err)
 		}
-		return err
+		return pluginledger.MapError(err)
 	}
 }
 

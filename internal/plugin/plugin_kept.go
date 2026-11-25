@@ -506,7 +506,7 @@ func (s *KeptPlugins) checkDatabase(ctx context.Context, g *keptGroup) error {
 	db := s.agents[name].db
 	st, err := s.ports.Guard.AgentStatus(ctx, db)
 	if err != nil {
-		return unreachable(s.ports.Guard, name, err)
+		return unreachable(name, err)
 	}
 	if !holdsPluginApprovals(st, s.ports.approvalsVersion()) {
 		return Refused(reasonGuardOutdated, fmt.Sprintf(
@@ -514,15 +514,15 @@ func (s *KeptPlugins) checkDatabase(ctx context.Context, g *keptGroup) error {
 				"Update it with the link basalt init prints for agent %s", name, s.ports.approvalsVersion(), name))
 	}
 	if g.install, err = s.ports.Guard.InstallID(ctx, db); err != nil {
-		return unreachable(s.ports.Guard, name, err)
+		return unreachable(name, err)
 	}
 	return nil
 }
 
-func unreachable(g Guard, agentName string, err error) error {
+func unreachable(agentName string, err error) error {
 	why := "it does not answer"
-	if _, message, _, ok := dbError(g, err); ok {
-		why = "it refused: " + message
+	if se := pluginmodel.StoreErrorOf(err); se != nil {
+		why = "it refused: " + se.Message
 	}
 	return Refused(reasonDatabaseUnreachable, fmt.Sprintf(
 		"the database of agent %s cannot be used (%s); nothing was written. Run the command again once it answers", agentName, why))
@@ -543,7 +543,7 @@ func (s *KeptPlugins) writeOwedEnds(ctx context.Context, k pluginmodel.EntryKey,
 	errs := s.endAll(ctx, k, agents)
 	for _, name := range agents {
 		if err := errs[name]; err != nil {
-			return unreachable(s.ports.Guard, name, err)
+			return unreachable(name, err)
 		}
 	}
 	return nil
@@ -588,7 +588,7 @@ func (s *KeptPlugins) openApprovals(ctx context.Context, groups []*keptGroup, p 
 			defer cancel()
 			opened, err := s.ports.Guard.OpenPluginApproval(ctx, s.agents[g.agents[0]].db, PluginApprovalDetail(p.Key(), v, g.agents), p.ApprovalSettings())
 			if err != nil {
-				item.Refused = keptOpenRefusal(s.ports.Guard, err, s.ports.approvalsVersion())
+				item.Refused = keptOpenRefusal(err, s.ports.approvalsVersion())
 			} else {
 				id, at := opened.ID, opened.ExpiresAt.UTC()
 				item.ApprovalID, item.ExpiresAt, item.BindingText, item.SettingsText = &id, &at, opened.BindingText, opened.SettingsText
@@ -600,19 +600,20 @@ func (s *KeptPlugins) openApprovals(ctx context.Context, groups []*keptGroup, p 
 	return out
 }
 
-// keptOpenRefusal maps a failed open_plugin_approval to its reason.
-func keptOpenRefusal(g Guard, err error, schemaVersion int) *PluginOpenRefusal {
-	code, message, detail, ok := dbError(g, err)
+// keptOpenRefusal maps a failed open of a plugin approval to its reason.
+func keptOpenRefusal(err error, schemaVersion int) *PluginOpenRefusal {
+	se := pluginmodel.StoreErrorOf(err)
 	r := &PluginOpenRefusal{Reason: reasonDatabaseUnreachable, Message: "the database does not answer"}
 	switch {
-	case ok && code == "BS007" && detail == guardmodel.DetailTooManyPending:
+	case se == nil:
+	case se.Reason == pluginmodel.StoreTooManyPending:
 		r.Reason, r.Message = reasonTooManyPending, "8 plugin approvals already wait in this database"
-	case ok && code == "BS007" && detail == guardmodel.DetailUnknownAgent:
+	case se.Reason == pluginmodel.StoreUnknownAgent:
 		r.Reason, r.Message = reasonUnknownAgent, "a listed agent is not an agent role of this database"
-	case ok && code == sqlstateUndefinedFunction:
+	case se.Reason == pluginmodel.StoreGuardOutdated:
 		r.Reason, r.Message = reasonGuardOutdated, fmt.Sprintf("the guard is older than schema version %d", schemaVersion)
-	case ok:
-		r.Message = message
+	default:
+		r.Message = se.Message
 	}
 	return r
 }
@@ -708,7 +709,7 @@ func (s *KeptPlugins) EndDisabled(ctx context.Context) {
 // Approve is PLUGIN_APPROVE: a relay. Each database is asked in parallel,
 // through its agents in name order, for the agent that opened the approval
 // (the one whose row carries the binding text), and the signature is
-// submitted with that agent's credential: Postgres verifies it.
+// submitted with that agent's credential: the guard verifies it.
 func (s *KeptPlugins) Approve(ctx context.Context, p PluginApproveParams) (PluginApproveResult, error) {
 	byDB := map[string][]string{}
 	for _, name := range slices.Sorted(maps.Keys(s.agents)) {

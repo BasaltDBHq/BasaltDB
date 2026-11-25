@@ -235,15 +235,12 @@ func (s *Store) revealRevertRowsRaw(ctx context.Context, id uuid.UUID, proof pas
 // did not prepare, or none (_revert_lock_pending).
 const revertNotFoundDetail = "no such revert"
 
-// tablesShapeHint is the guard's hint for a tables entry that is not a
-// schema.table name (_revert_select_norm, detail SHAPE). On a preview or
-// a prepare it is the agent's filter the store refused for the name's form,
-// RevertFilterName with this hint; any other SHAPE is RevertInvalid.
-const tablesShapeHint = "tables are schema.table names"
-
 // scopeReasons are the revert reasons of the guard's SCOPE_REFUSED details
-// on a preview or a prepare; any other detail is RevertInvalid.
+// on a preview or a prepare; any other detail is RevertInvalid. NAME, a
+// tables entry that is not one schema.table name, is the agent's filter
+// refused for the name's form, the hint naming the entry.
 var scopeReasons = map[string]action.RevertReason{
+	guardmodel.ScopeName:         action.RevertFilterName,
 	guardmodel.ScopeNotOwnChange: action.RevertNotOwnChange,
 	guardmodel.ScopeNotOwnRun:    action.RevertNotOwnRun,
 	guardmodel.ScopeNotOwnTask:   action.RevertNotOwnTask,
@@ -286,8 +283,8 @@ func findRevertRefusal(err error) error {
 }
 
 // prepareRefusal maps PreviewRevert's and PrepareRevert's errors: a scope
-// the guard refused (the hint says why; a badly formed table name is the
-// agent's filter refused for its form), nothing to revert (the scope
+// the guard refused, by its detail (the hint says why; NAME, a badly formed
+// table name, is the agent's filter refused for its form), nothing to revert (the scope
 // changed no rows, or every row would be skipped; the detail is the guard's
 // whole message), and the time limit.
 func prepareRefusal(err error) error {
@@ -298,10 +295,7 @@ func prepareRefusal(err error) error {
 	switch guardmodel.Code(se.LedgerCode) {
 	case guardmodel.CodeScopeRefused:
 		reason, ok := scopeReasons[se.Detail]
-		switch {
-		case se.Detail == guardmodel.ScopeShape && se.Hint == tablesShapeHint:
-			reason = action.RevertFilterName
-		case !ok:
+		if !ok {
 			reason = action.RevertInvalid
 		}
 		return refusal(err, reason, se.Hint)

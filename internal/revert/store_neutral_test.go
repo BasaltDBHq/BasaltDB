@@ -201,7 +201,7 @@ var postgresRefusals = []postgresRefusal{
 	{reason: action.RevertNotFound},
 	{reason: action.RevertNotOwnRun, detail: "the run is not one of yours"},
 	{reason: action.RevertFilter, detail: "public.ghost has no change of yours in this scope"},
-	{reason: action.RevertFilterName, detail: "tables are schema.table names"},
+	{reason: action.RevertFilterName, detail: "leads is not a schema.table name"},
 	{reason: action.RevertRowsChanged, detail: "rows changed since the preview; nothing was reverted, prepare the revert again"},
 	{reason: action.RevertTimedOut, code: "57014"},
 }

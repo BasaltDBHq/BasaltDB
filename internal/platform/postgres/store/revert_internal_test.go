@@ -48,6 +48,7 @@ func TestRevertRefusalsPerCall(t *testing.T) {
 	t.Parallel()
 	const (
 		filterHint   = "public.ghost has no change of yours in this scope"
+		nameHint     = "leads is not a schema.table name"
 		shapeHint    = "tables are schema.table names"
 		readsOnly    = "RUN 0193a3f0-0000-7000-8000-000000000002 changed no rows that a revert could restore"
 		allSkipped   = "every row of RUN 0193a3f0-0000-7000-8000-000000000002 would be skipped"
@@ -67,7 +68,11 @@ func TestRevertRefusalsPerCall(t *testing.T) {
 		{"prepare: not own task", prepareRefusal, scopeRefusedErr("NOT_OWN_TASK", "x"), action.RevertNotOwnTask, "x", ""},
 		{"prepare: filter", prepareRefusal, scopeRefusedErr("FILTER", filterHint), action.RevertFilter, filterHint, ""},
 		{"prepare: filter cap", prepareRefusal, scopeRefusedErr("FILTER_CAP", "at most 50"), action.RevertFilterCap, "at most 50", ""},
-		{"prepare: table name shape", prepareRefusal, scopeRefusedErr("SHAPE", shapeHint), action.RevertFilterName, shapeHint, ""},
+		{"prepare: table name", prepareRefusal, scopeRefusedErr("NAME", nameHint), action.RevertFilterName, nameHint, ""},
+		// Told apart by the detail, never the hint: a SHAPE with the hint an
+		// older guard gave a bad name, or any hint, is RevertInvalid.
+		{"prepare: table name shape, older guard", prepareRefusal, scopeRefusedErr("SHAPE", shapeHint), action.RevertInvalid, shapeHint, ""},
+		{"prepare: table name, any hint", prepareRefusal, scopeRefusedErr("NAME", "x"), action.RevertFilterName, "x", ""},
 		{"prepare: run id shape", prepareRefusal, scopeRefusedErr("SHAPE", "runs are run ids"), action.RevertInvalid, "runs are run ids", ""},
 		{"prepare: agents shape", prepareRefusal, scopeRefusedErr("SHAPE", "agents are role names"), action.RevertInvalid, "agents are role names", ""},
 		{"prepare: other shape", prepareRefusal, scopeRefusedErr("SHAPE", "scopeId is a uuid"), action.RevertInvalid, "scopeId is a uuid", ""},
@@ -92,6 +97,7 @@ func TestRevertRefusalsPerCall(t *testing.T) {
 		{"apply: scope refused", applyRevertRefusal, scopeRefusedErr("SHAPE", "x"), "", "", ""},
 
 		{"rescope: shape", rescopeRevertRefusal, scopeRefusedErr("SHAPE", shapeHint), action.RevertInvalid, shapeHint, ""},
+		{"rescope: table name", rescopeRevertRefusal, scopeRefusedErr("NAME", nameHint), action.RevertInvalid, nameHint, ""},
 		{"rescope: descriptor", rescopeRevertRefusal, scopeRefusedErr("DESCRIPTOR", "x"), action.RevertInvalid, "x", ""},
 		{"rescope: filter", rescopeRevertRefusal, scopeRefusedErr("FILTER", filterHint), action.RevertInvalid, filterHint, ""},
 		{"rescope: widen refused", rescopeRevertRefusal, revertInvalid("WIDEN_REFUSED"), action.RevertWidenRefused, "WIDEN_REFUSED", ""},

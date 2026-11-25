@@ -26,7 +26,10 @@ const (
 // Details of SCOPE_REFUSED (BS011): why a revert scope descriptor was
 // refused (CONTRACT.md, Guard errors).
 const (
-	ScopeShape         = "SHAPE"
+	ScopeShape = "SHAPE"
+	// ScopeName is a tables entry that is not one schema.table name; the
+	// hint names the first such entry (version 9).
+	ScopeName          = "NAME"
 	ScopeStoreReserved = "STORE_RESERVED"
 	ScopeFilterCap     = "FILTER_CAP"
 	ScopeNotOwnChange  = "NOT_OWN_CHANGE"

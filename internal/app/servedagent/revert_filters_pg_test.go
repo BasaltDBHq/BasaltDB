@@ -244,17 +244,29 @@ func TestRevertRunsFilterNeedsATask(t *testing.T) {
 		}
 		// A resource name the tool passes through unchanged: the store
 		// refuses it, and the agent gets the store's refusal as its filter
-		// refused (SCOPE_FILTER). A name the store cannot use says nothing
-		// of whose work it is, so its answer never says "not yours".
-		for name, want := range map[string]string{
-			"leads": "the revert filter is not valid, nothing was prepared: tables are schema.table names",
-			"public.leads;drop": "the revert filter names work that is not yours, nothing was prepared: public.leads;drop has no " +
-				"change of yours in this scope. runs lists only your own runs in the task, and resources only resources you wrote in " +
-				"this scope; run_history shows them",
+		// refused (SCOPE_FILTER), naming the first bad name in its order.
+		// A name the store cannot use says nothing of whose work it is, so
+		// its answer never says "not yours".
+		for name, tc := range map[string]struct {
+			resources []any
+			want      string
+		}{
+			"a bad name": {[]any{"leads"}, "the revert filter is not valid, nothing was prepared: leads is not a schema.table name"},
+			"several bad names": {
+				[]any{"public.leads", "b.c.d", "leads"},
+				"the revert filter is not valid, nothing was prepared: b.c.d is not a schema.table name",
+			},
+			"in the caller's order": {
+				[]any{"public.leads", "zz", "aa"},
+				"the revert filter is not valid, nothing was prepared: zz is not a schema.table name",
+			},
+			"a semicolon": {[]any{"public.leads;drop"}, "the revert filter names work that is not yours, nothing was prepared: " +
+				"public.leads;drop has no change of yours in this scope. runs lists only your own runs in the task, and resources " +
+				"only resources you wrote in this scope; run_history shows them"},
 		} {
-			body, isError := env.call(t, tool, map[string]any{"taskId": env.taskID, "resources": []any{name}})
+			body, isError := env.call(t, tool, map[string]any{"taskId": env.taskID, "resources": tc.resources})
 			requireErrorSteps(t, body, isError, "INVALID_ARGUMENT", "SCOPE_FILTER")
-			require.Equal(t, want, str(t, body["message"]), "%s %s", tool, name)
+			require.Equal(t, tc.want, str(t, body["message"]), "%s %s", tool, name)
 		}
 	}
 	id := uuid.Must(uuid.NewV7()).String()

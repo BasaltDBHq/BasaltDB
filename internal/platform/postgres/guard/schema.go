@@ -54,6 +54,10 @@ const (
 	// versionEngineAddressRemoved drops the engine address with the direct
 	// transport: record_engine takes the key alone: schema/018.
 	versionEngineAddressRemoved
+	// versionRevertFilterName refuses a tables entry of a revert scope
+	// descriptor that is not one schema.table name with its own detail,
+	// NAME, naming the entry: schema/019.
+	versionRevertFilterName
 )
 
 // EngineAddressRemovedVersion is the basalt_meta version whose
@@ -72,7 +76,7 @@ const PluginApprovalsVersion = versionPluginApprovals
 // versionFiles is how many schema files each version runs, in version
 // order: a new version appends its own schema files after the last and its
 // count here, and every earlier version keeps the files it has.
-var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, versionPluginEvents: 1, versionPluginTrustRemoved: 1, versionPluginApprovals: 1, versionTrustPins: 1, versionSetupCodeLife: 1, versionEngineAddressRemoved: 1}
+var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, versionPluginEvents: 1, versionPluginTrustRemoved: 1, versionPluginApprovals: 1, versionTrustPins: 1, versionSetupCodeLife: 1, versionEngineAddressRemoved: 1, versionRevertFilterName: 1}
 
 // nonBreakingVersions are the versions an engine serves an agent without
 // (migration.nonBreaking). versionPluginEvents: without it the engine
@@ -89,9 +93,13 @@ var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, version
 // versionEngineAddressRemoved: the engine reads only an engine's key and
 // revocation from agent_engines, which a guard without it has too; only
 // basalt init records an engine, after the migrations.
+// versionRevertFilterName: without it a badly formed name in a revert
+// filter is refused as SHAPE with a hint that names no entry, which the
+// engine answers as a refused scope (INVALID_ARGUMENT with that hint);
+// every tool is served as before.
 var nonBreakingVersions = map[int]bool{
 	versionPluginEvents: true, versionPluginTrustRemoved: true, versionPluginApprovals: true, versionTrustPins: true, versionSetupCodeLife: true,
-	versionEngineAddressRemoved: true,
+	versionEngineAddressRemoved: true, versionRevertFilterName: true,
 }
 
 // guardFiles is how many schema files version 1 has: 001 to 011.

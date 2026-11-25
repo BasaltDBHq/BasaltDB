@@ -2,7 +2,7 @@
   "body": {
     "code": "INVALID_ARGUMENT",
     "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
-    "message": "the revert filter is not valid, nothing was prepared: tables are schema.table names",
+    "message": "the revert filter is not valid, nothing was prepared: leads is not a schema.table name",
     "nextSteps": [
       {
         "action": "REVISE_CALL",
@@ -16,7 +16,7 @@
         "arguments": {
           "runId": "<id-1>"
         },
-        "text": "Read the run's history to see the tables you wrote in it.",
+        "text": "Read the run's history to see the resources you wrote in it.",
         "tool": "run_history"
       }
     ],

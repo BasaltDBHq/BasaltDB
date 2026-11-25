@@ -18,8 +18,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
-// slowPrepare is a revert store whose prepare runs into its time limit,
-// recording the limit it was given; nothing else is called.
+// slowPrepare is a revert store whose prepare runs into its time limit, as
+// the Postgres store answers it, recording the limit it was given; nothing
+// else is called.
 type slowPrepare struct {
 	Store
 	timeout *time.Duration
@@ -27,7 +28,8 @@ type slowPrepare struct {
 
 func (s slowPrepare) PrepareRevert(_ context.Context, _ action.Scope, _ string, timeout time.Duration) (action.PreparedRevert, error) {
 	*s.timeout = timeout
-	return action.PreparedRevert{}, store.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"})
+	canceled := store.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"})
+	return action.PreparedRevert{}, &action.RevertRefusalError{Reason: action.RevertTimedOut, StoreCode: "57014", Err: canceled}
 }
 
 // A prepare too large for an MCP call is QUERY_TIMEOUT, and its message
@@ -145,4 +147,17 @@ func TestNewRefusesAStoreSetWithANilPort(t *testing.T) {
 		}, name)
 	}
 	require.NotPanics(t, func() { New(Core{}, storeSet(struct{ Store }{}), &Deps{}, nil, nil, nil, nil) })
+}
+
+// A store set without a prepare time limit is refused when the service is
+// built: Postgres reads a zero statement timeout as no limit at all.
+func TestNewRefusesAStoreSetWithoutAPrepareLimit(t *testing.T) {
+	t.Parallel()
+	for _, limit := range []time.Duration{0, -time.Second} {
+		set := storeSet(struct{ Store }{})
+		set.Limits.Prepare = limit
+		require.PanicsWithValue(t, "revert: store set has no prepare time limit", func() {
+			New(Core{}, set, &Deps{}, nil, nil, nil, nil)
+		}, limit.String())
+	}
 }

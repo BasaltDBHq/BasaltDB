@@ -76,10 +76,15 @@ type Describe interface {
 }
 
 // New returns the service over core and the revert's store set. It panics
-// on a set with a nil port: the service reads the store only through them.
+// on a set with a nil port, since the service reads the store only through
+// them, and on a set without a prepare time limit, which a store may read
+// as no limit at all.
 func New(core Core, store StoreSet, deps *Deps, runs RunFinder, delivery Delivery, describe Describe, admit Admitter) *Service {
 	if missing := store.missingPorts(); len(missing) > 0 {
 		panic("revert: store set missing ports: " + strings.Join(missing, ", "))
+	}
+	if store.Limits.Prepare <= 0 {
+		panic("revert: store set has no prepare time limit")
 	}
 	return &Service{core: core, store: store, deps: deps, runs: runs, delivery: delivery, describe: describe, admit: admit, rescopes: newRescopes()}
 }

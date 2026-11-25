@@ -121,18 +121,17 @@ func (rc *Service) revokeRejected(ctx context.Context, id uuid.UUID) {
 // finds for the role reads as an unknown id, an expiry is REVERT_EXPIRED,
 // and a revert signed or rejected meanwhile is REVERT_INVALID.
 func (rc *Service) rejectError(r action.Revert, heldToken bool, err error) error {
-	code, _ := guidance.LedgerCode(err)
-	detail := guidance.StoreDetail(err)
+	refused := refusalOf(err)
 	switch {
-	case code == guardmodel.CodeRevertInvalid && detail == guardmodel.RevertWidenRefused && heldToken:
+	case refused.Reason == action.RevertWidenRefused && heldToken:
 		return rc.personScopeGone(r)
-	case code == guardmodel.CodeRevertInvalid && detail == guardmodel.RevertWidenRefused:
+	case refused.Reason == action.RevertWidenRefused:
 		return rejectRefused()
-	case code == guardmodel.CodeRevertInvalid && detail == revertNotFoundDetail:
+	case refused.Reason == action.RevertNotFound:
 		return linksvc.ErrNotThisAgent
-	case code == guardmodel.CodeRevertExpired:
+	case refused.Reason == action.RevertExpiredReason:
 		return rc.revertExpired(r)
-	case code == guardmodel.CodeRevertInvalid:
+	case refused.Reason == action.RevertNotPending:
 		return &guidance.PageError{ToolError: &toolresult.ToolError{
 			Code:          guidance.CodeRevertInvalid,
 			Message:       "the revert can no longer be rejected: it was signed or rejected meanwhile",
@@ -141,10 +140,6 @@ func (rc *Service) rejectError(r action.Revert, heldToken bool, err error) error
 	}
 	return err
 }
-
-// revertNotFoundDetail is the guard's detail for a revert the calling role
-// did not prepare, or none (_revert_lock_pending).
-const revertNotFoundDetail = "no such revert"
 
 // rejectRefused is a reject the store refused for its scope token: after a
 // widen only the page holding the rotated link can reject, and only while

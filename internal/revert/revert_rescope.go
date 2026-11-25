@@ -13,7 +13,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -270,20 +269,15 @@ func (rc *Service) registerRelay(ctx context.Context, id uuid.UUID, token channe
 // failure is one REVERT_INVALID whatever its cause; a rescope past
 // the store's Limits.Prepare is QUERY_TIMEOUT TIME_LIMIT.
 func (rc *Service) rescopeError(ctx context.Context, r action.Revert, err error) error {
-	if _, hint, ok := guidance.ScopeRefusal(err); ok {
-		return &guidance.ArgumentError{Message: "the scope was refused: " + hint}
-	}
-	se := guidance.StoreError(err)
-	if se == nil {
-		return err
-	}
-	code, _ := guidance.LedgerCode(err)
+	refused := refusalOf(err)
 	switch {
-	case code == guardmodel.CodeRevertInvalid && se.Detail == guardmodel.RevertWidenRefused:
+	case refused.Reason == action.RevertInvalid:
+		return &guidance.ArgumentError{Message: "the scope was refused: " + refused.Detail}
+	case refused.Reason == action.RevertWidenRefused:
 		return widenRefused()
-	case code == guardmodel.CodeRevertExpired:
+	case refused.Reason == action.RevertExpiredReason:
 		return rc.revertExpired(r)
-	case guidance.TimedOut(err) && ctx.Err() == nil:
+	case refused.Reason == action.RevertTimedOut && ctx.Err() == nil:
 		return rescopeTimeout()
 	}
 	return err

@@ -201,7 +201,7 @@ func (s *Store) Passkeys(ctx context.Context) ([]passkey.Credential, error) {
 // for that, and is rolled back anyway.
 func (s *Store) PreviewRevert(ctx context.Context, scope action.Scope, after string, limit int) (action.PreviewPage, error) {
 	r0, err := s.previewRevertRaw(ctx, scope, after, limit)
-	return r0, MapError(err)
+	return r0, prepareRefusal(MapError(err))
 }
 
 // PrepareRevert stores a revert of scope for the person to sign
@@ -211,7 +211,7 @@ func (s *Store) PreviewRevert(ctx context.Context, scope action.Scope, after str
 // action.ErrEmptyProposal: through MCP it is NOTHING_TO_REVERT (RS-6).
 func (s *Store) PrepareRevert(ctx context.Context, scope action.Scope, intent string, timeout time.Duration) (action.PreparedRevert, error) {
 	r0, err := s.prepareRevertRaw(ctx, scope, intent, timeout)
-	return r0, MapError(err)
+	return r0, prepareRefusal(MapError(err))
 }
 
 // RescopeRevert changes the scope of a revert the agent's role prepared
@@ -221,7 +221,7 @@ func (s *Store) PrepareRevert(ctx context.Context, scope action.Scope, intent st
 // changes.
 func (s *Store) RescopeRevert(ctx context.Context, req action.RescopeRequest, timeout time.Duration) (action.RescopedRevert, error) {
 	r0, err := s.rescopeRevertRaw(ctx, req, timeout)
-	return r0, MapError(err)
+	return r0, rescopeRevertRefusal(MapError(err))
 }
 
 // ResetRevert puts a widened revert the agent's role prepared back to its
@@ -259,7 +259,7 @@ func (s *Store) RevertedBy(ctx context.Context, scope action.Scope) (uuid.UUID, 
 // FindRevert returns a revert the agent's role prepared.
 func (s *Store) FindRevert(ctx context.Context, id uuid.UUID) (action.Revert, error) {
 	r0, err := s.findRevertRaw(ctx, id)
-	return r0, MapError(err)
+	return r0, findRevertRefusal(MapError(err))
 }
 
 // RevertLines returns one page of a batched plan's lines, with values too
@@ -285,7 +285,7 @@ func (s *Store) ApplyRevertBatch(ctx context.Context, id uuid.UUID, lines []int)
 // person's revert.
 func (s *Store) ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (action.AppliedRevert, error) {
 	r0, err := s.applyRevertRaw(ctx, id, a)
-	return r0, MapError(err)
+	return r0, applyRevertRefusal(MapError(err))
 }
 
 // RevertNonce reads the rescope nonce of a revert the agent's role prepared
@@ -300,7 +300,7 @@ func (s *Store) RevertNonce(ctx context.Context, id uuid.UUID) ([]byte, error) {
 // scope token the engine holds for a widened revert's rotated link.
 func (s *Store) RejectRevert(ctx context.Context, id uuid.UUID, note string, token []byte) (action.RejectedRevert, error) {
 	r0, err := s.rejectRevertRaw(ctx, id, note, token)
-	return r0, MapError(err)
+	return r0, rejectRevertRefusal(MapError(err))
 }
 
 // RevealNonce reads the reveal nonce of an approval (approval.KindApprove)
@@ -317,7 +317,7 @@ func (s *Store) RevealNonce(ctx context.Context, kind string, id uuid.UUID) ([]b
 // pinned transaction: it rebuilds the lines' rows to match their hashes.
 func (s *Store) RevealRevertRows(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) (action.RevealedRevert, error) {
 	r0, err := s.revealRevertRowsRaw(ctx, id, proof, key)
-	return r0, MapError(err)
+	return r0, revealRevertRowsRefusal(MapError(err))
 }
 
 // ListRuns returns one page of the agent's own runs, read through the

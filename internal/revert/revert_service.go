@@ -13,7 +13,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -125,7 +124,7 @@ type RevertPlan struct {
 // once the person signed it.
 func (rc *Service) RevertPlan(ctx context.Context, p action.RevertLineParams) (RevertPlan, error) {
 	r, err := rc.store.Records.FindRevert(ctx, p.RevertID)
-	if guidance.Sentinel(err, rc.deps.ErrNotFound) {
+	if refusalOf(err).Reason == action.RevertNotFound {
 		return RevertPlan{}, &toolresult.ToolError{Code: guidance.CodeNotFound, Reason: guidance.ReasonRevert, Message: fmt.Sprintf("no revert %s prepared by this agent", p.RevertID)}
 	}
 	if err != nil {
@@ -316,7 +315,7 @@ type AwaitRevertParams struct {
 // or Wait is over. It never signs: the person signs on the revert page.
 func (rc *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (RequestedRevert, error) {
 	r, err := rc.store.Records.FindRevert(ctx, p.RevertID)
-	if guidance.Sentinel(err, rc.deps.ErrNotFound) {
+	if refusalOf(err).Reason == action.RevertNotFound {
 		return RequestedRevert{}, revertNotFound(p.RevertID)
 	}
 	if err != nil {
@@ -353,27 +352,32 @@ func (rc *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Reques
 // relayed: expired meanwhile, rows changed since the preview, or a
 // signature that does not verify.
 func (rc *Service) applyRevertError(ctx context.Context, r action.Revert, err error) error {
-	code, ok := guidance.LedgerCode(err)
-	switch {
-	case ok && code == guardmodel.CodeRevertExpired:
+	refused := refusalOf(err)
+	switch refused.Reason {
+	case action.RevertExpiredReason:
 		return rc.revertExpired(r)
-	case ok && code == guardmodel.CodeNothingToRevert:
+	case action.RevertNothing:
 		return nothingSigned(r)
-	}
-	if !ok || code != guardmodel.CodeRevertInvalid {
+	case action.RevertRowsChanged:
+		return rc.rowsChanged(r, refused.Detail)
+	case action.RevertPasskeyRevoked:
+		return rc.passkeyRevoked(ctx, r)
+	case action.RevertAlreadySigned:
+		return alreadySigned(r)
+	case action.RevertSignature:
+		return rc.badSignature(ctx, r, "the database refused the signature, nothing was reverted: "+refused.Detail)
+	default:
 		return err
 	}
-	// apply_revert's details (basalt_meta version 9) tell the cases apart.
-	detail := guidance.StoreDetail(err)
-	switch {
-	case strings.Contains(detail, "rows changed since"):
-		return rc.rowsChanged(r, detail)
-	case strings.Contains(detail, "passkey revoked"):
-		return rc.passkeyRevoked(ctx, r)
-	case strings.Contains(detail, "already"):
-		return alreadySigned(r)
+}
+
+// refusalOf is the store's refusal in err, the zero refusal (no reason)
+// when err carries none.
+func refusalOf(err error) action.RevertRefusalError {
+	if rr := action.RevertRefusalOf(err); rr != nil {
+		return *rr
 	}
-	return rc.badSignature(ctx, r, "the database refused the signature, nothing was reverted: "+detail)
+	return action.RevertRefusalError{}
 }
 
 // revertState is the answer for r without a new link: what happened, for
@@ -538,27 +542,25 @@ func notOwnTask(scope action.Scope) error {
 	}
 }
 
-// scopeRefused answers a scope the guard refused (BS011, CONTRACT.md,
-// Guard errors): another agent's or an unknown change, run or task is
-// NOT_FOUND, alike; a descriptor the engine built badly is
-// INVALID_ARGUMENT with the guard's explanation. nil when err is not a
-// scope refusal.
-func scopeRefused(scope action.Scope, err error) error {
-	detail, hint, ok := guidance.ScopeRefusal(err)
-	if !ok {
+// scopeRefused answers a scope the store refused (CONTRACT.md, Guard
+// errors): another agent's or an unknown change, run or task is NOT_FOUND,
+// alike; a descriptor the engine built badly is INVALID_ARGUMENT with the
+// store's explanation. nil when refused is not about the scope.
+func scopeRefused(scope action.Scope, refused action.RevertRefusalError) error {
+	switch refused.Reason {
+	case action.RevertNotOwnChange, action.RevertNotOwnRun:
+		return notOwnScope(scope)
+	case action.RevertNotOwnTask:
+		return notOwnTask(scope)
+	case action.RevertFilter:
+		return scopeFilterRefused(refused.Detail)
+	case action.RevertFilterCap:
+		return ScopeFilterCapped()
+	case action.RevertInvalid:
+		return &guidance.ArgumentError{Message: "the revert scope was refused: " + refused.Detail}
+	default:
 		return nil
 	}
-	switch detail {
-	case guardmodel.ScopeNotOwnChange, guardmodel.ScopeNotOwnRun:
-		return notOwnScope(scope)
-	case guardmodel.ScopeNotOwnTask:
-		return notOwnTask(scope)
-	case guardmodel.ScopeFilter:
-		return scopeFilterRefused(hint)
-	case guardmodel.ScopeFilterCap:
-		return ScopeFilterCapped()
-	}
-	return &guidance.ArgumentError{Message: "the revert scope was refused: " + hint}
 }
 
 // scopeFilterRefused answers runs or tables outside the agent's own work.
@@ -580,23 +582,24 @@ func ScopeFilterCapped() error {
 // can do when nothing can be reverted, or when the prepare is too large for
 // an MCP call and their terminal is the better path.
 func (rc *Service) prepareError(ctx context.Context, tool string, scope action.Scope, err error) error {
-	if refused := scopeRefused(scope, err); refused != nil {
-		return refused
+	refused := refusalOf(err)
+	if out := scopeRefused(scope, refused); out != nil {
+		return out
 	}
 	if errors.Is(err, action.ErrEmptyProposal) {
 		return rc.nothingToRevertError(ctx, tool, scope, guidance.ReasonReadsOnly, "this agent changed no rows in it that a revert could restore")
 	}
-	if code, ok := guidance.LedgerCode(err); ok && code == guardmodel.CodeNothingToRevert {
-		return rc.nothingToRevert(ctx, tool, scope, err)
+	if refused.Reason == action.RevertNothing || refused.Reason == action.RevertReadsOnly {
+		return rc.nothingToRevert(ctx, tool, scope, refused)
 	}
 	if ctx.Err() != nil {
 		// The client canceled the call: not the prepare's time limit.
 		return fmt.Errorf("prepare revert: %w", ctx.Err())
 	}
-	if !guidance.TimedOut(err) {
+	if refused.Reason != action.RevertTimedOut {
 		return err
 	}
-	return rc.prepareTimeout(tool, scope, guidance.StoreError(err).SQLState)
+	return rc.prepareTimeout(tool, scope, refused.StoreCode)
 }
 
 // revertLink is what the agent hands the person to sign a prepared revert:

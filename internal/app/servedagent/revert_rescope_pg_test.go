@@ -577,12 +577,13 @@ func TestConcurrentRescopesKeepTheLatest(t *testing.T) {
 	require.Equal(t, stored, read.Binding, "the engine serves what Postgres stored last")
 }
 
-// slowReverts answers every rescope as Postgres does once the statement
-// timeout cancels it.
+// slowReverts answers every rescope as the Postgres store does once the
+// statement timeout cancels it.
 type slowReverts struct{ app.SQLStore }
 
 func (slowReverts) RescopeRevert(context.Context, action.RescopeRequest, time.Duration) (action.RescopedRevert, error) {
-	return action.RescopedRevert{}, store.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"})
+	canceled := store.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"})
+	return action.RescopedRevert{}, &action.RevertRefusalError{Reason: action.RevertTimedOut, StoreCode: "57014", Err: canceled}
 }
 
 // A rescope past 100 seconds is 504 QUERY_TIMEOUT TIME_LIMIT, with what the

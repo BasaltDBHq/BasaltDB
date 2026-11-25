@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
@@ -11,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
@@ -219,4 +221,177 @@ func (s *Store) revealRevertRowsRaw(ctx context.Context, id uuid.UUID, proof pas
 		return err
 	})
 	return out, err
+}
+
+// The guard's answers to a revert call, mapped to the revert's own
+// refusals (action.RevertRefusalError) after MapError. Each port method has its
+// own mapping, in the order the revert use case told the guard's answers
+// apart: one guard answer means different things on different calls
+// (REVERT_INVALID "no such revert" is an unknown revert on reject and
+// reveal, a refused signature on apply). An answer no mapping names is
+// returned as MapError made it.
+
+// revertNotFoundDetail is the guard's detail for a revert the calling role
+// did not prepare, or none (_revert_lock_pending).
+const revertNotFoundDetail = "no such revert"
+
+// scopeReasons are the revert reasons of the guard's SCOPE_REFUSED details
+// on a preview or a prepare; any other detail is RevertInvalid.
+var scopeReasons = map[string]action.RevertReason{
+	guardmodel.ScopeNotOwnChange: action.RevertNotOwnChange,
+	guardmodel.ScopeNotOwnRun:    action.RevertNotOwnRun,
+	guardmodel.ScopeNotOwnTask:   action.RevertNotOwnTask,
+	guardmodel.ScopeFilter:       action.RevertFilter,
+	guardmodel.ScopeFilterCap:    action.RevertFilterCap,
+}
+
+// guardAnswer is the store error in err, mapped by MapError, nil when err
+// has none.
+func guardAnswer(err error) *action.StoreError {
+	var se *action.StoreError
+	if !errors.As(err, &se) {
+		return nil
+	}
+	return se
+}
+
+// refusal is err refused for reason, with the store's text detail.
+func refusal(err error, reason action.RevertReason, detail string) error {
+	return &action.RevertRefusalError{Reason: reason, Detail: detail, Err: err}
+}
+
+// timedOut is err refused as RevertTimedOut, with its SQLSTATE, when the
+// guard's statement ran into its time limit (QUERY_TIMEOUT TIME_LIMIT),
+// and nil otherwise.
+func timedOut(err error, se *action.StoreError) *action.RevertRefusalError {
+	if se.Code != action.CodeQueryTimeout || se.Reason != action.ReasonTimeLimit {
+		return nil
+	}
+	return &action.RevertRefusalError{Reason: action.RevertTimedOut, StoreCode: se.SQLState, Err: err}
+}
+
+// findRevertRefusal maps FindRevert's error: a revert the role did not
+// prepare is RevertNotFound.
+func findRevertRefusal(err error) error {
+	if errors.Is(err, ledger.ErrRevertNotFound) {
+		return refusal(err, action.RevertNotFound, "")
+	}
+	return err
+}
+
+// prepareRefusal maps PreviewRevert's and PrepareRevert's errors: a scope
+// the guard refused (the hint says why), nothing to revert (the scope
+// changed no rows, or every row would be skipped; the detail is the guard's
+// whole message), and the time limit.
+func prepareRefusal(err error) error {
+	se := guardAnswer(err)
+	if se == nil {
+		return err
+	}
+	switch guardmodel.Code(se.LedgerCode) {
+	case guardmodel.CodeScopeRefused:
+		reason, ok := scopeReasons[se.Detail]
+		if !ok {
+			reason = action.RevertInvalid
+		}
+		return refusal(err, reason, se.Hint)
+	case guardmodel.CodeNothingToRevert:
+		if strings.Contains(se.Message, "changed no rows") {
+			return refusal(err, action.RevertReadsOnly, se.Message)
+		}
+		return refusal(err, action.RevertNothing, se.Message)
+	default:
+		if out := timedOut(err, se); out != nil {
+			return out
+		}
+		return err
+	}
+}
+
+// applyRevertRefusal maps ApplyRevert's errors: an expired revert, a
+// signed revert with no row to restore, and every REVERT_INVALID, told
+// apart by the guard's detail in this order; any other detail is a
+// signature the guard did not accept.
+func applyRevertRefusal(err error) error {
+	se := guardAnswer(err)
+	if se == nil {
+		return err
+	}
+	code := guardmodel.Code(se.LedgerCode)
+	switch {
+	case code == guardmodel.CodeRevertExpired:
+		return refusal(err, action.RevertExpiredReason, se.Detail)
+	case code == guardmodel.CodeNothingToRevert:
+		return refusal(err, action.RevertNothing, se.Detail)
+	case code != guardmodel.CodeRevertInvalid:
+		return err
+	}
+	switch {
+	case strings.Contains(se.Detail, "rows changed since"):
+		return refusal(err, action.RevertRowsChanged, se.Detail)
+	case strings.Contains(se.Detail, "passkey revoked"):
+		return refusal(err, action.RevertPasskeyRevoked, se.Detail)
+	case strings.Contains(se.Detail, "already"):
+		return refusal(err, action.RevertAlreadySigned, se.Detail)
+	}
+	return refusal(err, action.RevertSignature, se.Detail)
+}
+
+// rescopeRevertRefusal maps RescopeRevert's errors: any scope the guard
+// refused (the hint says why), a failed proof or token check, an expired
+// revert, and the time limit.
+func rescopeRevertRefusal(err error) error {
+	se := guardAnswer(err)
+	if se == nil {
+		return err
+	}
+	code := guardmodel.Code(se.LedgerCode)
+	switch {
+	case code == guardmodel.CodeScopeRefused:
+		return refusal(err, action.RevertInvalid, se.Hint)
+	case code == guardmodel.CodeRevertInvalid && se.Detail == guardmodel.RevertWidenRefused:
+		return refusal(err, action.RevertWidenRefused, se.Detail)
+	case code == guardmodel.CodeRevertExpired:
+		return refusal(err, action.RevertExpiredReason, se.Detail)
+	}
+	if out := timedOut(err, se); out != nil {
+		return out
+	}
+	return err
+}
+
+// rejectRevertRefusal maps RejectRevert's errors: a failed scope token
+// check, a revert the role did not prepare, an expired revert, and any
+// other REVERT_INVALID (signed, applied or rejected meanwhile).
+func rejectRevertRefusal(err error) error {
+	return pendingRefusal(err, guardmodel.RevertWidenRefused, action.RevertWidenRefused)
+}
+
+// revealRevertRowsRefusal maps RevealRevertRows's errors: a failed reveal
+// proof, a revert the role did not prepare, an expired revert, and any
+// other REVERT_INVALID (signed, applied or rejected meanwhile).
+func revealRevertRowsRefusal(err error) error {
+	return pendingRefusal(err, guardmodel.RevealRefused, action.RevertRevealRefused)
+}
+
+// pendingRefusal maps the errors of a page call on a revert that must
+// still wait for the person: REVERT_INVALID with detail proofDetail is
+// proofReason.
+func pendingRefusal(err error, proofDetail string, proofReason action.RevertReason) error {
+	se := guardAnswer(err)
+	if se == nil {
+		return err
+	}
+	code := guardmodel.Code(se.LedgerCode)
+	switch {
+	case code == guardmodel.CodeRevertInvalid && se.Detail == proofDetail:
+		return refusal(err, proofReason, se.Detail)
+	case code == guardmodel.CodeRevertInvalid && se.Detail == revertNotFoundDetail:
+		return refusal(err, action.RevertNotFound, se.Detail)
+	case code == guardmodel.CodeRevertExpired:
+		return refusal(err, action.RevertExpiredReason, se.Detail)
+	case code == guardmodel.CodeRevertInvalid:
+		return refusal(err, action.RevertNotPending, se.Detail)
+	}
+	return err
 }

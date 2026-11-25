@@ -435,19 +435,18 @@ func statementLimitText(d time.Duration) string {
 	}
 }
 
-// nothingToRevert tells the cases of BS009 apart: the scope changed no rows
-// a revert could restore (READS_ONLY), every row was already reverted, or
-// people changed every row since (people win).
-func (rc *Service) nothingToRevert(ctx context.Context, tool string, scope action.Scope, err error) error {
-	detail := rc.core.Errors.ToolError(err).Message
-	if strings.Contains(detail, "changed no rows") {
-		return rc.nothingToRevertError(ctx, tool, scope, guidance.ReasonReadsOnly, detail)
+// nothingToRevert tells the cases of nothing to revert apart: the scope
+// changed no rows a revert could restore (READS_ONLY), every row was
+// already reverted, or people changed every row since (people win).
+func (rc *Service) nothingToRevert(ctx context.Context, tool string, scope action.Scope, refused action.RevertRefusalError) error {
+	if refused.Reason == action.RevertReadsOnly {
+		return rc.nothingToRevertError(ctx, tool, scope, guidance.ReasonReadsOnly, refused.Detail)
 	}
 	pv, perr := rc.store.Undo.PreviewRevert(ctx, scope, "", 1)
 	if perr != nil {
 		pv = action.PreviewPage{}
 	}
-	return rc.nothingToRevertError(ctx, tool, scope, skipReason(pv), detail)
+	return rc.nothingToRevertError(ctx, tool, scope, skipReason(pv), refused.Detail)
 }
 
 // nothingToRevertError builds NOTHING_TO_REVERT for reason.

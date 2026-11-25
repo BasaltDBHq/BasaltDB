@@ -244,7 +244,7 @@ func TestConnectRPCTransport(t *testing.T) {
 	t.Cleanup(func() { _ = tr.Close() })
 	var res pluginproto.FeedObserveResponse
 	require.NoError(t, tr.Call(context.Background(), pluginproto.MethodFeedObserve,
-		pluginproto.FeedObserveRequest{Agent: "product_a", Events: adaptertest.Batch(adaptertest.FeedEvent(7))}, &res))
+		pluginproto.FeedObserveRequest{Agent: "agent:product_a", Events: adaptertest.Batch(adaptertest.FeedEvent(7))}, &res))
 	require.Equal(t, int64(7), res.LastSeq)
 	r, err := tn.ReadRecords(rec)
 	require.NoError(t, err)
@@ -278,7 +278,7 @@ func TestRawModeOverAUnixSocket(t *testing.T) {
 	require.NoError(t, s.deliver())
 	r := s.records(t)
 	require.Len(t, r, 2)
-	require.Equal(t, "product_a", r[1].Agent)
+	require.Equal(t, "agent:product_a", r[1].Agent)
 	require.Equal(t, adaptertest.Notice, string(r[1].Event))
 }
 

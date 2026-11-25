@@ -42,7 +42,6 @@ func AgentHostDeps() Deps {
 	d.Core.ServiceManager = AgentServiceManager()
 	d.Core.Errors = AgentErrors()
 	d.Agent.Record = func(ch action.Change, rows []action.RowChange) any { return ledger.RecordFromDomain(ch, rows) }
-	d.Approval.ErrNotFound = ledger.ErrApprovalNotFound
 	d.Approval.SortSpec = ledger.ApprovalSortSpec
 	d.Revert.AfterAnswer = vault.AfterAnswer
 	d.Revert.RotateSession = vault.RotateSession

@@ -119,5 +119,3 @@ func (ac *Service) Preview(ctx context.Context, in action.Intent, sql string, pa
 func (ac *Service) Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error) {
 	return ac.store.Holds.Hold(ctx, in, r)
 }
-
-func (ac *Service) NotFound() error { return ac.deps.ErrNotFound }

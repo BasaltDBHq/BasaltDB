@@ -122,7 +122,7 @@ func (s *Store) Preview(ctx context.Context, in action.Intent, sql string, param
 // transaction. The caller keeps the ticket in memory for this one request.
 func (s *Store) OpenReveal(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) ([]byte, error) {
 	r0, err := s.openRevealRaw(ctx, id, proof, key)
-	return r0, MapError(err)
+	return r0, revealApprovalRefusal(MapError(err))
 }
 
 // RevealPreview re-runs a held write in a preview transaction exactly as an
@@ -132,7 +132,7 @@ func (s *Store) OpenReveal(ctx context.Context, id uuid.UUID, proof passkey.Asse
 // back.
 func (s *Store) RevealPreview(ctx context.Context, in action.Intent, op action.Op, sql string, params []any, id uuid.UUID, ticket []byte) ([]approval.RevealedRow, error) {
 	r0, err := s.revealPreviewRaw(ctx, in, op, sql, params, id, ticket)
-	return r0, MapError(err)
+	return r0, revealApprovalRefusal(MapError(err))
 }
 
 // Hold stores a held write for the person's approval.
@@ -172,7 +172,7 @@ func (s *Store) SubmitPluginApproval(ctx context.Context, r guardmodel.PluginApp
 // FindApproval returns one of the agent's approvals.
 func (s *Store) FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error) {
 	r0, err := s.findApprovalRaw(ctx, id)
-	return r0, MapError(err)
+	return r0, findApprovalRefusal(MapError(err))
 }
 
 // ListApprovals returns one page of the agent's open approvals.

@@ -99,7 +99,7 @@ func newService(t *testing.T, goos, configPath string, opts ...option) *Service 
 			PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget,
 		},
 		store: catalogStore{},
-		deps:  Deps{ErrNotFound: ledger.ErrApprovalNotFound, SortSpec: ledger.ApprovalSortSpec},
+		deps:  Deps{SortSpec: ledger.ApprovalSortSpec},
 	}
 	st.links = linksvc.Core{Name: "bot", Log: st.core.Log, Now: st.core.Now, Commands: cmds, Errors: st.core.Errors, PagesBase: st.core.PagesBase}
 	st.delivery = linksvc.Deps{

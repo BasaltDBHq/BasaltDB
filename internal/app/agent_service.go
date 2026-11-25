@@ -206,7 +206,6 @@ func (d Deps) missing() []string {
 	need("Agent.Data", d.Agent.Data == nil)
 	need("Agent.Record", d.Agent.Record == nil)
 	need("Approval.Store", d.Approval.Store == nil)
-	need("Approval.ErrNotFound", d.Approval.ErrNotFound == nil)
 	// The approval service relays the person's signed approval to the store,
 	// which must check the signature itself until the engine has a verifier
 	// of its own.

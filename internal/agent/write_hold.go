@@ -85,7 +85,7 @@ func (wc *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutco
 		return WriteOutcome{}, err
 	}
 	a, err := wc.approvals.FindApproval(ctx, p.ApprovalID)
-	if guidance.Sentinel(err, wc.approvals.NotFound()) {
+	if action.IsApprovalRefused(err, action.ApprovalNotFound) {
 		return WriteOutcome{}, approvalsvc.ApprovalInvalid(guidance.ReasonNotThisAgent, "approval %s is not one of this agent's held writes", p.ApprovalID)
 	}
 	if err != nil {

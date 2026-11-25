@@ -95,11 +95,11 @@ func (f *pluginFixture) installCopyOver(instance, hooks, transport string, signe
 }
 
 // honestDetail is what basalt plugin would open for entry p of the test
-// plugin with hooks feed.observe in same-user mode, naming roles: written
+// plugin with hooks feed.observe in same-user mode, naming agents (agent:<name>): written
 // out here, not derived by the engine's code.
-func honestDetail(p config.Plugin, roles ...string) guardmodel.PluginApprovalDetail {
+func honestDetail(p config.Plugin, agents ...string) guardmodel.PluginApprovalDetail {
 	return guardmodel.PluginApprovalDetail{
-		Agents: roles, Name: "acme-ner", Instance: p.Key().Instance, Version: "1.4.0",
+		Agents: agents, Name: "acme-ner", Instance: p.Key().Instance, Version: "1.4.0",
 		ManifestSHA256: p.ManifestSHA256, Hooks: []string{"feed.observe"}, Egress: []string{},
 		Endpoint:  guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointLocal},
 		Isolation: &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesNone, Network: guardmodel.PluginNetworkNotEnforced},
@@ -146,7 +146,7 @@ func (l pluginLedgers) approve(t *testing.T, pk *passkeytest.Authenticator, p co
 	t.Helper()
 	roles := make([]string, 0, len(agents))
 	for _, a := range agents {
-		roles = append(roles, l.roles[a])
+		roles = append(roles, approval.AgentName(a))
 	}
 	l.sign(t, pk, agents[0], l.open(t, agents[0], honestDetail(p, roles...), p.ApprovalSettings()))
 }
@@ -245,7 +245,7 @@ func TestUnapprovedEntryIsWithheld(t *testing.T) {
 	require.Contains(t, prob.Message, "no plugin approval names this agent")
 	require.Empty(t, l.events(t, "product_a"))
 
-	pending := l.open(t, "product_a", honestDetail(p, l.roles["product_a"]), p.ApprovalSettings())
+	pending := l.open(t, "product_a", honestDetail(p, approval.AgentName("product_a")), p.ApprovalSettings())
 	ep = f.plugins(nil)
 	l.record(t, f, ep)
 	require.Empty(t, servedTo(ep, p.Key()))
@@ -256,7 +256,7 @@ func TestUnapprovedEntryIsWithheld(t *testing.T) {
 
 	// client_x opens one naming only itself: product_a's pending one is
 	// cancelled, and product_a stays withheld.
-	l.open(t, "client_x", honestDetail(p, l.roles["client_x"]), p.ApprovalSettings())
+	l.open(t, "client_x", honestDetail(p, approval.AgentName("client_x")), p.ApprovalSettings())
 	ep = f.plugins(nil)
 	l.record(t, f, ep)
 	require.Empty(t, servedTo(ep, p.Key()))
@@ -271,7 +271,7 @@ func TestExpiredPendingIsReported(t *testing.T) {
 	f := newPluginFixture(t)
 	p := f.installApproval(feedHooks, "product_a")
 	l := newPluginLedgers(t, f)
-	a := l.open(t, "product_a", honestDetail(p, l.roles["product_a"]), p.ApprovalSettings())
+	a := l.open(t, "product_a", honestDetail(p, approval.AgentName("product_a")), p.ApprovalSettings())
 	pk := l.person(t)
 	as, err := pk.Sign(approval.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
@@ -329,7 +329,7 @@ func TestChangedEntryIsWithheld(t *testing.T) {
 			f := newPluginFixture(t)
 			p := f.installApproval(c.hooks, "product_a")
 			l := newPluginLedgers(t, f)
-			d, s := honestDetail(p, l.roles["product_a"]), p.ApprovalSettings()
+			d, s := honestDetail(p, approval.AgentName("product_a")), p.ApprovalSettings()
 			if c.hooks == detectHooks {
 				d.Hooks, d.Roles = []string{"wire.detect"}, []string{"VALUE"}
 			}
@@ -558,7 +558,7 @@ func TestApprovalOfAnotherAgentLeavesThisOne(t *testing.T) {
 	l.record(t, f, f.plugins(nil))
 	before := l.events(t, "product_a")
 
-	l.open(t, "client_x", honestDetail(p, l.roles["client_x"]), p.ApprovalSettings())
+	l.open(t, "client_x", honestDetail(p, approval.AgentName("client_x")), p.ApprovalSettings())
 	ep := f.plugins(nil)
 	l.record(t, f, ep)
 	require.Equal(t, []string{"product_a"}, servedTo(ep, p.Key()))
@@ -567,7 +567,7 @@ func TestApprovalOfAnotherAgentLeavesThisOne(t *testing.T) {
 	cx := kindsOf(l.events(t, "client_x"))
 	require.Equal(t, "PLUGIN_DISABLED", cx[len(cx)-1], "client_x stopped being served")
 
-	d := honestDetail(p, l.roles["client_x"])
+	d := honestDetail(p, approval.AgentName("client_x"))
 	d.Version = "1.4.1"
 	l.sign(t, pk, "client_x", l.open(t, "client_x", d, p.ApprovalSettings()))
 	ep = f.plugins(nil)
@@ -589,7 +589,7 @@ func TestEntryWithoutApprovalUnchanged(t *testing.T) {
 	unsigned.Agents = []string{"product_a"}
 	f.cfg.Plugins = append(f.cfg.Plugins, unsigned)
 	l := newPluginLedgers(t, f)
-	ro := l.roles["product_a"]
+	ro := approval.AgentName("product_a")
 	l.sign(t, l.person(t), "product_a", l.open(t, "product_a", honestDetail(unsigned, ro), unsigned.ApprovalSettings()))
 
 	ep := f.plugins(nil)
@@ -709,7 +709,7 @@ func TestCommandsApprovalIsServed(t *testing.T) {
 
 			v, err := Verify(f.root, p.Key(), p.ManifestSHA256, f.trust, pluginmodel.ModeSameUser, RequireApproval(true))
 			require.NoError(t, err)
-			d := PluginApprovalDetail(p.Key(), v, []string{l.roles["product_a"]})
+			d := PluginApprovalDetail(p.Key(), v, []string{"product_a"})
 			l.sign(t, l.person(t), "product_a", l.open(t, "product_a", d, p.ApprovalSettings()))
 
 			ep := f.plugins(nil)

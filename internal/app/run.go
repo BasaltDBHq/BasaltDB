@@ -734,7 +734,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		db:   pool,
 		kept: keptAgent{
 			db: pool, host: pool.Config().ConnConfig.Host, port: pool.Config().ConnConfig.Port,
-			database: pool.Config().ConnConfig.Database, role: pool.Config().ConnConfig.User,
+			database: pool.Config().ConnConfig.Database,
 		},
 		close: func() {
 			stopGuardLog()

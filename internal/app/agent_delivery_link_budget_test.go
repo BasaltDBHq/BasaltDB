@@ -52,15 +52,15 @@ func bigLines(n int) []string {
 	for i := range n {
 		sum := sha256.Sum256(fmt.Appendf(nil, "row %d", i))
 		sum2 := sha256.Sum256(sum[:])
-		out = append(out, fmt.Sprintf(`{"op": "DELETE", "key": {"id": %d}, "old": {"id": %d, "note": "%s%s"}, "set": null, "table": "public.leads", "cascaded": false}`,
+		out = append(out, fmt.Sprintf(`{"op": "DELETE", "key": {"id": %d}, "old": {"id": %d, "note": "%s%s"}, "set": null, "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "DELETE"}, "cascaded": false, "resource": "public.leads"}`,
 			i, i, hex.EncodeToString(sum[:]), hex.EncodeToString(sum2[:])))
 	}
 	return out
 }
 
-const noticeBinding = `{"kind": "APPROVE", "rows": 3, "agent": "basalt_agent_bot", "runId": "` + caseRunID + `", "intent": "Remove the spam lead", ` +
-	`"params": [], "database": "app", "rowsHash": "3c4e241b3edf41860015fee8ec777698cd66631ddd185902261f9256a8a5bfa4", ` +
-	`"expiresAt": "2026-11-12T06:02:11.123456Z", "statement": "DELETE FROM public.leads", "approvalId": "` + caseApproval + `", "assignedColumns": []}`
+const noticeBinding = `{"kind": "APPROVE", "rows": 3, "agent": "agent:bot", "runId": "` + caseRunID + `", "store": {"kind": "POSTGRES", "name": "app"}, "intent": "Remove the spam lead", ` +
+	`"request": {"kind": "SQL", "params": [], "statement": "DELETE FROM public.leads"}, "rowsHash": "3c4e241b3edf41860015fee8ec777698cd66631ddd185902261f9256a8a5bfa4", ` +
+	`"expiresAt": "2026-11-12T06:02:11.123456Z", "approvalId": "` + caseApproval + `", "assignedFields": []}`
 
 func noticeService(origin string, budget int, opts ...func(*Deps)) *Service {
 	d := deps()

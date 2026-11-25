@@ -118,10 +118,10 @@ func (a *heldAgent) PageFailure(err error) *toolresult.ToolError { return AgentE
 const intentMarker = "raise-the-price-of-every-lead"
 
 func heldBinding(id uuid.UUID, lines []string) string {
-	return fmt.Sprintf(`{"kind":"APPROVE","approvalId":%q,"database":"app","agent":"demo_bot","runId":%q,"taskId":null,`+
-		`"intent":%q,"statement":"UPDATE leads SET price = price * 2","params":[],"assignedColumns":["price"],`+
-		`"rows":1,"rowsHash":%q,"expiresAt":"2026-11-13T09:00:00Z"}`,
-		id, uuid.Must(uuid.NewV7()), intentMarker, approval.RowsHash(lines))
+	return fmt.Sprintf(`{"kind": "APPROVE", "rows": 1, "agent": "agent:demo_bot", "runId": %q, "store": {"kind": "POSTGRES", "name": "app"}, `+
+		`"intent": %q, "taskId": null, "request": {"kind": "SQL", "params": [], "statement": "UPDATE leads SET price = price * 2"}, `+
+		`"rowsHash": %q, "expiresAt": "2026-11-13T09:00:00.000000Z", "approvalId": %q, "assignedFields": ["price"]}`,
+		uuid.Must(uuid.NewV7()), intentMarker, approval.RowsHash(lines), id)
 }
 
 // wire records every message that crosses the fake Vault: session bytes
@@ -171,7 +171,7 @@ func newVaultSessionWith(t *testing.T, w *wire, opts vaulttest.Options) *vaultSe
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	id := uuid.Must(uuid.NewV7())
-	lines := []string{`{"op":"UPDATE","table":"public.leads","cascaded":false}`}
+	lines := []string{`{"op": "UPDATE", "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "UPDATE"}, "cascaded": false, "resource": "public.leads"}`}
 	store := links.NewSecrets(time.Now, rand.Reader)
 	held := &heldAgent{
 		secrets: store, id: id, binding: heldBinding(id, lines), lines: lines, cred: person.Credential(),

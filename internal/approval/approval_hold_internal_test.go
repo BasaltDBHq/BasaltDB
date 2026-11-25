@@ -81,6 +81,8 @@ func TestHoldExits(t *testing.T) {
 		{name: "preview run failing", store: holdStore{previewErr: &action.PreviewFailedError{Err: run}}, want: run, refusal: true},
 		{name: "no rows now", store: holdStore{preview: action.HeldPreview{Lines: nil}}, code: guidance.CodeStoreError},
 		{name: "over the cap", store: holdStore{preview: action.HeldPreview{Lines: over}}, code: guidance.CodeStatementRefused, refusal: true},
+		// Unreachable in practice: admission refuses a guard from before the
+		// 64 MiB cap (64 KiB a line) before any hold. Not a regression.
 		{name: "the hold failing on a long line", store: holdStore{preview: action.HeldPreview{Lines: []string{strings.Repeat("x", 64<<10+1)}}, holdErr: olderGuard}, want: olderGuard, holds: 1},
 		{name: "the guard's own cap", store: holdStore{preview: action.HeldPreview{Lines: line}, holdErr: guardTooLarge}, want: guardTooLarge, holds: 1},
 	} {

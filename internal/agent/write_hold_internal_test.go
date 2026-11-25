@@ -70,6 +70,8 @@ func TestHoldExitsRecordWhatTheyRecordedBefore(t *testing.T) {
 		{"preview run failing", fixedHolds{previewErr: &action.PreviewFailedError{Err: run}}, guidance.CodeStoreError, "", true},
 		{"no rows now", fixedHolds{}, guidance.CodeStoreError, guidance.ReasonNoRowsNow, false},
 		{"over the cap", fixedHolds{preview: action.HeldPreview{Lines: []string{strings.Repeat("x", guardmodel.MaxHeldLinesBytes+1)}}}, guidance.CodeStatementRefused, action.ReasonHoldTooLarge, true},
+		// Unreachable in practice: admission refuses a guard from before the
+		// 64 MiB cap (64 KiB a line) before any hold. Not a regression.
 		{"the hold failing on a long line", fixedHolds{preview: action.HeldPreview{Lines: []string{strings.Repeat("x", 64<<10+1)}}, holdErr: olderGuard}, guidance.CodeStoreError, "", false},
 		{"the guard's own cap", fixedHolds{preview: action.HeldPreview{Lines: []string{"x"}}, holdErr: guardTooLarge}, guidance.CodeStatementRefused, action.ReasonHoldTooLarge, false},
 	} {

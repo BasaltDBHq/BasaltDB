@@ -17,6 +17,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The guard gets schema version 9 (non-breaking): a revert scope's table entry that is not one `schema.table` name is refused with its own detail, `NAME`, and a hint that names the entry. Run `basalt init` again and update the guard on the page it opens; until then a badly formed name in `resources` is refused as before the update, `INVALID_ARGUMENT` "the revert scope was refused: tables are schema.table names", with `GUARD_UPGRADE_AVAILABLE`.
 - The revert tools name things in words that fit any store. `preview_revert` and `request_revert` take `resources` in place of `tables` (for Postgres still `schema.table` names); the lines of `preview_revert`, and the items of `revert_plan` and their `plan`, carry `resource` in place of `table`; and the lines and items of `preview_revert`, `revert_plan` and `apply_revert_batch` carry `storeCode` in place of `sqlState` (for Postgres still the SQLSTATE). Messages and next steps that name the filter say `resources`, the next steps of a refused filter point to the resources the agent wrote, and the `select` that `preview_revert` describes is the descriptor as the store normalized it. The signed revert line, the binding the person signs, the person's page and the tool error's `sqlState` are unchanged.
 
+### Fixed
+
+- The next step of `APPROVAL_INVALID` `DIFFERENT_WRITE` now repeats the held write's large integer params exactly. They were rounded through a float, so sending the step as it was refused the write again.
+
 ## [0.1.0-alpha] - 2026-11-24
 
 The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup moves from the terminal to a page: the agent runs `basalt init` and the person finishes on the page it links. The CLI only starts things. Expect bugs and breaking changes between alpha releases, and read "Breaking for alpha installs" before you upgrade.

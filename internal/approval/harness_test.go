@@ -111,10 +111,7 @@ func newService(t *testing.T, goos, configPath string, opts ...option) *Service 
 		opt(&st)
 	}
 	st.links.Now = st.core.Now
-	set := StoreSet{
-		Kind: action.StorePostgres, Capabilities: action.Capabilities{InStoreSignatureCheck: true},
-		Records: st.store, Holds: st.store, Proofs: st.store,
-	}
+	set := StoreSet{Records: st.store, Holds: st.store, Proofs: st.store}
 	ac := New(st.core, set, &st.deps, foundRuns{}, admitted{})
 	failure := func(_ string, _ map[string]any, err error) *toolresult.ToolError {
 		return st.core.Errors.ToolError(err)

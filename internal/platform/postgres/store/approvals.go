@@ -97,8 +97,12 @@ type revealRun struct {
 
 // heldStatement reads the held write from the binding's SQL request: its
 // statement, checked again with the SQL policy for its op, and its
-// parameters, numbers kept exact as the write tool decodes them.
+// parameters, numbers kept exact as the write tool decodes them. A request
+// of any other family is refused before the policy reads its text.
 func heldStatement(req approval.HeldRequest) (revealRun, error) {
+	if req.Kind != approval.RequestSQL {
+		return revealRun{}, fmt.Errorf("the held request is of family %q, not SQL", req.Kind)
+	}
 	stmt, err := Check(req.Statement, action.ToolWrite)
 	if err != nil {
 		return revealRun{}, fmt.Errorf("the held statement no longer parses: %w", err)
@@ -165,10 +169,10 @@ func (s *Store) passkeysRaw(ctx context.Context) ([]passkey.Credential, error) {
 
 // The guard's answers to an approval call, mapped to the approval's own
 // refusals (action.ApprovalRefusalError) after MapError, per call. An
-// answer no mapping names is returned as MapError made it. MapError's approvalDetails
-// are not reused here: they serve the agent's apply, and their
-// NOT_THIS_AGENT also covers "another agent", which a reveal answers as
-// signed or used meanwhile.
+// answer no mapping names is returned as MapError made it. MapError's
+// approvalDetails are not reused here: they serve the agent's apply, and
+// their NOT_THIS_AGENT also covers "another agent", which a reveal answers
+// as signed or used meanwhile.
 
 // approvalNotFoundDetail is the guard's detail for an approval the calling
 // role does not hold, or none.

@@ -2,6 +2,8 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -47,4 +49,18 @@ func TestHeldStatementRefusals(t *testing.T) {
 	})
 	require.ErrorContains(t, err, "a held parameter: ")
 	require.Same(t, err, revealApprovalRefusal(MapError(err)))
+}
+
+// A held request of another family is refused before the SQL policy reads
+// it, even when its text would pass as SQL: the Postgres store re-runs only
+// SQL requests.
+func TestHeldStatementRefusesAnotherFamily(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"DOCUMENT", "", "sql"} {
+		_, err := heldStatement(approval.HeldRequest{Kind: kind, Statement: "DELETE FROM public.leads WHERE id = $1", Params: []json.RawMessage{json.RawMessage(`1`)}})
+		require.EqualError(t, err, fmt.Sprintf("the held request is of family %q, not SQL", kind), kind)
+		var re *action.RefusalError
+		require.False(t, errors.As(err, &re), "refused before the SQL policy: %s", kind)
+		require.Same(t, err, revealApprovalRefusal(MapError(err)), kind)
+	}
 }

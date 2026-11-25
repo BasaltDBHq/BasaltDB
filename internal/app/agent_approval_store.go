@@ -14,13 +14,11 @@ type approvalDeps struct {
 	Store approvalsvc.Store
 }
 
-// approvalStoreSet is the approval's store set: the kind and capabilities
-// of the agent's store and the ports of the approval's store.
+// approvalStoreSet is the approval's store set: the ports of the
+// approval's store. NewService has already refused a store that does not
+// check the person's signature itself.
 func (s *Service) approvalStoreSet() approvalsvc.StoreSet {
 	var set approvalsvc.StoreSet
-	if st := s.deps.Core.Store; st != nil {
-		set.Kind, set.Capabilities = st.Kind(), st.Capabilities()
-	}
 	if a := s.deps.Approval.Store; a != nil {
 		set.Records, set.Holds, set.Proofs = a, a, a
 	}

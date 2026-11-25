@@ -13,16 +13,15 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
-// StoreSet is the approval's store as the approval use case reads it: the
-// store's kind and capabilities and its ports, built by the wiring and
-// copied once when the service is built. The service reads the store only
-// through it.
+// StoreSet is the approval's store as the approval use case reads it: its
+// ports, built by the wiring and copied once when the service is built. The
+// service reads the store only through them. The wiring checks the store's
+// capabilities before it builds the set: the store must check the person's
+// signature itself (InStoreSignatureCheck).
 type StoreSet struct {
-	Kind         action.StoreKind
-	Capabilities action.Capabilities
-	Records      Records
-	Holds        Holds
-	Proofs       Proofs
+	Records Records
+	Holds   Holds
+	Proofs  Proofs
 }
 
 // Records reads the ledger of the agent's held writes. It never changes

@@ -201,7 +201,33 @@ func TestListOpenApprovalsReadsAHeldWrite(t *testing.T) {
 	page, err := ledger.ListOpenApprovals(ctx, a.Conn, action.ApprovalListParams{Params: pagination.Params{Limit: 1}})
 	require.NoError(t, err)
 	require.Len(t, page.Items, 1)
-	require.Equal(t, action.HeldRequest{Kind: "SQL", Text: sql, Params: page.Items[0].Request.Params}, page.Items[0].Request)
-	require.JSONEq(t, `[1]`, string(page.Items[0].Request.Params))
+	got := page.Items[0].Request
+	require.Equal(t, "SQL", got.Kind)
+	require.Equal(t, sql, got.Text)
+	require.JSONEq(t, `[1]`, string(got.Params))
 	require.Nil(t, page.Items[0].LargeValues)
+}
+
+// TestFindApprovalReadsTheHeldRequest: the read of one held write returns
+// its request with the family the binding names (request.kind), its text
+// and its params.
+func TestFindApprovalReadsTheHeldRequest(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", leads, leads)
+	in := newRun(t, a, "remove a lead")
+	ctx := context.Background()
+	sql := "DELETE FROM public.leads WHERE id = $1"
+	store := postgres.NewStore(a.Conn, sqlguard.DefaultLimits(), time.Now)
+	req := action.Request{Text: sql, Params: []any{1}}
+	p, err := store.Preview(ctx, action.Intent(in), req)
+	require.NoError(t, err)
+	held, err := store.Hold(ctx, action.Intent(in), action.HoldRequest{Op: action.OpDelete, Request: req, Assigned: p.Assigned, Lines: p.Lines})
+	require.NoError(t, err)
+	found, err := ledger.FindApproval(ctx, a.Conn, held.ApprovalID)
+	require.NoError(t, err)
+	require.Equal(t, held.ApprovalID, found.ID)
+	require.Equal(t, "SQL", found.Request.Kind)
+	require.Equal(t, sql, found.Request.Text)
+	require.JSONEq(t, `[1]`, string(found.Request.Params))
 }

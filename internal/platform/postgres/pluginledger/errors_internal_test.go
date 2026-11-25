@@ -32,14 +32,14 @@ func TestStoreErrorMapsTheDatabaseAnswers(t *testing.T) {
 	}
 	for _, c := range cases {
 		pg := &pgconn.PgError{Code: c.code, Message: "the message", Detail: guard.DetailTooManyPending}
-		err := storeError(fmt.Errorf("record: %w", pg))
+		err := MapError(fmt.Errorf("record: %w", pg))
 		se := pluginmodel.StoreErrorOf(err)
 		require.NotNil(t, se, c.code)
 		require.Equal(t, c.want, se.Reason, c.code)
 		require.Equal(t, c.code, se.Code)
 		require.Equal(t, "the message", se.Message)
 		require.ErrorIs(t, err, pg)
-		require.Same(t, se, pluginmodel.StoreErrorOf(storeError(err)), "an answer is mapped once")
+		require.Same(t, se, pluginmodel.StoreErrorOf(MapError(err)), "an answer is mapped once")
 	}
 }
 
@@ -47,14 +47,14 @@ func TestStoreErrorMapsTheDatabaseAnswers(t *testing.T) {
 // store answer, so the host can tell it from one.
 func TestStoreErrorLeavesErrorsWithoutAnAnswer(t *testing.T) {
 	t.Parallel()
-	require.NoError(t, storeError(nil))
+	require.NoError(t, MapError(nil))
 	for _, err := range []error{
 		errors.New("cannot decode"),
 		context.DeadlineExceeded,
 		&pgconn.ConnectError{},
 	} {
-		require.Equal(t, err, storeError(err))
-		require.Nil(t, pluginmodel.StoreErrorOf(storeError(err)))
+		require.Equal(t, err, MapError(err))
+		require.Nil(t, pluginmodel.StoreErrorOf(MapError(err)))
 	}
 }
 

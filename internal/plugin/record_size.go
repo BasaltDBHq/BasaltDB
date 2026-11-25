@@ -12,8 +12,8 @@ import (
 // Bounds of what an agent's ledger records of an entry (CONTRACT.md,
 // Plugins, In the ledger): the guard refuses a version over 64 bytes and a
 // detail over 4096 bytes written by the text rules (CONTRACT.md, Stores,
-// Text rules), the layout every store's guard measures. A manifest whose
-// record could break either is refused here, so no plugin the person
+// Text rules): Basalt's bounds, which each store's guard keeps. A manifest
+// whose record could break either is refused here, so no plugin the person
 // consents to can fail to be recorded, and so never be served.
 const (
 	maxVersionBytes = 64

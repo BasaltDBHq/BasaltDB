@@ -46,3 +46,22 @@ const (
 // replayed proof, a wrong key, no or a wrong token, a select outside the
 // ceiling or naming work that is not the caller's.
 const RevertWidenRefused = "WIDEN_REFUSED"
+
+// The typed details of apply_revert's REVERT_INVALID (version 11): the
+// detail is the code and the hint the sentence. Any other detail of
+// REVERT_INVALID there is a signature the guard did not accept.
+const (
+	// RevertAlreadyApplied is a revert already applied.
+	RevertAlreadyApplied = "ALREADY_APPLIED"
+	// RevertAlreadySigned is a batched revert already signed.
+	RevertAlreadySigned = "ALREADY_SIGNED"
+	// RevertPasskeyRevoked is a signature by a revoked passkey.
+	RevertPasskeyRevoked = "PASSKEY_REVOKED"
+	// RevertRowsChanged is a revert whose rows changed since the preview.
+	RevertRowsChanged = "ROWS_CHANGED"
+)
+
+// NothingReadsOnly is the detail of NOTHING_TO_REVERT for a scope that
+// changed no row a revert could restore (version 11); the hint names the
+// scope. Every other NOTHING_TO_REVERT keeps a sentence as its detail.
+const NothingReadsOnly = "READS_ONLY"

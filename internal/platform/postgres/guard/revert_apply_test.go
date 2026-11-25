@@ -48,6 +48,17 @@ func requireRevertInvalid(t *testing.T, err error, detail string) {
 	require.Contains(t, pg.Detail, detail)
 }
 
+// requireRevertRefused is REVERT_INVALID with the typed detail code and a
+// hint that contains hint (version 11).
+func requireRevertRefused(t *testing.T, err error, code, hint string) {
+	t.Helper()
+	requireCode(t, err, guardmodel.CodeRevertInvalid)
+	var pg *pgconn.PgError
+	require.True(t, errors.As(err, &pg))
+	require.Equal(t, code, pg.Detail)
+	require.Contains(t, pg.Hint, hint)
+}
+
 func leadStatus(t *testing.T, d *guardtest.DB, id int) string {
 	t.Helper()
 	return scalarOf[string](t, d.Admin, `SELECT status FROM public.leads WHERE id = $1`, id)
@@ -196,7 +207,7 @@ func TestApplyRefusedWhenRowChangedAfterPreview(t *testing.T) {
 	d.Exec(t, `UPDATE public.leads SET status = 'person' WHERE id = 111`)
 
 	_, err := guard.ApplyRevert(ctx, a.Conn, prep.RevertID, as)
-	requireRevertInvalid(t, err, "rows changed since the preview")
+	requireRevertRefused(t, err, guardmodel.RevertRowsChanged, "rows changed since the preview")
 	require.Equal(t, "won", leadStatus(t, d, 110), "nothing was written")
 	require.Equal(t, "PENDING", scalarOf[string](t, a.Conn, `SELECT status FROM basalt_meta.agent_reverts`))
 }
@@ -238,7 +249,7 @@ func TestApplyRefusals(t *testing.T) {
 	_, err := guard.ApplyRevert(ctx, a.Conn, prep.RevertID, as)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, a.Conn, prep.RevertID, as)
-	requireRevertInvalid(t, err, "already applied")
+	requireRevertRefused(t, err, guardmodel.RevertAlreadyApplied, "already applied")
 
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, newRun(t, a, "Another"), `UPDATE public.leads SET status = 'won' WHERE id = 121`))
 	late, lateAs := prepareSigned(t, a, p, revert.ScopeChange,

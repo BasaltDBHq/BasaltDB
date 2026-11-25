@@ -18,6 +18,9 @@ func guardErr(sqlState, message, detail, hint string) error {
 
 func revertInvalid(detail string) error { return guardErr("BS005", "REVERT_INVALID", detail, "") }
 
+// revertRefused is REVERT_INVALID with a typed detail and its sentence.
+func revertRefused(code, hint string) error { return guardErr("BS005", "REVERT_INVALID", code, hint) }
+
 func revertExpired() error {
 	return guardErr("BS005", "REVERT_EXPIRED", "revert 0193a3f0-0000-7000-8000-000000000001 expired at 2026-11-25 10:00:00+00; prepare it again", "")
 }
@@ -78,7 +81,10 @@ func TestRevertRefusalsPerCall(t *testing.T) {
 		{"prepare: other shape", prepareRefusal, scopeRefusedErr("SHAPE", "scopeId is a uuid"), action.RevertInvalid, "scopeId is a uuid", ""},
 		{"prepare: store reserved", prepareRefusal, scopeRefusedErr("STORE_RESERVED", "x"), action.RevertInvalid, "x", ""},
 		{"prepare: descriptor", prepareRefusal, scopeRefusedErr("DESCRIPTOR", "x"), action.RevertInvalid, "x", ""},
-		{"prepare: reads only", prepareRefusal, guardErr("BS009", "NOTHING_TO_REVERT", readsOnly, ""), action.RevertReadsOnly, "NOTHING_TO_REVERT: " + readsOnly, ""},
+		{"prepare: reads only", prepareRefusal, guardErr("BS009", "NOTHING_TO_REVERT", "READS_ONLY", readsOnly), action.RevertReadsOnly, "NOTHING_TO_REVERT: " + readsOnly, ""},
+		// Told apart by the detail, never the words: the sentence as the
+		// detail, as a guard before version 11 gave it, is every row skipped.
+		{"prepare: reads only words, untyped", prepareRefusal, guardErr("BS009", "NOTHING_TO_REVERT", readsOnly, ""), action.RevertNothing, "NOTHING_TO_REVERT: " + readsOnly, ""},
 		{"prepare: every row skipped", prepareRefusal, guardErr("BS009", "NOTHING_TO_REVERT", allSkipped, ""), action.RevertNothing, "NOTHING_TO_REVERT: " + allSkipped, ""},
 		{"prepare: time limit", prepareRefusal, statementTimeout(), action.RevertTimedOut, "", "57014"},
 		{"prepare: empty proposal", prepareRefusal, action.ErrEmptyProposal, "", "", ""},
@@ -86,10 +92,15 @@ func TestRevertRefusalsPerCall(t *testing.T) {
 
 		{"apply: expired", applyRevertRefusal, revertExpired(), action.RevertExpiredReason, "", ""},
 		{"apply: no row to restore", applyRevertRefusal, guardErr("BS009", "NOTHING_TO_REVERT", "RUN x has no row to restore in this scope", ""), action.RevertNothing, "", ""},
-		{"apply: rows changed", applyRevertRefusal, revertInvalid(rowsChanged), action.RevertRowsChanged, rowsChanged, ""},
-		{"apply: passkey revoked", applyRevertRefusal, revertInvalid("passkey revoked"), action.RevertPasskeyRevoked, "passkey revoked", ""},
-		{"apply: already applied", applyRevertRefusal, revertInvalid(applied), action.RevertAlreadySigned, applied, ""},
-		{"apply: already signed", applyRevertRefusal, revertInvalid(signedBatch), action.RevertAlreadySigned, signedBatch, ""},
+		{"apply: rows changed", applyRevertRefusal, revertRefused("ROWS_CHANGED", rowsChanged), action.RevertRowsChanged, rowsChanged, ""},
+		{"apply: passkey revoked", applyRevertRefusal, revertRefused("PASSKEY_REVOKED", "passkey revoked"), action.RevertPasskeyRevoked, "passkey revoked", ""},
+		{"apply: already applied", applyRevertRefusal, revertRefused("ALREADY_APPLIED", applied), action.RevertAlreadySigned, applied, ""},
+		{"apply: already signed", applyRevertRefusal, revertRefused("ALREADY_SIGNED", signedBatch), action.RevertAlreadySigned, signedBatch, ""},
+		// Told apart by the detail, never the words: a sentence as the
+		// detail, as a guard before version 11 gave it, is a refused signature.
+		{"apply: rows changed words, untyped", applyRevertRefusal, revertInvalid(rowsChanged), action.RevertSignature, rowsChanged, ""},
+		{"apply: passkey revoked words, untyped", applyRevertRefusal, revertInvalid("passkey revoked"), action.RevertSignature, "passkey revoked", ""},
+		{"apply: already words, untyped", applyRevertRefusal, revertInvalid(applied), action.RevertSignature, applied, ""},
 		{"apply: no such revert", applyRevertRefusal, revertInvalid(noSuchRevert), action.RevertSignature, noSuchRevert, ""},
 		{"apply: rejected", applyRevertRefusal, revertInvalid(rejected), action.RevertSignature, rejected, ""},
 		{"apply: bad signature", applyRevertRefusal, revertInvalid("signature does not verify"), action.RevertSignature, "signature does not verify", ""},

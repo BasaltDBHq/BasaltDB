@@ -248,7 +248,7 @@ func TestBatchChecks(t *testing.T) {
 	_, err = guard.ApplyRevert(ctx, e.a.Conn, prep.RevertID, as)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, e.a.Conn, prep.RevertID, as)
-	requireRevertInvalid(t, err, "already signed")
+	requireRevertRefused(t, err, guardmodel.RevertAlreadySigned, "already signed")
 
 	other := e.d.NewAgent(t, "other", []string{"public.items"}, []string{"public.items"})
 	tooMany := make([]int, revert.MaxBatch+1)

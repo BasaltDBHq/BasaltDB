@@ -44,7 +44,7 @@ func TestRevokedPasskeyCannotApproveOrRevert(t *testing.T) {
 
 	prep, as := prepareSigned(t, a, p, revert.ScopeRun, in.RunID)
 	_, err = guard.ApplyRevert(ctx, a.Conn, prep.RevertID, as)
-	requireRevertInvalid(t, err, "passkey revoked")
+	requireRevertRefused(t, err, guardmodel.RevertPasskeyRevoked, "passkey revoked")
 	require.Equal(t, "won", leadStatus(t, d, 90), "nothing was reverted")
 
 	// The other passkey still signs.

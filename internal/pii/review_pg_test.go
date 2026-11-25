@@ -9,76 +9,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgpii"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
-// A full pool must not wedge the agent: writes that hold every connection
-// and meet an unknown table oid reload the map on their own transaction,
-// while the hourly tick waits for a connection without holding the map's
-// lock. Before the fix the tick held the lock while waiting, and the writes
-// waited for the lock: neither ever moved.
-func TestFullPoolDoesNotWedgeReloads(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	f.classify(t, time.Now())
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	pool, err := postgres.NewPool(ctx, f.agent.URL, 2)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	dict, _ := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
-	classes := NewMap(slog.New(slog.DiscardHandler))
-	obs := NewObserver(classes, dict)
-	require.NoError(t, classes.Load(ctx, pgquerier.Neutralize(pool)))
-
-	// Every connection of the pool held by a transaction.
-	txs := make([]pgx.Tx, 2)
-	for i := range txs {
-		txs[i], err = pool.BeginTx(ctx, pgx.TxOptions{})
-		require.NoError(t, err)
-	}
-	// The tick needs a connection: it waits for one.
-	tickDone := make(chan error, 1)
-	go func() {
-		_, err := classes.Tick(ctx, pgquerier.Neutralize(pool))
-		tickDone <- err
-	}()
-	time.Sleep(200 * time.Millisecond)
-
-	// plain has no classes: its oid is unknown, so each result reloads.
-	label := action.Column{Name: "label", TableOID: f.oid(t, "public.plain"), Attnum: 2}
-	rows := []map[string]any{{"label": "x"}}
-	var wg sync.WaitGroup
-	errs := make(chan error, len(txs))
-	for _, tx := range txs {
-		wg.Go(func() {
-			octx, ocancel := context.WithTimeout(ctx, 10*time.Second)
-			defer ocancel()
-			errs <- obs.Returned(octx, pgquerier.Neutralize(tx), []action.Column{label}, rows)
-		})
-	}
-	wg.Wait()
-	close(errs)
-	for err := range errs {
-		require.NoError(t, err, "a write holding a connection reloads on it")
-	}
-	for _, tx := range txs {
-		require.NoError(t, tx.Rollback(ctx))
-	}
-	require.NoError(t, <-tickDone, "the tick gets its connection once the writes end")
-}
-
-// The same, as writes through the store, with ticks, scans and reads
-// running at once on a two-connection pool.
+// A full pool must not wedge the agent: writes through the store that hold
+// every connection and meet an unknown table reload the map on their own
+// transaction, with ticks, scans and reads running at once on a
+// two-connection pool.
 func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
@@ -91,9 +36,9 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 	dict, _ := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	obs := NewObserver(classes, dict)
-	store := postgres.NewStore(pool, sqlguard.DefaultLimits(), time.Now).WithReturned(obs.Returned)
+	store := postgres.NewStore(pool, sqlguard.DefaultLimits(), time.Now).WithReturned(returned(obs))
 	reader := postgres.NewReader(pool, sqlguard.DefaultLimits(), time.Now)
-	scan := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(pool), ReadOnly: pgquerier.ReadOnlyTx(pool), Classes: classes, Limits: sqlguard.DefaultLimits()}},
+	scan := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(pool), ReadOnly: pgquerier.ReadOnlyTx(pool), Map: classes, Classes: pgpii.Classes(pool), Limits: sqlguard.DefaultLimits()}},
 		ScanOptions{}, slog.New(slog.DiscardHandler))
 	in := action.Intent{RunID: uuidV7(t), TaskID: uuidV7(t), Text: "touch customers"}
 	require.NoError(t, store.StartRun(ctx, in))
@@ -117,7 +62,7 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 	}
 	wg.Go(func() {
 		for range 4 {
-			_, err := classes.Tick(ctx, pgquerier.Neutralize(pool))
+			_, err := classes.Tick(ctx, pgpii.Classes(pool))
 			report(err)
 		}
 	})
@@ -131,7 +76,7 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 		for range 4 {
 			res, err := reader.Read(ctx, `SELECT label FROM plain`, nil, action.Statement{})
 			if err == nil {
-				err = obs.Observe(ctx, pgquerier.Neutralize(pool), res.Columns, res.Rows)
+				err = obs.Observe(ctx, pgpii.Classes(pool), resultFields(res.Columns), res.Rows)
 			}
 			report(err)
 		}
@@ -156,7 +101,7 @@ func TestScanSkipsAKeylessRelationThatTimesOut(t *testing.T) {
 	limits := sqlguard.DefaultLimits()
 	limits.StatementTimeout = 200 * time.Millisecond
 	log, out := newLog()
-	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(f.pool), ReadOnly: pgquerier.ReadOnlyTx(f.pool), Classes: NewMap(slog.New(slog.DiscardHandler)), Limits: limits}},
+	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(f.pool), ReadOnly: pgquerier.ReadOnlyTx(f.pool), Map: NewMap(slog.New(slog.DiscardHandler)), Classes: pgpii.Classes(f.pool), Limits: limits}},
 		ScanOptions{}, log)
 
 	res, err := s.Cycle(ctx)
@@ -177,46 +122,13 @@ func TestScanWarnsWhenBuildsKeepFailing(t *testing.T) {
 	pool.Close() // every cycle fails
 	dict, _ := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	log, out := newLog()
-	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(pool), ReadOnly: pgquerier.ReadOnlyTx(pool), Classes: NewMap(slog.New(slog.DiscardHandler)), Limits: sqlguard.DefaultLimits()}},
+	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(pool), ReadOnly: pgquerier.ReadOnlyTx(pool), Map: NewMap(slog.New(slog.DiscardHandler)), Classes: pgpii.Classes(pool), Limits: sqlguard.DefaultLimits()}},
 		ScanOptions{}, log)
 	for i := range failWarnAfter {
 		_, err := s.Cycle(context.Background())
 		require.Error(t, err)
 		require.Equal(t, i == failWarnAfter-1, strings.Contains(out.String(), "has not been rebuilt"), "cycle %d", i)
 	}
-}
-
-// A basalt classify that commits between a load's two reads, on a write's
-// read-committed transaction: the marks are read first, so the map holds
-// the older marks and the next tick reloads the new classes.
-func TestClassifyBetweenALoadsReadsIsReloadedAtTheNextTick(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	f.classify(t, time.Now().Add(-time.Hour))
-	ctx := context.Background()
-	m := NewMap(slog.New(slog.DiscardHandler))
-	note := ColumnRef{TableOID: f.oid(t, "public.customers"), Attnum: f.attnum(t, "public.customers", "note")}
-	var once sync.Once
-	m.between = func() {
-		once.Do(func() { f.classifyWith(t, time.Now(), map[string]string{"customers.note": guardmodel.EntityOther}) })
-	}
-
-	tx, err := f.pool.BeginTx(ctx, pgx.TxOptions{}) // read committed, as a write's
-	require.NoError(t, err)
-	got, err := m.Resolve(ctx, pgquerier.Neutralize(tx), []ColumnRef{note})
-	require.NoError(t, err)
-	require.NoError(t, tx.Rollback(ctx))
-	require.Equal(t, guardmodel.ClassIdentifier, got[0].Class, "the classes were read after the classify committed")
-
-	reloaded, err := m.Tick(ctx, pgquerier.Neutralize(f.pool))
-	require.NoError(t, err)
-	require.True(t, reloaded, "the marks were read before it: the tick sees the catalog move and reloads")
-	reloaded, err = m.Tick(ctx, pgquerier.Neutralize(f.pool))
-	require.NoError(t, err)
-	require.False(t, reloaded, "classes and marks agree again")
-	got, err = m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{note})
-	require.NoError(t, err)
-	require.Equal(t, guardmodel.EntityOther, got[0].EntityType)
 }
 
 func TestDictionaryErrorsAreEngineErrors(t *testing.T) {

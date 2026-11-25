@@ -87,11 +87,11 @@ func (f *fakeCatalog) Host() string                                { return "db.
 
 // fakeClasses is a ClassResolver over a fixed class map.
 type fakeClasses struct {
-	classes map[pii.ColumnRef]pii.Class
+	classes map[agentstore.FieldRef]pii.Class
 	print   string
 }
 
-func (f fakeClasses) Resolve(_ context.Context, refs []pii.ColumnRef) ([]pii.Class, error) {
+func (f fakeClasses) Resolve(_ context.Context, refs []agentstore.FieldRef) ([]pii.Class, error) {
 	out := make([]pii.Class, len(refs))
 	for i, r := range refs {
 		c, ok := f.classes[r]
@@ -103,8 +103,8 @@ func (f fakeClasses) Resolve(_ context.Context, refs []pii.ColumnRef) ([]pii.Cla
 	return out, nil
 }
 
-func (f fakeClasses) Secrets(context.Context) ([]pii.ColumnRef, error) {
-	var out []pii.ColumnRef
+func (f fakeClasses) Secrets(context.Context) ([]agentstore.FieldRef, error) {
+	var out []agentstore.FieldRef
 	for r, c := range f.classes {
 		if c.Class == guardmodel.ClassSecret {
 			out = append(out, r)
@@ -169,7 +169,7 @@ func describeService(t *testing.T, cat agentcatalog.Postgres, classes fakeClasse
 	require.NoError(t, err)
 	d.Core.Commands = cmds
 	d.Status.OperatedBy = operatedBy
-	d.Agent.Limits, d.Agent.Catalog, d.Agent.Classes = testLimits(), agentcatalog.New(cat), agentClasses{pg: classes}
+	d.Agent.Limits, d.Agent.Catalog, d.Agent.Classes = testLimits(), agentcatalog.New(cat), classes
 	return NewService(d)
 }
 
@@ -188,7 +188,7 @@ func (noChecker) Check(string, action.Tool) (action.Statement, error) {
 func describeUseCase(cmds guidance.Commands, cat agentcatalog.Postgres) *agentsvc.Service {
 	set := agentsvc.StoreSet{
 		Kind: action.StorePostgres, Family: agentstore.FamilySQL, Language: sqllang.New(noChecker{}),
-		Data: agentData{limits: testLimits()}, Catalog: agentcatalog.New(cat), Classes: agentClasses{pg: fakeClasses{}},
+		Data: agentData{limits: testLimits()}, Catalog: agentcatalog.New(cat), Classes: fakeClasses{},
 	}
 	return agentsvc.New(agentsvc.Core{Commands: cmds}, set, nil, func() *guidance.UpdateInfo { return nil })
 }
@@ -200,10 +200,10 @@ func ordersCatalog() (*fakeCatalog, fakeClasses) {
 		lines:   []string{"shop.orders:TABLE"},
 		guarded: map[uint32]bool{ordersOID: true},
 	}
-	classes := fakeClasses{classes: map[pii.ColumnRef]pii.Class{
-		{TableOID: ordersOID, Attnum: 1}: {Class: guardmodel.ClassPublic},
-		{TableOID: ordersOID, Attnum: 2}: {Class: guardmodel.ClassSecret},
-		{TableOID: ordersOID, Attnum: 5}: {Class: guardmodel.ClassPublic},
+	classes := fakeClasses{classes: map[agentstore.FieldRef]pii.Class{
+		agentcatalog.FieldRef(ordersOID, 1): {Class: guardmodel.ClassPublic},
+		agentcatalog.FieldRef(ordersOID, 2): {Class: guardmodel.ClassSecret},
+		agentcatalog.FieldRef(ordersOID, 5): {Class: guardmodel.ClassPublic},
 	}, print: "abc"}
 	return cat, classes
 }
@@ -866,8 +866,8 @@ func TestResourceFingerprintsArePinned(t *testing.T) {
 
 	open := openDetail()
 	cat = &fakeCatalog{visible: []pgcatalog.Relation{open.Relation}, details: map[uint32]pgcatalog.Detail{200: open}}
-	classes = fakeClasses{classes: map[pii.ColumnRef]pii.Class{
-		{TableOID: 200, Attnum: 2}: {Class: guardmodel.ClassIdentifier, EntityType: "PERSON_NAME"},
+	classes = fakeClasses{classes: map[agentstore.FieldRef]pii.Class{
+		agentcatalog.FieldRef(200, 2): {Class: guardmodel.ClassIdentifier, EntityType: "PERSON_NAME"},
 	}, print: "p1"}
 	require.Equal(t, "dc0a15972befb4445524c297feaed53dd8f27378f28db50b500d2e85565b20ed", fp(cat, classes, "shop.open"), "nothing hidden")
 }

@@ -4,50 +4,48 @@ import (
 	"context"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
-	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
+	"github.com/basaltdbhq/basaltdb/internal/lib/sqlport"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/agentcatalog"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgpii"
 )
 
-// pgClasses are the agent's PII classes by column (pii.StoreClasses).
-type pgClasses interface {
-	Resolve(ctx context.Context, refs []pii.ColumnRef) ([]pii.Class, error)
-	Secrets(ctx context.Context) ([]pii.ColumnRef, error)
-	CatalogFingerprint(ctx context.Context) (string, error)
-}
-
-// agentClasses are the PII classes as the agent reads them, by field ref.
-// The refs are the Postgres catalog adapter's (agentcatalog); this only
-// converts its columns to and from pii's.
-type agentClasses struct{ pg pgClasses }
-
-// NewAgentClasses are the PII classes c as the agent reads them.
-func NewAgentClasses(c pgClasses) agentsvc.ClassResolver { return agentClasses{pg: c} }
-
-func (c agentClasses) Resolve(ctx context.Context, refs []agentstore.FieldRef) ([]pii.Class, error) {
-	cols := make([]pii.ColumnRef, len(refs))
-	for i, ref := range refs {
-		col, err := agentcatalog.ParseFieldRef(ref)
-		if err != nil {
-			return nil, err
+// resultFields names the fields of a Postgres result for the PII observer:
+// each column's field ref, and none for a computed column (oid 0). The
+// agent's action.Column still carries the oid and attribute number.
+func resultFields(cols []action.Column) []piistore.ResultField {
+	out := make([]piistore.ResultField, len(cols))
+	for i, c := range cols {
+		out[i].Key = c.Name
+		if c.TableOID != 0 {
+			out[i].Ref = agentcatalog.FieldRef(c.TableOID, c.Attnum)
 		}
-		cols[i] = pii.ColumnRef{TableOID: col.OID, Attnum: col.Attnum}
 	}
-	return c.pg.Resolve(ctx, cols)
+	return out
 }
 
-func (c agentClasses) Secrets(ctx context.Context) ([]agentstore.FieldRef, error) {
-	cols, err := c.pg.Secrets(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]agentstore.FieldRef, len(cols))
-	for i, col := range cols {
-		out[i] = agentcatalog.FieldRef(col.TableOID, col.Attnum)
-	}
-	return out, nil
+// agentPII is the observer as the agent's PIIObserver: query rows, read
+// through the agent's pool.
+type agentPII struct{ o pii.BoundObserver }
+
+// NewAgentPII is obs reading the map through classes, for the agent's
+// query rows.
+func NewAgentPII(obs *pii.Observer, classes pii.Classes) agentsvc.PIIObserver {
+	return agentPII{o: obs.On(classes)}
 }
 
-func (c agentClasses) CatalogFingerprint(ctx context.Context) (string, error) {
-	return c.pg.CatalogFingerprint(ctx)
+func (a agentPII) Observe(ctx context.Context, cols []action.Column, rows []map[string]any) error {
+	return a.o.Observe(ctx, resultFields(cols), rows)
+}
+
+// returnedPII is obs as the Postgres store's returned-rows hook: a write's
+// RETURNING values, added inside its transaction before COMMIT, reading the
+// map on that transaction's connection. An error rolls the write back.
+func returnedPII(obs *pii.Observer) func(ctx context.Context, tx sqlport.Port, cols []action.Column, rows []map[string]any) error {
+	return func(ctx context.Context, tx sqlport.Port, cols []action.Column, rows []map[string]any) error {
+		return obs.Observe(ctx, pgpii.ClassesInTx(pgquerier.Unwrap(tx)), resultFields(cols), rows)
+	}
 }

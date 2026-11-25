@@ -14,9 +14,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pglargevalue"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/wiretime"
 )
 
 // ownSelect is the SQL expression of the calling role's own descriptor for
@@ -25,6 +26,10 @@ import (
 // the one Postgres authenticated, never an argument.
 const ownSelect = `jsonb_build_object('scope', $1::text, 'scopeId', $2::text, ` +
 	`'agents', jsonb_build_array(basalt_meta.agent_name()), 'runs', $3::jsonb, 'resources', $4::jsonb)`
+
+// RevertLineValues are the fields of a revert line that hold row values:
+// the ones an agent's read shows in the wire format (wiretime.Fields).
+var RevertLineValues = []string{"key", "now", "set"}
 
 // scopeArgs are the ownSelect arguments of s. A nil list is JSON null (all).
 func scopeArgs(s action.Scope) ([]any, error) {
@@ -65,9 +70,9 @@ func PreviewRevertPage(ctx context.Context, q Querier, s action.Scope, after str
 		return action.PreviewPage{}, err
 	}
 	// Plain SQL: a set-returning function over a built descriptor, under a
-	// recursive CTE (largevalue.ElideLines).
-	sql := largevalue.With + `pv_all AS MATERIALIZED (
-			SELECT p.n, p.t, ` + largevalue.SHA256Of("p.t") + ` AS hash, p.t::jsonb AS j
+	// recursive CTE (pglargevalue.ElideLines).
+	sql := pglargevalue.With + `pv_all AS MATERIALIZED (
+			SELECT p.n, p.t, ` + pglargevalue.SHA256Of("p.t") + ` AS hash, p.t::jsonb AS j
 			FROM basalt_meta.preview_revert(` + ownSelect + `) WITH ORDINALITY AS p(t, n)
 		), pv_tot AS MATERIALIZED (
 			SELECT count(n) AS lines, count(n) FILTER (WHERE j->>'action' = 'RESTORE') AS restore,
@@ -77,7 +82,7 @@ func PreviewRevertPage(ctx context.Context, q Querier, s action.Scope, after str
 			SELECT min(n) AS n FROM pv_all WHERE $5 <> '' AND hash = $5
 		), pv_page AS MATERIALIZED (
 			SELECT n, hash, j FROM pv_all WHERE n > coalesce((SELECT n FROM pv_cur), 0) ORDER BY n LIMIT $6
-		), ` + largevalue.ElideLines(`SELECT n AS item, j AS line FROM pv_page`) + `
+		), ` + pglargevalue.ElideLines(`SELECT n AS item, j AS line FROM pv_page`) + `
 		SELECT t.lines, t.restore, t.reverted, $5 = '' OR (SELECT n FROM pv_cur) IS NOT NULL,
 			(SELECT count(a.n) FROM pv_all a WHERE a.n > coalesce((SELECT n FROM pv_cur), 0)) > $6, p.hash, l.line::text
 		FROM pv_tot t
@@ -97,7 +102,8 @@ func PreviewRevertPage(ctx context.Context, q Querier, s action.Scope, after str
 			return action.PreviewPage{}, err
 		}
 		if text != nil {
-			out.Page = append(out.Page, action.PreviewLine{Text: *text, Hash: *hash})
+			// The hash is the signed text's; only the values shown change.
+			out.Page = append(out.Page, action.PreviewLine{Text: wiretime.Fields(*text, RevertLineValues...), Hash: *hash})
 		}
 	}
 	if err := rows.Err(); err != nil {

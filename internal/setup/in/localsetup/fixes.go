@@ -14,7 +14,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
@@ -246,7 +245,7 @@ func (s *Service) checkPasskeyAdd(ctx context.Context, tx pgx.Tx, j agentJob, da
 // passkeyRoom refuses a database that holds as many active passkeys as
 // the list shows.
 func (s *Service) passkeyRoom(ctx context.Context, tx pgx.Tx) error {
-	keys, err := s.be.ActivePasskeys(ctx, pgquerier.Neutralize(tx))
+	keys, err := s.be.ActivePasskeys(ctx, s.be.Port(tx))
 	if err != nil {
 		return setupFailed("read the passkeys", err)
 	}
@@ -264,7 +263,7 @@ func (s *Service) runPasskeyAdd(ctx context.Context, tx pgx.Tx, j agentJob, data
 	if err := s.passkeyRoom(ctx, tx); err != nil {
 		return err
 	}
-	if err := s.be.RegisterPasskey(ctx, pgquerier.Neutralize(tx), cred, j.req.Passkey.Label); err != nil {
+	if err := s.be.RegisterPasskey(ctx, s.be.Port(tx), cred, j.req.Passkey.Label); err != nil {
 		return setupFailed("register the passkey", err)
 	}
 	code, _ := cred.CheckCode()
@@ -287,7 +286,7 @@ func (s *Service) removedPasskey(ctx context.Context, tx pgx.Tx, j agentJob) (gu
 	if err != nil || len(id) == 0 || len(id) > maxCredentialIDBytes {
 		return guardmodel.RegisteredPasskey{}, 0, notActive()
 	}
-	keys, err := s.be.ActivePasskeys(ctx, pgquerier.Neutralize(tx))
+	keys, err := s.be.ActivePasskeys(ctx, s.be.Port(tx))
 	if err != nil {
 		return guardmodel.RegisteredPasskey{}, 0, setupFailed("read the passkeys", err)
 	}
@@ -326,7 +325,7 @@ func (s *Service) runPasskeyRemove(ctx context.Context, tx pgx.Tx, j agentJob, a
 	if err != nil {
 		return err
 	}
-	if _, err := s.be.RevokePasskey(ctx, pgquerier.Neutralize(tx), k.ID, true); err != nil {
+	if _, err := s.be.RevokePasskey(ctx, s.be.Port(tx), k.ID, true); err != nil {
 		var pg *pgconn.PgError
 		if errors.As(err, &pg) && pg.Code == sqlstateLedgerInputInvalid {
 			return notActive()

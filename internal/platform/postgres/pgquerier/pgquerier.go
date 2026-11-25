@@ -1,7 +1,8 @@
 // Package pgquerier is the part of a pgx connection, pool or transaction
 // that code needs to run queries, and the bridge from a pgx handle to the
-// driver-free port of internal/platform/postgres/sqlport. It imports the driver; a service
-// names sqlport, never this package.
+// driver-free port of sqlport. It imports the driver and belongs to the
+// Postgres adapters and the wiring: a service declares its own query port,
+// and an inbound adapter that holds a pgx handle has its backend wrap it.
 package pgquerier
 
 import (
@@ -14,7 +15,9 @@ import (
 )
 
 // Querier runs a statement or a query on a connection, pool or transaction.
-type Querier interface {
+// It is an unnamed interface, so a package that may not import this one
+// (an inbound adapter) declares the same type for itself.
+type Querier = interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row

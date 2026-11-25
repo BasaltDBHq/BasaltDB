@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -13,6 +14,15 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
+
+// Querier runs a statement or a query on a pgx connection or transaction:
+// the same type as the Postgres adapters' querier (an unnamed interface),
+// declared here because an inbound adapter does not import an outbound one.
+type Querier = interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
 
 // Backend is what the setup reads and writes outside this package: the
 // person's Postgres (the guard's install, labels, passkeys, pins, and the
@@ -26,6 +36,9 @@ import (
 // makes the driver read a file (passfile, sslrootcert).
 type Backend interface {
 	setup.SetuprunBackend
+	// Port is q, a connection or transaction this package opened, as the
+	// driver-free query port the setup's calls take: every call runs on q.
+	Port(q Querier) setup.Querier
 	// Connections and their trust.
 	Connect(ctx context.Context, dsn string) (*pgx.Conn, error)
 	Trust() *trustprofile.Set

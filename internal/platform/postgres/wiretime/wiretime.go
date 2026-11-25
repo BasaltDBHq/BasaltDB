@@ -134,6 +134,38 @@ func JSON(raw json.RawMessage) json.RawMessage {
 	return json.RawMessage(bytes.TrimRight(buf.Bytes(), "\n"))
 }
 
+// Fields is JSON for the named top-level fields of the JSON object text:
+// the timestamptz strings inside them are rewritten and every other field
+// keeps its text. text is returned untouched when nothing changed or it is
+// not an object.
+func Fields(text string, names ...string) string {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(text), &obj); err != nil {
+		return text
+	}
+	rewrote := false
+	for _, n := range names {
+		v, ok := obj[n]
+		if !ok {
+			continue
+		}
+		if out := JSON(v); !bytes.Equal(out, v) {
+			obj[n] = out
+			rewrote = true
+		}
+	}
+	if !rewrote {
+		return text
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(obj); err != nil {
+		return text
+	}
+	return string(bytes.TrimRight(buf.Bytes(), "\n"))
+}
+
 // changed reports whether Value would rewrite anything in v.
 func changed(v any) bool {
 	switch x := v.(type) {

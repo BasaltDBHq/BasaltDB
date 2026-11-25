@@ -31,6 +31,10 @@ import (
 // makes itself.
 type Backend struct{ setupstore.Store }
 
+// Port wraps a pgx connection or transaction of the local setup as setup's
+// driver-free query port.
+func (Backend) Port(q pgquerier.Querier) setup.Querier { return pgquerier.Neutralize(q) }
+
 // Connections and their trust.
 
 func (Backend) Connect(ctx context.Context, dsn string) (*pgx.Conn, error) {

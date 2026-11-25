@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pglargevalue"
 )
 
 // Agent reads with large values left out (CONTRACT.md, Large values): the
@@ -42,7 +43,7 @@ func headerImages(rel, id string) string {
 var (
 	markedStatement = `coalesce(st.img #>> '{}', '')`
 	markedParams    = `CASE WHEN p.lv_more THEN NULL WHEN pa.item IS NULL THEN p.params ELSE pa.img END`
-	markedLarge     = largevalue.Join("st.large_values", "pa.large_values")
+	markedLarge     = pglargevalue.Join("st.large_values", "pa.large_values")
 )
 
 // pageOnly is the SQL of expr for a page row, and empty for the row past
@@ -59,11 +60,11 @@ func pageOnly(expr, empty string) string {
 // markedParams, markedLarge). The row past limit has lv_more set and none
 // of its values elided or read.
 func markedPage(page, id, order string, limit int, cols ...string) string {
-	// Plain SQL: a recursive CTE over the page (largevalue.Elide).
-	return largevalue.With + `lv_page AS MATERIALIZED (SELECT x.*, row_number() OVER (ORDER BY ` + order + `) > ` +
+	// Plain SQL: a recursive CTE over the page (pglargevalue.Elide).
+	return pglargevalue.With + `lv_page AS MATERIALIZED (SELECT x.*, row_number() OVER (ORDER BY ` + order + `) > ` +
 		fmt.Sprint(limit) + ` AS lv_more FROM (` + page + `) x), lv_head AS MATERIALIZED (` +
 		headerImages("(SELECT * FROM lv_page WHERE NOT lv_more) h", id) + `), ` +
-		largevalue.Elide(`SELECT * FROM lv_head`) + fmt.Sprintf(`
+		pglargevalue.Elide(`SELECT * FROM lv_head`) + fmt.Sprintf(`
 		SELECT %[1]s FROM lv_page p
 		LEFT JOIN lv_out st ON st.item = p.%[2]s AND st.ord = %[3]d
 		LEFT JOIN lv_out pa ON pa.item = p.%[2]s AND pa.ord = %[4]d
@@ -106,15 +107,15 @@ func RowChangesMarked(ctx context.Context, q guard.Querier, changeIDs []uuid.UUI
 	if err != nil {
 		return nil, err
 	}
-	// Plain SQL: a recursive CTE over the rows (largevalue.Elide).
-	sql := largevalue.With + `lv_rc AS MATERIALIZED (` + rowsSQL + `),
+	// Plain SQL: a recursive CTE over the rows (pglargevalue.Elide).
+	sql := pglargevalue.With + `lv_rc AS MATERIALIZED (` + rowsSQL + `),
 		lv_ch AS MATERIALIZED (SELECT change_id, statement, params FROM basalt_meta.agent_changes WHERE change_id IN (SELECT change_id FROM lv_rc)),
 		lv_imgs AS MATERIALIZED (` + headerImages("lv_ch", colChangeID) + fmt.Sprintf(`
 			UNION ALL SELECT change_id, seq * %[1]d, '%[2]s', row_key FROM lv_rc
 			UNION ALL SELECT change_id, seq * %[1]d + 1, '%[3]s', old_row FROM lv_rc
 			UNION ALL SELECT change_id, seq * %[1]d + 2, '%[4]s', new_row FROM lv_rc), `,
 		imagesPerRow, largevalue.InKey, largevalue.InBefore, largevalue.InAfter) +
-		largevalue.Elide(`SELECT * FROM lv_imgs`) + fmt.Sprintf(`
+		pglargevalue.Elide(`SELECT * FROM lv_imgs`) + fmt.Sprintf(`
 		SELECT r.change_id, r.seq, r.table_name, r.op,
 			CASE WHEN k.item IS NULL THEN r.row_key ELSE k.img END, k.item IS NOT NULL AND k.img IS NULL,
 			CASE WHEN b.item IS NULL THEN r.old_row ELSE b.img END, b.item IS NOT NULL AND b.img IS NULL,
@@ -124,7 +125,7 @@ func RowChangesMarked(ctx context.Context, q guard.Querier, changeIDs []uuid.UUI
 		LEFT JOIN lv_out k ON k.item = r.change_id AND k.ord = r.seq * %[1]d
 		LEFT JOIN lv_out b ON b.item = r.change_id AND b.ord = r.seq * %[1]d + 1
 		LEFT JOIN lv_out a ON a.item = r.change_id AND a.ord = r.seq * %[1]d + 2
-		ORDER BY r.seq`, imagesPerRow, largevalue.Join("k.large_values", "b.large_values", "a.large_values"))
+		ORDER BY r.seq`, imagesPerRow, pglargevalue.Join("k.large_values", "b.large_values", "a.large_values"))
 	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err

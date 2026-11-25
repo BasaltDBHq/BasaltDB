@@ -15,14 +15,24 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
 )
+
+// Querier runs a statement or a query on a pgx connection, pool or
+// transaction. It is the same type as the Postgres adapters' querier (an
+// unnamed interface), declared here because an inbound adapter does not
+// import an outbound one.
+type Querier = interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
 
 // AgentConn is the agent's own connection init --remote reads with.
 type AgentConn interface {
-	pgquerier.Querier
+	Querier
 	Close(ctx context.Context) error
 }
 

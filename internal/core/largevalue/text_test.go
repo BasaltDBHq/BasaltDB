@@ -20,7 +20,7 @@ type sharedVector struct {
 	Text   string          `json:"text"`
 	Bytes  int64           `json:"bytes"`
 	SHA256 string          `json:"sha256"`
-	Column string          `json:"column"`
+	Field  string          `json:"field"`
 	Cost   int64           `json:"cost"`
 }
 
@@ -54,7 +54,7 @@ func TestCostAndTextMatchSharedVectors(t *testing.T) {
 	for _, v := range loadSharedVectors(t) {
 		t.Run(v.Name, func(t *testing.T) {
 			jt := v.jsonbText(t)
-			require.Equal(t, v.Cost, largevalue.Cost(jt, v.Column))
+			require.Equal(t, v.Cost, largevalue.Cost(jt, v.Field))
 			text, err := largevalue.Text(jt)
 			require.NoError(t, err)
 			require.Equal(t, v.Text, text)

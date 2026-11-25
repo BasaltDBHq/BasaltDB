@@ -11,9 +11,10 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pglargevalue"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/wiretime"
 )
 
 // ErrRevertNotFound is a revert id the calling role did not prepare.
@@ -103,16 +104,24 @@ func ListRevertLinesMarked(ctx context.Context, q guard.Querier, p action.Revert
 	if err != nil {
 		return pagination.Page[action.RevertLine]{}, err
 	}
-	// Plain SQL: a recursive CTE over the page (largevalue.ElideLines).
+	// Plain SQL: a recursive CTE over the page (pglargevalue.ElideLines).
 	// The line past the limit only tells that another page follows: its
 	// text is never read (a page at limit 1 holds one line).
-	sql := largevalue.With + `lv_page AS MATERIALIZED (SELECT x.*, row_number() OVER (ORDER BY line_no) > ` +
+	sql := pglargevalue.With + `lv_page AS MATERIALIZED (SELECT x.*, row_number() OVER (ORDER BY line_no) > ` +
 		fmt.Sprint(p.Limit) + ` AS lv_more FROM (` + page + `) x), ` +
-		largevalue.ElideLines(`SELECT line_no AS item, line::jsonb AS line FROM lv_page WHERE line <> '' AND NOT lv_more`) + `
+		pglargevalue.ElideLines(`SELECT line_no AS item, line::jsonb AS line FROM lv_page WHERE line <> '' AND NOT lv_more`) + `
 		SELECT p.line_no, CASE WHEN p.lv_more THEN '' ELSE coalesce(e.line::text, p.line) END, p.outcome, p.conflict, p.sql_state, p.batch
 		FROM lv_page p LEFT JOIN lv_lines e ON e.item = p.line_no
 		ORDER BY p.line_no`
-	return collectRevertLines(ctx, q, p, sql, args)
+	out, err := collectRevertLines(ctx, q, p, sql, args)
+	if err != nil {
+		return out, err
+	}
+	// The agent reads the row values as the wire format has them.
+	for i := range out.Items {
+		out.Items[i].Text = wiretime.Fields(out.Items[i].Text, guard.RevertLineValues...)
+	}
+	return out, nil
 }
 
 // revertLinePage is the SQL of one page of a plan's lines, one more than

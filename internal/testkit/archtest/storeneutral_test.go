@@ -37,14 +37,12 @@ type storeRule struct {
 }
 
 // storeBoundImports are a store's packages: the SQL guard, the Postgres
-// adapters, the driver, and the shared helpers that speak SQL. A
-// store-neutral domain imports none of them, directly or through another
+// adapters (with their query port and the large-value SQL) and the driver.
+// A store-neutral domain imports none of them, directly or through another
 // package.
 var storeBoundImports = []string{
 	modulePath + "/internal/core/sqlguard",
 	modulePath + "/internal/platform/postgres",
-	modulePath + "/internal/platform/postgres/sqlport",
-	modulePath + "/internal/platform/postgres/pgquerier",
 	"github.com/jackc/pgx",
 	"github.com/jackc/pgconn",
 	"github.com/Masterminds/squirrel",

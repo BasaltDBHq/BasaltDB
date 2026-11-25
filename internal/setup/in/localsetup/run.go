@@ -25,7 +25,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
@@ -343,7 +342,7 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 		if needed && cred == nil {
 			return refuse(CodePasskeyRequired, "The database has no passkey for this computer yet: create one on this page first. Nothing changed.")
 		}
-		if err := setup.ApplyInitTx(ctx, s.be, pgquerier.Neutralize(tx), script); err != nil {
+		if err := setup.ApplyInitTx(ctx, s.be, s.be.Port(tx), script); err != nil {
 			if r := grantsNotRevoked(err, j.role); r != nil {
 				return r
 			}
@@ -357,13 +356,13 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 			p.labeled = n
 		}
 		if cred != nil {
-			if err := s.be.RegisterPasskey(ctx, pgquerier.Neutralize(tx), *cred, req.Passkey.Label); err != nil {
+			if err := s.be.RegisterPasskey(ctx, s.be.Port(tx), *cred, req.Passkey.Label); err != nil {
 				return setupFailed("register the passkey", err)
 			}
 		}
 		warnings = script.Warnings
 		if req.Demo {
-			leads, notes, err := s.be.DemoCounts(ctx, pgquerier.Neutralize(tx))
+			leads, notes, err := s.be.DemoCounts(ctx, s.be.Port(tx))
 			if err != nil {
 				return setupFailed("count the sample data", err)
 			}

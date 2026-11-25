@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -143,7 +142,7 @@ func (s *Service) readPin(ctx context.Context, req Request) (*pin, error) {
 // it to trust.d next to engine.json. A profile that covers the host by now
 // refuses, unless it is this pin.
 func (p *pin) write(ctx context.Context, be Backend, tx pgx.Tx, configPath string) error {
-	if err := be.RecordTrustPin(ctx, pgquerier.Neutralize(tx), p.host, p.port, p.sha256); err != nil {
+	if err := be.RecordTrustPin(ctx, be.Port(tx), p.host, p.port, p.sha256); err != nil {
 		return setupFailed("record the trust pin", err)
 	}
 	if _, err := be.PinFileNew(configPath, p.host, p.top, p.caOnly); err != nil {

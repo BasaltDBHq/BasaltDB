@@ -28,7 +28,7 @@
   "resources": [
     {
       "access": [
-        "SELECT"
+        "READ"
       ],
       "comment": "Line items, one per product in an order",
       "estimatedRows": 0,
@@ -37,7 +37,7 @@
     },
     {
       "access": [
-        "SELECT",
+        "READ",
         "INSERT",
         "UPDATE",
         "DELETE"
@@ -48,7 +48,7 @@
     },
     {
       "access": [
-        "SELECT"
+        "READ"
       ],
       "comment": "Customer orders",
       "estimatedRows": 20,

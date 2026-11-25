@@ -55,8 +55,10 @@ func decodeRescoped(raw []byte) (action.RescopedRevert, error) {
 	out := in.RescopedRevert
 	out.Catalog = nil
 	if c := in.Catalog; c != nil {
-		out.Catalog = &action.RevertCatalog{Agents: c.Agents, Runs: c.Runs, ChangeAgents: c.ChangeAgents,
-			Tables: make([]action.CatalogTable, 0, len(c.Resources))}
+		out.Catalog = &action.RevertCatalog{
+			Agents: c.Agents, Runs: c.Runs, ChangeAgents: c.ChangeAgents,
+			Tables: make([]action.CatalogTable, 0, len(c.Resources)),
+		}
 		for _, r := range c.Resources {
 			out.Catalog.Tables = append(out.Catalog.Tables, action.CatalogTable{Table: r.Resource, Rows: r.Rows})
 		}

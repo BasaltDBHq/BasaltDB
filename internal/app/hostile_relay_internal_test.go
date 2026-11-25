@@ -124,7 +124,8 @@ func approveBody(t *testing.T, signer *passkeytest.Authenticator, id string, bin
 func TestRelayChannelCannotSignWithoutThePerson(t *testing.T) {
 	t.Parallel()
 	e := newRelayEnv(t)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	// Generous: a loaded runner once took 137s to dial the first session.
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 	a, b := e.hold(t, 21, 35), e.hold(t, 36, 50)
 	pa, err := e.session(t, ctx, a.secret)

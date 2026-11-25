@@ -23,6 +23,7 @@ jobs:
   lint:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       # The toolchain line and the shared Go cache (.github/actions/go).
@@ -33,6 +34,7 @@ jobs:
   vet:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - id: go
@@ -55,6 +57,7 @@ jobs:
   scripts:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
       # 22 or later: the portal page tests use Node's global WebSocket.
@@ -69,6 +72,7 @@ jobs:
   secret-scan:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
       - name: install gitleaks
@@ -89,12 +93,13 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: test (${{ matrix.shard }})
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     strategy:
       fail-fast: false
       matrix:
         # Packages per shard: scripts/test-shards.txt. "rest" runs every
         # package no shard lists, so each package runs in exactly one shard.
-        shard: ["1", "2", "3", rest]
+        shard: ["1", "2", "3", "4", rest]
     services:
       postgres:
         image: postgres:16
@@ -128,7 +133,7 @@ jobs:
           export TMPDIR="$HOME/.cache/basalt-tmp"
           mkdir -p "$TMPDIR"
           chmod 700 "$TMPDIR"
-          make test-shard SHARD=${{ matrix.shard }} SHARD_JSON="$RUNNER_TEMP/test.json"
+          make test-shard SHARD=${{ matrix.shard }} SHARD_TIMEOUT=6m SHARD_JSON="$RUNNER_TEMP/test.json"
       - name: timings
         if: always()
         run: |
@@ -155,6 +160,7 @@ jobs:
     if: always()
     needs: [lint, vet, scripts, secret-scan, test, containers, systemd, darwin-archives, macos-smoke]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       # Passes only when every job above succeeded. An allowlist, not a list of
       # bad results: a job GitHub gave up on before it started (for example a
@@ -180,6 +186,7 @@ jobs:
   containers:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
       - name: root tests in a container
@@ -230,6 +237,7 @@ jobs:
   darwin-archives:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -277,6 +285,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"runner":"macos-15-intel","expect_uname":"x86_64","archive":"basaltdb_0.0.0-nightly_darwin_amd64.tar.gz"}]' || '[{"runner":"macos-15","expect_uname":"arm64","archive":"basaltdb_0.0.0-nightly_darwin_arm64.tar.gz"},{"runner":"macos-15-intel","expect_uname":"x86_64","archive":"basaltdb_0.0.0-nightly_darwin_amd64.tar.gz"}]') }}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:

@@ -63,7 +63,7 @@ func (ac *Service) openApproval(ctx context.Context, id uuid.UUID) (action.Appro
 		return action.Approval{}, err
 	}
 	a, err := ac.store.Records.FindApproval(ctx, id)
-	if guidance.Sentinel(err, ac.deps.ErrNotFound) {
+	if action.IsApprovalRefused(err, action.ApprovalNotFound) {
 		return action.Approval{}, linksvc.ErrNotThisAgent
 	}
 	if err != nil {

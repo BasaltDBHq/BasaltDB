@@ -20,12 +20,9 @@ type Core struct {
 	LinkBudget int
 }
 
-// Deps is what held writes use besides the store set: the ledger's values
-// the agent maps to tool errors and the pages' column order.
+// Deps is what held writes use besides the store set: the ledger's list
+// sort and the pages' column order.
 type Deps struct {
-	// ErrNotFound is the ledger's answer for an approval the role does not
-	// hold.
-	ErrNotFound error
 	// SortSpec whitelists the approval list sort.
 	SortSpec pagination.SortSpec
 	// Columns reads each table's columns in table order for the pages;

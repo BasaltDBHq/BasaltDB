@@ -174,8 +174,6 @@ type Approvals interface {
 	Preview(ctx context.Context, in action.Intent, req agentstore.Request, assigned []string) ([]string, error)
 	Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error)
 	FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error)
-	// NotFound is the ledger's answer for an approval the role does not hold.
-	NotFound() error
 	// HoldTooLargeSteps and ApprovalRequiredSteps are the steps and the
 	// person's message of the errors a held write answers with.
 	HoldTooLargeSteps(b *guidance.Steps, te *toolresult.ToolError) string

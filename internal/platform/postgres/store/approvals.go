@@ -11,6 +11,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
@@ -120,4 +121,50 @@ func (s *Store) listOpenRevertsRaw(ctx context.Context, p action.RevertListParam
 // passkeysRaw is Passkeys before MapError.
 func (s *Store) passkeysRaw(ctx context.Context) ([]passkey.Credential, error) {
 	return ledger.Passkeys(ctx, s.db)
+}
+
+// The guard's answers to an approval call, mapped to the approval's own
+// refusals (action.ApprovalRefusalError) after MapError, per call. An
+// answer no mapping names is returned as MapError made it. MapError's approvalDetails
+// are not reused here: they serve the agent's apply, and their
+// NOT_THIS_AGENT also covers "another agent", which a reveal answers as
+// signed or used meanwhile.
+
+// approvalNotFoundDetail is the guard's detail for an approval the calling
+// role does not hold, or none.
+const approvalNotFoundDetail = "no such approval"
+
+// approvalRefusal is err refused for reason, with the store's text detail.
+func approvalRefusal(err error, reason action.ApprovalReason, detail string) error {
+	return &action.ApprovalRefusalError{Reason: reason, Detail: detail, Err: err}
+}
+
+// findApprovalRefusal maps FindApproval's error: an approval the role does
+// not hold is ApprovalNotFound.
+func findApprovalRefusal(err error) error {
+	if errors.Is(err, ledger.ErrApprovalNotFound) {
+		return approvalRefusal(err, action.ApprovalNotFound, "")
+	}
+	return err
+}
+
+// revealApprovalRefusal maps OpenReveal's and RevealPreview's errors: an
+// APPROVAL_INVALID whose detail is a failed reveal proof, rows changed
+// since the hold, or an approval the role does not hold, compared for
+// equality in this order; any other APPROVAL_INVALID is an approval signed
+// or used meanwhile.
+func revealApprovalRefusal(err error) error {
+	se := guardAnswer(err)
+	if se == nil || guardmodel.Code(se.LedgerCode) != guardmodel.CodeApprovalInvalid {
+		return err
+	}
+	switch se.Detail {
+	case guardmodel.RevealRefused:
+		return approvalRefusal(err, action.ApprovalRevealRefused, se.Detail)
+	case guardmodel.RevealRowsChanged:
+		return approvalRefusal(err, action.ApprovalRevealRowsChanged, se.Detail)
+	case approvalNotFoundDetail:
+		return approvalRefusal(err, action.ApprovalNotFound, se.Detail)
+	}
+	return approvalRefusal(err, action.ApprovalNotOpen, se.Detail)
 }

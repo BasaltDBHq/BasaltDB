@@ -12,7 +12,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -88,18 +87,21 @@ func heldWrite(a action.Approval, check StatementChecker) (heldRun, error) {
 	return heldRun{intent: in, op: stmt.Op, sql: b.Request.Statement, params: params}, nil
 }
 
-// revealApprovalError is the page's answer to a reveal the store refused.
+// revealApprovalError is the page's answer to a reveal the store refused,
+// by the store's refusal reason.
 func (ac *Service) revealApprovalError(err error, link string) error {
-	code, _ := guidance.LedgerCode(err)
-	detail := guidance.StoreDetail(err)
-	switch {
-	case code == guardmodel.CodeApprovalInvalid && detail == guardmodel.RevealRefused:
+	ar := action.ApprovalRefusalOf(err)
+	if ar == nil {
+		return err
+	}
+	switch ar.Reason {
+	case action.ApprovalRevealRefused:
 		return linksvc.RevealRefused(guidance.CodeApprovalInvalid, link)
-	case code == guardmodel.CodeApprovalInvalid && detail == guardmodel.RevealRowsChanged:
+	case action.ApprovalRevealRowsChanged:
 		return linksvc.RevealRowsChanged(guidance.CodeApprovalInvalid, "approval", "This approval can no longer apply; ask the agent to try the write again")
-	case code == guardmodel.CodeApprovalInvalid && detail == approvalNotFoundDetail:
+	case action.ApprovalNotFound:
 		return linksvc.ErrNotThisAgent
-	case code == guardmodel.CodeApprovalInvalid:
+	case action.ApprovalNotOpen:
 		return &guidance.PageError{ToolError: &toolresult.ToolError{
 			Code:          guidance.CodeApprovalInvalid,
 			Message:       "the hidden rows cannot be shown: the approval was signed or used meanwhile",
@@ -108,7 +110,3 @@ func (ac *Service) revealApprovalError(err error, link string) error {
 	}
 	return err
 }
-
-// approvalNotFoundDetail is the guard's detail for an approval the calling
-// role does not hold, or none.
-const approvalNotFoundDetail = "no such approval"

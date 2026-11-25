@@ -391,12 +391,10 @@ func (a *docApprovals) FindApproval(_ context.Context, id uuid.UUID) (action.App
 	defer a.mu.Unlock()
 	ap, ok := a.approvals[id]
 	if !ok {
-		return action.Approval{}, errNoApproval
+		return action.Approval{}, &action.ApprovalRefusalError{Reason: action.ApprovalNotFound, Err: errNoApproval}
 	}
 	return ap, nil
 }
-
-func (a *docApprovals) NotFound() error { return errNoApproval }
 
 func (a *docApprovals) HoldTooLargeSteps(*guidance.Steps, *toolresult.ToolError) string { return "" }
 
@@ -652,4 +650,23 @@ func TestDocumentStoreDifferentWriteNamesTheFamilysArguments(t *testing.T) {
 		guidance.ArgRunID: run.RunID.String(), guidance.ArgApprovalID: id.String(),
 	}, step.Arguments)
 	require.NotContains(t, step.Arguments, "sql")
+}
+
+// A write under an approval the store does not find is APPROVAL_INVALID
+// NOT_THIS_AGENT: the store's refusal, not its error value, says so.
+func TestDocumentStoreUnknownApprovalIsNotThisAgent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _, _ := newDocService(t)
+	run, err := svc.StartRun(ctx, "move trial customers to pro", uuid.Nil)
+	require.NoError(t, err)
+
+	id := uuid.Must(uuid.NewV7())
+	req := agentstore.Request{Text: `{"update":"customers","filter":{"_id":"c01"},"set":{"plan":"pro"}}`}
+	_, err = svc.Write(ctx, agent.WriteParams{Request: req, Intent: "upgrade c01", RunID: run.RunID, ApprovalID: id})
+	var te *toolresult.ToolError
+	require.ErrorAs(t, err, &te)
+	require.Equal(t, guidance.CodeApprovalInvalid, te.Code)
+	require.Equal(t, guidance.ReasonNotThisAgent, te.Reason)
+	require.Equal(t, "approval "+id.String()+" is not one of this agent's held writes", te.Message)
 }

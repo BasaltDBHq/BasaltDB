@@ -571,7 +571,7 @@ func scopeRefused(scope action.Scope, refused action.RevertRefusalError) error {
 // one.
 func scopeFilterRefused(refused string) error {
 	return &guidance.ArgumentError{Reason: guidance.ReasonScopeFilter, Message: "the revert filter names work that is not yours, nothing was " +
-		"prepared: " + refused + ". runs lists only your own runs in the task, and resources only what you wrote in this " +
+		"prepared: " + refused + ". runs lists only your own runs in the task, and resources only tables you wrote in this " +
 		"scope; run_history shows them"}
 }
 

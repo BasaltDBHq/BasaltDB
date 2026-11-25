@@ -227,7 +227,7 @@ func catalogCases() map[string]catalogCase {
 		stepcatalogtest.CaseKey("INVALID_ARGUMENT", "SCOPE_FILTER", ""): {
 			"preview_revert",
 			map[string]any{"runId": caseRunID, "resources": []any{"public.ghost"}},
-			plain(&guidance.ArgumentError{Reason: guidance.ReasonScopeFilter, Message: "the revert filter names work that is not yours, nothing was prepared: public.ghost has no change of yours in this scope. runs lists only your own runs in the task, and resources only what you wrote in this scope; run_history shows them"}),
+			plain(&guidance.ArgumentError{Reason: guidance.ReasonScopeFilter, Message: "the revert filter names work that is not yours, nothing was prepared: public.ghost has no change of yours in this scope. runs lists only your own runs in the task, and resources only tables you wrote in this scope; run_history shows them"}),
 		},
 		stepcatalogtest.CaseKey("INVALID_ARGUMENT", "SCOPE_FILTER_CAP", ""): {
 			"request_revert",

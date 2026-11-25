@@ -249,7 +249,7 @@ func TestRevertRunsFilterNeedsATask(t *testing.T) {
 		for name, want := range map[string]string{
 			"leads": "the revert filter is not valid, nothing was prepared: tables are schema.table names",
 			"public.leads;drop": "the revert filter names work that is not yours, nothing was prepared: public.leads;drop has no " +
-				"change of yours in this scope. runs lists only your own runs in the task, and resources only what you wrote in " +
+				"change of yours in this scope. runs lists only your own runs in the task, and resources only tables you wrote in " +
 				"this scope; run_history shows them",
 		} {
 			body, isError := env.call(t, tool, map[string]any{"taskId": env.taskID, "resources": []any{name}})

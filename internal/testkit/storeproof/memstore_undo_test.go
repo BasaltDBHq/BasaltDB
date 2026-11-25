@@ -29,8 +29,9 @@ import (
 // agent's writes recorded. A revert line puts a document's earlier version
 // back unless someone changed it after the agent (people win).
 
-// memVerbs are the store's own words for a revert line's operation.
-var memVerbs = map[string]string{approval.OpInsert: "insertOne", approval.OpUpdate: "replaceOne", approval.OpDelete: "deleteOne"}
+// memVerbRestore is the store's own word for a revert line that puts a
+// document back.
+const memVerbRestore = "replaceOne"
 
 // memResourceName is the store's form of a resource name.
 var memResourceName = regexp.MustCompile(`^[a-z]+/[a-z]+$`)
@@ -45,7 +46,6 @@ type memLine struct {
 	no            int
 	text          string
 	resource, key string
-	op            string
 	// set is what the revert puts back (nil deletes the document);
 	// version is the document's version the line was prepared over.
 	set     map[string]any
@@ -157,29 +157,18 @@ func (s *memStore) planLines(changes []change) []memLine {
 	out := make([]memLine, 0, len(order))
 	for _, t := range order {
 		f, l, cur := first[t], last[t], s.docs[t.resource][t.key]
+		// The agent's language only updates documents: every line puts one
+		// back. (The revert domain's own object store covers inserts,
+		// deletes and a taken key.)
 		line := revert.Line{
 			Op: approval.OpUpdate, Key: rawJSON(map[string]any{"_id": t.key}), Now: rawJSON(cur.doc), Set: rawJSON(f.before),
-			Shape: approval.ShapeRecord, Resource: t.resource, Action: revert.ActionRestore, ChangeIDs: ids[t],
+			Shape: approval.ShapeRecord, Store: revert.LineStore{Kind: string(memKind), Verb: memVerbRestore},
+			Resource: t.resource, Action: revert.ActionRestore, ChangeIDs: ids[t],
 		}
-		switch {
-		case f.before == nil:
-			line.Op = approval.OpDelete
-		case l.after == nil:
-			line.Op = approval.OpInsert
-		}
-		line.Store = revert.LineStore{Kind: string(memKind), Verb: memVerbs[line.Op]}
-		ml := memLine{resource: t.resource, key: t.key, op: line.Op, set: f.before, version: l.version, restore: true}
-		switch {
-		case cur.version != l.version && line.Op == approval.OpInsert && cur.doc != nil:
-			ml.conflict, ml.code = revert.ConflictKeyTaken, codeKeyExists
-		case cur.version != l.version:
-			ml.conflict = revert.ConflictChangedAfter
-		}
-		if ml.conflict != "" {
-			ml.restore, line.Action, line.Conflict = false, revert.ActionSkip, &ml.conflict
-			if ml.code != "" {
-				line.Store.Code = &ml.code
-			}
+		ml := memLine{resource: t.resource, key: t.key, set: f.before, version: l.version, restore: true}
+		if cur.version != l.version {
+			ml.conflict, ml.restore, line.Action = revert.ConflictChangedAfter, false, revert.ActionSkip
+			line.Conflict = &ml.conflict
 		}
 		ml.text = textruletest.MustText(line)
 		out = append(out, ml)
@@ -362,16 +351,12 @@ func (s *memStore) applyLine(l *memLine, batch int) {
 		l.outcome = guardmodel.OutcomeSkipped
 		return
 	}
-	cur := s.docs[l.resource][l.key]
-	switch {
-	case cur.version != l.version && l.op == approval.OpInsert && cur.doc != nil:
-		l.outcome, l.conflict, l.code = guardmodel.OutcomeSkipped, revert.ConflictKeyTaken, codeKeyExists
-	case cur.version != l.version:
+	if s.docs[l.resource][l.key].version != l.version {
 		l.outcome, l.conflict = guardmodel.OutcomeSkipped, revert.ConflictChangedAfter
-	default:
-		s.put(l.resource, l.key, l.set)
-		l.outcome = guardmodel.OutcomeRestored
+		return
 	}
+	s.put(l.resource, l.key, l.set)
+	l.outcome = guardmodel.OutcomeRestored
 }
 
 func (r *memRevert) progress() {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
@@ -161,11 +162,11 @@ func (s *memStore) Hold(_ context.Context, in action.Intent, hr action.HoldReque
 
 // Proofs.
 
-// postgresBadSignature is the refusal the Postgres adapter maps the guard's
-// answer to a signature it does not accept to.
-var postgresBadSignature = action.StoreError{
-	Code: action.CodeApprovalInvalid, Reason: action.ReasonBadSignature, StoreCode: "BS005",
-	Message: "approval invalid: the signature does not verify",
+// postgresBadSignature is the refusal the Postgres adapter maps the
+// guard's answer to a signature it does not accept to (submit_approval's
+// detail in 005_approvals.sql).
+func postgresBadSignature() *action.StoreError {
+	return postgresAnswer(&pgconn.PgError{Code: "BS005", Message: "APPROVAL_INVALID", Detail: "bad passkey signature"})
 }
 
 func (s *memStore) SubmitApproval(_ context.Context, id uuid.UUID, a passkey.Assertion) (time.Time, error) {
@@ -177,15 +178,13 @@ func (s *memStore) SubmitApproval(_ context.Context, id uuid.UUID, a passkey.Ass
 		return time.Time{}, &action.ApprovalRefusalError{Reason: action.ApprovalNotFound, Err: fmt.Errorf("no held write %s", id)}
 	}
 	if !slices.Equal(a.Signature, personAssertion(ap.rec.BindingText).Signature) {
-		se := action.StoreError{
-			Code: action.CodeApprovalInvalid, Reason: action.ReasonBadSignature, StoreCode: codeSignature,
-			Message: "the passkey's signature does not match the held write",
-		}
 		if s.asPostgres {
-			se = postgresBadSignature
+			return time.Time{}, postgresBadSignature()
 		}
-		se.Err = errors.New(se.Message)
-		return time.Time{}, &se
+		msg := "the passkey's signature does not match the held write"
+		return time.Time{}, &action.StoreError{
+			Code: action.CodeApprovalInvalid, Reason: action.ReasonBadSignature, StoreCode: codeSignature, Message: msg, Err: errors.New(msg),
+		}
 	}
 	now := time.Now().UTC()
 	ap.rec.Status, ap.rec.ApprovedAt = action.ApprovalApproved, &now

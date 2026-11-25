@@ -260,6 +260,11 @@ func runFlow(t *testing.T, h *harness) flow {
 	require.Equal(t, action.RevertPending, requested["status"])
 	require.Equal(t, []time.Duration{memPrepareLimit}, h.store.prepareLimits, "the store gets its own time limit")
 	f.stepsSeen = append(f.stepsSeen, requested["nextSteps"])
+	// list_pending lists the open revert next to the held write.
+	both := items(t, h.mustCall(guidance.ToolListPending, map[string]any{}))
+	require.Len(t, both, 2)
+	kinds := []any{both[0]["kind"], both[1]["kind"]}
+	require.ElementsMatch(t, []any{guidance.KindApproval, guidance.KindRevert}, kinds)
 	revReq, b, applied, err := h.personSignsRevert(requested["revertUrl"].(string))
 	require.NoError(t, err)
 	f.revertBinding, f.revertLines = b, revReq.Lines
@@ -401,8 +406,8 @@ func refusalCases() []refusalCase {
 	}
 	return []refusalCase{
 		{
-			name: "query: the store's time limit", code: codeDeadline, pgCode: postgresTimeout.StoreCode,
-			own: "the find ran past the store's deadline", pg: postgresTimeout.Message,
+			name: "query: the store's time limit", code: codeDeadline, pgCode: postgresTimeout().StoreCode,
+			own: "the find ran past the store's deadline", pg: postgresTimeout().Message,
 			run: func(h *harness) *toolresult.ToolError {
 				h.store.mu.Lock()
 				h.store.slowReads = true
@@ -440,8 +445,8 @@ func refusalCases() []refusalCase {
 			}),
 		},
 		{
-			name: "the person's approval: a signature the store does not accept", code: codeSignature, pgCode: postgresBadSignature.StoreCode,
-			own: "the passkey's signature does not match the held write", pg: postgresBadSignature.Message,
+			name: "the person's approval: a signature the store does not accept", code: codeSignature, pgCode: postgresBadSignature().StoreCode,
+			own: "the passkey's signature does not match the held write", pg: postgresBadSignature().Message,
 			run: func(h *harness) *toolresult.ToolError {
 				id := heldWrite(h)
 				_, err := h.approval.RelayApproval(context.Background(), approvaltest.NewResponse(id, personAssertion("another binding")))
@@ -531,4 +536,23 @@ func TestMemoryStoreRefusalsGiveThePostgresAnswers(t *testing.T) {
 			requireNoSQLArgument(t, got.NextSteps)
 		})
 	}
+}
+
+// A store code reaches the agent and the person as the store wrote it: the
+// memory store's codes are its own words, where the Postgres store's are
+// SQLSTATEs.
+func TestMemoryStoreCodesAreNotSQLStates(t *testing.T) {
+	t.Parallel()
+	coded := 0
+	for _, c := range refusalCases() {
+		if c.code == "" {
+			continue
+		}
+		coded++
+		got := c.run(newHarness(t))
+		require.Equal(t, c.code, got.StoreCode, c.name)
+		require.NotRegexp(t, sqlState, got.StoreCode, c.name)
+		require.Regexp(t, sqlState, c.pgCode, "the Postgres store's code is a SQLSTATE: %s", c.name)
+	}
+	require.GreaterOrEqual(t, coded, 3, "a read, a revert and the person's approval")
 }

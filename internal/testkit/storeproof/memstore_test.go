@@ -13,11 +13,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
+	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
 // This package proves that every store-neutral domain runs on a store that
@@ -51,7 +53,6 @@ const (
 // The store's own error codes, in its own words.
 const (
 	codeDeadline  = "E_DEADLINE"
-	codeKeyExists = "E_KEY_EXISTS"
 	codeSignature = "E_SIGNATURE"
 )
 
@@ -326,11 +327,20 @@ func result(collection string, docs []map[string]any) ([]action.Column, []map[st
 	return cols, rows
 }
 
-// postgresTimeout is the refusal the Postgres adapter maps a read
-// canceled by the statement timeout to.
-var postgresTimeout = action.StoreError{
-	Code: action.CodeQueryTimeout, Reason: action.ReasonTimeLimit, StoreCode: "57014",
-	Message: "canceling statement due to statement timeout",
+// postgresTimeout is the refusal the Postgres adapter maps a read the
+// statement timeout canceled to, made by the adapter's own mapping.
+func postgresTimeout() *action.StoreError {
+	return postgresAnswer(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"})
+}
+
+// postgresAnswer is the Postgres guard's answer pe as the Postgres
+// adapter maps it.
+func postgresAnswer(pe *pgconn.PgError) *action.StoreError {
+	var se *action.StoreError
+	if !errors.As(postgres.MapError(pe), &se) {
+		panic("the Postgres adapter did not map " + pe.Code)
+	}
+	return se
 }
 
 // Data.
@@ -341,15 +351,13 @@ func (s *memStore) Read(_ context.Context, req agentstore.Request, stmt action.S
 	defer s.mu.Unlock()
 	s.count("Read")
 	if s.slowReads {
-		se := action.StoreError{
-			Code: action.CodeQueryTimeout, Reason: action.ReasonTimeLimit, StoreCode: codeDeadline,
-			Message: "the find ran past the store's deadline",
-		}
 		if s.asPostgres {
-			se = postgresTimeout
+			return action.ReadResult{}, postgresTimeout()
 		}
-		se.Err = errors.New(se.Message)
-		return action.ReadResult{}, &se
+		msg := "the find ran past the store's deadline"
+		return action.ReadResult{}, &action.StoreError{
+			Code: action.CodeQueryTimeout, Reason: action.ReasonTimeLimit, StoreCode: codeDeadline, Message: msg, Err: errors.New(msg),
+		}
 	}
 	r := stmt.Handle.(memRequest)
 	cols, rows := result(r.Find, s.match(r, req.Params))

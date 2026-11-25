@@ -98,6 +98,9 @@ func write(b *strings.Builder, key string, v any) {
 	}
 }
 
+// firstPlain is U+0020, the first character the rules write as it is.
+const firstPlain = 0x20
+
 var short = map[rune]string{'"': `\"`, '\\': `\\`, '\b': `\b`, '\f': `\f`, '\n': `\n`, '\r': `\r`, '\t': `\t`}
 
 func quote(b *strings.Builder, s string) {
@@ -107,7 +110,7 @@ func quote(b *strings.Builder, s string) {
 			b.WriteString(e)
 			continue
 		}
-		if r < 0x20 {
+		if r < firstPlain {
 			fmt.Fprintf(b, `\u%04x`, r)
 			continue
 		}

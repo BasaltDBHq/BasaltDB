@@ -501,10 +501,10 @@ func (s *objectStore) PrepareRevert(_ context.Context, scope action.Scope, inten
 	}
 	s.reverts[id] = &objRevert{lines: lines, rec: action.Revert{
 		ID: id, Status: action.RevertPending, Scope: string(scope.Kind), ScopeID: scope.ID, Intent: intent,
-		Rows: b.Rows, Skipped: b.Skipped, ExpiresAt: b.ExpiresAt, BindingText: string(binding), Lines: shown,
+		Rows: b.Rows, Skipped: b.Skipped, ExpiresAt: b.ExpiresAt, BindingText: binding, Lines: shown,
 		Batched: b.Batched, CreatedAt: objNow,
 	}}
-	return action.PreparedRevert{RevertID: id, BindingText: string(binding), ExpiresAt: b.ExpiresAt, Batched: b.Batched, LineCount: len(lines)}, nil
+	return action.PreparedRevert{RevertID: id, BindingText: binding, ExpiresAt: b.ExpiresAt, Batched: b.Batched, LineCount: len(lines)}, nil
 }
 
 var errObjUnsupported = errors.New("the object store under test does not reset, rescope, reject or reveal a revert")

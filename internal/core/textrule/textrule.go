@@ -198,7 +198,7 @@ func (s *scanner) str() ([]byte, error) {
 		case c == '"':
 			s.pos++
 			return out, nil
-		case c < 0x20:
+		case c < firstPlain:
 			return nil, broken(s.pos, "has a control character written as it is")
 		case c != '\\':
 			out = append(out, c)
@@ -212,6 +212,9 @@ func (s *scanner) str() ([]byte, error) {
 		out = append(out, decoded)
 	}
 }
+
+// firstPlain is U+0020, the first character the rules write as it is.
+const firstPlain = 0x20
 
 // uEscapeLen is the length of `\u00xx`.
 const uEscapeLen = 6
@@ -234,7 +237,7 @@ func (s *scanner) escape() (byte, error) {
 		return 0, broken(at, "has a \\u escape that is not lowercase hex")
 	}
 	c := byte(hi<<4 | lo)
-	if c >= 0x20 {
+	if c >= firstPlain {
 		return 0, broken(at, "escapes a character the rules write as it is")
 	}
 	if _, short := shortFor[c]; short {

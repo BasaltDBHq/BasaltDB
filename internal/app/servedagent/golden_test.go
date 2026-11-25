@@ -37,7 +37,7 @@ func goldenNormal(v any, key string) any {
 		return out
 	}
 	switch key {
-	case "database", "fingerprint", "tableBytes", "totalBytes", "seqScans", "indexScans", "lastAnalyzed", "sizeBytes", "scans":
+	case "database", "fingerprint", "resourceBytes", "totalBytes", "seqScans", "indexScans", "lastAnalyzed", "sizeBytes", "scans":
 		return "<" + key + ">"
 	}
 	return v

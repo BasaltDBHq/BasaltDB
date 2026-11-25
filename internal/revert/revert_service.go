@@ -554,6 +554,8 @@ func scopeRefused(scope action.Scope, refused action.RevertRefusalError) error {
 		return notOwnTask(scope)
 	case action.RevertFilter:
 		return scopeFilterRefused(refused.Detail)
+	case action.RevertFilterName:
+		return scopeFilterInvalid(refused.Detail)
 	case action.RevertFilterCap:
 		return ScopeFilterCapped()
 	case action.RevertInvalid:
@@ -563,17 +565,26 @@ func scopeRefused(scope action.Scope, refused action.RevertRefusalError) error {
 	}
 }
 
-// scopeFilterRefused answers runs or tables outside the agent's own work.
-// refused is the guard's list of refused entries, one fixed text per kind,
-// so another agent's run or table reads exactly like an unknown one.
+// scopeFilterRefused answers runs or resources outside the agent's own
+// work. refused is the store's list of refused entries, one fixed text per
+// kind, so another agent's run or resource reads exactly like an unknown
+// one.
 func scopeFilterRefused(refused string) error {
 	return &guidance.ArgumentError{Reason: guidance.ReasonScopeFilter, Message: "the revert filter names work that is not yours, nothing was " +
-		"prepared: " + refused + ". runs lists only your own runs in the task, and tables only tables you wrote in this " +
+		"prepared: " + refused + ". runs lists only your own runs in the task, and resources only tables you wrote in this " +
 		"scope; run_history shows them"}
 }
 
+// scopeFilterInvalid answers a resource name the store cannot use: the
+// store's own text, never "not yours", since the name says nothing of
+// whose work it is.
+func scopeFilterInvalid(detail string) error {
+	return &guidance.ArgumentError{Reason: guidance.ReasonScopeFilter, Message: "the revert filter is not valid, nothing was " +
+		"prepared: " + detail}
+}
+
 func ScopeFilterCapped() error {
-	return &guidance.ArgumentError{Reason: guidance.ReasonScopeFilterCap, Message: fmt.Sprintf("runs and tables each list at most %d "+
+	return &guidance.ArgumentError{Reason: guidance.ReasonScopeFilterCap, Message: fmt.Sprintf("runs and resources each list at most %d "+
 		"entries, nothing was prepared. Leave a filter out for all of your work in the scope: the person can narrow it on the "+
 		"signing page", revert.MaxFilter)}
 }

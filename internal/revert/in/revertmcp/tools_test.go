@@ -1,6 +1,7 @@
 package revertmcp
 
 import (
+	"encoding/json"
 	"slices"
 	"testing"
 
@@ -40,21 +41,46 @@ func TestArgsStructsMatchTheSchemas(t *testing.T) {
 	}
 }
 
-// The tools hold no rule for a table name: the agent's string reaches the
-// scope unchanged, and the store refuses a name it cannot use. The tool
+// The tools hold no rule for a resource name: the agent's string reaches
+// the scope unchanged, and the store refuses a name it cannot use. The tool
 // schemas carry no name pattern either.
-func TestTableNamesPassThroughToTheStore(t *testing.T) {
+func TestResourceNamesPassThroughToTheStore(t *testing.T) {
 	t.Parallel()
 	names := []string{"leads", "public.leads;drop", "a b.c", "public.leads", "s.t.u", "Public.\"Leads\""}
 	for _, kind := range []revert.Scope{revert.ScopeChange, revert.ScopeRun, revert.ScopeTask} {
-		scope, err := scopeIDs{Tables: names}.filtered(action.Scope{Kind: kind, ID: uuid.Must(uuid.NewV7())})
+		scope, err := scopeIDs{Resources: names}.filtered(action.Scope{Kind: kind, ID: uuid.Must(uuid.NewV7())})
 		require.NoError(t, err, kind)
 		require.Equal(t, names, scope.Tables, kind)
 	}
 	for _, name := range []string{"preview_revert", "request_revert"} {
 		c, ok := mcpcontract.Find(mcpcontract.MustLoad(), name)
 		require.True(t, ok)
-		tables := c.InputSchema["properties"].(map[string]any)["tables"].(map[string]any)
-		require.Equal(t, map[string]any{"type": "string"}, tables["items"], name)
+		resources := c.InputSchema["properties"].(map[string]any)["resources"].(map[string]any)
+		require.Equal(t, map[string]any{"type": "string"}, resources["items"], name)
 	}
+}
+
+// The agent reads a line's store code as storeCode and its resource as
+// resource: the signed line's sqlState and table map to them, on preview
+// lines, plan items, a plan item's plan line and batch items.
+func TestRevertAnswersNameStoreCodeAndResource(t *testing.T) {
+	t.Parallel()
+	code, conflict := "23505", "KEY_TAKEN"
+	line := revert.Line{Action: "SKIP", Op: "INSERT", Table: "public.leads", Conflict: &conflict, SQLState: &code}
+	got, err := json.Marshal(revertLineFromDomain(line))
+	require.NoError(t, err)
+	var fields map[string]any
+	require.NoError(t, json.Unmarshal(got, &fields))
+	require.Equal(t, "public.leads", fields["resource"])
+	require.Equal(t, code, fields["storeCode"])
+	require.NotContains(t, fields, "table")
+	require.NotContains(t, fields, "sqlState")
+
+	plan, err := json.Marshal(revertPlanItemDTO{Line: 1, Outcome: "SKIPPED", Conflict: conflict, StoreCode: code})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"line": 1, "outcome": "SKIPPED", "conflict": "KEY_TAKEN", "storeCode": "23505"}`, string(plan))
+
+	item, err := json.Marshal(action.BatchItem{Line: 1, Outcome: "SKIPPED", Conflict: conflict, StoreCode: code})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"line": 1, "outcome": "SKIPPED", "conflict": "KEY_TAKEN", "storeCode": "23505"}`, string(item))
 }

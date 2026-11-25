@@ -50,7 +50,7 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	require.Equal(t, guidance.CodeQueryTimeout, te.Code)
 	require.Equal(t, guidance.ReasonTimeLimit, te.Reason)
 	require.Contains(t, te.Message, "nothing was prepared")
-	require.Contains(t, te.Message, "runs or tables")
+	require.Contains(t, te.Message, "runs or resources")
 	require.NotContains(t, te.Message, "basalt ", "no person command")
 	require.NotContains(t, te.PersonMessage, "basalt ", "the person runs no command")
 	kinds := make([]string, 0, len(te.NextSteps))
@@ -80,7 +80,7 @@ func TestPreviewRevertTimeLimitNamesTheStatementTimeout(t *testing.T) {
 	require.Equal(t, guidance.CodeQueryTimeout, preview.Code)
 	require.Equal(t, guidance.ReasonTimeLimit, preview.Reason)
 	require.Equal(t, "previewing the revert of run "+scope.ID.String()+" took longer than the agent's statement timeout of 5 seconds; "+
-		"nothing was previewed. A narrower revert, with runs or tables, may fit.", preview.Message)
+		"nothing was previewed. A narrower revert, with runs or resources, may fit.", preview.Message)
 	require.NotContains(t, preview.Message, "100 seconds")
 
 	request := testErrors().ToolError(s.prepareTimeout(guidance.ToolRequestRevert, scope, "57014"))
@@ -160,4 +160,22 @@ func TestNewRefusesAStoreSetWithoutAPrepareLimit(t *testing.T) {
 			New(Core{}, set, &Deps{}, nil, nil, nil, nil)
 		}, limit.String())
 	}
+}
+
+// A rescope past the store's Limits.Prepare names that limit on the
+// person's page: for Postgres's 100 seconds the texts are the ones the
+// contract shows (contract/revert.md), byte for byte.
+func TestRescopeTimeoutNamesThePrepareLimit(t *testing.T) {
+	t.Parallel()
+	var pe *guidance.PageError
+	require.ErrorAs(t, rescopeTimeout(100*time.Second), &pe)
+	require.Equal(t, guidance.CodeQueryTimeout, pe.Code)
+	require.Equal(t, guidance.ReasonTimeLimit, pe.Reason)
+	require.Equal(t, "the scope change took longer than 100 seconds and was stopped; nothing changed", pe.Message)
+	require.Equal(t, "Changing the scope took longer than 100 seconds and was stopped. Nothing changed. "+
+		"Choose fewer agents, runs or tables, or try again.", pe.PersonMessage)
+
+	require.ErrorAs(t, rescopeTimeout(30*time.Second), &pe)
+	require.Contains(t, pe.Message, "longer than 30 seconds")
+	require.Contains(t, pe.PersonMessage, "longer than 30 seconds")
 }

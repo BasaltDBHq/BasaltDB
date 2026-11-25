@@ -109,7 +109,7 @@
               ],
               "description": "Set on SKIPPED only."
             },
-            "sqlState": {
+            "storeCode": {
               "type": "string",
               "description": "Set on CONSTRAINT conflicts only."
             }

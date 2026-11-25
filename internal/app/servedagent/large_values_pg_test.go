@@ -243,7 +243,7 @@ func TestPreviewRevertMarksLargeValues(t *testing.T) {
 	require.Len(t, lines, 3)
 	byTable := map[string]map[string]any{}
 	for _, l := range lines {
-		byTable[str(t, l["table"])] = l
+		byTable[str(t, l["resource"])] = l
 	}
 	docs := byTable["public.docs"]
 	require.Equal(t, map[string]any{"id": json.Number("1")}, docs["now"], "now's body is absent")

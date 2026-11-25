@@ -21,11 +21,11 @@
             "v": "agent"
           },
           "op": "UPDATE",
+          "resource": "public.items",
           "set": {
             "id": 1010,
             "v": "before"
-          },
-          "table": "public.items"
+          }
         }
       },
       {
@@ -46,11 +46,11 @@
             "v": "agent"
           },
           "op": "UPDATE",
+          "resource": "public.items",
           "set": {
             "id": 1009,
             "v": "before"
-          },
-          "table": "public.items"
+          }
         }
       },
       {
@@ -71,11 +71,11 @@
             "v": "agent"
           },
           "op": "UPDATE",
+          "resource": "public.items",
           "set": {
             "id": 1008,
             "v": "before"
-          },
-          "table": "public.items"
+          }
         }
       },
       {
@@ -95,11 +95,11 @@
             "v": "agent"
           },
           "op": "UPDATE",
+          "resource": "public.items",
           "set": {
             "id": 1007,
             "v": "before"
-          },
-          "table": "public.items"
+          }
         }
       },
       {
@@ -119,11 +119,11 @@
             "v": "agent"
           },
           "op": "UPDATE",
+          "resource": "public.items",
           "set": {
             "id": 1006,
             "v": "before"
-          },
-          "table": "public.items"
+          }
         }
       }
     ],

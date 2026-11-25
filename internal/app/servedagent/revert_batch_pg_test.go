@@ -126,7 +126,7 @@ func TestRevertPlanAndBatchTools(t *testing.T) {
 	plan, ok := first["plan"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "RESTORE", plan["action"])
-	require.Equal(t, "public.items", plan["table"])
+	require.Equal(t, "public.items", plan["resource"])
 	// Not signed yet: the link to sign it, for the agent to hand over.
 	link := str(t, before["revertUrl"])
 	// No local pages, and a plan sample over the budget: the hash link with

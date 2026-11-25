@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"fmt"
 	"sync"
 	"time"
 
@@ -278,7 +279,7 @@ func (rc *Service) rescopeError(ctx context.Context, r action.Revert, err error)
 	case refused.Reason == action.RevertExpiredReason:
 		return rc.revertExpired(r)
 	case refused.Reason == action.RevertTimedOut && ctx.Err() == nil:
-		return rescopeTimeout()
+		return rescopeTimeout(rc.store.Limits.Prepare)
 	}
 	return err
 }
@@ -295,13 +296,16 @@ func widenRefused() error {
 	}}
 }
 
-// rescopeTimeout is a rescope that ran past the store's Limits.Prepare (N12-R9).
-func rescopeTimeout() error {
+// rescopeTimeout is a rescope that ran past limit, the store's
+// Limits.Prepare (N12-R9). The texts name that limit, so they cannot drift
+// from it; for Postgres they read 100 seconds.
+func rescopeTimeout(limit time.Duration) error {
+	seconds := int(limit.Seconds())
 	return &guidance.PageError{ToolError: &toolresult.ToolError{
 		Code: guidance.CodeQueryTimeout, Reason: guidance.ReasonTimeLimit,
-		Message: "the scope change took longer than 100 seconds and was stopped; nothing changed",
-		PersonMessage: "Changing the scope took longer than 100 seconds and was stopped. Nothing changed. " +
-			"Choose fewer agents, runs or tables, or try again.",
+		Message: fmt.Sprintf("the scope change took longer than %d seconds and was stopped; nothing changed", seconds),
+		PersonMessage: fmt.Sprintf("Changing the scope took longer than %d seconds and was stopped. Nothing changed. "+
+			"Choose fewer agents, runs or tables, or try again.", seconds),
 	}}
 }
 

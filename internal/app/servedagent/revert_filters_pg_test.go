@@ -72,7 +72,7 @@ func tablesOf(t *testing.T, body map[string]any) []string {
 	list := items(t, body)
 	out := make([]string, 0, len(list))
 	for _, l := range list {
-		out = append(out, str(t, l["table"]))
+		out = append(out, str(t, l["resource"]))
 	}
 	return out
 }
@@ -84,14 +84,14 @@ func revertCount(t *testing.T, d *guardtest.DB) int {
 	return n
 }
 
-// The runs and tables filters narrow the agent's own proposal (RS-1): a
+// The runs and resources filters narrow the agent's own proposal (RS-1): a
 // table of a run, some of its runs in a task, or both; the binding the
 // person signs carries them as the proposal.
 func TestRevertFiltersNarrowTheProposal(t *testing.T) {
 	t.Parallel()
 	env := filterHarness(t)
 
-	body, isError := env.call(t, "preview_revert", map[string]any{"runId": env.run1, "tables": []any{"public.lead_owner"}})
+	body, isError := env.call(t, "preview_revert", map[string]any{"runId": env.run1, "resources": []any{"public.lead_owner"}})
 	require.False(t, isError, "%v", body)
 	require.EqualValues(t, "1", body["rows"])
 	require.Equal(t, []string{"public.lead_owner"}, tablesOf(t, body), "only the lead_owner line of run 1")
@@ -107,7 +107,7 @@ func TestRevertFiltersNarrowTheProposal(t *testing.T) {
 	require.Contains(t, fmt.Sprint(items(t, body)[0]["key"]), "92")
 
 	body, isError = env.call(t, "preview_revert", map[string]any{
-		"taskId": env.taskID, "runs": []any{env.run1}, "tables": []any{"public.leads"},
+		"taskId": env.taskID, "runs": []any{env.run1}, "resources": []any{"public.leads"},
 	})
 	require.False(t, isError, "%v", body)
 	require.EqualValues(t, "1", body["rows"], "only run 1's lead 91")
@@ -117,7 +117,7 @@ func TestRevertFiltersNarrowTheProposal(t *testing.T) {
 	step, ok := steps[1].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "request_revert", step["tool"])
-	require.Equal(t, map[string]any{"taskId": env.taskID, "runs": []any{env.run1}, "tables": []any{"public.leads"}}, step["arguments"],
+	require.Equal(t, map[string]any{"taskId": env.taskID, "runs": []any{env.run1}, "resources": []any{"public.leads"}}, step["arguments"],
 		"the request the steps lead to is the one previewed, filters included")
 	msg := str(t, body["personMessage"])
 	require.Contains(t, msg, "task "+env.taskID+", only 1 of its runs and table public·leads would restore 1 rows", msg)
@@ -131,7 +131,7 @@ func TestRevertFiltersNarrowTheProposal(t *testing.T) {
 		message string
 	}{
 		{
-			map[string]any{"runId": env.run1, "tables": []any{"public.lead_owner"}},
+			map[string]any{"runId": env.run1, "resources": []any{"public.lead_owner"}},
 			revert.ScopeRun, nil,
 			[]string{"public.lead_owner"},
 			"Revert of run " + env.run1 + ", only table public·lead_owner: 1 rows to restore",
@@ -169,7 +169,7 @@ func TestRevertFiltersNarrowTheProposal(t *testing.T) {
 	requireToolError(t, body, isError, "NOTHING_TO_REVERT", "", "")
 }
 
-// More than 20 runs or tables is SCOPE_FILTER_CAP (owner, Q10); 20 is
+// More than 20 runs or resources is SCOPE_FILTER_CAP (owner, Q10); 20 is
 // within the cap.
 func TestRevertFiltersCap(t *testing.T) {
 	t.Parallel()
@@ -193,8 +193,8 @@ func TestRevertFiltersCap(t *testing.T) {
 	for _, tool := range []string{"preview_revert", "request_revert"} {
 		for _, args := range []map[string]any{
 			{"taskId": env.taskID, "runs": ids(revert.MaxFilter + 1)},
-			{"taskId": env.taskID, "tables": names(revert.MaxFilter + 1)},
-			{"runId": env.run1, "tables": names(revert.MaxFilter + 1)},
+			{"taskId": env.taskID, "resources": names(revert.MaxFilter + 1)},
+			{"runId": env.run1, "resources": names(revert.MaxFilter + 1)},
 		} {
 			body, isError := env.call(t, tool, args)
 			steps := requireErrorSteps(t, body, isError, "INVALID_ARGUMENT", "SCOPE_FILTER_CAP")
@@ -203,7 +203,7 @@ func TestRevertFiltersCap(t *testing.T) {
 		}
 		for _, args := range []map[string]any{
 			{"taskId": env.taskID, "runs": ids(revert.MaxFilter)},
-			{"taskId": env.taskID, "tables": names(revert.MaxFilter)},
+			{"taskId": env.taskID, "resources": names(revert.MaxFilter)},
 		} {
 			body, isError := env.call(t, tool, args)
 			requireErrorSteps(t, body, isError, "INVALID_ARGUMENT", "SCOPE_FILTER")
@@ -235,28 +235,31 @@ func TestRevertRunsFilterNeedsATask(t *testing.T) {
 		}
 		for _, args := range []map[string]any{
 			{"taskId": env.taskID, "runs": []any{}},
-			{"taskId": env.taskID, "tables": []any{}},
+			{"taskId": env.taskID, "resources": []any{}},
 			{"taskId": env.taskID, "runs": []any{"not-a-uuid"}},
 			{"taskId": env.taskID, "runs": []any{env.run1, env.run1}},
 		} {
 			body, isError := env.call(t, tool, args)
 			requireErrorSteps(t, body, isError, "INVALID_ARGUMENT", "")
 		}
-		// A table name the tool passes through unchanged: the store
+		// A resource name the tool passes through unchanged: the store
 		// refuses it, and the agent gets the store's refusal as its filter
-		// refused (SCOPE_FILTER).
+		// refused (SCOPE_FILTER). A name the store cannot use says nothing
+		// of whose work it is, so its answer never says "not yours".
 		for name, want := range map[string]string{
-			"leads":             "tables are schema.table names",
-			"public.leads;drop": "public.leads;drop has no change of yours in this scope",
+			"leads": "the revert filter is not valid, nothing was prepared: tables are schema.table names",
+			"public.leads;drop": "the revert filter names work that is not yours, nothing was prepared: public.leads;drop has no " +
+				"change of yours in this scope. runs lists only your own runs in the task, and resources only tables you wrote in " +
+				"this scope; run_history shows them",
 		} {
-			body, isError := env.call(t, tool, map[string]any{"taskId": env.taskID, "tables": []any{name}})
+			body, isError := env.call(t, tool, map[string]any{"taskId": env.taskID, "resources": []any{name}})
 			requireErrorSteps(t, body, isError, "INVALID_ARGUMENT", "SCOPE_FILTER")
-			require.Contains(t, str(t, body["message"]), want, "%s %s", tool, name)
+			require.Equal(t, want, str(t, body["message"]), "%s %s", tool, name)
 		}
 	}
 	id := uuid.Must(uuid.NewV7()).String()
 	for _, args := range []map[string]any{
-		{"revertId": id, "tables": []any{"public.leads"}},
+		{"revertId": id, "resources": []any{"public.leads"}},
 		{"revertId": id, "runs": []any{env.run1}},
 	} {
 		body, isError := env.h.call(t, "request_revert", args)
@@ -301,7 +304,7 @@ func TestRevertFilterRefusalsReadAlike(t *testing.T) {
 			"another agent's table":   "public.payroll",
 			"own table outside scope": "public.lead_owner",
 		} {
-			body, isError := env.call(t, tool, map[string]any{"runId": env.run2, "tables": []any{table}})
+			body, isError := env.call(t, tool, map[string]any{"runId": env.run2, "resources": []any{table}})
 			steps := requireErrorSteps(t, body, isError, "INVALID_ARGUMENT", "SCOPE_FILTER")
 			require.Equal(t, "run_history", steps[1]["tool"], "%s: a run's tables are in its history", name)
 			require.Contains(t, str(t, body["message"]), table+" has no change of yours in this scope")
@@ -330,4 +333,17 @@ func requireAlike(t *testing.T, tool string, texts map[string]string) {
 		}
 		require.Equal(t, first, text, "%s: %s and %s read alike", tool, firstName, name)
 	}
+}
+
+// The two answers of a resources filter the store refuses, pinned: a name
+// the store cannot use gets the store's text and never "not yours"; a name
+// that is not the agent's work says so.
+func TestRevertFilterRefusalsGolden(t *testing.T) {
+	t.Parallel()
+	env := filterHarness(t)
+	g := newServedGolden(t, "served/filters", env.h)
+	g.callErr("preview_revert_bad_resource_name", "preview_revert",
+		map[string]any{"runId": env.run2, "resources": []any{"leads"}}, "INVALID_ARGUMENT")
+	g.callErr("preview_revert_resource_not_yours", "preview_revert",
+		map[string]any{"runId": env.run2, "resources": []any{"public.ghost"}}, "INVALID_ARGUMENT")
 }

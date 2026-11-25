@@ -5,7 +5,17 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 )
+
+// HeldRun is what re-runs a held write for a reveal: the run, task and
+// intent it was held in, from the binding's shared part, and the binding's
+// request as the person signed it, which only the store reads.
+type HeldRun struct {
+	Intent  Intent
+	Request approval.HeldRequest
+}
 
 // HoldRequest is a write to store for the person's approval: Basalt's op of
 // the write (the store's adapter writes its own verb from it), the request

@@ -123,11 +123,11 @@ func hexOf(b []byte) string {
 // revealApproval is the engine's approval reveal with the person's proof:
 // open_reveal (which locks the approval row), then the re-run preview.
 func (e raceEnv) revealApproval(h heldDelete, as passkey.Assertion, key []byte) ([]approval.RevealedRow, error) {
-	ticket, err := e.store.OpenReveal(context.Background(), h.held.ApprovalID, as, key)
-	if err != nil {
-		return nil, err
+	req := approval.HeldRequest{Kind: approval.RequestSQL, Statement: dropLeadSQL}
+	for _, p := range h.params {
+		req.Params = append(req.Params, json.RawMessage(p.(json.Number)))
 	}
-	return e.store.RevealPreview(context.Background(), h.in, action.OpDelete, dropLeadSQL, h.params, h.held.ApprovalID, ticket)
+	return e.store.RevealHeld(context.Background(), h.held.ApprovalID, action.HeldRun{Intent: h.in, Request: req}, as, key)
 }
 
 // lockRow locks one row of a basalt_meta table in a transaction on its own

@@ -55,15 +55,13 @@ type Holds interface {
 // store verifies the signature.
 type Proofs interface {
 	SubmitApproval(ctx context.Context, id uuid.UUID, a passkey.Assertion) (time.Time, error)
-	// OpenReveal checks the person's reveal proof for a held write and
-	// returns the ticket of the re-run preview; RevealPreview re-runs the
-	// held write in a preview that rolls back and reads its hidden rows.
-	OpenReveal(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) ([]byte, error)
-	RevealPreview(ctx context.Context, in action.Intent, op action.Op, sql string, params []any, id uuid.UUID, ticket []byte) ([]approval.RevealedRow, error)
+	// RevealHeld checks the person's reveal proof for a held write,
+	// re-runs it in a preview that rolls back and reads its hidden rows.
+	RevealHeld(ctx context.Context, id uuid.UUID, held HeldRun, proof passkey.Assertion, key []byte) ([]approval.RevealedRow, error)
 }
 
-// Store is a store with all three sides of a held write, as the wiring
-// builds a StoreSet from it.
+// Store is a store with all three sides of a held write, which a StoreSet
+// can take in each of its ports.
 type Store interface {
 	Records
 	Holds

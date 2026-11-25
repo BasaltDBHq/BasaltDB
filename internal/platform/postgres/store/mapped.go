@@ -128,21 +128,15 @@ func (s *Store) Preview(ctx context.Context, in action.Intent, req agentstore.Re
 	return action.HeldPreview{Assigned: assigned, Lines: lines}, nil
 }
 
-// OpenReveal checks the person's reveal proof for a held write and returns
-// the ticket of the re-run preview (basalt_meta.open_reveal), in its own
-// transaction. The caller keeps the ticket in memory for this one request.
-func (s *Store) OpenReveal(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) ([]byte, error) {
-	r0, err := s.openRevealRaw(ctx, id, proof, key)
-	return r0, revealApprovalRefusal(MapError(err))
-}
-
-// RevealPreview re-runs a held write in a preview transaction exactly as an
-// apply runs it (the statement with its parameters, then finish_change, so
-// the change records them), and reads the held approval's hidden rows with
-// ticket (basalt_meta.reveal_approval_rows). The transaction always rolls
-// back.
-func (s *Store) RevealPreview(ctx context.Context, in action.Intent, op action.Op, sql string, params []any, id uuid.UUID, ticket []byte) ([]approval.RevealedRow, error) {
-	r0, err := s.revealPreviewRaw(ctx, in, op, sql, params, id, ticket)
+// RevealHeld checks the person's reveal proof for a held write
+// (basalt_meta.open_reveal, in its own transaction), then re-runs the held
+// request in a preview transaction exactly as an apply runs it (the
+// statement with its parameters, then finish_change, so the change records
+// them), and reads the held approval's hidden rows with the reveal's ticket
+// (basalt_meta.reveal_approval_rows). The ticket lives in this call only;
+// the transaction always rolls back.
+func (s *Store) RevealHeld(ctx context.Context, id uuid.UUID, run action.HeldRun, proof passkey.Assertion, key []byte) ([]approval.RevealedRow, error) {
+	r0, err := s.revealHeldRaw(ctx, id, run, proof, key)
 	return r0, revealApprovalRefusal(MapError(err))
 }
 

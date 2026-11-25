@@ -1,10 +1,7 @@
 package approval
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
 
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
@@ -18,11 +15,11 @@ import (
 )
 
 // RevealApproval reveals the hidden rows of one of this agent's held
-// writes to the person on the approval page: open_reveal checks the proof
-// and gives a ticket, then the held write re-runs in a preview that rolls
-// back, recorded as an apply records it, and reveal_approval_rows reads
-// the rows there, for the page holding secret, the approval's live link
-// secret. The ticket lives in this call only.
+// writes to the person on the approval page: the store checks the person's
+// proof, re-runs the held write in a preview that rolls back, recorded as
+// an apply records it, and reads the rows there, for the page holding
+// secret, the approval's live link secret. The service reads only the
+// binding's shared part and passes its request to the store unread.
 func (ac *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret string, in linksvc.RevealRequest) (approval.RevealAnswer, error) {
 	key, err := in.RevealKey()
 	if err != nil {
@@ -33,58 +30,31 @@ func (ac *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret stri
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
-	held, err := heldWrite(a, ac.writes)
+	held, err := heldWrite(a)
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
-	ticket, err := ac.store.Proofs.OpenReveal(ctx, id, in.Proof.Assertion(), key)
-	if err != nil {
-		return approval.RevealAnswer{}, ac.revealApprovalError(err, ac.delivery.PageLink(links.Approval, id, secret))
-	}
-	defer clear(ticket)
-	rows, err := ac.store.Proofs.RevealPreview(ctx, held.intent, held.op, held.sql, held.params, id, ticket)
+	rows, err := ac.store.Proofs.RevealHeld(ctx, id, held, in.Proof.Assertion(), key)
 	if err != nil {
 		return approval.RevealAnswer{}, ac.revealApprovalError(err, ac.delivery.PageLink(links.Approval, id, secret))
 	}
 	return linksvc.CheckedAnswer(a.Lines, rows)
 }
 
-// heldRun is what re-runs a held write: its statement and parameters as
-// the binding carries them, under the run, task and intent it was held in.
-type heldRun struct {
-	intent action.Intent
-	op     action.Op
-	sql    string
-	params []any
-}
+// HeldRun is what re-runs a held write (action.HeldRun).
+type HeldRun = action.HeldRun
 
-// heldWrite reads the held write from approval a's binding: its SQL
-// request's statement and parameters (numbers kept exact, as the write tool decodes them), and
-// the run it belongs to.
-func heldWrite(a action.Approval, check StatementChecker) (heldRun, error) {
+// heldWrite reads the held write from approval a's binding.
+func heldWrite(a action.Approval) (HeldRun, error) {
 	b, err := approval.ParseBinding(a.BindingText)
 	if err != nil {
-		return heldRun{}, err
-	}
-	stmt, err := check.Check(b.Request.Statement, action.ToolWrite)
-	if err != nil {
-		return heldRun{}, fmt.Errorf("the held statement no longer parses: %w", err)
-	}
-	params := make([]any, 0, len(b.Request.Params))
-	for _, raw := range b.Request.Params {
-		var v any
-		dec := json.NewDecoder(bytes.NewReader(raw))
-		dec.UseNumber()
-		if err := dec.Decode(&v); err != nil {
-			return heldRun{}, fmt.Errorf("a held parameter: %w", err)
-		}
-		params = append(params, v)
+		return HeldRun{}, err
 	}
 	in := action.Intent{RunID: b.RunID, Text: b.Intent}
 	if b.TaskID != nil {
 		in.TaskID = *b.TaskID
 	}
-	return heldRun{intent: in, op: stmt.Op, sql: b.Request.Statement, params: params}, nil
+	return HeldRun{Intent: in, Request: b.Request}, nil
 }
 
 // revealApprovalError is the page's answer to a reveal the store refused,

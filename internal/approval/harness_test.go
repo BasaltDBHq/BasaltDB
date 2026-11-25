@@ -115,7 +115,7 @@ func newService(t *testing.T, goos, configPath string, opts ...option) *Service 
 		Kind: action.StorePostgres, Capabilities: action.Capabilities{InStoreSignatureCheck: true},
 		Records: st.store, Holds: st.store, Proofs: st.store,
 	}
-	ac := New(st.core, set, &st.deps, checkNothing{}, foundRuns{}, admitted{})
+	ac := New(st.core, set, &st.deps, foundRuns{}, admitted{})
 	failure := func(_ string, _ map[string]any, err error) *toolresult.ToolError {
 		return st.core.Errors.ToolError(err)
 	}
@@ -150,13 +150,6 @@ func (s *testService) with(opts ...option) *Service {
 type catalogStore struct{ Store }
 
 func (catalogStore) Passkeys(context.Context) ([]passkey.Credential, error) { return nil, nil }
-
-// checkNothing is a statement check that is never called by these tests.
-type checkNothing struct{}
-
-func (checkNothing) Check(string, action.Tool) (action.Statement, error) {
-	return action.Statement{}, nil
-}
 
 // foundRuns finds every run.
 type foundRuns struct{}

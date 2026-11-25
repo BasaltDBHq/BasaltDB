@@ -106,7 +106,7 @@ func requireNoLogin(t *testing.T, d *guardtest.DB, name, password string) {
 
 func requireRefused(t *testing.T, err error, reason string) {
 	t.Helper()
-	requireCode(t, err, guardmodel.CodeSetupRefused)
+	requireCode(t, err, guard.CodeSetupRefused)
 	got, ok := guard.SetupRefusal(err)
 	require.True(t, ok)
 	require.Equal(t, reason, got)
@@ -229,7 +229,7 @@ func TestInstallVerifierRefusesExistingRole(t *testing.T) {
 	d.Exec(t, `CREATE ROLE `+d.Names.Prefix+`_agent_app LOGIN`)
 	for _, name := range []string{"root", "app"} {
 		err = d.TryInit(guardmodel.AgentSpec{Name: name, Verifier: newVerifier(t, guard.NewPassword()), Write: leads, Read: leads})
-		requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+		requireCode(t, err, guard.CodeLedgerInputInvalid)
 	}
 }
 
@@ -302,7 +302,7 @@ func TestRecordSetupRefusals(t *testing.T) {
 	t.Run("used", func(t *testing.T) {
 		s := installSetup(t, d, "bot")
 		require.NoError(t, record(s))
-		requireRefused(t, record(s), guardmodel.SetupUsed)
+		requireRefused(t, record(s), guard.SetupUsed)
 	})
 	t.Run("superseded", func(t *testing.T) {
 		old := installSetup(t, d, "bot")
@@ -310,7 +310,7 @@ func TestRecordSetupRefusals(t *testing.T) {
 		newer.Kind = guardmodel.SetupAgent
 		newer.ID = uuidAt(t, dbNow(t, d).Add(time.Second))
 		require.NoError(t, record(newer))
-		requireRefused(t, record(old), guardmodel.SetupSuperseded)
+		requireRefused(t, record(old), guard.SetupSuperseded)
 		// An UPGRADE is never superseded.
 		up := old
 		up.Kind, up.Agent = guardmodel.SetupUpgrade, ""
@@ -341,8 +341,8 @@ func TestRecordSetupRefusals(t *testing.T) {
 		require.NoError(t, record(at(now.Add(-time.Second))))
 		require.NoError(t, record(at(now.Add(-setupGrace+time.Minute))))
 		// Past the grace the database refuses it, whatever the client checked.
-		requireRefused(t, record(at(now.Add(-setupGrace-time.Minute))), guardmodel.SetupExpired)
-		requireRefused(t, record(at(now.Add(-24*time.Hour))), guardmodel.SetupExpired)
+		requireRefused(t, record(at(now.Add(-setupGrace-time.Minute))), guard.SetupExpired)
+		requireRefused(t, record(at(now.Add(-24*time.Hour))), guard.SetupExpired)
 	})
 	t.Run("setup id in the future", func(t *testing.T) {
 		now := dbNow(t, d)
@@ -350,7 +350,7 @@ func TestRecordSetupRefusals(t *testing.T) {
 			ID: uuidAt(t, now.Add(setupSkew+time.Minute)), Kind: guardmodel.SetupUpgrade,
 			GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(5 * time.Minute),
 		}
-		requireRefused(t, record(s), guardmodel.SetupIDInFuture)
+		requireRefused(t, record(s), guard.SetupIDInFuture)
 		// Within the skew it passes.
 		s.ID = uuidAt(t, now.Add(setupSkew-time.Minute))
 		require.NoError(t, record(s))
@@ -361,11 +361,11 @@ func TestRecordSetupRefusals(t *testing.T) {
 			ID: uuidAt(t, now), Kind: guardmodel.SetupUpgrade, GuardVersion: guard.LatestVersion(),
 			ExpiresAt: now.Add(setupLifetime + setupSkew + time.Minute),
 		}
-		requireRefused(t, record(s), guardmodel.SetupExpiryTooFar)
+		requireRefused(t, record(s), guard.SetupExpiryTooFar)
 		// More than Lifetime after the setup id's time, though near now.
 		s.ID = uuidAt(t, now.Add(-20*time.Minute))
 		s.ExpiresAt = now
-		requireRefused(t, record(s), guardmodel.SetupExpiryTooFar)
+		requireRefused(t, record(s), guard.SetupExpiryTooFar)
 		s.ExpiresAt = now.Add(setupLifetime - 20*time.Minute)
 		require.NoError(t, record(s))
 	})
@@ -398,7 +398,7 @@ func TestRecordSetupRefusals(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				s := base
 				mutate(&s)
-				requireCode(t, record(s), guardmodel.CodeLedgerInputInvalid)
+				requireCode(t, record(s), guard.CodeLedgerInputInvalid)
 			})
 		}
 	})
@@ -415,7 +415,7 @@ func TestRecordSetupRefusals(t *testing.T) {
 		require.NoError(t, d.Admin.QueryRow(ctx, `SELECT now()`).Scan(&now))
 		_, err = d.Admin.Exec(ctx, `SELECT basalt_meta.record_setup($1::uuid, 'INSTALL', $2::name, $3::int, $4::timestamptz)`,
 			uuidAt(t, now), d.Names.Agents(), guard.LatestVersion(), now.Add(5*time.Minute))
-		requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+		requireCode(t, err, guard.CodeLedgerInputInvalid)
 	})
 	t.Run("expired inside a long transaction", func(t *testing.T) {
 		// now() is fixed when the transaction starts; the expiry check
@@ -441,7 +441,7 @@ func TestRecordSetupRefusals(t *testing.T) {
 			_, err := guard.RecordSetup(ctx, tx, d.Names, s)
 			return err
 		})
-		requireRefused(t, err, guardmodel.SetupExpired)
+		requireRefused(t, err, guard.SetupExpired)
 	})
 }
 
@@ -527,7 +527,7 @@ func TestSetupsAreRemovable(t *testing.T) {
 	bot := requireLogin(t, d, pw)
 	require.Equal(t, 1, count(t, bot, `SELECT count(setup_id)::int FROM basalt_meta.agent_setups`))
 	_, err = guard.RecordSetup(ctx, d.Admin, d.Names, s)
-	requireRefused(t, err, guardmodel.SetupUsed)
+	requireRefused(t, err, guard.SetupUsed)
 
 	require.NoError(t, bot.Close(ctx))
 	d.Exec(t, `DROP SCHEMA basalt_meta CASCADE`)

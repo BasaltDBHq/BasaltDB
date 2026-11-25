@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
@@ -69,7 +68,7 @@ func field(t *testing.T, raw json.RawMessage, name string) any {
 // requireScopeRefused checks err is SCOPE_REFUSED (BS011) with detail.
 func requireScopeRefused(t *testing.T, err error, detail string) {
 	t.Helper()
-	requireCode(t, err, guardmodel.CodeScopeRefused)
+	requireCode(t, err, guard.CodeScopeRefused)
 	got, _, ok := guard.ScopeRefusal(err)
 	require.True(t, ok)
 	require.Equal(t, detail, got, err.Error())
@@ -123,9 +122,9 @@ func TestRevertLinesUpdate(t *testing.T) {
 
 	got, err := guard.PreviewRevert(ctx, a.Conn, action.Scope{Kind: revert.ScopeRun, ID: uuid.Must(uuid.NewV7())})
 	require.Empty(t, got)
-	requireScopeRefused(t, err, guardmodel.ScopeNotOwnRun)
+	requireScopeRefused(t, err, guard.ScopeNotOwnRun)
 	_, err = guard.PreviewRevert(ctx, d.Admin, action.Scope{Kind: revert.ScopeRun, ID: in.RunID})
-	requireCode(t, err, guardmodel.CodeNotAllowed)
+	requireCode(t, err, guard.CodeNotAllowed)
 }
 
 func TestRevertLinesInsertDeleteAndNetNoOp(t *testing.T) {

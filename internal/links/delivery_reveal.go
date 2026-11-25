@@ -6,7 +6,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -75,7 +74,7 @@ func CheckedAnswer(lines []string, rows []approval.RevealedRow) (approval.Reveal
 // goes back to that page only) to press Show values with passkey once more.
 func RevealRefused(code, link string) error {
 	te := &toolresult.ToolError{
-		Code: code, Reason: guardmodel.RevealRefused,
+		Code: code, Reason: guidance.ReasonRevealRefused,
 		Message:       "showing the hidden rows was refused: it needs the person's passkey on this page; nothing was shown",
 		PersonMessage: "Your passkey didn't confirm. Nothing was shown; try again.",
 	}

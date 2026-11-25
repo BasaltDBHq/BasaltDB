@@ -124,7 +124,7 @@ func ledgerDetails(t *testing.T, d *guardtest.DB, kind string) []map[string]any 
 
 func requireWidenRefused(t *testing.T, err error) string {
 	t.Helper()
-	requireRevertInvalid(t, err, guardmodel.RevertWidenRefused)
+	requireRevertInvalid(t, err, guard.RevertWidenRefused)
 	return scopeErrorText(t, err)
 }
 
@@ -336,7 +336,7 @@ func TestRescopeProbeUniform(t *testing.T) {
 	theirTable := tableText("public.lead_owner")
 	require.Equal(t, theirTable, tableText("public.nope"))
 	require.Equal(t, theirTable, tableText("public.payroll"))
-	require.Contains(t, theirTable, guardmodel.RevertWidenRefused)
+	require.Contains(t, theirTable, guard.RevertWidenRefused)
 
 	theirRevert, err := guard.PrepareRevert(ctx, e.helper.Conn, action.Scope{Kind: revert.ScopeRun, ID: e.help.RunID}, "x")
 	require.NoError(t, err)
@@ -451,14 +451,14 @@ func TestRescopeMembership(t *testing.T) {
 	}
 	run := e.every()
 	run.Runs = []uuid.UUID{e.helperOutside.RunID}
-	requireScopeRefused(t, try(run), guardmodel.ScopeFilter)
+	requireScopeRefused(t, try(run), guard.ScopeFilter)
 	table := e.every()
 	table.Resources = []string{"public.payroll"}
-	requireScopeRefused(t, try(table), guardmodel.ScopeFilter)
+	requireScopeRefused(t, try(table), guard.ScopeFilter)
 	agent := e.every()
 	agent.Agents = []string{e.helper.Name, "agent:nobody"}
-	requireScopeRefused(t, try(agent), guardmodel.ScopeDescriptor)
-	requireScopeRefused(t, try(revert.Select{Scope: revert.ScopeRun, ScopeID: e.helperOutside.RunID}), guardmodel.ScopeDescriptor)
+	requireScopeRefused(t, try(agent), guard.ScopeDescriptor)
+	requireScopeRefused(t, try(revert.Select{Scope: revert.ScopeRun, ScopeID: e.helperOutside.RunID}), guard.ScopeDescriptor)
 	// The agent's own unrelated run: own work, but not this revert's scope.
 	outside := newRun(t, e.bot, "elsewhere")
 	require.NoError(t, guardtest.Guarded(ctx, e.bot.Conn, outside, `UPDATE public.leads SET status = 'o' WHERE id = 35`))
@@ -466,7 +466,7 @@ func TestRescopeMembership(t *testing.T) {
 		RevertID: e.prep.RevertID,
 		Select:   revert.Select{Scope: revert.ScopeRun, ScopeID: outside.RunID, Agents: []string{e.bot.Name}},
 	})
-	requireScopeRefused(t, err, guardmodel.ScopeDescriptor)
+	requireScopeRefused(t, err, guard.ScopeDescriptor)
 	require.Empty(t, ledgerDetails(t, e.d, "REVERT_RESCOPED"))
 }
 
@@ -520,13 +520,13 @@ func TestResetRevert(t *testing.T) {
 		e.d.Exec(t, sql, prep.RevertID)
 		_, err = guard.ResetRevert(ctx, e.bot.Conn, prep.RevertID)
 		code, _ := guard.CodeOf(err)
-		require.Contains(t, []guardmodel.Code{guardmodel.CodeRevertInvalid, guardmodel.CodeRevertExpired}, code, name)
+		require.Contains(t, []guard.Code{guard.CodeRevertInvalid, guard.CodeRevertExpired}, code, name)
 		_, err = guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{
 			RevertID: prep.RevertID,
 			Select:   revert.Select{Scope: revert.ScopeRun, ScopeID: e.botA.RunID, Agents: []string{e.bot.Name}},
 		})
 		code, _ = guard.CodeOf(err)
-		require.Contains(t, []guardmodel.Code{guardmodel.CodeRevertInvalid, guardmodel.CodeRevertExpired}, code, name)
+		require.Contains(t, []guard.Code{guard.CodeRevertInvalid, guard.CodeRevertExpired}, code, name)
 	}
 }
 
@@ -543,7 +543,7 @@ func TestRescopeInvalidatesEarlierSignature(t *testing.T) {
 	_, err = guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{RevertID: e.prep.RevertID, Select: leadsOnly})
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, e.bot.Conn, e.prep.RevertID, sig)
-	requireCode(t, err, guardmodel.CodeRevertInvalid)
+	requireCode(t, err, guard.CodeRevertInvalid)
 	require.Equal(t, "a", leadStatus(t, e.d, 30))
 }
 
@@ -565,11 +565,11 @@ func TestUndoWidenedRevertRefused(t *testing.T) {
 	unknown := uuid.Must(uuid.NewV7())
 	none := action.Scope{Kind: revert.ScopeChange, ID: unknown}
 	_, err = guard.PreviewRevert(ctx, e.bot.Conn, undo)
-	requireScopeRefused(t, err, guardmodel.ScopeNotOwnChange)
+	requireScopeRefused(t, err, guard.ScopeNotOwnChange)
 	_, errNone := guard.PreviewRevert(ctx, e.bot.Conn, none)
 	require.Equal(t, scopeErrorText(t, errNone, unknown), scopeErrorText(t, err, applied.ChangeID))
 	_, err = guard.PrepareRevert(ctx, e.bot.Conn, undo, "redo")
-	requireScopeRefused(t, err, guardmodel.ScopeNotOwnChange)
+	requireScopeRefused(t, err, guard.ScopeNotOwnChange)
 	// Nor through rescope_revert of a pending revert, without a proof.
 	pending, err := guard.PrepareRevert(ctx, e.bot.Conn, action.Scope{
 		Kind: revert.ScopeRun,

@@ -15,7 +15,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -182,7 +181,7 @@ func (e raceEnv) race(t *testing.T, release func(), first, second func() error) 
 	return err1, err2
 }
 
-func requireRefused(t *testing.T, err error, code guardmodel.Code, detail string) {
+func requireRefused(t *testing.T, err error, code guard.Code, detail string) {
 	t.Helper()
 	got, ok := guard.CodeOf(err)
 	require.True(t, ok, "%v", err)
@@ -227,7 +226,7 @@ func TestRevealRacesTheApproval(t *testing.T) {
 	if errReveal == nil {
 		require.Len(t, rows, 2, "notes 39 and 40")
 	} else {
-		requireRefused(t, errReveal, guardmodel.CodeApprovalInvalid, "approval already approved")
+		requireRefused(t, errReveal, guard.CodeApprovalInvalid, "approval already approved")
 	}
 	require.NoError(t, errSign)
 	require.NoError(t, e.apply(h), "the signed write applies")
@@ -241,7 +240,7 @@ func TestRevealRacesTheApproval(t *testing.T) {
 		return err
 	})
 	require.NoError(t, errSign)
-	requireRefused(t, errReveal, guardmodel.CodeApprovalInvalid, "approval already approved")
+	requireRefused(t, errReveal, guard.CodeApprovalInvalid, "approval already approved")
 
 	// A signed approval: its apply first, the reveal after it is refused
 	// as used.
@@ -252,7 +251,7 @@ func TestRevealRacesTheApproval(t *testing.T) {
 		return err
 	})
 	require.NoError(t, errApply, "APPLIED")
-	requireRefused(t, errReveal, guardmodel.CodeApprovalInvalid, "approval already used")
+	requireRefused(t, errReveal, guard.CodeApprovalInvalid, "approval already used")
 
 	// The reveal first: refused (the approval is signed), and the apply
 	// after it still lands.
@@ -262,7 +261,7 @@ func TestRevealRacesTheApproval(t *testing.T) {
 		_, err := e.revealApproval(h, as, key)
 		return err
 	}, func() error { return e.apply(h) })
-	requireRefused(t, errReveal, guardmodel.CodeApprovalInvalid, "approval already approved")
+	requireRefused(t, errReveal, guard.CodeApprovalInvalid, "approval already approved")
 	require.NoError(t, errApply, "APPLIED")
 	var left int
 	require.NoError(t, e.d.Admin.QueryRow(context.Background(),
@@ -327,5 +326,5 @@ func TestRevealRacesTheRevertSignature(t *testing.T) {
 		return err
 	})
 	require.NoError(t, errSign)
-	requireRefused(t, errReveal, guardmodel.CodeRevertInvalid, "revert already applied")
+	requireRefused(t, errReveal, guard.CodeRevertInvalid, "revert already applied")
 }

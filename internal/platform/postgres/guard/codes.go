@@ -1,4 +1,9 @@
-package guardmodel
+package guard
+
+// The guard's error codes and refusal details: what the Postgres guard
+// raises (SQLSTATE class BS, its MESSAGE and its DETAIL). Only the Postgres
+// adapters read them; they map each to the store-neutral codes and typed
+// reasons of internal/core/action, which the domains read.
 
 // Code is a guard error code. Values match the MESSAGE the guard raises and
 // the CONTRACT.md tool error codes where one exists.
@@ -65,3 +70,26 @@ const (
 // changed no row a revert could restore (version 11); the hint names the
 // scope. Every other NOTHING_TO_REVERT keeps a sentence as its detail.
 const NothingReadsOnly = "READS_ONLY"
+
+// RevealRefused is the one detail of APPROVAL_INVALID and REVERT_INVALID for
+// every failed reveal proof, key, nonce or ticket check (CONTRACT.md, Rows
+// hidden from the agent; version 29).
+const RevealRefused = "REVEAL_REFUSED"
+
+// RevealRowsChanged is the detail of APPROVAL_INVALID when a re-run preview's
+// lines no longer match the held approval's (reveal_approval_rows): the
+// approval can no longer apply.
+const RevealRowsChanged = "ROWS_CHANGED"
+
+// DetailHoldTooLarge is the detail of the guard's refusal of preview lines
+// over guardmodel.MaxHeldLinesBytes (BS007 NOT_ALLOWED).
+const DetailHoldTooLarge = "HOLD_TOO_LARGE"
+
+// SETUP_REFUSED reasons: the DETAIL record_setup raises with BS010.
+const (
+	SetupUsed         = "USED"
+	SetupSuperseded   = "SUPERSEDED"
+	SetupExpired      = "EXPIRED"
+	SetupIDInFuture   = "SETUP_ID_IN_FUTURE"
+	SetupExpiryTooFar = "EXPIRY_TOO_FAR"
+)

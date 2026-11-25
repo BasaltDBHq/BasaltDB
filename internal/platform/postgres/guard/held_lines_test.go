@@ -35,10 +35,10 @@ func docsAgent(t *testing.T, size int) (*guardtest.DB, *guardtest.Agent) {
 // preview lines are over guard.MaxHeldLinesBytes.
 func requireHoldTooLarge(t *testing.T, err error) {
 	t.Helper()
-	requireCode(t, err, guardmodel.CodeNotAllowed)
+	requireCode(t, err, guard.CodeNotAllowed)
 	var pg *pgconn.PgError
 	require.True(t, errors.As(err, &pg))
-	require.Equal(t, guardmodel.DetailHoldTooLarge, pg.Detail)
+	require.Equal(t, guard.DetailHoldTooLarge, pg.Detail)
 	require.Contains(t, pg.Hint, fmt.Sprint(guardmodel.MaxHeldLinesBytes))
 }
 

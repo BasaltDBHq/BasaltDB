@@ -5,10 +5,10 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
 
@@ -33,7 +33,7 @@ func TestFailureCallsTheApprovalAndRevertStepBuilders(t *testing.T) {
 			"write", writeArgs0, plainFunc(func() error { return approval.ApprovalRequiredError(held) }),
 		},
 		stepcatalogtest.CaseKey("STATEMENT_REFUSED", "HOLD_TOO_LARGE", ""): {
-			"write", writeArgs0, pgFail("BS007", "NOT_ALLOWED", guardmodel.DetailHoldTooLarge),
+			"write", writeArgs0, pgFail("BS007", "NOT_ALLOWED", guard.DetailHoldTooLarge),
 		},
 		stepcatalogtest.CaseKey("REVERT_INVALID", "LINE_INVALID", ""): {
 			"apply_revert_batch", map[string]any{"revertId": caseRevertID, "lines": []any{1}}, pgFail("BS005", "REVERT_INVALID", "line 9 is not in the plan"),

@@ -42,4 +42,7 @@ const (
 	ReasonRowsChanged         = "ROWS_CHANGED"
 	ReasonPlanFinished        = "PLAN_FINISHED"
 	ReasonNotSigned           = "NOT_SIGNED"
+	// ReasonRevealRefused is every refused reveal proof, key, nonce or
+	// ticket (APPROVAL_INVALID and REVERT_INVALID, pages API only).
+	ReasonRevealRefused = "REVEAL_REFUSED"
 )

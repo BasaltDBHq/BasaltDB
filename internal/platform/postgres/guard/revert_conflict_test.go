@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
@@ -168,7 +167,7 @@ func TestRevertConflictSuite(t *testing.T) {
 			}
 			if restores == 0 {
 				_, err := guard.PrepareRevert(context.Background(), e.a.Conn, action.Scope{Kind: revert.ScopeRun, ID: e.in.RunID}, "Undo")
-				requireCode(t, err, guardmodel.CodeNothingToRevert)
+				requireCode(t, err, guard.CodeNothingToRevert)
 				return
 			}
 			out := revertScope(t, e.a, e.p, revert.ScopeRun, e.in.RunID)

@@ -76,7 +76,7 @@ func TestPluginEventSchemaExamples(t *testing.T) {
 			valid++
 			continue
 		}
-		requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+		requireCode(t, err, guard.CodeLedgerInputInvalid)
 	}
 	require.Equal(t, valid, pluginEvents(t, d, a.Role))
 }
@@ -93,13 +93,13 @@ func TestUnknownDetailKeyRefused(t *testing.T) {
 		`"agents": ["other"]`, `"config": {"languages": ["en"]}`, `"credentialFile": "/etc/x"`, `"note": "x"`,
 	} {
 		detail := strings.TrimSuffix(string(base), "}") + "," + extra + "}"
-		requireCode(t, recordRaw(t, a.Conn, string(guardmodel.PluginEnabled), detail), guardmodel.CodeLedgerInputInvalid)
+		requireCode(t, recordRaw(t, a.Conn, string(guardmodel.PluginEnabled), detail), guard.CodeLedgerInputInvalid)
 	}
 	for _, detail := range []string{
 		`{"signerKeyId": "jNZPxNG5htlwfhg4ZgknAA", "name": "acme-ner"}`,
 		`{"signerKeyId": "jNZPxNG5htlwfhg4ZgknAA", "agent": "other"}`,
 	} {
-		requireCode(t, recordRaw(t, a.Conn, string(guardmodel.PluginTrustAdded), detail), guardmodel.CodeLedgerInputInvalid)
+		requireCode(t, recordRaw(t, a.Conn, string(guardmodel.PluginTrustAdded), detail), guard.CodeLedgerInputInvalid)
 	}
 	require.Zero(t, pluginEvents(t, d, a.Role))
 }
@@ -149,7 +149,7 @@ func TestPluginEventShapesRefused(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			requireCode(t, recordRaw(t, a.Conn, string(guardmodel.PluginChanged), mutated(t, validLocal(), mutate)), guardmodel.CodeLedgerInputInvalid)
+			requireCode(t, recordRaw(t, a.Conn, string(guardmodel.PluginChanged), mutated(t, validLocal(), mutate)), guard.CodeLedgerInputInvalid)
 		})
 	}
 	for name, mutate := range map[string]func(m map[string]any){
@@ -159,14 +159,14 @@ func TestPluginEventShapesRefused(t *testing.T) {
 		"remote host not string": func(m map[string]any) { m["endpoint"] = map[string]any{"kind": "REMOTE", "host": 443} },
 	} {
 		t.Run(name, func(t *testing.T) {
-			requireCode(t, recordRaw(t, a.Conn, string(guardmodel.PluginChanged), mutated(t, remote, mutate)), guardmodel.CodeLedgerInputInvalid)
+			requireCode(t, recordRaw(t, a.Conn, string(guardmodel.PluginChanged), mutated(t, remote, mutate)), guard.CodeLedgerInputInvalid)
 		})
 	}
 	for _, detail := range []string{`null`, `[]`, `"x"`, `{}`} {
-		requireCode(t, recordRaw(t, a.Conn, string(guardmodel.PluginDisabled), detail), guardmodel.CodeLedgerInputInvalid)
+		requireCode(t, recordRaw(t, a.Conn, string(guardmodel.PluginDisabled), detail), guard.CodeLedgerInputInvalid)
 	}
-	requireCode(t, recordRaw(t, a.Conn, "PLUGIN_INSTALLED", mutated(t, validLocal(), nil)), guardmodel.CodeLedgerInputInvalid)
-	requireCode(t, recordRaw(t, a.Conn, "HEARTBEAT", mutated(t, validLocal(), nil)), guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, recordRaw(t, a.Conn, "PLUGIN_INSTALLED", mutated(t, validLocal(), nil)), guard.CodeLedgerInputInvalid)
+	requireCode(t, recordRaw(t, a.Conn, "HEARTBEAT", mutated(t, validLocal(), nil)), guard.CodeLedgerInputInvalid)
 	require.Zero(t, pluginEvents(t, d, a.Role))
 
 	// The shapes above are refused for their one change: the bases pass.
@@ -202,7 +202,7 @@ func TestPluginEventOver4KiBRefused(t *testing.T) {
 	require.NoError(t, err)
 	require.Greater(t, len(b), 4096)
 	err = guard.RecordPluginEntryEvent(context.Background(), a.Conn, guardmodel.PluginEnabled, big)
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
 	require.Equal(t, "BS008", guardtest.SQLState(err))
 	require.Zero(t, pluginEvents(t, d, a.Role))
 }
@@ -250,7 +250,7 @@ func TestPluginEventsAreEachAgentsOwn(t *testing.T) {
 	require.Empty(t, other.LatestTrustEvents)
 
 	// The admin (not an agent role) cannot write one at all.
-	requireCode(t, recordRaw(t, d.Admin, string(guardmodel.PluginEnabled), mutated(t, validLocal(), nil)), guardmodel.CodeNotAllowed)
+	requireCode(t, recordRaw(t, d.Admin, string(guardmodel.PluginEnabled), mutated(t, validLocal(), nil)), guard.CodeNotAllowed)
 }
 
 // The latest event of each entry decides: a disabled entry is not listed.
@@ -343,8 +343,8 @@ func TestReadPluginRecordsTakesTheLatestTrustEvent(t *testing.T) {
 	require.ElementsMatch(t, []guardmodel.PluginTrustEvent{{KeyID: k2, Kind: guardmodel.PluginTrustAdded}, {KeyID: k1, Kind: guardmodel.PluginTrustRemoved}}, recs.LatestTrustEvents)
 
 	require.Error(t, guard.RecordPluginEntryEvent(ctx, a.Conn, guardmodel.PluginTrustRemoved, validLocal()), "a key event carries no entry")
-	requireCode(t, recordRaw(t, a.Conn, string(guardmodel.PluginTrustRemoved), `{"signerKeyId": "short"}`), guardmodel.CodeLedgerInputInvalid)
-	requireCode(t, recordRaw(t, a.Conn, string(guardmodel.PluginTrustRemoved), mutated(t, validLocal(), nil)), guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, recordRaw(t, a.Conn, string(guardmodel.PluginTrustRemoved), `{"signerKeyId": "short"}`), guard.CodeLedgerInputInvalid)
+	requireCode(t, recordRaw(t, a.Conn, string(guardmodel.PluginTrustRemoved), mutated(t, validLocal(), nil)), guard.CodeLedgerInputInvalid)
 	st, err := guard.VerifyChain(ctx, a.Conn)
 	require.NoError(t, err)
 	require.True(t, st.Intact)
@@ -358,7 +358,7 @@ func TestPluginTrustRemovedMigration(t *testing.T) {
 	restore := guardtest.UpToVersion(t, 3)
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", leads, nil)
-	requireCode(t, guard.RecordPluginTrustRemoved(ctx, a.Conn, "jNZPxNG5htlwfhg4ZgknAA"), guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, guard.RecordPluginTrustRemoved(ctx, a.Conn, "jNZPxNG5htlwfhg4ZgknAA"), guard.CodeLedgerInputInvalid)
 	require.NoError(t, guard.RecordPluginTrustAdded(ctx, a.Conn, "jNZPxNG5htlwfhg4ZgknAA"), "version 3 still records")
 
 	restore()
@@ -376,7 +376,7 @@ func TestPluginTrustRemovedMigration(t *testing.T) {
 	require.NoError(t, d.Admin.QueryRow(ctx,
 		`SELECT has_function_privilege('public', 'basalt_meta.record_plugin_event(text, jsonb)', 'EXECUTE')`).Scan(&public))
 	require.False(t, public, "PUBLIC cannot run it")
-	requireCode(t, recordRaw(t, d.Admin, string(guardmodel.PluginTrustRemoved), `{"signerKeyId": "jNZPxNG5htlwfhg4ZgknAA"}`), guardmodel.CodeNotAllowed)
+	requireCode(t, recordRaw(t, d.Admin, string(guardmodel.PluginTrustRemoved), `{"signerKeyId": "jNZPxNG5htlwfhg4ZgknAA"}`), guard.CodeNotAllowed)
 	st, err := guard.VerifyChain(ctx, a.Conn)
 	require.NoError(t, err)
 	require.True(t, st.Intact)

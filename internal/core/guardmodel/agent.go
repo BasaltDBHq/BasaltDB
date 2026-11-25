@@ -19,7 +19,9 @@ const (
 // an Exact agent spec says after the role's name, followed by the tables
 // and sequences: the role still holds a privilege the setup grants on one
 // that is not picked, and this admin could not revoke it. It holds no quote and no
-// percent sign: it is written into the SQL as is.
+// percent sign: it is written into the SQL as is. It is the Postgres guard's
+// detail, here because the setup page (an inbound adapter, Postgres-only)
+// reads it and may not import the guard adapter.
 const UnpickedGrantsDetail = "still has access to tables or sequences that were not picked, and this admin cannot revoke it: "
 
 // ErrInvalidAgent is returned for an agent spec that cannot be installed.

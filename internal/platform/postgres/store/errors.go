@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5/pgproto3"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 )
 
@@ -42,9 +41,9 @@ var guardCodes = map[string]string{
 
 // messageCodes are guard codes, told apart by message within one SQLSTATE
 // (BS005, BS009), that are also contract tool codes.
-var messageCodes = []guardmodel.Code{
-	guardmodel.CodeApprovalExpired, guardmodel.CodeRevertInvalid, guardmodel.CodeRevertExpired,
-	guardmodel.CodeNothingToRevert,
+var messageCodes = []guard.Code{
+	guard.CodeApprovalExpired, guard.CodeRevertInvalid, guard.CodeRevertExpired,
+	guard.CodeNothingToRevert,
 }
 
 // unavailableClasses are SQLSTATE classes meaning the database cannot serve
@@ -145,7 +144,7 @@ func guardReason(code, detail string) string {
 		if strings.Contains(detail, "has no primary key") {
 			return action.ReasonNoPrimaryKey
 		}
-		if detail == guardmodel.DetailHoldTooLarge {
+		if detail == guard.DetailHoldTooLarge {
 			return action.ReasonHoldTooLarge
 		}
 		return action.ReasonNotAllowed
@@ -163,22 +162,22 @@ func guardReason(code, detail string) string {
 // typedSentence reports whether detail is a typed detail of guard code gc
 // whose hint is the guard's sentence (version 11): apply_revert's
 // REVERT_INVALID codes and NOTHING_TO_REVERT READS_ONLY.
-func typedSentence(gc guardmodel.Code, detail string) bool {
-	if gc == guardmodel.CodeNothingToRevert {
-		return detail == guardmodel.NothingReadsOnly
+func typedSentence(gc guard.Code, detail string) bool {
+	if gc == guard.CodeNothingToRevert {
+		return detail == guard.NothingReadsOnly
 	}
 	_, typed := revertTypedReasons[detail]
-	return gc == guardmodel.CodeRevertInvalid && typed
+	return gc == guard.CodeRevertInvalid && typed
 }
 
 // revertTypedReasons are the catalog reasons of apply_revert's typed
 // REVERT_INVALID details (version 11), the reasons their sentences had: a
 // revoked passkey stays a signature the guard did not accept.
 var revertTypedReasons = map[string]string{
-	guardmodel.RevertAlreadyApplied: action.ReasonPlanFinished,
-	guardmodel.RevertAlreadySigned:  action.ReasonPlanFinished,
-	guardmodel.RevertRowsChanged:    action.ReasonRowsChanged,
-	guardmodel.RevertPasskeyRevoked: action.ReasonBadSignature,
+	guard.RevertAlreadyApplied: action.ReasonPlanFinished,
+	guard.RevertAlreadySigned:  action.ReasonPlanFinished,
+	guard.RevertRowsChanged:    action.ReasonRowsChanged,
+	guard.RevertPasskeyRevoked: action.ReasonBadSignature,
 }
 
 type detailRule struct{ contains, reason string }

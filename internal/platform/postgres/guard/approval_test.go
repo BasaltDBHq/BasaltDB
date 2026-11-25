@@ -76,7 +76,7 @@ func sign(t *testing.T, p *passkeytest.Authenticator, held guard.Held, tamper fu
 
 func requireInvalid(t *testing.T, err error, detail string) {
 	t.Helper()
-	requireCode(t, err, guardmodel.CodeApprovalInvalid)
+	requireCode(t, err, guard.CodeApprovalInvalid)
 	var pg *pgconn.PgError
 	require.True(t, errors.As(err, &pg))
 	require.Contains(t, pg.Detail, detail)
@@ -94,7 +94,7 @@ func TestApprovalFlow(t *testing.T) {
 	const stmt = `DELETE FROM public.leads WHERE id = $1`
 	params := []any{3}
 
-	requireCode(t, applyApproved(context.Background(), a.Conn, in, uuid.Must(uuid.NewV7()), stmt, params), guardmodel.CodeApprovalInvalid)
+	requireCode(t, applyApproved(context.Background(), a.Conn, in, uuid.Must(uuid.NewV7()), stmt, params), guard.CodeApprovalInvalid)
 	err := pgx.BeginFunc(context.Background(), a.Conn, func(tx pgx.Tx) error {
 		if err := guard.BeginGuarded(context.Background(), tx, in, guardtest.Timeout); err != nil {
 			return err
@@ -102,7 +102,7 @@ func TestApprovalFlow(t *testing.T) {
 		_, err := tx.Exec(context.Background(), stmt, params...)
 		return err
 	})
-	requireCode(t, err, guardmodel.CodeApprovalRequired)
+	requireCode(t, err, guard.CodeApprovalRequired)
 
 	held, lines := previewAndHold(t, a.Conn, in, stmt, params, []string{})
 	// lead 3, its notes 5 and 6, their tags 5 and 6: the agent cannot read
@@ -305,8 +305,8 @@ func TestApprovalExpiry(t *testing.T) {
 	d.Exec(t, `UPDATE basalt_meta.approvals SET expires_at = now() - interval '1 second'`)
 
 	_, err = guard.SubmitApproval(context.Background(), a.Conn, unsigned.ApprovalID, sign(t, p, unsigned, nil))
-	requireCode(t, err, guardmodel.CodeApprovalExpired)
-	requireCode(t, applyApproved(context.Background(), a.Conn, in, signedHeld.ApprovalID, `DELETE FROM public.leads WHERE id = 61`, nil), guardmodel.CodeApprovalExpired)
+	requireCode(t, err, guard.CodeApprovalExpired)
+	requireCode(t, applyApproved(context.Background(), a.Conn, in, signedHeld.ApprovalID, `DELETE FROM public.leads WHERE id = 61`, nil), guard.CodeApprovalExpired)
 
 	_, err = a.Conn.Exec(context.Background(), `SELECT basalt_meta.prune()`)
 	require.NoError(t, err)
@@ -341,7 +341,7 @@ func TestHoldValidation(t *testing.T) {
 	}
 	for _, tc := range cases {
 		_, err := guard.Hold(context.Background(), a.Conn, tc.in, guardtest.Timeout, guard.HoldRequest{Statement: "DELETE FROM public.leads", Assigned: tc.assigned, Lines: tc.lines})
-		requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+		requireCode(t, err, guard.CodeLedgerInputInvalid)
 	}
 
 	// preview_lines only in a preview.
@@ -352,7 +352,7 @@ func TestHoldValidation(t *testing.T) {
 		_, err := guard.PreviewLines(context.Background(), tx, nil)
 		return err
 	})
-	requireCode(t, err, guardmodel.CodeNotAllowed)
+	requireCode(t, err, guard.CodeNotAllowed)
 }
 
 func TestPasskeyRegistration(t *testing.T) {
@@ -368,7 +368,7 @@ func TestPasskeyRegistration(t *testing.T) {
 
 	// Off the curve.
 	_, err := d.Admin.Exec(context.Background(), `SELECT basalt_meta.register_passkey('\x01', $1, $1, 'basaltvault.app', 'https://basaltvault.app', 'x', NULL)`, make([]byte, 32))
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
 
 	// Agents cannot register a key or write the passkey table.
 	x, y, err := p.Credential().XY()

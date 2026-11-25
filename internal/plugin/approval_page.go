@@ -157,14 +157,14 @@ func (pc *Service) pluginRelayError(ctx context.Context, id uuid.UUID, err error
 	detail := guidance.StoreDetail(err)
 	msg := pc.core.Errors.ToolError(err).Message
 	switch {
-	case code == guardmodel.CodeApprovalExpired:
+	case code == guidance.CodeApprovalExpired:
 		r, found, readErr := pc.deps.Approvals.ReadPluginApproval(ctx, id)
 		if readErr == nil && found {
 			return pluginExpired(id, r.ExpiresAt)
 		}
 		return pluginPageError(guidance.CodeApprovalExpired, "", msg,
 			"This plugin approval expired. Nothing was approved; ask the agent for a new link.", askAgentForLink())
-	case code != guardmodel.CodeApprovalInvalid:
+	case code != guidance.CodeApprovalInvalid:
 		return err
 	case detail == guardmodel.DetailAlreadyApproved:
 		return pluginAlreadyApproved(id)

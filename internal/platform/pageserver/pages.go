@@ -31,7 +31,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -497,14 +496,14 @@ func (s *Server) Body(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 // statuses maps contract error codes to HTTP statuses (CONTRACT.md, Local
 // pages, Errors).
 var statuses = map[string]int{
-	guidance.CodeNotFound:                http.StatusNotFound,
-	guidance.CodeApprovalExpired:         http.StatusGone,
-	string(guardmodel.CodeRevertExpired): http.StatusGone,
-	guidance.CodeApprovalInvalid:         http.StatusConflict,
-	string(guardmodel.CodeRevertInvalid): http.StatusConflict,
-	guidance.CodeInvalidArgument:         http.StatusBadRequest,
-	guidance.CodeUnavailable:             http.StatusServiceUnavailable,
-	guidance.CodeQueryTimeout:            http.StatusGatewayTimeout,
+	guidance.CodeNotFound:        http.StatusNotFound,
+	guidance.CodeApprovalExpired: http.StatusGone,
+	guidance.CodeRevertExpired:   http.StatusGone,
+	guidance.CodeApprovalInvalid: http.StatusConflict,
+	guidance.CodeRevertInvalid:   http.StatusConflict,
+	guidance.CodeInvalidArgument: http.StatusBadRequest,
+	guidance.CodeUnavailable:     http.StatusServiceUnavailable,
+	guidance.CodeQueryTimeout:    http.StatusGatewayTimeout,
 }
 
 // Fail answers err as the contract's error body. Unexpected errors are

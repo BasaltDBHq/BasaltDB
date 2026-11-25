@@ -74,8 +74,8 @@ var revertStoreRule = storeRule{
 	// 57014; the domain reads the store's codes only through its ports.
 	text: regexp.MustCompile(`pg_|xmin|\b[0-9][0-9A-Z]{4}\b`),
 	selectors: map[string]*regexp.Regexp{
-		modulePath + "/internal/core/guidance":   regexp.MustCompile(`^(LedgerCode|StoreDetail|ScopeRefusal|TimedOut)$`),
-		modulePath + "/internal/core/guardmodel": regexp.MustCompile(`^(Code.*|Scope.*|.*Refused)$`),
+		modulePath + "/internal/core/guidance":   regexp.MustCompile(`^(LedgerCode|StoreDetail|TimedOut)$`),
+		modulePath + "/internal/core/guardmodel": regexp.MustCompile(`^(Code.*|Scope.*|.*Refused|Detail.*|UnpickedGrantsDetail)$`),
 		modulePath + "/internal/core/action":     regexp.MustCompile(`^StoreError$`),
 	},
 	allowed:     map[string]string{},
@@ -109,7 +109,7 @@ var approvalStoreRule = storeRule{
 	text:    regexp.MustCompile(`pg_|^(?i:sql)$`),
 	selectors: map[string]*regexp.Regexp{
 		modulePath + "/internal/core/guidance":   regexp.MustCompile(`^(LedgerCode|StoreDetail|StoreError)$`),
-		modulePath + "/internal/core/guardmodel": regexp.MustCompile(`^(Code.*|.*Refused|Reveal.*)$`),
+		modulePath + "/internal/core/guardmodel": regexp.MustCompile(`^(Code.*|.*Refused|Reveal.*|Detail.*|UnpickedGrantsDetail)$`),
 		modulePath + "/internal/core/approval":   regexp.MustCompile(`^RequestSQL$`),
 		modulePath + "/internal/core/action":     regexp.MustCompile(`^StoreError$`),
 	},
@@ -465,6 +465,8 @@ var (
 	_ = gm.CodeScopeRefused
 	_ = gm.ScopeShape
 	_ = gm.RevertWidenRefused
+	_ = gm.DetailTooManyPending
+	_ = gm.UnpickedGrantsDetail
 	_ = guidance.LedgerCode
 	_ = guidance.TimedOut
 	_ *action.StoreError
@@ -502,8 +504,10 @@ func widenRefused() {}
 		`a.go: import github.com/jackc/pgx/v5/pgconn`,
 		`a.go: selector action.StoreError`,
 		`a.go: selector gm.CodeScopeRefused`,
+		`a.go: selector gm.DetailTooManyPending`,
 		`a.go: selector gm.RevertWidenRefused`,
 		`a.go: selector gm.ScopeShape`,
+		`a.go: selector gm.UnpickedGrantsDetail`,
 		`a.go: selector guidance.LedgerCode`,
 		`a.go: selector guidance.TimedOut`,
 		`a.go: text "57014"`,
@@ -591,6 +595,7 @@ var (
 	_ = gm.CodeApprovalInvalid
 	_ = gm.HoldRefused
 	_ = gm.RevealRowsChanged
+	_ = gm.DetailAlreadyApproved
 	_ = approval.RequestSQL
 	_ *action.StoreError
 	_ = toolresult.ToolError{SQLState: "57014"}
@@ -633,6 +638,7 @@ func RevealHeld() {}
 		`a.go: selector g.StoreDetail`,
 		`a.go: selector g.StoreError`,
 		`a.go: selector gm.CodeApprovalInvalid`,
+		`a.go: selector gm.DetailAlreadyApproved`,
 		`a.go: selector gm.HoldRefused`,
 		`a.go: selector gm.RevealRowsChanged`,
 		`a.go: text "SQL"`,

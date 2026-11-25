@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
@@ -28,7 +27,7 @@ func newRun(t *testing.T, a *guardtest.Agent, text string) guard.Intent {
 	return in
 }
 
-func requireCode(t *testing.T, err error, want guardmodel.Code) {
+func requireCode(t *testing.T, err error, want guard.Code) {
 	t.Helper()
 	require.Error(t, err)
 	got, ok := guard.CodeOf(err)
@@ -50,7 +49,7 @@ func TestWriteWithoutIntentRefused(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := a.Conn.Exec(ctx, `UPDATE public.leads SET status = 'merged' WHERE id = 4`)
-	requireCode(t, err, guardmodel.CodeIntentRequired)
+	requireCode(t, err, guard.CodeIntentRequired)
 
 	err = pgx.BeginFunc(ctx, a.Conn, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SELECT set_config('basalt.intent', '', true)`); err != nil {
@@ -59,7 +58,7 @@ func TestWriteWithoutIntentRefused(t *testing.T) {
 		_, err := tx.Exec(ctx, `UPDATE public.leads SET status = 'merged' WHERE id = 4`)
 		return err
 	})
-	requireCode(t, err, guardmodel.CodeIntentRequired)
+	requireCode(t, err, guard.CodeIntentRequired)
 
 	// People and the app are never blocked or recorded.
 	d.Exec(t, `CREATE ROLE `+d.Names.Prefix+`_app LOGIN PASSWORD 'app'`)
@@ -151,7 +150,7 @@ func TestIntentDoesNotLeakAcrossTransactions(t *testing.T) {
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET score = 1 WHERE id = 1`))
 	// Same connection, as a pooler would hand it to the next client.
 	_, err := a.Conn.Exec(ctx, `UPDATE public.leads SET score = 2 WHERE id = 1`)
-	requireCode(t, err, guardmodel.CodeIntentRequired)
+	requireCode(t, err, guard.CodeIntentRequired)
 	var intent string
 	require.NoError(t, a.Conn.QueryRow(ctx, `SELECT coalesce(current_setting('basalt.intent', true), '')`).Scan(&intent))
 	require.Empty(t, intent)
@@ -166,9 +165,9 @@ func TestRunMustBelongToAgent(t *testing.T) {
 	in := newRun(t, a, "mine")
 
 	err := guardtest.Guarded(ctx, b.Conn, in, `UPDATE public.leads SET score = 1 WHERE id = 1`)
-	requireCode(t, err, guardmodel.CodeNotAllowed)
+	requireCode(t, err, guard.CodeNotAllowed)
 	err = guard.StartRun(ctx, b.Conn, in)
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
 }
 
 func TestTruncateRefused(t *testing.T) {
@@ -178,7 +177,7 @@ func TestTruncateRefused(t *testing.T) {
 	a := d.NewAgent(t, "bot", []string{"public.scratch"}, nil)
 	d.Exec(t, `GRANT TRUNCATE ON public.scratch TO `+a.Role)
 	_, err := a.Conn.Exec(context.Background(), `TRUNCATE public.scratch`)
-	requireCode(t, err, guardmodel.CodeNotAllowed)
+	requireCode(t, err, guard.CodeNotAllowed)
 }
 
 func TestSuperuserNotGuarded(t *testing.T) {
@@ -216,9 +215,9 @@ func TestRecordRefusal(t *testing.T) {
 	require.Equal(t, []any{"public.leads"}, refusalResources(t, d, id))
 
 	_, err = guard.RecordRefusal(ctx, a.Conn, guard.Refusal{Intent: in, Op: "DROP", Code: "X"})
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
 	_, err = guard.RecordRefusal(ctx, a.Conn, guard.Refusal{Intent: in, Op: "OTHER", Code: "lower"})
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
 
 	// A refused read is recorded with Basalt's op, READ, and the store's
 	// verb, SELECT.

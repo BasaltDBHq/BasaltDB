@@ -339,7 +339,7 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 
 	body, isError = h.call(t, "write", withApproval(map[string]any{"params": []any{"closed", 21, 36}}))
 	requireToolError(t, body, isError, "APPROVAL_INVALID", "", "")
-	require.Contains(t, body["message"], "exactly those of the held write")
+	require.Contains(t, body["message"], "the request must be exactly the held write's")
 
 	require.NoError(t, relayApproval(e.svc, signLink(t, link, person)))
 	body, isError = h.call(t, "write", withApproval(nil))

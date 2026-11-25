@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/revert-binding.v1.json",
   "title": "Revert binding",
-  "description": "The jsonb text basalt_meta.prepare_revert (and, from version 20, rescope_revert and reset_revert) builds. The WebAuthn challenge is sha256 of its UTF-8 bytes. Clients parse it for display and never re-serialise it. This is the shape from basalt_meta version 20 (owner decision RS-3); up to version 19 the scope sat at the top level as scope, scopeId and agents, with no select, proposed, widened or agentRows. See CONTRACT.md, Revert.",
+  "description": "The binding text basalt_meta.prepare_revert, rescope_revert and reset_revert build, in the text rules of CONTRACT.md, Stores, Text rules. The WebAuthn challenge is sha256 of its UTF-8 bytes. Clients parse it for display and never re-serialise it. Owner decision RS-3: the scope is carried as scope descriptors (select, proposed). See CONTRACT.md, Revert.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "kind",
     "revertId",
-    "database",
+    "store",
     "select",
     "widened",
     "intent",
@@ -30,9 +30,9 @@
       "type": "string",
       "format": "uuid"
     },
-    "database": {
-      "type": "string",
-      "description": "current_database() of the guarded database, for display. Not the reserved store key of the descriptor (RS-4)."
+    "store": {
+      "$ref": "#/$defs/store",
+      "description": "Which store wrote the binding: its kind and the name it gives what the agent is bound to (current_database() in Postgres), for display. Not the reserved store key of the descriptor (RS-4)."
     },
     "select": {
       "$ref": "revert-select.schema.json",
@@ -44,7 +44,7 @@
     },
     "widened": {
       "type": "boolean",
-      "description": "True when select covers any change not made by requestedBy (its agents is null or names another role)."
+      "description": "True when select covers any change not made by requestedBy (its agents is null or names another agent)."
     },
     "agentRows": {
       "type": "object",
@@ -53,7 +53,10 @@
         "type": "integer",
         "minimum": 0
       },
-      "description": "Present exactly when widened is true: lines per agent role whose changes the select covers, RESTORE and SKIP, keyed by role name, for the page's headline. The keys are role names, not our own keys."
+      "description": "Present exactly when widened is true: lines per agent whose changes the select covers, RESTORE and SKIP, keyed agent:<name>, for the page's headline.",
+      "propertyNames": {
+        "$ref": "#/$defs/agentName"
+      }
     },
     "intent": {
       "type": "string",
@@ -80,8 +83,8 @@
       "description": "RFC 3339 UTC with microseconds, 1 hour after prepare_revert, or after the latest rescope or reset."
     },
     "requestedBy": {
-      "type": "string",
-      "description": "The role that called prepare_revert; lines are redacted for it. For a batched plan, the only role that may apply it."
+      "$ref": "#/$defs/agentName",
+      "description": "The agent that called prepare_revert, agent:<name>; lines are redacted for it. For a batched plan, the only agent that may apply it."
     },
     "batched": {
       "type": "boolean",
@@ -101,5 +104,35 @@
     "sampleHash": [
       "batched"
     ]
+  },
+  "$defs": {
+    "store": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "name"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "POSTGRES"
+          ],
+          "description": "The store's kind (CONTRACT.md, Stores). A page uses it as a label only."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The name the store gives what the agent is bound to: current_database() in Postgres."
+        }
+      }
+    },
+    "agentName": {
+      "type": "string",
+      "pattern": "^agent:[a-z][a-z0-9_]*$",
+      "maxLength": 69,
+      "description": "An agent, agent:<name> with <name> its name in engine.json; never the store's login for it (CONTRACT.md, Stores, Agent names)."
+    }
   }
 }

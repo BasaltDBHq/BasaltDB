@@ -100,12 +100,12 @@
                   "type": "array",
                   "description": "Values bound to $1, $2, ..."
                 },
-                "assignedColumns": {
+                "assignedFields": {
                   "type": "array",
                   "items": {
                     "type": "string"
                   },
-                  "description": "Columns whose new values the approval binds (CONTRACT.md, Approvals)."
+                  "description": "Fields whose new values the approval binds, the binding's assignedFields (CONTRACT.md, Approvals)."
                 },
                 "rows": {
                   "type": "integer",

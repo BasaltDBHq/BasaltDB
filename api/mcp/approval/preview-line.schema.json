@@ -2,17 +2,19 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/preview-line.v1.json",
   "title": "Preview line",
-  "description": "One affected row of a held write, as jsonb text from basalt_meta.preview_lines. Lines are ordered COLLATE \"C\". See CONTRACT.md, Approvals.",
+  "description": "One affected row of a held write, as basalt_meta.preview_lines writes it, in the text rules of CONTRACT.md, Stores, Text rules. Lines are ordered bytewise (COLLATE \"C\"). See CONTRACT.md, Approvals.",
   "oneOf": [
     {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "op",
+        "shape",
+        "store",
         "key",
         "old",
         "set",
-        "table",
+        "resource",
         "cascaded"
       ],
       "properties": {
@@ -24,12 +26,42 @@
             "DELETE"
           ]
         },
+        "shape": {
+          "type": "string",
+          "enum": [
+            "RECORD",
+            "OBJECT"
+          ],
+          "description": "The kind of data the values describe (CONTRACT.md, Stores, Shapes). RECORD: fields and values. OBJECT is reserved: a page refuses to offer signing for it, and for a shape it does not know."
+        },
+        "store": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "verb"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "POSTGRES"
+              ],
+              "description": "The store's kind (CONTRACT.md, Stores). A page uses it as a label only."
+            },
+            "verb": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The store's own word for the operation (in Postgres the command: INSERT, UPDATE, DELETE)."
+            }
+          }
+        },
         "key": {
           "type": [
             "object",
             "null"
           ],
-          "description": "Primary key of the old row; null for INSERT."
+          "description": "The identity fields of the old row (the primary key in Postgres); null for INSERT."
         },
         "old": {
           "type": [
@@ -43,11 +75,12 @@
             "object",
             "null"
           ],
-          "description": "New values of the assigned columns; null for DELETE and cascaded rows."
+          "description": "New values of the assigned fields; null for DELETE and cascaded rows."
         },
-        "table": {
+        "resource": {
           "type": "string",
-          "description": "Schema-qualified table name."
+          "minLength": 1,
+          "description": "What the row belongs to, in the store's form: schema.table in Postgres. Untrusted plain text on a page."
         },
         "cascaded": {
           "type": "boolean"
@@ -59,7 +92,9 @@
       "additionalProperties": false,
       "required": [
         "op",
-        "table",
+        "shape",
+        "store",
+        "resource",
         "rowHash",
         "cascaded",
         "redacted"
@@ -73,20 +108,52 @@
             "DELETE"
           ]
         },
-        "table": {
-          "type": "string"
+        "shape": {
+          "type": "string",
+          "enum": [
+            "RECORD",
+            "OBJECT"
+          ],
+          "description": "The kind of data the values describe (CONTRACT.md, Stores, Shapes). RECORD: fields and values. OBJECT is reserved: a page refuses to offer signing for it, and for a shape it does not know."
+        },
+        "store": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "verb"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "POSTGRES"
+              ],
+              "description": "The store's kind (CONTRACT.md, Stores). A page uses it as a label only."
+            },
+            "verb": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The store's own word for the operation (in Postgres the command: INSERT, UPDATE, DELETE)."
+            }
+          }
+        },
+        "resource": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What the row belongs to, in the store's form: schema.table in Postgres. Untrusted plain text on a page."
         },
         "rowHash": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$",
-          "description": "Lowercase hex sha256 of jsonb_build_array(key, old, set)::text."
+          "description": "Lowercase hex sha256 of [key, old, set] written by the text rules (in Postgres jsonb_build_array(key, old, set)::text)."
         },
         "cascaded": {
           "type": "boolean"
         },
         "redacted": {
           "const": true,
-          "description": "The agent role cannot SELECT this table, so key and values are hidden."
+          "description": "The agent role cannot read this row (in Postgres, cannot SELECT its table), so key and values are hidden."
         }
       }
     }

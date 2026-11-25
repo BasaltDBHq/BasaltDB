@@ -29,7 +29,7 @@
           "row": {
             "type": "string",
             "minLength": 2,
-            "description": "The exact text Postgres returns for jsonb_build_array(key, old, set) (approval) or jsonb_build_array(key, now, set) (revert): the text the line's rowHash hashes. Every SECRET column is null wherever it appears."
+            "description": "The exact text of [key, old, set] (approval) or [key, now, set] (revert) written by the text rules (CONTRACT.md, Stores, Text rules; in Postgres jsonb_build_array(…)): the text the line's rowHash hashes. Every SECRET column is null wherever it appears."
           },
           "secretColumns": {
             "type": "array",

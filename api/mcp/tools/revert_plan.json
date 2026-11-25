@@ -144,7 +144,7 @@
               "type": "string",
               "enum": [
                 "CHANGED_AFTER",
-                "ROW_GONE",
+                "TARGET_GONE",
                 "KEY_TAKEN",
                 "ALREADY_REVERTED",
                 "VALUES_PRUNED",
@@ -203,7 +203,7 @@
       "revertLine": {
         "type": "object",
         "additionalProperties": false,
-        "description": "The signed revert line as an object (CONTRACT.md, Revert); the fields are those of preview_revert items: the signed line's table is resource and its sqlState is storeCode.",
+        "description": "The signed revert line as an object (CONTRACT.md, Revert); the fields are those of preview_revert items: the signed line's store.code is a flat storeCode.",
         "required": [
           "action",
           "op",
@@ -249,7 +249,7 @@
             "type": "string",
             "enum": [
               "CHANGED_AFTER",
-              "ROW_GONE",
+              "TARGET_GONE",
               "KEY_TAKEN",
               "ALREADY_REVERTED",
               "VALUES_PRUNED",

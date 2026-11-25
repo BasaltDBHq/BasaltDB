@@ -55,7 +55,6 @@
           "changeId",
           "at",
           "actor",
-          "target",
           "rows",
           "cascadedRows",
           "status",
@@ -100,31 +99,77 @@
           "intent": {
             "type": "string"
           },
-          "target": {
-            "type": "object",
-            "properties": {
-              "table": {
-                "type": "string"
-              }
-            }
+          "resource": {
+            "type": "string",
+            "description": "The statement's own resource, in the store's form (schema.table in Postgres); absent when the action named none."
+          },
+          "shape": {
+            "type": "string",
+            "enum": [
+              "RECORD",
+              "OBJECT"
+            ],
+            "description": "The kind of data the values describe (CONTRACT.md, Stores, Shapes)."
+          },
+          "key": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "The identity fields of the one row the change targets, when it names one."
           },
           "op": {
             "type": "string",
             "enum": [
-              "SELECT",
+              "READ",
               "INSERT",
               "UPDATE",
               "DELETE",
               "OTHER",
               "REVERT"
-            ]
+            ],
+            "description": "Basalt's operation (CONTRACT.md, Stores, Operations); the store's own word is store.verb."
           },
-          "statement": {
-            "type": "string"
+          "store": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "POSTGRES"
+                ],
+                "description": "The store's kind (CONTRACT.md, Stores)."
+              },
+              "verb": {
+                "type": "string",
+                "description": "The store's own word for the operation (in Postgres the command, SELECT for a read); absent when the request did not parse."
+              }
+            }
           },
-          "params": {
-            "type": "array",
-            "description": "Values bound to $1, $2, ...; pruned after 30 days."
+          "request": {
+            "type": "object",
+            "description": "The request by family (CONTRACT.md, Stores, Request families). For SQL: statement and params; params pruned after 30 days.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "SQL"
+                ]
+              },
+              "statement": {
+                "type": "string"
+              },
+              "params": {
+                "type": "array",
+                "description": "Values bound to $1, $2, ...; pruned after 30 days."
+              }
+            }
           },
           "durationMs": {
             "type": "integer",
@@ -133,7 +178,7 @@
           "rows": {
             "type": "integer",
             "minimum": 0,
-            "description": "Rows the action changed, cascaded rows included; for a SELECT, rows returned."
+            "description": "Rows the action changed, cascaded rows included; for a READ, rows returned."
           },
           "cascadedRows": {
             "type": "integer",
@@ -170,15 +215,25 @@
             "items": {
               "type": "object",
               "required": [
-                "table",
+                "resource",
+                "shape",
                 "op",
                 "cascaded",
                 "redacted",
                 "pruned"
               ],
               "properties": {
-                "table": {
-                  "type": "string"
+                "resource": {
+                  "type": "string",
+                  "description": "What the row belongs to, in the store's form (schema.table in Postgres)."
+                },
+                "shape": {
+                  "type": "string",
+                  "enum": [
+                    "RECORD",
+                    "OBJECT"
+                  ],
+                  "description": "The kind of data the values describe (CONTRACT.md, Stores, Shapes)."
                 },
                 "op": {
                   "type": "string",
@@ -257,7 +312,7 @@
             "items": {
               "$ref": "../values/large-value.schema.json"
             },
-            "description": "CONTRACT.md, Large values: the values (statement, params) of this record left out because they are too large for you to read, each with its size and sha256; absent when none was. A value left out is absent, never null: it is stored in full."
+            "description": "CONTRACT.md, Large values: the values (request.statement, request.params) of this record left out because they are too large for you to read, each with its size and sha256; absent when none was. A value left out is absent, never null: it is stored in full."
           }
         }
       },
@@ -270,7 +325,8 @@
         "properties": {
           "version": {
             "type": "string",
-            "pattern": "^xmin:[0-9]+$"
+            "minLength": 1,
+            "description": "The store's version of the row, an opaque string the store writes and compares: xmin:<n> in Postgres (CONTRACT.md, Stores, Versions)."
           },
           "changeId": {
             "type": "string",

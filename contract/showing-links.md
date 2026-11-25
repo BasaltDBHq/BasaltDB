@@ -2,7 +2,7 @@
 
 Planned (M3.5, Vault channel Phase 0, owner decision VC-7). Long links rarely fail on a hard length limit. They fail because chat and terminal clients format them: they hard-wrap the line, stop link detection at a line break, take a trailing `.` or `)` into the URL, or read `_` and `*` as emphasis. These rules keep a link whole from the engine to the person's browser. They apply to every link the engine, the CLI or a page hands over: approval, revert and passkey pages, short or long.
 
-Terms: a **short link** carries `#s=<secret>` ([Link secrets](local-pages.md#link-secrets)); a **long link** carries the whole request, `#1.<request>` or `#2.<request>` ([Codes](approvals.md#codes)); a **hash link** carries only a check of the request, `#h=<h>`, and the request travels beside it as a file or text blocks ([The request file and pasted blocks](#the-request-file-and-pasted-blocks)). Format `2.` is the compact request encoding (design section 3.2, item 1), laid out in [Format 2](approvals.md#format-2-the-compact-request) (owner decision VC-29). The pages read both `1.` and `2.`; the engine emits `2.`.
+Terms: a **short link** carries `#s=<secret>` ([Link secrets](local-pages.md#link-secrets)); a **long link** carries the whole request, `#2.<request>` ([Codes](approvals.md#codes); format 1, `#1.`, is no longer read); a **hash link** carries only a check of the request, `#h=<h>`, and the request travels beside it as a file or text blocks ([The request file and pasted blocks](#the-request-file-and-pasted-blocks)). Format `2.` is the compact request encoding (design section 3.2, item 1), laid out in [Format 2](approvals.md#format-2-the-compact-request) (owner decision VC-29). The pages read both `1.` and `2.`; the engine emits `2.`.
 
 ### The link budget
 

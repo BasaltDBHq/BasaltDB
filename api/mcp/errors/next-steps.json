@@ -75,8 +75,8 @@
     { "code": "NOT_FOUND", "reason": "LINK_RESET", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "TELL_AGENT" }] },
     { "code": "NOT_FOUND", "tool": "describe", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }, { "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "RUN_COMMAND" }] },
 
-    { "code": "SQL_ERROR", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
-    { "code": "SQL_ERROR", "reason": "NO_ROWS_NOW", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "STORE_ERROR", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "STORE_ERROR", "reason": "NO_ROWS_NOW", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
 
     { "code": "INVALID_ARGUMENT", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
     { "code": "INVALID_ARGUMENT", "reason": "STALE_CURSOR", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },

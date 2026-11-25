@@ -13,6 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
@@ -162,13 +163,13 @@ func (s *Service) checkLabels(ctx context.Context, conn *pgx.Conn, tx pgx.Tx, j 
 	if more {
 		cols = cols[:maxColumns]
 	}
-	sampled := make([]sampled, len(cols))
 	infos := make([]ColumnInfo, len(cols))
+	listed := make([]piistore.Column, len(cols))
 	for i, c := range cols {
 		infos[i] = ColumnInfo{Table: c.TableName(), Column: c.Column, DataType: c.DataType, Class: c.Class, EntityType: c.EntityType, PhoneRegion: c.PhoneRegion}
-		sampled[i] = sampledColumn(infos[i], c.TableOID, c.Attnum)
+		listed[i] = piistore.Column{Namespace: c.Schema, Resource: c.Table, Name: c.Column, DataType: c.DataType}
 	}
-	s.suggest(ctx, conn, sampled, infos)
+	s.suggest(ctx, conn, listed, infos)
 	out := fixAnswer(database, []string{
 		fmt.Sprintf("This labels the columns of the database %s that have no label yet. Labels apply to every agent on this database.", database),
 	}, fmt.Sprintf("-- column labels: the ones you set, written to basalt_meta.pii_columns (%d columns listed)\n", len(infos)))
@@ -347,12 +348,4 @@ func passkeyLabel(label string) string {
 		return "without a label"
 	}
 	return label
-}
-
-// sampledColumn is a listed column with its catalog reference, for the
-// classifier's sample.
-func sampledColumn(info ColumnInfo, oid uint32, attnum int16) sampled {
-	s := sampled{info: info}
-	s.ref.TableOID, s.ref.Attnum = oid, attnum
-	return s
 }

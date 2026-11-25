@@ -6,6 +6,7 @@ import (
 	"unicode"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 )
 
 // nameRule is one row of the name rules: any of its phrases (word sequences
@@ -15,7 +16,7 @@ type nameRule struct {
 	phrases       [][]string
 	// kinds are the column kinds the rule applies to: an int column named
 	// mail_count holds no email.
-	kinds []kind
+	kinds []piistore.Kind
 	// numericPhrases, when set, are the only phrases that also apply to
 	// integer and numeric columns (a zip code may be stored as a number).
 	numericPhrases [][]string
@@ -37,44 +38,44 @@ var nameRules = []nameRule{
 		phrases: words("password", "passwd", "secret", "token", "api key", "apikey", "hash", "ssn",
 			"national id", "passport", "tax id", "card number", "cvv", "cvc", "nik", "pin", "otp", "passcode",
 			"security code"),
-		kinds: []kind{kindText, kindInt, kindNumeric, kindOther},
+		kinds: []piistore.Kind{piistore.KindText, piistore.KindInt, piistore.KindNumeric, piistore.KindOther},
 	},
 	{
 		class: guardmodel.ClassIdentifier, entity: guardmodel.EntityEmail,
 		phrases: words("email", "e mail", "mail"),
-		kinds:   []kind{kindText},
+		kinds:   []piistore.Kind{piistore.KindText},
 	},
 	{
 		class: guardmodel.ClassIdentifier, entity: guardmodel.EntityPhone,
 		phrases: words("phone", "mobile", "tel", "msisdn", "telephone", "whatsapp"),
-		kinds:   []kind{kindText, kindInt, kindNumeric},
+		kinds:   []piistore.Kind{piistore.KindText, piistore.KindInt, piistore.KindNumeric},
 	},
 	{
 		class: guardmodel.ClassIdentifier, entity: guardmodel.EntityOther,
 		phrases: words("ip address", "mac address", "wallet address"),
-		kinds:   []kind{kindText, kindOther},
+		kinds:   []piistore.Kind{piistore.KindText, piistore.KindOther},
 	},
 	{
 		class: guardmodel.ClassIdentifier, entity: guardmodel.EntityAddress,
 		phrases:        words("address", "street", "addr", "postcode", "zip", "zipcode", "postal code"),
-		kinds:          []kind{kindText, kindInt, kindNumeric},
+		kinds:          []piistore.Kind{piistore.KindText, piistore.KindInt, piistore.KindNumeric},
 		numericPhrases: words("postcode", "zip", "zipcode", "postal code"),
 	},
 	{
 		class: guardmodel.ClassIdentifier, entity: guardmodel.EntityOther,
 		phrases: words("dob", "birth date", "date of birth", "birthdate", "birthday", "iban",
 			"account number", "imei"),
-		kinds: []kind{kindText, kindInt, kindNumeric, kindDate},
+		kinds: []piistore.Kind{piistore.KindText, piistore.KindInt, piistore.KindNumeric, piistore.KindDate},
 	},
 	{
 		class: guardmodel.ClassIdentifier, entity: guardmodel.EntityPersonName,
 		phrases: words("name", "surname", "firstname", "lastname", "fullname", "givenname"),
-		kinds:   []kind{kindText},
+		kinds:   []piistore.Kind{piistore.KindText},
 	},
 	{
 		class:   guardmodel.ClassFreeText,
 		phrases: words("notes", "note", "comment", "comments", "message", "messages", "body", "description", "bio"),
-		kinds:   []kind{kindText},
+		kinds:   []piistore.Kind{piistore.KindText},
 	},
 }
 
@@ -127,7 +128,7 @@ const (
 
 // matchName applies the name rules to a column of kind k. A full match wins
 // over a qualified one.
-func matchName(name string, k kind) (nameHit, bool) {
+func matchName(name string, k piistore.Kind) (nameHit, bool) {
 	ws := splitName(name)
 	var qualified *nameHit
 	for _, r := range nameRules {
@@ -135,7 +136,7 @@ func matchName(name string, k kind) (nameHit, bool) {
 			continue
 		}
 		phrases := r.phrases
-		if r.numericPhrases != nil && (k == kindInt || k == kindNumeric) {
+		if r.numericPhrases != nil && (k == piistore.KindInt || k == piistore.KindNumeric) {
 			phrases = r.numericPhrases
 		}
 		switch ruleMatches(r, phrases, ws) {

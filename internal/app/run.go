@@ -35,7 +35,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
@@ -43,6 +42,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgpii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
@@ -404,7 +404,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 		}
 		out.upkeeps = append(out.upkeeps, rt.upkeep)
 		out.services = append(out.services, rt.svc)
-		if rt.scan.DB != nil {
+		if rt.scan.Fields != nil {
 			out.scans = append(out.scans, rt.scan)
 		}
 		out.agents = append(out.agents, engine.Agent{
@@ -671,8 +671,9 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	// it reads added to the dictionary before they leave the engine: query
 	// rows in the service, RETURNING rows inside the write's transaction.
 	classes := pii.NewMap(log.With("component", "pii"))
+	classStore := pgpii.Classes(pool)
 	observer := pii.NewObserver(classes, env.dict)
-	store := postgres.NewStore(budgeted, limits, time.Now).WithReturned(observer.Returned)
+	store := postgres.NewStore(budgeted, limits, time.Now).WithReturned(returnedPII(observer))
 	secrets := linkSecrets(env.stateDir, a.Name, log)
 	readRecord := func(ctx context.Context, id string) (*status.EngineRecord, error) {
 		r, err := guard.EngineRecord(ctx, pool, id)
@@ -700,7 +701,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	deps.Core.Name, deps.Core.Log, deps.Core.Now = a.Name, log, time.Now
 	deps.Core.Store, deps.Core.Commands = store, cmds
 	deps.Core.PagesBase, deps.Core.PagesOrigin, deps.Core.LinkBudget = env.pagesBase, env.pagesOrigin, env.cfg.LinkBudgetOrDefault()
-	deps.Agent.Data, deps.Agent.Visibility, deps.Agent.PII = store, blind, observer.On(pgquerier.Neutralize(pool))
+	deps.Agent.Data, deps.Agent.Visibility, deps.Agent.PII = store, blind, NewAgentPII(observer, classStore)
 	deps.Approval.Store, deps.Approval.Columns = store, postgres.NewColumnOrder(budgeted)
 	deps.Revert.Store = store
 	deps.Delivery.Deliverer, deps.Delivery.Links, deps.Delivery.Relay, deps.Delivery.Receipts = deliverer, secrets, relay, env.receipts
@@ -717,7 +718,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	deps.Status.Finisher = finisher
 	catalog := postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host)
 	deps.Agent.Limits, deps.Agent.Catalog = catalog.Limits(), NewAgentCatalog(catalog)
-	deps.Agent.Classes = agentClasses{pg: pii.StoreClasses{BoundMap: classes.On(pgquerier.Neutralize(pool)), Store: storeErrors{}}}
+	deps.Agent.Classes = pii.StoreClasses{BoundMap: classes.On(classStore), Store: storeErrors{}}
 	// The plugin approval routes read and relay on the agent's own
 	// credential, as the approval routes do.
 	deps.Plugin.Approvals, deps.Plugin.Requests = store, requests
@@ -729,8 +730,8 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		home: homeDBOf(cc),
 		upkeep: ledger.New(a.Name, buildinfo.Version, postgres.NewUpkeep(pool), log, time.Now).WithPins(env.pins).WithRLSCache(blind).
 			WithOperatedBy(env.cfg.OperatedBy).WithGate(svc.AdmitTick).
-			WithPII(pii.NewWatch(a.Name, classes, pgquerier.Neutralize(pool), log.With("component", "pii"))),
-		scan: pii.ScanSource{Agent: a.Name, DB: pgquerier.Neutralize(pool), ReadOnly: pgquerier.ReadOnlyTx(pool), Classes: classes, Limits: limits},
+			WithPII(pii.NewWatch(a.Name, classes, classStore, log.With("component", "pii"))),
+		scan: pii.ScanSource{Agent: a.Name, Map: classes, Classes: classStore, Fields: pgpii.Fields(pool, limits, pii.DefaultLoadTimeout)},
 		db:   pool,
 		kept: keptAgent{
 			db: pool, host: pool.Config().ConnConfig.Host, port: pool.Config().ConnConfig.Port,

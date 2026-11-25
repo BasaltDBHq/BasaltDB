@@ -3,69 +3,64 @@ package pii
 import (
 	"context"
 	"encoding/hex"
-	"sort"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
-// Secrets returns the SECRET columns of the map, ordered by table oid and
-// attribute number, loading it first when nothing is loaded. describe hides
-// them and search never matches them (CONTRACT.md, describe).
-func (m *Map) Secrets(ctx context.Context, db PiidictQuerier) ([]ColumnRef, error) {
-	s, err := m.current(ctx, db, nil)
+// Secrets returns the SECRET fields of the map, in the store's order,
+// loading it first when nothing is loaded. describe hides them and search
+// never matches them (CONTRACT.md, describe).
+func (m *Map) Secrets(ctx context.Context, c Classes) ([]agentstore.FieldRef, error) {
+	s, err := m.current(ctx, c, nil)
 	if err != nil {
 		return nil, err
 	}
-	var out []ColumnRef
-	for ref, c := range s.cols {
-		if c.Class == guardmodel.ClassSecret {
-			out = append(out, ref)
+	var out []agentstore.FieldRef
+	for _, f := range s.fields {
+		if f.class.Class == guardmodel.ClassSecret {
+			out = append(out, f.ref)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].TableOID != out[j].TableOID {
-			return out[i].TableOID < out[j].TableOID
-		}
-		return out[i].Attnum < out[j].Attnum
-	})
 	return out, nil
 }
 
-// CatalogFingerprint returns the agent's PII catalog fingerprint
-// (agent_pii_catalog.fingerprint) the map was loaded with, as hex: empty
-// before the first basalt classify. It loads the map first when nothing is
+// CatalogFingerprint returns the fingerprint of the agent's last classify
+// the map was loaded with (Marks.CatalogPrint), as hex: empty before the
+// first basalt classify. It loads the map first when nothing is
 // loaded.
-func (m *Map) CatalogFingerprint(ctx context.Context, db PiidictQuerier) (string, error) {
-	s, err := m.current(ctx, db, nil)
+func (m *Map) CatalogFingerprint(ctx context.Context, c Classes) (string, error) {
+	s, err := m.current(ctx, c, nil)
 	if err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(s.marks.catalogPrint), nil
+	return hex.EncodeToString(s.marks.CatalogPrint), nil
 }
 
-// On is the map reading through db (the agent's pool), as describe calls
-// it (agent.ClassResolver).
-func (m *Map) On(db PiidictQuerier) BoundMap {
-	return BoundMap{m: m, db: db}
+// On is the map reading through c (the agent's pool), as describe calls it
+// (agent.ClassResolver).
+func (m *Map) On(c Classes) BoundMap {
+	return BoundMap{m: m, c: c}
 }
 
-// BoundMap is a Map with its database.
+// BoundMap is a Map with its class store.
 type BoundMap struct {
-	m  *Map
-	db PiidictQuerier
+	m *Map
+	c Classes
 }
 
-// Resolve is Map.Resolve through the bound database.
-func (b BoundMap) Resolve(ctx context.Context, refs []ColumnRef) ([]Class, error) {
-	return b.m.Resolve(ctx, b.db, refs)
+// Resolve is Map.Resolve through the bound class store.
+func (b BoundMap) Resolve(ctx context.Context, refs []agentstore.FieldRef) ([]Class, error) {
+	return b.m.Resolve(ctx, b.c, refs)
 }
 
-// Secrets is Map.Secrets through the bound database.
-func (b BoundMap) Secrets(ctx context.Context) ([]ColumnRef, error) {
-	return b.m.Secrets(ctx, b.db)
+// Secrets is Map.Secrets through the bound class store.
+func (b BoundMap) Secrets(ctx context.Context) ([]agentstore.FieldRef, error) {
+	return b.m.Secrets(ctx, b.c)
 }
 
-// CatalogFingerprint is Map.CatalogFingerprint through the bound database.
+// CatalogFingerprint is Map.CatalogFingerprint through the bound class
+// store.
 func (b BoundMap) CatalogFingerprint(ctx context.Context) (string, error) {
-	return b.m.CatalogFingerprint(ctx, b.db)
+	return b.m.CatalogFingerprint(ctx, b.c)
 }

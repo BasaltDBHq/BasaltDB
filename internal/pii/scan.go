@@ -7,15 +7,19 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 )
+
+var piidictPsql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 
 // Scan defaults (M5.1 plan, section 6; CONTRACT.md engine config).
 const (
@@ -89,8 +93,10 @@ type ScanSource struct {
 	// ReadOnly runs each page in a read-only transaction of its own on the
 	// same pool (pgquerier.ReadOnlyTx).
 	ReadOnly ReadOnlyTx
-	Classes  *Map
-	Limits   sqlguard.Limits
+	// Map is the agent's classification map, read through Classes.
+	Map     *Map
+	Classes Classes
+	Limits  sqlguard.Limits
 }
 
 // ScanOptions tune the scan; zero fields take the defaults.
@@ -251,12 +257,16 @@ type scanRun struct {
 
 func (r *scanRun) source(ctx context.Context, src ScanSource) error {
 	lctx, cancel := context.WithTimeout(ctx, r.s.opts.LoadTimeout)
-	cols, err := src.Classes.Identifiers(lctx, src.DB)
+	cols, err := src.Map.Identifiers(lctx, src.Classes)
 	cancel()
 	if err != nil {
 		return fmt.Errorf("agent %s: %w", src.Agent, err)
 	}
-	for _, t := range byTable(cols) {
+	tables, err := byTable(cols)
+	if err != nil {
+		return fmt.Errorf("agent %s: %w", src.Agent, err)
+	}
+	for _, t := range tables {
 		err := r.table(ctx, src, t)
 		if why := skipReason(err); why != "" {
 			r.res.Skipped++
@@ -299,23 +309,38 @@ type scanTable struct {
 }
 
 // byTable groups columns by table, in a stable order.
-func byTable(cols []IdentifierColumn) []scanTable {
-	idx := map[uint32]int{}
+func byTable(cols []IdentifierColumn) ([]scanTable, error) {
+	idx := map[agentstore.ResourceRef]int{}
 	var out []scanTable
 	for _, c := range cols {
-		i, ok := idx[c.Ref.TableOID]
+		i, ok := idx[c.Resource]
 		if !ok {
+			oid, err := tableOID(c.Resource)
+			if err != nil {
+				return nil, err
+			}
 			i = len(out)
-			idx[c.Ref.TableOID] = i
-			out = append(out, scanTable{oid: c.Ref.TableOID, schema: c.Class.Schema, name: c.Class.Table})
+			idx[c.Resource] = i
+			out = append(out, scanTable{oid: oid, schema: c.Class.Namespace, name: c.Class.Resource})
 		}
 		out[i].cols = append(out[i].cols, c.Class)
 	}
 	slices.SortFunc(out, func(a, b scanTable) int { return strings.Compare(a.schema+"."+a.name, b.schema+"."+b.name) })
 	for i := range out {
-		slices.SortFunc(out[i].cols, func(a, b Class) int { return strings.Compare(a.Column, b.Column) })
+		slices.SortFunc(out[i].cols, func(a, b Class) int { return strings.Compare(a.Field, b.Field) })
 	}
-	return out
+	return out, nil
+}
+
+// tableOID reads a Postgres resource ref back as the table's oid. A bridge
+// until the scan reads its pages through a store port: the ref is the
+// table's oid, as the Postgres adapter writes it.
+func tableOID(ref agentstore.ResourceRef) (uint32, error) {
+	oid, err := strconv.ParseUint(string(ref), 10, 32)
+	if err != nil || oid == 0 {
+		return 0, fmt.Errorf("pii: %q is not a table the scan can read", ref)
+	}
+	return uint32(oid), nil
 }
 
 // table pages through one table: by its primary key, or by ctid for a
@@ -456,7 +481,7 @@ func rowPager(t scanTable, keys []keyColumn) func(page int) pager {
 			bounds = append(bounds, "CAST(? AS "+k.typ+")")
 		}
 		for _, c := range t.cols {
-			sel = append(sel, quoteIdentifier(c.Column))
+			sel = append(sel, quoteIdentifier(c.Field))
 		}
 		from := quoteIdentifier(t.schema, t.name)
 		tuple := "(" + strings.Join(order, ", ") + ") > (" + strings.Join(bounds, ", ") + ")"
@@ -481,7 +506,7 @@ func onePassPager(t scanTable) func(page int) pager {
 	return func(int) pager {
 		sel := make([]string, 0, len(t.cols))
 		for _, c := range t.cols {
-			sel = append(sel, quoteIdentifier(c.Column))
+			sel = append(sel, quoteIdentifier(c.Field))
 		}
 		from := quoteIdentifier(t.schema, t.name)
 		return pager{

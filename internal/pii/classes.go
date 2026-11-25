@@ -7,102 +7,130 @@ import (
 	"log/slog"
 	"sync"
 	"sync/atomic"
-	"time"
 
-	sq "github.com/Masterminds/squirrel"
-
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 )
 
-var piidictPsql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
-
-// Bounds of the per-tick bookkeeping, so an agent that reads many tables
+// Bounds of the per-tick bookkeeping, so an agent that reads many resources
 // with no classes cannot grow the engine's memory or its reload count
-// without limit. Past them a missing column is still UNCLASSIFIED, only no
+// without limit. Past them a missing field is still UNCLASSIFIED, only no
 // longer reloaded for or warned about again until the next tick.
 const (
-	// maxReloadOIDs is how many unknown table oids may each cause one reload
-	// per hourly tick.
-	maxReloadOIDs = 4096
-	// maxWarnedColumns is how many unclassified columns are warned about per
+	// maxReloadResources is how many unknown resources may each cause one
+	// reload per hourly tick.
+	maxReloadResources = 4096
+	// maxWarnedFields is how many unclassified fields are warned about per
 	// hourly tick.
-	maxWarnedColumns = 4096
+	maxWarnedFields = 4096
 )
 
-// ColumnRef is a table column as Postgres names it in a row description:
-// the table's oid and the column's attribute number.
-type ColumnRef struct {
-	TableOID uint32
-	Attnum   int16
+// Classes is the store's classification of one agent's fields, read on the
+// agent's credential.
+type Classes interface {
+	// Snapshot reads the marks and the classes in one consistent read,
+	// begun after the call: the marks first, then the classes.
+	Snapshot(ctx context.Context) (piistore.Snapshot, error)
+	// Marks reads the marks alone.
+	Marks(ctx context.Context) (piistore.Marks, error)
+	// Unclassified lists the fields the agent can read that need a person.
+	Unclassified(ctx context.Context) ([]piistore.Unclassified, error)
+	// ResourceOf is the resource that holds ref, for a ref the map does not
+	// know. ref is never empty.
+	ResourceOf(ref agentstore.FieldRef) agentstore.ResourceRef
+	// Shared is true for a source others may share a load with (a pool),
+	// false inside a caller's transaction (a write's RETURNING), which
+	// reads alone, on its own connection.
+	Shared() bool
 }
 
-// Class is one row of basalt_meta.agent_pii_columns.
+// Class is one field's class.
 type Class struct {
-	Schema, Table, Column string
-	Class                 string
+	Namespace, Resource, Field string
+	Class                      string
 	// EntityType is set exactly when Class is IDENTIFIER.
 	EntityType string
-	// PhoneRegion is the region a PHONE column's values are parsed in, or "".
+	// PhoneRegion is the region a PHONE field's values are parsed in, or "".
 	PhoneRegion string
 }
 
-// Unclassified is the class of a column missing from the map: UNCLASSIFIED,
+// Unclassified is the class of a field missing from the map: UNCLASSIFIED,
 // warned in M5.1 and refused from M5.2 (CONTRACT.md, PII classification).
 var Unclassified = Class{Class: guardmodel.ClassUnclassified}
 
-// Name is schema.table.column (names are not PII).
-func (c Class) Name() string { return c.Schema + "." + c.Table + "." + c.Column }
+// Name is namespace.resource.field (names are not PII).
+func (c Class) Name() string { return c.Namespace + "." + c.Resource + "." + c.Field }
 
-// marks are what the map was loaded with: the live fingerprint and the
-// catalog row, compared on each hourly tick.
-type marks struct {
-	fingerprint  []byte
-	catalogPrint []byte
-	classifiedAt *time.Time
-}
-
-func (m marks) equal(o marks) bool {
-	if !bytes.Equal(m.fingerprint, o.fingerprint) || !bytes.Equal(m.catalogPrint, o.catalogPrint) {
+// marksEqual reports whether two loads saw the same marks.
+func marksEqual(m, o piistore.Marks) bool {
+	if !bytes.Equal(m.Fingerprint, o.Fingerprint) || !bytes.Equal(m.CatalogPrint, o.CatalogPrint) {
 		return false
 	}
-	if m.classifiedAt == nil || o.classifiedAt == nil {
-		return m.classifiedAt == nil && o.classifiedAt == nil
+	if m.ClassifiedAt == nil || o.ClassifiedAt == nil {
+		return m.ClassifiedAt == nil && o.ClassifiedAt == nil
 	}
-	return m.classifiedAt.Equal(*o.classifiedAt)
+	return m.ClassifiedAt.Equal(*o.ClassifiedAt)
+}
+
+// fieldClass is one field of a snapshot.
+type fieldClass struct {
+	ref      agentstore.FieldRef
+	resource agentstore.ResourceRef
+	class    Class
 }
 
 // snapshot is one load of the map; it is never changed after the load.
 type snapshot struct {
-	cols  map[ColumnRef]Class
-	oids  map[uint32]struct{}
-	marks marks
+	cols      map[agentstore.FieldRef]Class
+	resources map[agentstore.ResourceRef]struct{}
+	// fields are the classes in the store's order.
+	fields []fieldClass
+	marks  piistore.Marks
+}
+
+// newSnapshot keys a store's snapshot by field and resource.
+func newSnapshot(s piistore.Snapshot) *snapshot {
+	out := &snapshot{
+		cols:      make(map[agentstore.FieldRef]Class, len(s.Fields)),
+		resources: map[agentstore.ResourceRef]struct{}{},
+		fields:    make([]fieldClass, 0, len(s.Fields)),
+		marks:     s.Marks,
+	}
+	for _, f := range s.Fields {
+		c := Class{
+			Namespace: f.Namespace, Resource: f.ResourceName, Field: f.Field,
+			Class: f.Class, EntityType: f.EntityType, PhoneRegion: f.PhoneRegion,
+		}
+		out.fields = append(out.fields, fieldClass{ref: f.Ref, resource: f.Resource, class: c})
+		out.cols[f.Ref] = c
+		out.resources[f.Resource] = struct{}{}
+	}
+	return out
 }
 
 // Map is one agent's classification map (CONTRACT.md, PII classification,
-// Engine): agent_pii_columns keyed by table oid and attribute number, with
-// the fingerprint and catalog row read with it. Lookups take no lock. No
-// lock is ever held while waiting for the database: a load through the
-// agent's pool runs as one flight that others wait on with their own
-// context, and a load inside a caller's transaction (a write's RETURNING)
-// reads on that transaction's connection, so a full pool cannot wedge it.
-// Safe for concurrent use.
+// Engine): the store's classes keyed by field, with the marks read with
+// them. Lookups take no lock. No lock is ever held while waiting for the
+// store: a load through a shared source (the agent's pool) runs as one
+// flight that others wait on with their own context, and a load from a
+// private one (a write's RETURNING, inside its transaction) reads alone on
+// that connection, so a full pool cannot wedge it. Safe for concurrent use.
 type Map struct {
 	log  *slog.Logger
 	snap atomic.Pointer[snapshot]
 	// loads counts loads (tests).
 	loads atomic.Int64
-	// between runs between a load's two reads (tests); a no-op otherwise.
-	between func()
 
 	mu        sync.Mutex // guards the fields below; never held during I/O
-	tried     map[uint32]struct{}
-	warned    map[ColumnRef]struct{}
-	flight    *flight // the pool load running now, or nil
+	tried     map[agentstore.ResourceRef]struct{}
+	warned    map[agentstore.FieldRef]struct{}
+	flight    *flight // the shared load running now, or nil
 	nextSeq   uint64  // the sequence number of the next load
 	storedSeq uint64  // the sequence number of the stored snapshot
 }
 
-// flight is one load through the pool, which others may wait on.
+// flight is one load through a shared source, which others may wait on.
 type flight struct {
 	seq  uint64
 	done chan struct{}
@@ -115,29 +143,33 @@ func NewMap(log *slog.Logger) *Map {
 	if log == nil {
 		panic("piidict: logger required")
 	}
-	return &Map{log: log, tried: map[uint32]struct{}{}, warned: map[ColumnRef]struct{}{}, nextSeq: 1, between: func() {}}
+	return &Map{
+		log: log, tried: map[agentstore.ResourceRef]struct{}{}, warned: map[agentstore.FieldRef]struct{}{},
+		nextSeq: 1,
+	}
 }
 
-// Load reads agent_pii_columns, pii_fingerprint() and agent_pii_catalog
-// in one snapshot, begun after this call, and replaces the map.
-func (m *Map) Load(ctx context.Context, db PiidictQuerier) error {
-	return m.load(ctx, db, true)
+// Load reads the classes and their marks in one snapshot, begun after this
+// call, and replaces the map.
+func (m *Map) Load(ctx context.Context, c Classes) error {
+	return m.load(ctx, c, true)
 }
 
 // load loads a snapshot. fresh asks for a load begun after this call (an
-// unknown oid, a moved catalog); otherwise a load already running will do.
-func (m *Map) load(ctx context.Context, db PiidictQuerier, fresh bool) error {
-	if _, ok := snapshotOf(db); !ok {
+// unknown resource, a moved catalog); otherwise a load already running will
+// do.
+func (m *Map) load(ctx context.Context, c Classes, fresh bool) error {
+	if !c.Shared() {
 		// Inside the caller's transaction: read on its own connection.
 		m.mu.Lock()
 		seq := m.nextSeq
 		m.nextSeq++
 		m.mu.Unlock()
-		s, err := readSnapshot(ctx, db, m.between)
+		s, err := c.Snapshot(ctx)
 		if err != nil {
 			return fmt.Errorf("load the pii classification: %w", err)
 		}
-		m.store(seq, s)
+		m.store(seq, newSnapshot(s))
 		return nil
 	}
 	f, lead, err := m.joinFlight(ctx, fresh)
@@ -147,13 +179,11 @@ func (m *Map) load(ctx context.Context, db PiidictQuerier, fresh bool) error {
 	if !lead {
 		return waitFlight(ctx, f)
 	}
-	s, err := withSnapshot(ctx, db, func(ctx context.Context, q PiidictQuerier) (*snapshot, error) {
-		return readSnapshot(ctx, q, m.between)
-	})
+	s, err := c.Snapshot(ctx)
 	if err != nil {
 		f.err = fmt.Errorf("load the pii classification: %w", err)
 	} else {
-		m.store(f.seq, s)
+		m.store(f.seq, newSnapshot(s))
 	}
 	m.mu.Lock()
 	m.flight = nil
@@ -209,80 +239,81 @@ func (m *Map) store(seq uint64, s *snapshot) {
 	m.snap.Store(s)
 }
 
-// Tick is the hourly check: it starts a new tick (every unknown oid may
-// reload once more, and missing columns are warned again), then reads the
-// fingerprint and the catalog row and reloads the map when either differs
-// from the values kept at the last load (or nothing was loaded yet).
-func (m *Map) Tick(ctx context.Context, db PiidictQuerier) (reloaded bool, err error) {
+// Tick is the hourly check: it starts a new tick (every unknown resource
+// may reload once more, and missing fields are warned again), then reads
+// the marks and reloads the map when they differ from the marks kept at the
+// last load (or nothing was loaded yet).
+func (m *Map) Tick(ctx context.Context, c Classes) (reloaded bool, err error) {
 	m.mu.Lock()
 	clear(m.tried)
 	clear(m.warned)
 	m.mu.Unlock()
 	if cur := m.snap.Load(); cur != nil {
-		now, err := withSnapshot(ctx, db, readMarks)
+		now, err := c.Marks(ctx)
 		if err != nil {
 			return false, fmt.Errorf("read the pii fingerprint: %w", err)
 		}
-		if now.equal(cur.marks) {
+		if marksEqual(now, cur.marks) {
 			return false, nil
 		}
 	}
-	return true, m.load(ctx, db, true)
+	return true, m.load(ctx, c, true)
 }
 
-// Resolve returns the class of each column. A column whose table oid is
-// not in the map reloads the map first, at most once per oid per tick
+// Resolve returns the class of each field. A field whose resource is not in
+// the map reloads the map first, at most once per resource per tick
 // (CONTRACT.md: so a table with no classes does not reload on every query).
-// A column still missing is UNCLASSIFIED and warned about once per tick. A
-// computed column (oid 0) has no class: its zero Class. A load that fails
-// is an error, so the caller does not return values it cannot classify.
-func (m *Map) Resolve(ctx context.Context, db PiidictQuerier, refs []ColumnRef) ([]Class, error) {
-	s, err := m.current(ctx, db, refs)
+// A field still missing is UNCLASSIFIED and warned about once per tick. A
+// computed value (an empty ref) has no class: its zero Class. A load that
+// fails is an error, so the caller does not return values it cannot
+// classify.
+func (m *Map) Resolve(ctx context.Context, c Classes, refs []agentstore.FieldRef) ([]Class, error) {
+	s, err := m.current(ctx, c, refs)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]Class, len(refs))
-	var missing []ColumnRef
+	var missing []agentstore.FieldRef
 	for i, r := range refs {
-		if r.TableOID == 0 {
+		if r == "" {
 			continue
 		}
-		c, ok := s.cols[r]
+		cl, ok := s.cols[r]
 		if !ok {
-			c = Unclassified
+			cl = Unclassified
 			missing = append(missing, r)
 		}
-		out[i] = c
+		out[i] = cl
 	}
 	m.warnMissing(missing)
 	return out, nil
 }
 
 // current is the snapshot to resolve refs against, loading it first when
-// none is loaded or a table oid of refs is unknown and not yet tried this
+// none is loaded or a resource of refs is unknown and not yet tried this
 // tick.
-func (m *Map) current(ctx context.Context, db PiidictQuerier, refs []ColumnRef) (*snapshot, error) {
+func (m *Map) current(ctx context.Context, c Classes, refs []agentstore.FieldRef) (*snapshot, error) {
 	s := m.snap.Load()
-	if s != nil && !s.unknown(refs) {
+	if s != nil && !s.unknown(c, refs) {
 		return s, nil
 	}
 	if s == nil {
-		if err := m.load(ctx, db, false); err != nil {
+		if err := m.load(ctx, c, false); err != nil {
 			return nil, err
 		}
 		s = m.snap.Load()
 	}
 	m.mu.Lock()
-	fresh := m.tryUnknownLocked(s, refs)
+	fresh := m.tryUnknownLocked(c, s, refs)
 	m.mu.Unlock()
 	if len(fresh) == 0 {
 		return s, nil
 	}
-	if err := m.load(ctx, db, true); err != nil {
-		// Not tried after all: the next result from those tables reloads.
+	if err := m.load(ctx, c, true); err != nil {
+		// Not tried after all: the next result from those resources reloads.
 		m.mu.Lock()
-		for _, oid := range fresh {
-			delete(m.tried, oid)
+		for _, r := range fresh {
+			delete(m.tried, r)
 		}
 		m.mu.Unlock()
 		return nil, err
@@ -290,176 +321,76 @@ func (m *Map) current(ctx context.Context, db PiidictQuerier, refs []ColumnRef) 
 	return m.snap.Load(), nil
 }
 
-// tryUnknownLocked marks the unknown oids of refs as tried for this tick and
-// returns the ones not tried before (one reload covers them all).
-func (m *Map) tryUnknownLocked(s *snapshot, refs []ColumnRef) []uint32 {
-	var fresh []uint32
+// tryUnknownLocked marks the unknown resources of refs as tried for this
+// tick and returns the ones not tried before (one reload covers them all).
+func (m *Map) tryUnknownLocked(c Classes, s *snapshot, refs []agentstore.FieldRef) []agentstore.ResourceRef {
+	var fresh []agentstore.ResourceRef
 	for _, r := range refs {
-		if r.TableOID == 0 {
+		if r == "" {
 			continue
 		}
-		if _, ok := s.oids[r.TableOID]; ok {
+		res := c.ResourceOf(r)
+		if _, ok := s.resources[res]; ok {
 			continue
 		}
-		if _, ok := m.tried[r.TableOID]; ok || len(m.tried) >= maxReloadOIDs {
+		if _, ok := m.tried[res]; ok || len(m.tried) >= maxReloadResources {
 			continue
 		}
-		m.tried[r.TableOID] = struct{}{}
-		fresh = append(fresh, r.TableOID)
+		m.tried[res] = struct{}{}
+		fresh = append(fresh, res)
 	}
 	return fresh
 }
 
-func (s *snapshot) unknown(refs []ColumnRef) bool {
+func (s *snapshot) unknown(c Classes, refs []agentstore.FieldRef) bool {
 	for _, r := range refs {
-		if r.TableOID == 0 {
+		if r == "" {
 			continue
 		}
-		if _, ok := s.oids[r.TableOID]; !ok {
+		if _, ok := s.resources[c.ResourceOf(r)]; !ok {
 			return true
 		}
 	}
 	return false
 }
 
-// warnMissing logs each unclassified column once per tick, by table oid and
-// attribute number (no value, no name the agent did not already see).
-func (m *Map) warnMissing(refs []ColumnRef) {
+// warnMissing logs each unclassified field once per tick, by its ref (no
+// value, no name the agent did not already see).
+func (m *Map) warnMissing(refs []agentstore.FieldRef) {
 	if len(refs) == 0 {
 		return
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, r := range refs {
-		if _, ok := m.warned[r]; ok || len(m.warned) >= maxWarnedColumns {
+		if _, ok := m.warned[r]; ok || len(m.warned) >= maxWarnedFields {
 			continue
 		}
 		m.warned[r] = struct{}{}
 		m.log.Warn("pii: a column the agent read is not classified (UNCLASSIFIED); run basalt init to label it",
-			"tableOid", r.TableOID, "attnum", r.Attnum)
+			"field", string(r))
 	}
 }
 
-// Identifiers returns the IDENTIFIER columns of the map, loading it first
-// when nothing is loaded.
-func (m *Map) Identifiers(ctx context.Context, db PiidictQuerier) ([]IdentifierColumn, error) {
-	if _, err := m.current(ctx, db, nil); err != nil {
+// Identifiers returns the IDENTIFIER fields of the map, in the store's
+// order, loading it first when nothing is loaded.
+func (m *Map) Identifiers(ctx context.Context, c Classes) ([]IdentifierColumn, error) {
+	if _, err := m.current(ctx, c, nil); err != nil {
 		return nil, err
 	}
 	s := m.snap.Load()
-	out := make([]IdentifierColumn, 0, len(s.cols))
-	for ref, c := range s.cols {
-		if c.Class == guardmodel.ClassIdentifier {
-			out = append(out, IdentifierColumn{Ref: ref, Class: c})
+	out := make([]IdentifierColumn, 0, len(s.fields))
+	for _, f := range s.fields {
+		if f.class.Class == guardmodel.ClassIdentifier {
+			out = append(out, IdentifierColumn{Ref: f.ref, Resource: f.resource, Class: f.class})
 		}
 	}
 	return out, nil
 }
 
-// IdentifierColumn is one IDENTIFIER column to scan.
+// IdentifierColumn is one IDENTIFIER field to scan.
 type IdentifierColumn struct {
-	Ref   ColumnRef
-	Class Class
-}
-
-// snapshotter is a handle that can open a read-only snapshot of its own: a
-// pool or a connection, not a transaction (pgquerier.Neutral implements it).
-type snapshotter interface {
-	ReadOnlySnapshot() (func(ctx context.Context, fn func(PiidictQuerier) error) error, bool)
-}
-
-// snapshotOf is the runner of db's own read-only snapshots, false when db
-// is a transaction (or a handle that cannot open one).
-func snapshotOf(db PiidictQuerier) (func(ctx context.Context, fn func(PiidictQuerier) error) error, bool) {
-	s, ok := db.(snapshotter)
-	if !ok {
-		return nil, false
-	}
-	return s.ReadOnlySnapshot()
-}
-
-// withSnapshot runs read in one repeatable-read, read-only transaction when
-// db is a pool, so the map and its marks come from one snapshot; inside a
-// caller's transaction (a write's RETURNING) it runs there.
-func withSnapshot[T any](ctx context.Context, db PiidictQuerier, read func(context.Context, PiidictQuerier) (T, error)) (T, error) {
-	run, ok := snapshotOf(db)
-	if !ok {
-		return read(ctx, db)
-	}
-	var out T
-	err := run(ctx, func(tx PiidictQuerier) error {
-		var err error
-		out, err = read(ctx, tx)
-		return err
-	})
-	return out, err
-}
-
-// readSnapshot reads the marks first, then the classes. Inside a write's
-// read-committed transaction the two are separate statements, and a basalt
-// classify may commit between them: marks read first are then the older
-// ones, so the next hourly tick sees the catalog move and reloads. (Read
-// the other way round, old classes would be kept with new marks and never
-// reloaded.) between runs between the two reads (tests).
-func readSnapshot(ctx context.Context, db PiidictQuerier, between func()) (*snapshot, error) {
-	mk, err := readMarks(ctx, db)
-	if err != nil {
-		return nil, err
-	}
-	between()
-	q, args, err := piidictPsql.Select("table_oid", "attnum", "table_schema", "table_name", "column_name",
-		"class", "coalesce(entity_type, '')", "coalesce(phone_region, '')").
-		From("basalt_meta.agent_pii_columns").ToSql()
-	if err != nil {
-		return nil, err
-	}
-	rows, err := db.Query(ctx, q, args...)
-	if err != nil {
-		return nil, err
-	}
-	s := &snapshot{cols: map[ColumnRef]Class{}, oids: map[uint32]struct{}{}, marks: mk}
-	var (
-		ref ColumnRef
-		c   Class
-	)
-	err = forEachRow(rows, []any{&ref.TableOID, &ref.Attnum, &c.Schema, &c.Table, &c.Column, &c.Class, &c.EntityType, &c.PhoneRegion}, func() error {
-		s.cols[ref] = c
-		s.oids[ref.TableOID] = struct{}{}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return s, nil
-}
-
-// readMarks reads pii_fingerprint() and the agent_pii_catalog row (none
-// before the first basalt classify).
-func readMarks(ctx context.Context, db PiidictQuerier) (marks, error) {
-	var mk marks
-	q, args, err := piidictPsql.Select("basalt_meta.pii_fingerprint()").ToSql()
-	if err != nil {
-		return mk, err
-	}
-	if err := db.QueryRow(ctx, q, args...).Scan(&mk.fingerprint); err != nil {
-		return mk, err
-	}
-	q, args, err = piidictPsql.Select("fingerprint", "classified_at").From("basalt_meta.agent_pii_catalog").ToSql()
-	if err != nil {
-		return mk, err
-	}
-	rows, err := db.Query(ctx, q, args...)
-	if err != nil {
-		return mk, err
-	}
-	var (
-		fp []byte
-		at time.Time
-	)
-	err = forEachRow(rows, []any{&fp, &at}, func() error {
-		classified := at
-		mk.catalogPrint, mk.classifiedAt = bytes.Clone(fp), &classified
-		return nil
-	})
-	return mk, err
+	Ref      agentstore.FieldRef
+	Resource agentstore.ResourceRef
+	Class    Class
 }

@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/rand"
 	"log/slog"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -18,12 +17,17 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
+	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
+	"github.com/basaltdbhq/basaltdb/internal/lib/sqlport"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/agentcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgpii"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
@@ -120,14 +124,6 @@ func (f fixture) oid(t *testing.T, table string) uint32 {
 	return oid
 }
 
-func (f fixture) attnum(t *testing.T, table, column string) int16 {
-	t.Helper()
-	var n int16
-	require.NoError(t, f.db.Admin.QueryRow(context.Background(),
-		`SELECT attnum FROM pg_attribute WHERE attrelid = $1::regclass AND attname = $2`, table, column).Scan(&n))
-	return n
-}
-
 // dictDirs remembers each test dictionary's state directory.
 var dictDirs sync.Map
 
@@ -182,69 +178,6 @@ func newLog() (*slog.Logger, *logBuffer) {
 	return slog.New(slog.NewTextHandler(b, nil)), b
 }
 
-func TestMapReloadsWhenClassifiedAtMoves(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	ctx := context.Background()
-	m := NewMap(slog.New(slog.DiscardHandler))
-
-	// Before the first classify: no catalog row, no class.
-	reloaded, err := m.Tick(ctx, pgquerier.Neutralize(f.pool))
-	require.NoError(t, err)
-	require.True(t, reloaded, "the first tick loads")
-	email := ColumnRef{TableOID: f.oid(t, "public.customers"), Attnum: f.attnum(t, "public.customers", "email")}
-	ids, err := m.Identifiers(ctx, pgquerier.Neutralize(f.pool))
-	require.NoError(t, err)
-	require.Empty(t, ids)
-
-	reloaded, err = m.Tick(ctx, pgquerier.Neutralize(f.pool))
-	require.NoError(t, err)
-	require.False(t, reloaded, "nothing moved")
-
-	f.classify(t, time.Now())
-	reloaded, err = m.Tick(ctx, pgquerier.Neutralize(f.pool))
-	require.NoError(t, err)
-	require.True(t, reloaded, "basalt classify ran: the catalog moved")
-	got, err := m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{email})
-	require.NoError(t, err)
-	require.Equal(t, guardmodel.ClassIdentifier, got[0].Class)
-
-	// Only classified_at moves (the same classes again): still a reload.
-	f.classify(t, time.Now().Add(time.Minute))
-	reloaded, err = m.Tick(ctx, pgquerier.Neutralize(f.pool))
-	require.NoError(t, err)
-	require.True(t, reloaded)
-
-	// A readable column added moves the live fingerprint.
-	f.db.Exec(t, `ALTER TABLE public.plain ADD COLUMN extra text`)
-	reloaded, err = m.Tick(ctx, pgquerier.Neutralize(f.pool))
-	require.NoError(t, err)
-	require.True(t, reloaded)
-}
-
-func TestMissingColumnIsUnclassifiedAndWarnedOncePerTick(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	f.classify(t, time.Now())
-	ctx := context.Background()
-	log, out := newLog()
-	m := NewMap(log)
-	// A column added after classify is in no row: UNCLASSIFIED.
-	f.db.Exec(t, `ALTER TABLE public.customers ADD COLUMN secret_word text`)
-	ref := ColumnRef{TableOID: f.oid(t, "public.customers"), Attnum: f.attnum(t, "public.customers", "secret_word")}
-	for range 3 {
-		got, err := m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{ref})
-		require.NoError(t, err)
-		require.Equal(t, Unclassified, got[0])
-	}
-	require.Equal(t, 1, strings.Count(out.String(), "UNCLASSIFIED"), out.String())
-	_, err := m.Tick(ctx, pgquerier.Neutralize(f.pool))
-	require.NoError(t, err)
-	_, err = m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{ref})
-	require.NoError(t, err)
-	require.Equal(t, 2, strings.Count(out.String(), "UNCLASSIFIED"), "warned again on the next tick")
-}
-
 // The query path of the engine: the reader on the agent's pool, then the
 // observer, as agent.Service.Query does.
 func TestValuesReadAreInTheDictionaryAndTokenizedConsistently(t *testing.T) {
@@ -253,13 +186,13 @@ func TestValuesReadAreInTheDictionaryAndTokenizedConsistently(t *testing.T) {
 	f.classify(t, time.Now())
 	ctx := context.Background()
 	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
-	obs := NewObserver(NewMap(slog.New(slog.DiscardHandler)), dict).On(pgquerier.Neutralize(f.pool))
+	obs := NewObserver(NewMap(slog.New(slog.DiscardHandler)), dict).On(pgpii.Classes(f.pool))
 
 	reader := postgres.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
 	res, err := reader.Read(ctx, `SELECT c.id, c.email, c.phone, c.name, lower(c.email) AS computed, c.note FROM customers c ORDER BY c.id`, nil, action.Statement{})
 	require.NoError(t, err)
 	require.False(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "ada@corp.ee", "")))
-	require.NoError(t, obs.Observe(ctx, res.Columns, res.Rows))
+	require.NoError(t, obs.Observe(ctx, resultFields(res.Columns), res.Rows))
 
 	require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "ada@corp.ee", "")))
 	require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "bob@corp.ee", "")))
@@ -284,6 +217,27 @@ func TestValuesReadAreInTheDictionaryAndTokenizedConsistently(t *testing.T) {
 	require.Contains(t, first, tok.Surface())
 }
 
+// resultFields names a Postgres result's fields, as internal/app does for
+// the observer: oid 0 (a computed column) has no ref.
+func resultFields(cols []action.Column) []piistore.ResultField {
+	out := make([]piistore.ResultField, len(cols))
+	for i, c := range cols {
+		out[i].Key = c.Name
+		if c.TableOID != 0 {
+			out[i].Ref = agentcatalog.FieldRef(c.TableOID, c.Attnum)
+		}
+	}
+	return out
+}
+
+// returned is obs as the store's returned-rows hook, reading the map in the
+// write's transaction, as internal/app wires it.
+func returned(obs *Observer) postgres.ReturnedFunc {
+	return func(ctx context.Context, tx sqlport.Port, cols []action.Column, rows []map[string]any) error {
+		return obs.Observe(ctx, pgpii.ClassesInTx(pgquerier.Unwrap(tx)), resultFields(cols), rows)
+	}
+}
+
 // refusingDict fails every add, as a full delta does.
 type refusingDict struct{}
 
@@ -296,7 +250,7 @@ func TestWriteReturningValuesAreAddedBeforeCommitAndFailClosed(t *testing.T) {
 	ctx := context.Background()
 	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	obs := NewObserver(NewMap(slog.New(slog.DiscardHandler)), dict)
-	store := postgres.NewStore(f.pool, sqlguard.DefaultLimits(), time.Now).WithReturned(obs.Returned)
+	store := postgres.NewStore(f.pool, sqlguard.DefaultLimits(), time.Now).WithReturned(returned(obs))
 	in := action.Intent{RunID: uuidV7(t), TaskID: uuidV7(t), Text: "add a customer"}
 	require.NoError(t, store.StartRun(ctx, in))
 	res, err := store.Write(ctx, in, action.OpInsert,
@@ -307,7 +261,7 @@ func TestWriteReturningValuesAreAddedBeforeCommitAndFailClosed(t *testing.T) {
 
 	// A value the dictionary cannot take rolls the write back.
 	refusing := postgres.NewStore(f.pool, sqlguard.DefaultLimits(), time.Now).
-		WithReturned(NewObserver(NewMap(slog.New(slog.DiscardHandler)), refusingDict{}).Returned)
+		WithReturned(returned(NewObserver(NewMap(slog.New(slog.DiscardHandler)), refusingDict{})))
 	_, err = refusing.Write(ctx, in, action.OpInsert,
 		`INSERT INTO customers (id, email) VALUES (11, 'dee@corp.ee') RETURNING email`, nil)
 	require.ErrorIs(t, err, corepii.ErrDeltaFull)
@@ -327,7 +281,7 @@ func TestScanRebuildsFromEveryKindOfRelation(t *testing.T) {
 	log, out := newLog()
 	var slept time.Duration
 	clock := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
-	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(f.pool), ReadOnly: pgquerier.ReadOnlyTx(f.pool), Classes: classes, Limits: sqlguard.DefaultLimits()}},
+	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(f.pool), ReadOnly: pgquerier.ReadOnlyTx(f.pool), Map: classes, Classes: pgpii.Classes(f.pool), Limits: sqlguard.DefaultLimits()}},
 		ScanOptions{
 			PageRows: 2, RowsPerSecond: 4, Now: func() time.Time { return clock },
 			Sleep: func(_ context.Context, d time.Duration) error { slept += d; clock = clock.Add(d); return nil },
@@ -368,7 +322,7 @@ func TestScanOverBudgetKeepsThePreviousDictionary(t *testing.T) {
 	ctx := context.Background()
 	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
-	src := []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(f.pool), ReadOnly: pgquerier.ReadOnlyTx(f.pool), Classes: classes, Limits: sqlguard.DefaultLimits()}}
+	src := []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(f.pool), ReadOnly: pgquerier.ReadOnlyTx(f.pool), Map: classes, Classes: pgpii.Classes(f.pool), Limits: sqlguard.DefaultLimits()}}
 	_, err := NewScanner(dict, src, ScanOptions{}, slog.New(slog.DiscardHandler)).Cycle(ctx)
 	require.NoError(t, err)
 	require.NoError(t, dict.Add(corepii.EntityEmail, "delta@corp.ee", ""))
@@ -382,144 +336,6 @@ func TestScanOverBudgetKeepsThePreviousDictionary(t *testing.T) {
 	require.Equal(t, 1, dict.Status().DeltaValues)
 }
 
-func TestWatchWarnsAboutUnclassifiedColumns(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	f.classify(t, time.Now())
-	ctx := context.Background()
-	log, out := newLog()
-	w := NewWatch("bot", NewMap(log), pgquerier.Neutralize(f.pool), log)
-	require.NoError(t, w.Tick(ctx))
-	require.Contains(t, out.String(), "pii: 2 columns unclassified: public.plain.id, public.plain.label")
-	require.Contains(t, out.String(), "pii: classification loaded")
-}
-
-// TestMapListsSecretsAndTheCatalogFingerprint: describe hides SECRET columns
-// and keys its fingerprints on the agent's PII catalog row, so the map lists
-// its SECRET columns and that row's fingerprint (empty before the first
-// classify), loading first when nothing is loaded.
-func TestMapListsSecretsAndTheCatalogFingerprint(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	ctx := context.Background()
-	m := NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(f.pool))
-
-	secrets, err := m.Secrets(ctx)
-	require.NoError(t, err)
-	require.Empty(t, secrets)
-	print0, err := m.CatalogFingerprint(ctx)
-	require.NoError(t, err)
-	require.Empty(t, print0, "no catalog row before the first classify")
-
-	rows, err := f.db.Admin.Query(ctx, `SELECT table_schema, table_name, column_name, data_type FROM basalt_meta.pii_readable_columns()`)
-	require.NoError(t, err)
-	cols, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (guardmodel.PIIColumn, error) {
-		var c guardmodel.PIIColumn
-		err := r.Scan(&c.Schema, &c.Table, &c.Column, &c.DataType)
-		c.Class = guardmodel.ClassPublic
-		if c.Table == "orders" && c.Column == "email" {
-			c.Class = guardmodel.ClassSecret
-		}
-		return c, err
-	})
-	require.NoError(t, err)
-	require.NoError(t, pgx.BeginFunc(ctx, f.db.Admin, func(tx pgx.Tx) error {
-		return guard.WriteClassification(ctx, tx, f.db.Names, guardmodel.Classification{Columns: cols, At: time.Now()})
-	}))
-	_, err = m.m.Tick(ctx, pgquerier.Neutralize(f.pool))
-	require.NoError(t, err)
-
-	secrets, err = m.Secrets(ctx)
-	require.NoError(t, err)
-	require.Equal(t, []ColumnRef{{TableOID: f.oid(t, "public.orders"), Attnum: f.attnum(t, "public.orders", "email")}}, secrets)
-	print1, err := m.CatalogFingerprint(ctx)
-	require.NoError(t, err)
-	require.Regexp(t, `^[0-9a-f]{64}$`, print1)
-
-	got, err := m.Resolve(ctx, secrets)
-	require.NoError(t, err)
-	require.Equal(t, guardmodel.ClassSecret, got[0].Class)
-}
-
-func TestMapReloadsOnceForANewTableOIDPerTick(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	f.classify(t, time.Now())
-	ctx := context.Background()
-	log, _ := newLog()
-	m := NewMap(log)
-	require.NoError(t, m.Load(ctx, pgquerier.Neutralize(f.pool)))
-	require.EqualValues(t, 1, m.loads.Load())
-
-	// A table created again after the load has a new oid: the first result
-	// column from it reloads the map, which then knows its class.
-	f.db.Exec(t, `DROP VIEW public.emails_v; DROP TABLE public.nokey;
-		CREATE TABLE public.nokey (email text);
-		CREATE VIEW public.emails_v AS SELECT email AS mail FROM public.customers;
-		GRANT SELECT ON public.nokey, public.emails_v TO `+f.agent.Role)
-	f.classify(t, time.Now())
-	ref := ColumnRef{TableOID: f.oid(t, "public.nokey"), Attnum: 1}
-	got, err := m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{ref})
-	require.NoError(t, err)
-	require.EqualValues(t, 2, m.loads.Load(), "an unknown oid reloads the map")
-	require.Equal(t, guardmodel.ClassIdentifier, got[0].Class)
-	require.Equal(t, guardmodel.EntityEmail, got[0].EntityType)
-
-	// A table with no classes reloads once per tick, not on every query.
-	plain := ColumnRef{TableOID: f.oid(t, "public.plain"), Attnum: 2}
-	for range 5 {
-		got, err = m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{plain})
-		require.NoError(t, err)
-		require.Equal(t, guardmodel.ClassUnclassified, got[0].Class)
-	}
-	require.EqualValues(t, 3, m.loads.Load(), "at most once per oid per tick")
-
-	// The next tick lets it reload once more (the marks are unchanged, so
-	// the tick itself does not reload).
-	reloaded, err := m.Tick(ctx, pgquerier.Neutralize(f.pool))
-	require.NoError(t, err)
-	require.False(t, reloaded)
-	_, err = m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{plain})
-	require.NoError(t, err)
-	_, err = m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{plain})
-	require.NoError(t, err)
-	require.EqualValues(t, 4, m.loads.Load())
-
-	// A computed column has no source: no reload, no class.
-	got, err = m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{{}})
-	require.NoError(t, err)
-	require.Equal(t, Class{}, got[0])
-	require.EqualValues(t, 4, m.loads.Load())
-}
-
-func TestMapBoundsReloadsAndWarnings(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	f.classify(t, time.Now())
-	ctx := context.Background()
-	m := NewMap(slog.New(slog.DiscardHandler))
-	require.NoError(t, m.Load(ctx, pgquerier.Neutralize(f.pool)))
-
-	// More unknown oids than the bound, in one result: one reload covers
-	// them, and the per-tick sets stop at their bounds.
-	refs := make([]ColumnRef, 0, maxReloadOIDs+100)
-	for i := range maxReloadOIDs + 100 {
-		refs = append(refs, ColumnRef{TableOID: uint32(4_000_000_000 - i), Attnum: 1})
-	}
-	_, err := m.Resolve(ctx, pgquerier.Neutralize(f.pool), refs)
-	require.NoError(t, err)
-	require.EqualValues(t, 2, m.loads.Load())
-	m.mu.Lock()
-	require.Len(t, m.tried, maxReloadOIDs)
-	require.Len(t, m.warned, maxWarnedColumns)
-	m.mu.Unlock()
-
-	// More unknown oids past the bound: no reload until the next tick.
-	_, err = m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{{TableOID: 12345678, Attnum: 1}})
-	require.NoError(t, err)
-	require.EqualValues(t, 2, m.loads.Load())
-}
-
 func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
@@ -527,11 +343,11 @@ func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 	ctx := context.Background()
 	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
-	obs := NewObserver(classes, dict).On(pgquerier.Neutralize(f.pool))
+	obs := NewObserver(classes, dict).On(pgpii.Classes(f.pool))
 	reader := postgres.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
-	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(f.pool), ReadOnly: pgquerier.ReadOnlyTx(f.pool), Classes: classes, Limits: sqlguard.DefaultLimits()}},
+	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(f.pool), ReadOnly: pgquerier.ReadOnlyTx(f.pool), Map: classes, Classes: pgpii.Classes(f.pool), Limits: sqlguard.DefaultLimits()}},
 		ScanOptions{}, slog.New(slog.DiscardHandler))
-	plain := ColumnRef{TableOID: f.oid(t, "public.plain"), Attnum: 2}
+	plain := agentcatalog.FieldRef(f.oid(t, "public.plain"), 2)
 
 	var wg sync.WaitGroup
 	errs := make(chan error, 64)
@@ -540,10 +356,10 @@ func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 			for range 5 {
 				res, err := reader.Read(ctx, `SELECT email, name FROM customers`, nil, action.Statement{})
 				if err == nil {
-					err = obs.Observe(ctx, res.Columns, res.Rows)
+					err = obs.Observe(ctx, resultFields(res.Columns), res.Rows)
 				}
 				if err == nil {
-					_, err = classes.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{plain})
+					_, err = classes.Resolve(ctx, pgpii.Classes(f.pool), []agentstore.FieldRef{plain})
 				}
 				if err != nil {
 					errs <- err
@@ -562,7 +378,7 @@ func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 	})
 	wg.Go(func() {
 		for range 3 {
-			if _, err := classes.Tick(ctx, pgquerier.Neutralize(f.pool)); err != nil {
+			if _, err := classes.Tick(ctx, pgpii.Classes(f.pool)); err != nil {
 				errs <- err
 				return
 			}

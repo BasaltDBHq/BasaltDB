@@ -24,11 +24,11 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgpii"
 )
 
 // piiService is the engine's agent service with the PII observer wired as
@@ -63,7 +63,7 @@ func piiService(t *testing.T, obs agentsvc.PIIObserver) (*app.Service, *guardtes
 	t.Cleanup(func() { _ = dict.Close() })
 	env := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(deps *app.Deps, pool *pgxpool.Pool) {
 		if obs == nil {
-			obs = pii.NewObserver(pii.NewMap(slog.New(slog.DiscardHandler)), dict).On(pgquerier.Neutralize(pool))
+			obs = app.NewAgentPII(pii.NewObserver(pii.NewMap(slog.New(slog.DiscardHandler)), dict), pgpii.Classes(pool))
 		}
 		deps.Agent.PII = obs
 	}))

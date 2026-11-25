@@ -88,8 +88,8 @@ func TestToolErrorMapping(t *testing.T) {
 		return store.MapError(fmt.Errorf("exec: %w", &pgconn.PgError{Code: code, Message: msg}))
 	}
 	cases := []struct {
-		err                    error
-		code, reason, sqlState string
+		err                     error
+		code, reason, storeCode string
 	}{
 		{pg("BS001", "INTENT_REQUIRED: UPDATE on public.leads"), guidance.CodeIntentRequired, "", "BS001"},
 		{pg("BS002", "APPROVAL_REQUIRED: 11 rows"), guidance.CodeApprovalRequired, "", "BS002"},
@@ -108,7 +108,7 @@ func TestToolErrorMapping(t *testing.T) {
 		{pg("57P01", "terminating connection due to administrator command"), guidance.CodeUnavailable, guidance.ReasonDatabaseUnreachable, "57P01"},
 		{pg("53300", `too many connections for role "basalt_agent_bot"`), guidance.CodeUnavailable, guidance.ReasonTooManyConnections, "53300"},
 		{pg("53100", "could not extend file: No space left on device"), guidance.CodeUnavailable, guidance.ReasonDatabaseUnreachable, "53100"},
-		{pg("23505", "duplicate key"), guidance.CodeSQLError, "", "23505"},
+		{pg("23505", "duplicate key"), guidance.CodeStoreError, "", "23505"},
 		{&action.RefusalError{Reason: action.ReasonDDL}, guidance.CodeStatementRefused, "DDL_NOT_ALLOWED", ""},
 		{fmt.Errorf("read: %w", action.ErrRowLimit), guidance.CodeQueryTimeout, guidance.ReasonRowLimit, ""},
 		{fmt.Errorf("read: %w", budget.ErrSizeLimit), guidance.CodeQueryTimeout, guidance.ReasonSizeLimit, ""},
@@ -126,7 +126,7 @@ func TestToolErrorMapping(t *testing.T) {
 		te := testErrors().ToolError(c.err)
 		require.Equal(t, c.code, te.Code, c.err.Error())
 		require.Equal(t, c.reason, te.Reason, c.err.Error())
-		require.Equal(t, c.sqlState, te.SQLState, c.err.Error())
+		require.Equal(t, c.storeCode, te.StoreCode, c.err.Error())
 		require.NotContains(t, te.Message, "hunter2")
 	}
 }

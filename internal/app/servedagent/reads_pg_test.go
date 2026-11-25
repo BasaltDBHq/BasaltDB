@@ -74,7 +74,7 @@ func TestStaleWriteIsRefusedBeforeItLands(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, guidance.CodeStaleRead, reason["code"])
 	require.Equal(t, read["changeId"], recs[1]["changeId"])
-	require.Equal(t, "SELECT", recs[1]["op"])
+	require.Equal(t, "READ", recs[1]["op"])
 
 	// Read again, then the write is based on what the agent saw.
 	h.mustQuery(t, map[string]any{"sql": "SELECT id, status FROM leads WHERE id = 42", "runId": runID})

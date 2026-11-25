@@ -17,7 +17,7 @@ const (
 	CodeRevertInvalid    = "REVERT_INVALID"
 	CodeRevertExpired    = "REVERT_EXPIRED"
 	CodePermissionDenied = "PERMISSION_DENIED"
-	CodeSQLError         = "SQL_ERROR"
+	CodeStoreError       = "STORE_ERROR"
 	CodeUnavailable      = "UNAVAILABLE"
 	CodeInternal         = "INTERNAL"
 )

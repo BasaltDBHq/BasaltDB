@@ -63,10 +63,7 @@ var revertStoreRule = storeRule{
 		modulePath + "/internal/core/guardmodel": regexp.MustCompile(`^(Code.*|Scope.*|.*Refused)$`),
 		modulePath + "/internal/core/action":     regexp.MustCompile(`^StoreError$`),
 	},
-	allowed: map[string]string{
-		"revert_steps.go: identifier SQLState": "the timeout answer's toolresult.ToolError still names the store's code " +
-			"SQLState; renaming ToolError's field removes this entry",
-	},
+	allowed: map[string]string{},
 }
 
 // importName is the name a file refers to the import s by.

@@ -8,14 +8,15 @@ import (
 
 // ToolError is a tool failure with a stable code from CONTRACT.md, returned
 // in the tools/call result with isError set. Reason refines some codes
-// (STATEMENT_REFUSED, QUERY_TIMEOUT); SQLState is set when Postgres raised
-// the error; Approval is set on APPROVAL_REQUIRED (M2).
+// (STATEMENT_REFUSED, QUERY_TIMEOUT); StoreCode is the store's own error
+// code (in Postgres the SQLSTATE), set whenever the store raised the error,
+// on any code; Approval is set on APPROVAL_REQUIRED (M2).
 type ToolError struct {
-	Code     string          `json:"code"`
-	Message  string          `json:"message"`
-	Reason   string          `json:"reason,omitempty"`
-	SQLState string          `json:"sqlState,omitempty"`
-	Approval *ApprovalNotice `json:"approval,omitempty"`
+	Code      string          `json:"code"`
+	Message   string          `json:"message"`
+	Reason    string          `json:"reason,omitempty"`
+	StoreCode string          `json:"storeCode,omitempty"`
+	Approval  *ApprovalNotice `json:"approval,omitempty"`
 	// PersonMessage and NextSteps say what to tell the person and what to
 	// do next (CONTRACT.md, Next steps).
 	PersonMessage string `json:"personMessage,omitempty"`

@@ -105,15 +105,15 @@ func (h harness) call(t *testing.T, tool string, args any) (map[string]any, bool
 	return body, resp.Result.IsError
 }
 
-func requireToolError(t *testing.T, body map[string]any, isError bool, code, reason, sqlState string) {
+func requireToolError(t *testing.T, body map[string]any, isError bool, code, reason, storeCode string) {
 	t.Helper()
 	require.True(t, isError, "%v", body)
 	require.Equal(t, code, body["code"], "%v", body)
 	if reason != "" {
 		require.Equal(t, reason, body["reason"], "%v", body)
 	}
-	if sqlState != "" {
-		require.Equal(t, sqlState, body["sqlState"], "%v", body)
+	if storeCode != "" {
+		require.Equal(t, storeCode, body["storeCode"], "%v", body)
 	}
 }
 
@@ -273,12 +273,12 @@ func TestQueryErrors(t *testing.T) {
 	h := newHarness(t, agentURL, sqlguard.DefaultLimits())
 
 	cases := []struct {
-		name                   string
-		args                   map[string]any
-		code, reason, sqlState string
+		name                    string
+		args                    map[string]any
+		code, reason, storeCode string
 	}{
 		{"ungranted table", map[string]any{"sql": "SELECT * FROM secrets"}, guidance.CodePermissionDenied, "", "42501"},
-		{"unknown column", map[string]any{"sql": "SELECT nope FROM leads"}, guidance.CodeSQLError, "", "42703"},
+		{"unknown column", map[string]any{"sql": "SELECT nope FROM leads"}, guidance.CodeStoreError, "", "42703"},
 		{"write sent to query", map[string]any{"sql": "DELETE FROM leads"}, guidance.CodeStatementRefused, "WRONG_TOOL", ""},
 		{"sleep", map[string]any{"sql": "SELECT pg_sleep(10)"}, guidance.CodeStatementRefused, "FUNCTION_NOT_ALLOWED", ""},
 		{"user function", map[string]any{"sql": "SELECT bump()"}, guidance.CodeStatementRefused, "FUNCTION_NOT_ALLOWED", ""},
@@ -295,7 +295,7 @@ func TestQueryErrors(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			body, isError := h.query(t, c.args)
-			requireToolError(t, body, isError, c.code, c.reason, c.sqlState)
+			requireToolError(t, body, isError, c.code, c.reason, c.storeCode)
 		})
 	}
 }
@@ -309,8 +309,8 @@ func TestReadsRunReadOnly(t *testing.T) {
 	// read: the agent role may INSERT into audit, but not from a read.
 	_, err := h.reader.Read(context.Background(), "SELECT bump()", nil, action.Statement{})
 	te := agenttest.ToolError(err)
-	require.Equal(t, guidance.CodeSQLError, te.Code)
-	require.Equal(t, "25006", te.SQLState, "read_only_sql_transaction")
+	require.Equal(t, guidance.CodeStoreError, te.Code)
+	require.Equal(t, "25006", te.StoreCode, "read_only_sql_transaction")
 
 	db, err := pgdial.Connect(context.Background(), adminURL)
 	require.NoError(t, err)

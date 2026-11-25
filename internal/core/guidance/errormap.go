@@ -52,7 +52,7 @@ func (m ErrorMap) ToolError(err error) *toolresult.ToolError {
 	case Sentinel(err, m.InvalidParams), Sentinel(err, m.InvalidIntent):
 		return &toolresult.ToolError{Code: CodeInvalidArgument, Reason: argumentReason(err), Message: err.Error()}
 	case errors.As(err, &pe):
-		return &toolresult.ToolError{Code: pe.Code, Reason: pe.Reason, Message: pe.Message, SQLState: pe.SQLState}
+		return &toolresult.ToolError{Code: pe.Code, Reason: pe.Reason, Message: pe.Message, StoreCode: pe.StoreCode}
 	case errors.Is(err, action.ErrUnavailable), errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		return &toolresult.ToolError{Code: CodeUnavailable, Reason: ReasonDatabaseUnreachable, Message: "the database cannot be reached"}
 	}

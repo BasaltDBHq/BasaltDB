@@ -29,9 +29,10 @@ type RunSummary struct {
 	Reverted     int
 	Reads        int
 	RowsWritten  int
-	// Tables the run wrote to, in name order, at most the store's limit.
-	Tables          []string
-	TablesTruncated bool
+	// Resources the run wrote to, in the store's form and name order, at
+	// most the store's limit.
+	Resources          []string
+	ResourcesTruncated bool
 }
 
 // History is one page of a run's change records (C) with the rows each

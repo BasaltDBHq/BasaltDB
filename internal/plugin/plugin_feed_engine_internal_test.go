@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
 )
 
@@ -46,7 +47,7 @@ func (f *pluginFixture) fedSeqs(sch *jsonschema.Schema, agent string) []int64 {
 				Events []gotEvent `json:"events"`
 			}
 			require.NoError(f.t, json.Unmarshal(req.Params, &p))
-			if p.Agent != agent {
+			if p.Agent != approval.AgentName(agent) {
 				continue
 			}
 			for _, e := range p.Events {

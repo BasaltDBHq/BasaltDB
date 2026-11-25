@@ -185,7 +185,9 @@ func TestNotifierSamplesHoldNoValues(t *testing.T) {
 const checkInstallID = "00000000-0000-0000-0000-000000000000"
 
 // TestCheckSamples: the samples basalt plugin check sends hold no store
-// data: the zero install id, and the table basalt_check.sample only.
+// data: the zero install id, and the resource basalt_check.sample only.
+// Each sample names it at least once (a headline with a middle dot), so the
+// check always has a name to compare.
 func TestCheckSamples(t *testing.T) {
 	t.Parallel()
 	for _, f := range []string{"valid-feed-request-check-sample.json", "valid-deliver-request-check-sample.json"} {
@@ -196,8 +198,11 @@ func TestCheckSamples(t *testing.T) {
 		for _, src := range regexp.MustCompile(`"source": "([^"]+)"`).FindAllStringSubmatch(text, -1) {
 			require.Equal(t, "urn:uuid:"+checkInstallID, src[1], f)
 		}
-		for _, table := range regexp.MustCompile(`(?:"table": "|in )([a-z_]+\.[a-z_]+)`).FindAllStringSubmatch(text, -1) {
-			require.Equal(t, "basalt_check.sample", table[1], f)
+		// A headline shows the dot of a name as a middle dot.
+		names := regexp.MustCompile(`(?:"resource": "|in )([a-z_]+)[.\x{00B7}]([a-z_]+)`).FindAllStringSubmatch(text, -1)
+		require.NotEmpty(t, names, "%s: a sample names its resource", f)
+		for _, name := range names {
+			require.Equal(t, "basalt_check.sample", name[1]+"."+name[2], f)
 		}
 	}
 }

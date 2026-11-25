@@ -59,9 +59,9 @@ func TestErrorsFromARealGuardCarryTheCatalogsSteps(t *testing.T) {
 	body, isError = h.call(t, "write", map[string]any{"sql": "DROP TABLE leads", "intent": "Tidy up", "runId": runID})
 	requireCatalogSteps(t, body, isError, "write", "STATEMENT_REFUSED", "DDL_NOT_ALLOWED")
 
-	// SQL_ERROR and PERMISSION_DENIED.
+	// STORE_ERROR and PERMISSION_DENIED.
 	body, isError = h.call(t, "query", map[string]any{"sql": "SELECT nope FROM leads", "runId": runID})
-	requireCatalogSteps(t, body, isError, "query", "SQL_ERROR", "")
+	requireCatalogSteps(t, body, isError, "query", "STORE_ERROR", "")
 	body, isError = h.call(t, "query", map[string]any{"sql": "SELECT amount FROM payroll", "runId": runID})
 	steps = requireCatalogSteps(t, body, isError, "query", "PERMISSION_DENIED", "")
 	require.Equal(t, "basalt init --agent bot", str(t, steps[4]["command"]), "the setup page grants the table")

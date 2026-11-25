@@ -121,6 +121,8 @@ type Map struct {
 	snap atomic.Pointer[snapshot]
 	// loads counts loads (tests).
 	loads atomic.Int64
+	// joins counts loads that waited on a running flight (tests).
+	joins atomic.Int64
 
 	mu        sync.Mutex // guards the fields below; never held during I/O
 	tried     map[agentstore.ResourceRef]struct{}
@@ -210,6 +212,7 @@ func (m *Map) joinFlight(ctx context.Context, fresh bool) (f *flight, lead bool,
 	}
 	defer m.mu.Unlock()
 	if m.flight != nil {
+		m.joins.Add(1)
 		return m.flight, false, nil
 	}
 	m.flight = &flight{seq: m.nextSeq, done: make(chan struct{})}

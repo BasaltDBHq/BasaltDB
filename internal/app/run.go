@@ -35,7 +35,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
@@ -405,7 +404,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 		}
 		out.upkeeps = append(out.upkeeps, rt.upkeep)
 		out.services = append(out.services, rt.svc)
-		if rt.scan.DB != nil {
+		if rt.scan.Fields != nil {
 			out.scans = append(out.scans, rt.scan)
 		}
 		out.agents = append(out.agents, engine.Agent{
@@ -732,7 +731,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		upkeep: ledger.New(a.Name, buildinfo.Version, postgres.NewUpkeep(pool), log, time.Now).WithPins(env.pins).WithRLSCache(blind).
 			WithOperatedBy(env.cfg.OperatedBy).WithGate(svc.AdmitTick).
 			WithPII(pii.NewWatch(a.Name, classes, classStore, log.With("component", "pii"))),
-		scan: pii.ScanSource{Agent: a.Name, DB: pgquerier.Neutralize(pool), ReadOnly: pgquerier.ReadOnlyTx(pool), Map: classes, Classes: classStore, Limits: limits},
+		scan: pii.ScanSource{Agent: a.Name, Map: classes, Classes: classStore, Fields: pgpii.Fields(pool, limits, pii.DefaultLoadTimeout)},
 		db:   pool,
 		kept: keptAgent{
 			db: pool, host: pool.Config().ConnConfig.Host, port: pool.Config().ConnConfig.Port,

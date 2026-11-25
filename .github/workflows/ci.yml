@@ -94,7 +94,7 @@ jobs:
       matrix:
         # Packages per shard: scripts/test-shards.txt. "rest" runs every
         # package no shard lists, so each package runs in exactly one shard.
-        shard: ["1", "2", "3", rest]
+        shard: ["1", "2", "3", "4", rest]
     services:
       postgres:
         image: postgres:16

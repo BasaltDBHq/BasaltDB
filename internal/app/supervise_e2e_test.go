@@ -94,7 +94,7 @@ func TestSuperviseRealEngineKilled(t *testing.T) {
 	require.Eventually(t, func() bool {
 		pid := enginePID()
 		return pid > 0 && pid != first && answers()
-	}, 5*time.Second, 50*time.Millisecond, "the supervisor starts the engine again")
+	}, 45*time.Second, 50*time.Millisecond, "the supervisor starts the engine again") // generous: a loaded runner once missed 5s
 	require.Equal(t, "CRASH", engineStartedBy(t, sock), "the supervisor's restart says so")
 }
 

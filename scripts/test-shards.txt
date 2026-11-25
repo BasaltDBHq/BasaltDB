@@ -1,10 +1,12 @@
 # Test shards for the CI workflow (one parallel job each). Balanced on the
-# package times of GitHub run 43731118331; packages not listed here run in the
+# package times of GitHub run 45656616835 (attempt 2: rest was the long pole at
+# 335s of tests, the others 72s to 183s); packages not listed here run in the
 # "rest" shard, so a new package needs no edit.
 # Format: "shard <name>" starts a shard; one package path per line below it.
 
 shard 1
 internal/app
+internal/platform/postgres/guard
 
 shard 2
 internal/app/servedagent
@@ -12,3 +14,6 @@ internal/app/servedagent
 shard 3
 internal/core/pii
 internal/pii
+
+shard 4
+internal/plugin

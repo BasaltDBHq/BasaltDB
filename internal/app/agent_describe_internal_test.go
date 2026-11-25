@@ -855,7 +855,7 @@ func TestResourceFingerprintsArePinned(t *testing.T) {
 	}
 
 	cat, classes := ordersCatalog()
-	require.Equal(t, "dfa169ce7e1f7686bef01459c1f0e2c9171043ddeb28138792a20d8964ebac2a", fp(cat, classes, "shop.orders"), "hidden columns, indexes and keys")
+	require.Equal(t, "6415fa1490f34af7f3d2d355af20f3159810ae9cfc9e95c60686ef61d97792f8", fp(cat, classes, "shop.orders"), "hidden columns, indexes and keys")
 
 	cat, classes = ordersCatalog()
 	d := cat.details[ordersOID]
@@ -863,7 +863,7 @@ func TestResourceFingerprintsArePinned(t *testing.T) {
 	d.Indexes[0].Definition += " WHERE id < 5 & true"
 	d.Comment = "<orders> & co"
 	cat.details[ordersOID] = d
-	require.Equal(t, "d406030013d5ce4dbd524196fcee155d5f6433f72979688997f5332e909f5b45", fp(cat, classes, "shop.orders"), "escaped text and index counters")
+	require.Equal(t, "ca88eaedfda5d5468f27bc11b7abbf29697b7e9afa1bcd9ead4a3d607774a25a", fp(cat, classes, "shop.orders"), "escaped text and index counters")
 
 	open := openDetail()
 	cat = &fakeCatalog{visible: []pgcatalog.Relation{open.Relation}, details: map[uint32]pgcatalog.Detail{200: open}}

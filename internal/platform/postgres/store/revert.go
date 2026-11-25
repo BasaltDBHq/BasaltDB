@@ -301,6 +301,12 @@ func findRevertRefusal(err error) error {
 	return err
 }
 
+// PrepareError is a guard answer to preview_revert or prepare_revert as
+// PreviewRevert and PrepareRevert return it: MapError, then
+// prepareRefusal. Exported so tests outside the adapter compare another
+// store's refusals with Postgres's own mapping.
+func PrepareError(err error) error { return prepareRefusal(MapError(err)) }
+
 // prepareRefusal maps PreviewRevert's and PrepareRevert's errors: a scope
 // the guard refused, by its detail (the hint says why; NAME, a badly formed
 // table name, is the agent's filter refused for its form), nothing to

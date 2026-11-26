@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 )
 
@@ -22,7 +23,8 @@ func TestCauseRedactsPasswords(t *testing.T) {
 		Code: "42501", Detail: "the statement was ALTER ROLE x PASSWORD '" + agentPW + "'",
 		Message: "permission denied for postgres://postgres" + ":Tr0ub4dor&x@db.ref.supabase.co password=Tr0ub4dor&x PASSWORD '" + agentPW + "' and Tr0ub4dor&x alone",
 	}
-	err := scrub(setupFailed("install script", fmt.Errorf("init step 7: %w", pg)), admin)
+	s := &Service{be: setupbackend.Backend{}}
+	err := scrub(s.setupFailed("install script", fmt.Errorf("init step 7: %w", pg)), admin)
 	r := AsRefusal(err)
 	require.Equal(t, CodeSetupFailed, r.Code)
 	require.Equal(t, "install script, statement 7", r.Cause.Step)
@@ -37,7 +39,7 @@ func TestCauseRedactsPasswords(t *testing.T) {
 		require.NotContains(t, s, "the statement was", "the detail is never kept")
 	}
 
-	guardErr := AsRefusal(setupFailed("register the passkey", &pgconn.PgError{Code: "BS008", Message: "LEDGER_INPUT_INVALID", Detail: "label is required"}))
+	guardErr := AsRefusal(s.setupFailed("register the passkey", &pgconn.PgError{Code: "BS008", Message: "LEDGER_INPUT_INVALID", Detail: "label is required"}))
 	require.Equal(t, "LEDGER_INPUT_INVALID: label is required", guardErr.Cause.Message, "a guard refusal keeps its detail")
 
 	plain := AsRefusal(scrub(errors.New("dial "+admin), admin))

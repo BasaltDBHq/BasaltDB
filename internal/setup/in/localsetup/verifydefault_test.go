@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
@@ -25,7 +24,7 @@ func TestAdminStringVerifiesByDefaultForABuiltInProfile(t *testing.T) {
 		Backend:    setupbackend.Backend{},
 		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin, Users: okUsers{},
 		Profiles: trustprofile.BuiltInSet,
-		Dial: func(_ context.Context, dsn string) (*pgx.Conn, error) {
+		Dial: func(_ context.Context, dsn string) (localsetup.Conn, error) {
 			dialed = append(dialed, dsn)
 			return nil, errors.New("not here")
 		},

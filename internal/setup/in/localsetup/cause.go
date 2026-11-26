@@ -6,8 +6,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
@@ -26,25 +24,37 @@ var secretForms = []*regexp.Regexp{
 
 const redacted = "[redacted]"
 
+// describeError is the message and detail of the database error in err,
+// false when it carries none (Backend.DatabaseError).
+type describeError func(err error) (message, detail string, ok bool)
+
 // causeOf is err's cause at step: the Postgres SQLSTATE and the server's
 // own message (never its hint or query position, and its detail only for
 // the guard's own BS… codes: another detail can quote the statement) when
 // the database refused it, else the error's text; the
-// message redacted.
-func causeOf(step string, err error) *Cause {
+// message redacted. describe nil reads no message: the SQLSTATE and the
+// error's text then.
+func causeOf(step string, err error, describe describeError) *Cause {
 	c := &Cause{Step: setup.FailedStep(step, err)}
 	if err == nil {
 		return c
 	}
-	var pg *pgconn.PgError
-	if errors.As(err, &pg) {
-		c.SQLState, c.Message = pg.Code, pg.Message
-		if strings.HasPrefix(pg.Code, "BS") && pg.Detail != "" {
+	var message, detail string
+	var ok bool
+	if describe != nil {
+		message, detail, ok = describe(err)
+	}
+	switch {
+	case ok:
+		c.SQLState, c.Message = setup.SQLStateOf(err), message
+		if strings.HasPrefix(c.SQLState, "BS") && detail != "" {
 			// The guard's own refusals (BS…) put the reason in the detail,
 			// written by basalt_meta's SQL, never a quoted statement.
-			c.Message += ": " + pg.Detail
+			c.Message += ": " + detail
 		}
-	} else {
+	case describe == nil:
+		c.SQLState, c.Message = setup.SQLStateOf(err), err.Error()
+	default:
 		c.Message = err.Error()
 	}
 	c.Message = redact(c.Message)

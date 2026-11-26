@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
@@ -16,11 +17,12 @@ import (
 // and what to do; any other guard refusal stays SETUP_FAILED.
 func TestGrantsNotRevokedIsAReadableRefusal(t *testing.T) {
 	t.Parallel()
+	s := &Service{be: setupbackend.Backend{}}
 	pg := &pgconn.PgError{
 		Code: sqlstateLedgerInputInvalid, Message: "LEDGER_INPUT_INVALID",
 		Detail: "bt_agent_bot " + guardmodel.UnpickedGrantsDetail + "public.t2, sales.\u202enotes",
 	}
-	r := grantsNotRevoked(fmt.Errorf("init step 9: %w", pg), "bt_agent_bot")
+	r := s.grantsNotRevoked(fmt.Errorf("init step 9: %w", pg), "bt_agent_bot")
 	require.NotNil(t, r)
 	require.Equal(t, CodeGrantsNotRevoked, r.Code)
 	require.Contains(t, r.Message, "The agent role bt_agent_bot still has access to tables or sequences that were not picked (public.t2, sales.?notes)")
@@ -28,7 +30,7 @@ func TestGrantsNotRevokedIsAReadableRefusal(t *testing.T) {
 	require.Contains(t, r.Message, "Nothing changed.")
 
 	other := &pgconn.PgError{Code: sqlstateLedgerInputInvalid, Detail: "bt_agent_bot is not a plain agent role"}
-	require.Nil(t, grantsNotRevoked(fmt.Errorf("init step 2: %w", other), "bt_agent_bot"))
-	require.Nil(t, grantsNotRevoked(&pgconn.PgError{Code: "42501", Detail: pg.Detail}, "bt_agent_bot"))
-	require.Nil(t, grantsNotRevoked(errors.New("no database error"), "bt_agent_bot"))
+	require.Nil(t, s.grantsNotRevoked(fmt.Errorf("init step 2: %w", other), "bt_agent_bot"))
+	require.Nil(t, s.grantsNotRevoked(&pgconn.PgError{Code: "42501", Detail: pg.Detail}, "bt_agent_bot"))
+	require.Nil(t, s.grantsNotRevoked(errors.New("no database error"), "bt_agent_bot"))
 }

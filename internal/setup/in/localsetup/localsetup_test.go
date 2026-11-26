@@ -277,7 +277,7 @@ func TestRequestsTheEngineRefusesBeforeConnecting(t *testing.T) {
 	svc, err := localsetup.New(localsetup.Options{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: filepath.Join(dir, "engine.json"), Origin: origin, Users: fakeUsers{aliceGroups: []string{"4000"}},
-		Dial: func(context.Context, string) (*pgx.Conn, error) {
+		Dial: func(context.Context, string) (localsetup.Conn, error) {
 			dialed = true
 			return nil, errors.New("not here")
 		},
@@ -326,7 +326,7 @@ func TestAdminStringRefusesKeysOutsideTheAllowlist(t *testing.T) {
 	svc, err := localsetup.New(localsetup.Options{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin, Users: okUsers{},
-		Dial: func(context.Context, string) (*pgx.Conn, error) {
+		Dial: func(context.Context, string) (localsetup.Conn, error) {
 			dialed = true
 			return nil, errors.New("not here")
 		},
@@ -378,7 +378,7 @@ func TestRealInstallRefusesBadSchemasAndPicksBeforeConnecting(t *testing.T) {
 	svc, err := localsetup.New(localsetup.Options{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin,
-		Users: okUsers{}, Dial: func(context.Context, string) (*pgx.Conn, error) { return nil, errors.New("not here") },
+		Users: okUsers{}, Dial: func(context.Context, string) (localsetup.Conn, error) { return nil, errors.New("not here") },
 	})
 	require.NoError(t, err)
 	base := localsetup.Request{Job: localsetup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: unusedAdminURL}
@@ -729,7 +729,7 @@ func TestRealInstallRefusesBadLabelsBeforeConnecting(t *testing.T) {
 	svc, err := localsetup.New(localsetup.Options{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin,
-		Users: okUsers{}, Dial: func(context.Context, string) (*pgx.Conn, error) { return nil, errors.New("not here") },
+		Users: okUsers{}, Dial: func(context.Context, string) (localsetup.Conn, error) { return nil, errors.New("not here") },
 	})
 	require.NoError(t, err)
 	picked := []localsetup.TablePick{{Table: "public.people", Access: localsetup.AccessRead}}
@@ -840,7 +840,7 @@ func TestRealInstallColumnsWithoutASampleStillAnswer(t *testing.T) {
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix,
 		Now: func() time.Time { return f.now },
-		SampleColumn: func(_ context.Context, _ *pgx.Conn, col pii.Column) (pii.Sample, error) {
+		SampleColumn: func(_ context.Context, _ localsetup.Conn, col pii.Column) (pii.Sample, error) {
 			if col.Name == "email" {
 				return pii.Sample{}, errors.New("the connection failed")
 			}
@@ -900,7 +900,7 @@ func newPinFixture(t *testing.T) *pinFixture {
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix,
 		Now: func() time.Time { return f.now },
-		Dial: func(context.Context, string) (*pgx.Conn, error) {
+		Dial: func(context.Context, string) (localsetup.Conn, error) {
 			return nil, x509.UnknownAuthorityError{}
 		},
 		Profiles: func() *trustprofile.Set {
@@ -909,10 +909,10 @@ func newPinFixture(t *testing.T) *pinFixture {
 			}
 			return trustprofile.NewSet(nil, nil, nil)
 		},
-		DialPinned: func(ctx context.Context, dsn string, pin *trustprofile.Profile) (*pgx.Conn, error) {
+		DialPinned: func(ctx context.Context, dsn string, pin *trustprofile.Profile) (localsetup.Conn, error) {
 			p.pinnedWith = append(p.pinnedWith, pin)
 			p.pinnedDSNs = append(p.pinnedDSNs, dsn)
-			return pgdial.Connect(ctx, f.db.URL)
+			return setupbackend.Wrap(pgdial.Connect(ctx, f.db.URL))
 		},
 		Probe: func(_ context.Context, host string, _ int) ([]*x509.Certificate, error) {
 			require.Equal(t, pinHost, host)
@@ -1083,8 +1083,10 @@ func TestRealInstallARunAfterAFailedCommitRecordsThePinAgain(t *testing.T) {
 	svc, err := localsetup.New(localsetup.Options{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: p.config, Origin: origin, Users: fakeUsers{}, Prefix: p.db.Names.Prefix,
-		Now:      func() time.Time { return p.now },
-		Dial:     func(ctx context.Context, _ string) (*pgx.Conn, error) { return pgdial.Connect(ctx, p.db.URL) }, // verifies through the pin
+		Now: func() time.Time { return p.now },
+		Dial: func(ctx context.Context, _ string) (localsetup.Conn, error) {
+			return setupbackend.Wrap(pgdial.Connect(ctx, p.db.URL))
+		}, // verifies through the pin
 		Profiles: func() *trustprofile.Set { return trustdir.Set(p.config) },
 	})
 	require.NoError(t, err)
@@ -1145,7 +1147,7 @@ func cutService(t *testing.T, f *fixture, cut *bool, wrap func(net.Conn) net.Con
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix,
 		Now: func() time.Time { return f.now },
-		Dial: func(ctx context.Context, dsn string) (*pgx.Conn, error) {
+		Dial: func(ctx context.Context, dsn string) (localsetup.Conn, error) {
 			cfg, err := pgdial.ConnConfig(dsn)
 			if err != nil {
 				return nil, err
@@ -1159,7 +1161,7 @@ func cutService(t *testing.T, f *fixture, cut *bool, wrap func(net.Conn) net.Con
 					return wrap(c), nil
 				}
 			}
-			return pgx.ConnectConfig(ctx, cfg)
+			return setupbackend.Wrap(pgx.ConnectConfig(ctx, cfg))
 		},
 	})
 	require.NoError(t, err)

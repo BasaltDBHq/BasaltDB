@@ -390,14 +390,8 @@ const parsesOnly = "parses the connection string only to read its target; it ope
 var directDialsAllowed = map[string]string{
 	"internal/platform/postgres/store/password.go: pgxpool.NewWithConfig": "opens the pool from pgdial.PoolConfig, " +
 		"adding the password refresh",
-	"internal/setup/in/localsetup/pin.go: pgx.ConnectConfig": "connects with the config from the backend's " +
-		"ConnConfigPinned (pgdial)",
-	"internal/app/setuphost.go: pgconn.ParseConfig":                            parsesOnly,
-	"internal/platform/cli/trust.go: pgconn.ParseConfig":                       parsesOnly,
-	"internal/setup/in/localsetup/agentjobs.go: pgconn.ParseConfig (2 times)":  parsesOnly,
-	"internal/setup/in/localsetup/confirm.go: pgconn.ParseConfig":              parsesOnly,
-	"internal/setup/in/localsetup/localsetup.go: pgconn.ParseConfig (2 times)": parsesOnly,
-	"internal/setup/in/localsetup/trustfix.go: pgconn.ParseConfig":             parsesOnly,
+	"internal/app/setuphost.go: pgconn.ParseConfig":      parsesOnly,
+	"internal/platform/cli/trust.go: pgconn.ParseConfig": parsesOnly,
 }
 
 func TestConnectionsOpenThroughPgdial(t *testing.T) {

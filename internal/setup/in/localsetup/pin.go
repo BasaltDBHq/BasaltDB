@@ -9,9 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -40,25 +38,16 @@ type pin struct {
 	profile *trustprofile.Profile
 }
 
-// pinnedDial returns the dial that opens the admin connection with the
-// pin's certificate as the only root for its host (Backend.ConnConfigPinned).
-func pinnedDial(be Backend) func(ctx context.Context, dsn string, p *trustprofile.Profile) (*pgx.Conn, error) {
-	return func(ctx context.Context, dsn string, p *trustprofile.Profile) (*pgx.Conn, error) {
-		return dialPinned(ctx, be, dsn, p)
-	}
-}
-
-func dialPinned(ctx context.Context, be Backend, dsn string, p *trustprofile.Profile) (*pgx.Conn, error) {
-	cfg, err := be.ConnConfigPinned(dsn, p)
-	if err != nil {
-		return nil, err
-	}
-	return pgx.ConnectConfig(ctx, cfg)
-}
-
 // probe reads the chain host:port presents with the TLS handshake alone.
 func probe(ctx context.Context, host string, port int) ([]*x509.Certificate, error) {
 	return trustpin.Fetch(ctx, nil, host, port)
+}
+
+// loginRefused: the database refused the login (SQLSTATE class 28,
+// invalid authorization).
+func loginRefused(err error) bool {
+	code := setup.SQLStateOf(err)
+	return len(code) >= 2 && code[:2] == "28"
 }
 
 func notVerified() *RefusalError {
@@ -67,11 +56,10 @@ func notVerified() *RefusalError {
 
 // connectError is the fixed refusal of a failed connection.
 func (s *Service) connectError(ctx context.Context, err error) *RefusalError {
-	var pg *pgconn.PgError
 	switch {
 	case s.be.CertificateNotVerified(err):
 		return notVerified()
-	case errors.As(err, &pg) && len(pg.Code) >= 2 && pg.Code[:2] == "28":
+	case loginRefused(err):
 		return refuse(CodeLoginFailed, "The database refused the login. Check the admin user and password.")
 	case ctx.Err() != nil:
 		return refuse(CodeTimeLimit, "The setup ran out of time; nothing changed.")
@@ -85,7 +73,7 @@ func (s *Service) connectError(ctx context.Context, err error) *RefusalError {
 // trust profile covers); with the person's trustRoot, the engine reads the
 // chain itself and logs in only against that one certificate. The pin is nil
 // when the certificate verified without one.
-func (s *Service) connectAdmin(ctx context.Context, req Request) (*pgx.Conn, *pin, error) {
+func (s *Service) connectAdmin(ctx context.Context, req Request) (Conn, *pin, error) {
 	conn, err := s.opts.Dial(ctx, req.DatabaseURL)
 	if err == nil {
 		return conn, s.keptPin(req), nil
@@ -141,12 +129,12 @@ func (s *Service) readPin(ctx context.Context, req Request) (*pin, error) {
 // write records the pin in the ledger, in the run's transaction, and writes
 // it to trust.d next to engine.json. A profile that covers the host by now
 // refuses, unless it is this pin.
-func (p *pin) write(ctx context.Context, be Backend, tx pgx.Tx, configPath string) error {
-	if err := be.RecordTrustPin(ctx, be.Port(tx), p.host, p.port, p.sha256); err != nil {
-		return setupFailed("record the trust pin", err)
+func (s *Service) writePin(ctx context.Context, p *pin, tx Tx) error {
+	if err := s.be.RecordTrustPin(ctx, tx.Port(), p.host, p.port, p.sha256); err != nil {
+		return s.setupFailed("record the trust pin", err)
 	}
-	if _, err := be.PinFileNew(configPath, p.host, p.top, p.caOnly); err != nil {
-		return setupFailed("write the trust pin", err)
+	if _, err := s.be.PinFileNew(s.opts.ConfigPath, p.host, p.top, p.caOnly); err != nil {
+		return s.setupFailed("write the trust pin", err)
 	}
 	return nil
 }

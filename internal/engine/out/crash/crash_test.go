@@ -270,3 +270,19 @@ func TestSaveListAndRetention(t *testing.T) {
 	require.Len(t, List(r.Dir), Keep)
 	require.Empty(t, List(filepath.Join(t.TempDir(), "missing")))
 }
+
+// A report written to a directory whose older reports cannot be listed is
+// still saved: Save says so with ErrNotPruned and the report's id.
+func TestSaveThatCannotPruneKeepsTheReport(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a directory without its read bit")
+	}
+	r := testRecorder(t)
+	require.NoError(t, os.MkdirAll(r.Dir, 0o700))
+	require.NoError(t, os.Chmod(r.Dir, 0o300)) // write and search, no listing
+	t.Cleanup(func() { _ = os.Chmod(r.Dir, 0o700) })
+	rep, err := r.Save(servicespec.CrashInput{Command: "write", Kind: servicespec.CrashKindPanic, ErrorCode: "INTERNAL", Value: "x"})
+	require.ErrorIs(t, err, ErrNotPruned)
+	_, statErr := os.Stat(filepath.Join(r.Dir, rep.ID+".json"))
+	require.NoError(t, statErr, "the report was written")
+}

@@ -238,7 +238,7 @@ func runWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	gate := engine.NewCallGate()
 	if cfg.VaultEnabled() {
 		sessionPages = newPages(base, log.With("component", "vault-pages"))
-		dispatch = gatedDispatcher{gate: gate, next: sessionDispatcher{sessionPages}}
+		dispatch = vault.GatedDispatcher{Gate: gate, Next: sessionDispatcher{sessionPages}}
 	}
 	ev := openVault(cfg, env.stateDir, time.Now, log, relay, dispatch)
 	env.vault, env.receipts = ev, ev.Receipts()
@@ -280,7 +280,7 @@ func runWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		return errNoAgent
 	}
 	if site != nil {
-		site.pages.SetHome(newHomeSource(srv.homes, log.With("component", "home")))
+		site.pages.SetHome(newHomeSource(srv.homes))
 	}
 
 	ctx, cancel := context.WithCancel(ctx)

@@ -197,8 +197,7 @@ func (s *Service) approvalCore() approvalsvc.Core {
 type runChecker struct{ store agentStore }
 
 func (r runChecker) CheckRun(ctx context.Context, id uuid.UUID) error {
-	_, err := ledgersvc.FindRun(ctx, r.store, id)
-	return err
+	return ledgersvc.CheckRun(ctx, r.store, id)
 }
 
 // linksCore is the part of the shared settings the delivery use case reads.

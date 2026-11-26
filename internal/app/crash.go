@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"log/slog"
 	"path/filepath"
 	"time"
@@ -26,6 +27,10 @@ func (env agentEnv) onPanic(log *slog.Logger) func(tool string, v any, stack []b
 			Scrub: crash.OSScrubber(), Now: time.Now, Shared: true,
 		}
 		rep, err := rec.Save(servicespec.CrashInput{Command: tool, Kind: servicespec.CrashKindPanic, ErrorCode: "INTERNAL", Value: v, Stack: stack})
+		if errors.Is(err, crash.ErrNotPruned) {
+			log.Error("tool panicked", "tool", tool, "code", "INTERNAL", "error_id", id, "report_id", rep.ID, "prune_err", err)
+			return id, rep.ID
+		}
 		if err != nil {
 			log.Error("tool panicked; no crash report saved", "tool", tool, "code", "INTERNAL", "error_id", id, "err", err)
 			return id, ""

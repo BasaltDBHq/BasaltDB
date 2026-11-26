@@ -192,13 +192,17 @@ func forwardsIntoApp(files []*ast.File, pkg *types.Package, info *types.Info, ch
 
 // funcValues maps each function-typed field or variable that files assign,
 // in a composite literal's key, on an assignment's left side or in a var
-// declaration, to the values assigned to it. A field or variable files never
+// declaration, to the values assigned to it; a multi-value assignment
+// (a.f, err = g()) assigns it the call, which landing cannot follow. A field or variable files never
 // assign has no entry: forwardsIntoApp counts a call through one that pkg
 // declares as logic, and one another package declares and app never sets as
 // a forward.
 func funcValues(files []*ast.File, info *types.Info) map[*types.Var][]ast.Expr {
 	values := map[*types.Var][]ast.Expr{}
 	add := func(target ast.Expr, value ast.Expr) {
+		if value == nil {
+			return
+		}
 		var obj types.Object
 		switch x := ast.Unparen(target).(type) {
 		case *ast.Ident:
@@ -230,22 +234,31 @@ func funcValues(files []*ast.File, info *types.Info) map[*types.Var][]ast.Expr {
 					}
 				}
 			case *ast.AssignStmt:
-				if len(n.Lhs) == len(n.Rhs) {
-					for i := range n.Lhs {
-						add(n.Lhs[i], n.Rhs[i])
-					}
+				for i := range n.Lhs {
+					add(n.Lhs[i], valueAt(n.Rhs, i))
 				}
 			case *ast.ValueSpec:
-				if len(n.Names) == len(n.Values) {
-					for i := range n.Names {
-						add(n.Names[i], n.Values[i])
-					}
+				for i := range n.Names {
+					add(n.Names[i], valueAt(n.Values, i))
 				}
 			}
 			return true
 		})
 	}
 	return values
+}
+
+// valueAt is the value assigned to the i-th name: values[i], or, for a
+// multi-value assignment (a, b = f()), the one call, whose results the scan
+// cannot follow. A declaration without values (var f func()) assigns none.
+func valueAt(values []ast.Expr, i int) ast.Expr {
+	switch {
+	case i < len(values):
+		return values[i]
+	case len(values) == 1:
+		return values[0]
+	}
+	return nil
 }
 
 // landing is where a call through a function value lands: the function or
@@ -508,31 +521,13 @@ func (s *Service) InATest() int { n := 1; return n }
 // still here. The list only shrinks: an entry whose method is gone, has
 // become a forward or no longer implements a port fails the test.
 var portLogic = map[string]string{
-	"runChecker.CheckRun":               "looks the run up in the ledger and drops the run it found",
-	"agentProbe.ReinstallNotice":        "reads the store's reinstalls and renders the ledger's person message",
 	"pgErrors.ServerMessage":            "the setup domain's DBErrors on pgx: unwraps a Postgres server error",
 	"rootConfigDir.Upsert":              "the setup domain's config writer as root: checks the directory's owner before it writes",
 	"rootFiles.ReadCredential":          "the setup domain's credential files as root: reads through the checked read",
 	"rootFiles.Promote":                 "the setup domain's credential files as root: checks the pending file before it renames it",
 	"rootFiles.ClearSetup":              "the setup domain's credential files as root: picks the owner before it clears the setup",
 	"rootFiles.Close":                   "the setup domain's credential files as root: closes both directories",
-	"EngineDownServer.Abandoned":        "basalt mcp with the engine down: answers each request line itself",
-	"gatedDispatcher.Dispatch":          "the pages API: refuses a request while the engine restarts",
 	"sessionDispatcher.Dispatch":        "the pages API: translates the channel's request and response to the pages' types",
-	"homeSource.Home":                   "the home page: caches its read for a short time",
-	"vaultLinks.Live":                   "the Vault channel: converts the live relay links",
-	"vaultLinks.Session":                "the Vault channel: converts a relay link and zeroes its key",
-	"osHost.ResolvedExecutable":         "the OS adapter: resolves the binary's path",
-	"osHost.DialogAvailable":            "the OS adapter: checks for the admin dialog",
-	"osHost.AdminDialog":                "the OS adapter: runs the admin dialog",
-	"osHost.SetupState":                 "the OS adapter: reads the setup page's state over HTTP",
-	"osHost.EngineBuild":                "the OS adapter: reads the engine's build over HTTP",
-	"osHost.ServiceRuns":                "the OS adapter: reads the service manager's runs",
-	"osHost.Sudo":                       "the OS adapter: runs a command with sudo",
-	"osHost.Run":                        "the OS adapter: runs a command",
-	"osHost.PagesUp":                    "the OS adapter: probes the pages over HTTP",
-	"osHost.Probe":                      "the OS adapter: probes the engine's socket",
-	"osHost.EngineLog":                  "the OS adapter: reads the engine's log",
 	"setupHost.ConnTarget":              "the setup host: parses the connection string's target",
 	"setupHost.OSInstallScript":         "the setup host: reads the binary's source, then builds the install script",
 	"setupHost.OSRestartScript":         "the setup host: reads the binary's source, then builds the restart script",
@@ -944,3 +939,51 @@ func TestDeclaresPorts(t *testing.T) {
 type importerFunc func(path string) (*types.Package, error)
 
 func (f importerFunc) Import(path string) (*types.Package, error) { return f(path) }
+
+// A function-typed field another package declares is followed through the
+// values app assigns it: one a multi-value assignment sets (d.Fn, err =
+// pair()) cannot be followed and is logic; one app never sets is the other
+// package's, a forward.
+func TestForwardIntoAppFollowsAnotherPackagesField(t *testing.T) {
+	fset := token.NewFileSet()
+	parse := func(src string) *ast.File {
+		f, err := parser.ParseFile(fset, "probe.go", src, parser.SkipObjectResolution)
+		require.NoError(t, err)
+		return f
+	}
+	domain, err := (&types.Config{}).Check("example.com/m/internal/dom", fset, []*ast.File{parse(`package dom
+
+type Deps struct{ Fn, Unset func() int }
+`)}, nil)
+	require.NoError(t, err)
+	f := parse(`package app
+
+import "example.com/m/internal/dom"
+
+func pair() (func() int, error) { return nil, nil }
+
+type host struct{ d dom.Deps }
+
+func wire() host {
+	var h host
+	var err error
+	h.d.Fn, err = pair()
+	_ = err
+	return h
+}
+
+func (h host) ViaPair() int  { return h.d.Fn() }
+func (h host) ViaUnset() int { return h.d.Unset() }
+`)
+	imp := importerFunc(func(path string) (*types.Package, error) {
+		if path == domain.Path() {
+			return domain, nil
+		}
+		return nil, errors.New("no package " + path)
+	})
+	info := &types.Info{Uses: map[*ast.Ident]types.Object{}, Defs: map[*ast.Ident]types.Object{}}
+	pkg, err := (&types.Config{Importer: imp}).Check("example.com/m/internal/app", fset, []*ast.File{f}, info)
+	require.NoError(t, err)
+	require.Equal(t, []string{"host.ViaPair"},
+		forwardsIntoApp([]*ast.File{f}, pkg, info, map[string]bool{"host.ViaPair": true, "host.ViaUnset": true}))
+}

@@ -35,6 +35,16 @@ type SetupFiles struct {
 
 func (f SetupFiles) secretPath() string { return config.SecretPath(f.CredFile, f.Agent) }
 
+// CredentialExists reports whether the agent's credential file exists, not
+// following a link.
+func (f SetupFiles) CredentialExists() (bool, error) {
+	_, err := os.Lstat(f.CredFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 // Lock takes the agent's .lock.
 func (f SetupFiles) Lock() (func(), error) { return config.LockFile(f.CredFile + config.LockSuffix) }
 

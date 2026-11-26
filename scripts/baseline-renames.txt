@@ -1,11 +1,19 @@
-# Baseline renames scripts/baseline-shrink.sh follows, one per line:
-#   old/pkg<TAB>new/pkg              a package move: the base baselines'
+# Baseline renames scripts/baseline-shrink.sh follows, one per line (rules
+# in ARCHITECTURE.md and the script's header):
+#   old/pkg<TAB>new/pkg              a package move: the base's baseline
 #                                    paths, file names and lines are
-#                                    rewritten through it; empty once the
-#                                    moves are on master.
+#                                    rewritten through it. Remove it once
+#                                    the move is on master.
 #   old/path.txt<TAB>new/path.txt    a baseline file renamed (several old
-#                                    files may name one new file): the new
+#                                    files may name one new file; an old
+#                                    file is in one pair only): the new
 #                                    file's lines must come from the old
-#                                    ones; skipped once the base has it.
+#                                    ones. Skipped once the base has it, so
+#                                    it may stay; delete it when its new
+#                                    file is renamed again (it is stale).
+#   new<TAB>path/to/baseline.txt     a new baseline declared on purpose: it
+#                                    may hold lines a registered baseline
+#                                    holds; it must be registered and new,
+#                                    and is shrink-only from then on.
 internal/testkit/archtest/serviceio_baseline.txt	internal/testkit/archtest/serviceio_calls_baseline.txt
 internal/testkit/archtest/serviceio_lookups_baseline.txt	internal/testkit/archtest/serviceio_calls_baseline.txt

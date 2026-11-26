@@ -37,7 +37,11 @@
 # the base, new a file there) is skipped; once its new file is renamed
 # again the pair is stale and is deleted. Any other baseline registered
 # here and absent at the base may hold no line of a baseline the base
-# registers, with or without its declaration and count.
+# registers, with or without its declaration and count, unless the renames
+# file declares it new with "new<TAB>path" (registered here, absent at the
+# base; skipped once the base has it). Every archtest file named
+# *baseline*.txt or under a *baseline* directory must be registered. Lines
+# are read as archtest reads them: trimmed at both ends.
 #
 # usage: sh scripts/baseline-shrink.sh <base-commit>
 set -eu
@@ -60,10 +64,11 @@ entries() {
 	sed -e 's/#.*//' -e 's/[[:space:]]*$//' | grep -v '^$' || true
 }
 
-# tagged prints each line of stdin as "file<TAB>line", leaving out blank
-# lines and comment lines (starting with #).
+# tagged prints each line of stdin as "file<TAB>line", trimmed of leading
+# and trailing white space as archtest reads it, leaving out blank lines and
+# comment lines (starting with #).
 tagged() {
-	sed -e 's/[[:space:]]*$//' -e '/^#/d' | grep -v '^$' | sed "s|^|$1	|" || true
+	sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^#/d' | grep -v '^$' | sed "s|^|$1	|" || true
 }
 
 # base_listed reports whether the base's shrink-only.txt registers $1.
@@ -76,10 +81,11 @@ fail=0
 : >"$tmp/moves"
 : >"$tmp/cands"
 : >"$tmp/pairs"
+: >"$tmp/declared"
 [ -f "$renames" ] && entries <"$renames" >"$tmp/pairs"
 
 # An old path is the old side of one pair at most.
-cut -f1 "$tmp/pairs" | LC_ALL=C sort | uniq -d >"$tmp/dups"
+cut -f1 "$tmp/pairs" | grep -vx new | LC_ALL=C sort | uniq -d >"$tmp/dups" || true
 while IFS= read -r d; do
 	echo "$renames: $d is the old side of more than one pair" >&2
 	fail=1
@@ -91,6 +97,18 @@ while IFS= read -r pair; do
 	if [ "$old" = "$pair" ] || [ -z "$old" ] || [ -z "$new" ] || [ "$new" != "${new%%"	"*}" ]; then
 		echo "$renames: not \"old<TAB>new\": $pair" >&2
 		fail=1
+		continue
+	fi
+	if [ "$old" = new ]; then
+		# "new<TAB>path" declares a new baseline whose lines may equal a
+		# registered baseline's; it is skipped once the base has it.
+		git cat-file -e "$base:$new" 2>/dev/null && continue
+		if ! entries <scripts/shrink-only.txt | grep -qxF -- "$new" || [ ! -e "$new" ]; then
+			echo "$renames: declared new baseline $new must be registered here, absent at the base and present here" >&2
+			fail=1
+		else
+			printf '%s\n' "$new" >>"$tmp/declared"
+		fi
 		continue
 	fi
 	if ! git cat-file -e "$base:$old" 2>/dev/null && [ ! -e "$old" ] && [ "$(git cat-file -t "$base:$new" 2>/dev/null)" = blob ]; then
@@ -221,7 +239,8 @@ LC_ALL=C sort -u "$tmp/heads" | while IFS= read -r p; do
 	done
 done >>"$tmp/new"
 
-# freshlines: the lines of the new baselines that no file pair names.
+# freshlines: the lines of the new baselines that no file pair names and
+# that are not declared new.
 cut -f2 "$tmp/filepairs" | LC_ALL=C sort -u >"$tmp/pairnew"
 : >"$tmp/freshlines"
 : >"$tmp/freshall"
@@ -229,9 +248,28 @@ LC_ALL=C sort -u "$tmp/fresh" | while IFS= read -r p; do
 	[ -e "$p" ] || continue
 	find "$p" -type f | LC_ALL=C sort | while IFS= read -r f; do
 		tagged "$f" <"$f" >>"$tmp/freshall"
-		grep -qxF -- "$f" "$tmp/pairnew" || tagged "$f" <"$f"
+		grep -qxF -- "$f" "$tmp/pairnew" && continue
+		grep -qxF -- "$p" "$tmp/declared" && continue
+		tagged "$f" <"$f"
 	done
 done >>"$tmp/freshlines"
+
+# Every archtest baseline file (a *baseline*.txt, or a file under a
+# *baseline* directory) is covered by a path shrink-only.txt registers.
+entries <scripts/shrink-only.txt >"$tmp/here"
+git ls-files --cached --others --exclude-standard -- internal/testkit/archtest |
+	grep -E '^internal/testkit/archtest/(.*/)?[^/]*baseline[^/]*(\.txt$|/)' |
+	LC_ALL=C sort -u | while IFS= read -r f; do
+	[ -e "$f" ] || continue
+	covered=
+	while IFS= read -r p; do
+		case $f in "$p" | "$p"/*) covered=1 ;; esac
+	done <"$tmp/here"
+	[ -n "$covered" ] && continue
+	echo "$f: a baseline file that scripts/shrink-only.txt does not register" >&2
+	echo x
+done >"$tmp/unregistered"
+[ -s "$tmp/unregistered" ] && fail=1
 
 # A baseline the base registers is still here, under its moved path, unless
 # a file pair renames it.

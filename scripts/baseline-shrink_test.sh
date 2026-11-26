@@ -341,4 +341,55 @@ check 0 "a file pair the base already has applied is skipped"
 printf 'p f.go: Rot: os.Lstat\np z.go: Z: os.Remove\n' >"$work/r/all.txt"
 check 1 "the renamed file only shrinks after its pair merges"
 
+setup
+counted_base
+: >"$work/r/calls.txt"
+printf 'fresh.txt\n' >>"$work/r/scripts/shrink-only.txt"
+printf ' p f.go: os.Lstat\n' >"$work/r/fresh.txt"
+check 1 "a copied line with a leading space in a new unpaired baseline fails"
+printf '\tp f.go: os.Lstat\n' >"$work/r/fresh.txt"
+check 1 "a copied line with a leading tab in a new unpaired baseline fails"
+
+setup
+printf 'fresh.txt\n' >>"$work/r/scripts/shrink-only.txt"
+printf 'x\n' >"$work/r/fresh.txt"
+check 1 "a new baseline holding a line a registered one also holds fails undeclared"
+renames "new${tab}fresh.txt"
+check 0 "the same new baseline declared new passes"
+renames "new${tab}fresh.txt"
+check 0 "a new baseline declared twice passes the one-pair rule"
+
+setup
+printf 'x\n' >"$work/r/fresh.txt"
+renames "new${tab}fresh.txt"
+check 1 "a declared new baseline that is not registered fails"
+
+setup
+renames "new${tab}allow.txt"
+check 0 "a declaration of a baseline the base has is skipped"
+
+setup
+printf 'fresh.txt\n' >>"$work/r/scripts/shrink-only.txt"
+printf 'x\n' >"$work/r/fresh.txt"
+renames "new${tab}fresh.txt"
+git -C "$work/r" add -A
+git -C "$work/r" -c user.name=t -c user.email=t@t commit -qm declared
+printf 'x\ny\n' >"$work/r/fresh.txt"
+check 1 "a declared new baseline only shrinks once it is on the base"
+
+setup
+printf 'z\n' >"$work/r/internal/testkit/archtest/foo_baseline.txt"
+check 1 "an archtest baseline file no path registers fails"
+printf 'internal/testkit/archtest/foo_baseline.txt\n' >>"$work/r/scripts/shrink-only.txt"
+check 0 "the same file registered passes"
+
+setup
+mkdir -p "$work/r/internal/testkit/archtest/more_baseline"
+printf 'z\n' >"$work/r/internal/testkit/archtest/more_baseline/a.txt"
+check 1 "a file in an archtest baseline directory no path registers fails"
+
+setup
+printf '  b\n\ta\n' >"$work/r/$bl/internal_one.txt"
+check 0 "a listed line indented is the same line"
+
 exit "$fail"

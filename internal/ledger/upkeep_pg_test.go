@@ -284,7 +284,7 @@ func reinstall(t *testing.T, d *guardtest.DB, a *guardtest.Agent) *guardtest.Age
 	t.Helper()
 	ctx := context.Background()
 	require.NoError(t, a.Conn.Close(ctx))
-	require.NoError(t, guard.Uninstall(ctx, d.Admin, d.Names))
+	require.NoError(t, guardtest.Uninstall(ctx, d.Admin, d.Names))
 	return d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 }
 

@@ -2,6 +2,7 @@ package guardtest
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
@@ -48,4 +49,23 @@ func RecordSetup(ctx context.Context, q guard.Querier, n guardmodel.Names, s gua
 	err := q.QueryRow(ctx, `SELECT basalt_meta.record_setup($1::uuid, $2::text, $3::name, $4::int, $5::timestamptz)`,
 		s.ID, s.Kind, agent, s.GuardVersion, s.ExpiresAt).Scan(&seq)
 	return seq, err
+}
+
+// Uninstall drops the guard's and agents' RLS policies and basalt_meta (and with it
+// every guard trigger), then the agent roles, the group and the owner.
+// Roles are cluster objects that
+// DROP SCHEMA leaves behind; DROP OWNED BY revokes their grants in this
+// database. A role with privileges in another database fails to drop.
+// It runs what guard.PlanUninstall plans, in order.
+func Uninstall(ctx context.Context, q guard.Querier, n guardmodel.Names) error {
+	drops, err := guard.PlanUninstall(ctx, q, n)
+	if err != nil {
+		return err
+	}
+	for _, sql := range drops {
+		if _, err := q.Exec(ctx, sql); err != nil {
+			return fmt.Errorf("uninstall: %w", err)
+		}
+	}
+	return nil
 }

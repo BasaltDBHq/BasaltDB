@@ -450,7 +450,7 @@ func TestUninstallDropsSchemaAndRoles(t *testing.T) {
 
 	tx, err := d.Admin.Begin(ctx)
 	require.NoError(t, err)
-	require.NoError(t, guard.Uninstall(ctx, tx, d.Names))
+	require.NoError(t, guardtest.Uninstall(ctx, tx, d.Names))
 	require.NoError(t, tx.Commit(ctx))
 
 	var schemas, roles, triggers int
@@ -462,7 +462,7 @@ func TestUninstallDropsSchemaAndRoles(t *testing.T) {
 	require.Zero(t, triggers)
 
 	// Uninstalling twice is a no-op.
-	require.NoError(t, guard.Uninstall(ctx, d.Admin, d.Names))
+	require.NoError(t, guardtest.Uninstall(ctx, d.Admin, d.Names))
 }
 
 // writeCA writes a self-signed CA certificate under a directory whose name

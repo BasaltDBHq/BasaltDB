@@ -159,11 +159,12 @@ var contract = setuprun.NewContract(store)
 // (EXPIRED, SETUP_ID_IN_FUTURE, EXPIRY_TOO_FAR), this build's guard
 // (BINARY_TOO_OLD, GUARD_TOO_OLD). A refusal is an *Error.
 func Describe(req Request) (Description, error) {
-	d, err := contract.Describe(contractRequest(req))
-	if err != nil {
-		return Description{}, asError(err)
-	}
-	return description(d), nil
+	return described(contract.Describe(contractRequest(req)))
+}
+
+// described is the service's description of a code, or its refusal.
+func described(d setuprun.ContractDescription, err error) (Description, error) {
+	return description(d), asError(err)
 }
 
 // contractRequest is req as the setup service takes it.
@@ -465,15 +466,12 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	var approveErr error
 	cin := setuprun.ContractRunInput{AllRows: in.Answers.AllRows, AddPasskey: in.AddPasskey, RestPublic: in.RestPublic}
 	if in.Passkey != nil {
-		cin.Passkey = &setuprun.ContractPasskey{Cred: in.Passkey.cred, Label: in.Passkey.label}
+		cin.Passkey = &in.Passkey.p
 	}
 	if in.AskPasskey != nil {
 		cin.AskPasskey = func(ctx context.Context) (setuprun.ContractPasskey, error) {
 			pk, err := in.AskPasskey(ctx)
-			if err != nil {
-				return setuprun.ContractPasskey{}, err
-			}
-			return setuprun.ContractPasskey{Cred: pk.cred, Label: pk.label}, nil
+			return pk.p, err
 		}
 	}
 	if in.Approve != nil {

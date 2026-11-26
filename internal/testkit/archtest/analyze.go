@@ -2,6 +2,7 @@ package archtest
 
 import (
 	"bufio"
+	_ "embed"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -73,12 +74,26 @@ var allowed = map[string][]string{
 	lWeb:      {lCore, lLib},
 }
 
-// pkgExtra lists layers that one package may import on top of its layer's list.
-// pkg/setup is the second composition root: it builds the adapters for a
-// program that calls it directly.
-var pkgExtra = map[string][]string{
-	"pkg/setup": {lService, lCore, lOutbound},
-}
+// pkgImportsAllowlist lists, as "<package>: <import>", the packages one
+// package under pkg/ imports on top of its layer's list. pkg/setup is the
+// second composition root: it forwards to the setup service and builds the
+// setup adapter for a program that calls it directly. The list only
+// shrinks.
+//
+//go:embed pkg_imports_allowlist.txt
+var pkgImportsAllowlist string
+
+// pkgExtra is pkgImportsAllowlist as a map from package to the imports it
+// may make on top of its layer's list.
+var pkgExtra = func() map[string][]string {
+	out := map[string][]string{}
+	for _, l := range strings.Split(pkgImportsAllowlist, "\n") {
+		if pkg, target, ok := strings.Cut(strings.TrimSpace(l), ": "); ok {
+			out[pkg] = append(out[pkg], target)
+		}
+	}
+	return out
+}()
 
 // storeSQLGuard is the one named exception to "only services call decisions":
 // the Postgres store runs the SQL policy right before it runs SQL.
@@ -467,13 +482,12 @@ func checkLayer(v violations, rel, layer, target string) {
 	if !listed {
 		return // app, testkit, scripts, other: no rule
 	}
-	extra := pkgExtra[rel]
 	tl := layerOf(target)
 	if layer == lInbound && tl == lService && strings.HasPrefix(rel, "internal/platform/") {
 		v.add(rel, "imports "+target+" (an internal/platform package imports no domain service)")
 		return
 	}
-	if in(ok, tl) || in(extra, tl) {
+	if in(ok, tl) || in(pkgExtra[rel], target) {
 		return
 	}
 	v.add(rel, "imports "+target)

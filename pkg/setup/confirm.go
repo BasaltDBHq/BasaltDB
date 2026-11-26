@@ -2,14 +2,11 @@ package setup
 
 import (
 	"context"
-	"crypto/tls"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
-
-	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
-	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
+	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // The confirm step, "Is this your database?" (CONTRACT.md, The connect page,
@@ -50,16 +47,12 @@ type Certificate struct {
 // say); provider is the built-in profile's name with CertificateProvider. A
 // connection without TLS is CertificateNone whatever kind says.
 func CertificateOf(conn *pgx.Conn, kind CertificateKind, provider string) Certificate {
-	tc, ok := conn.PgConn().Conn().(*tls.Conn)
-	switch {
-	case !ok:
-		return Certificate{Kind: CertificateNone}
-	case kind == CertificateNotVerified:
-		return Certificate{Kind: kind}
-	case kind == CertificateProvider:
-		return Certificate{Kind: kind, Issuer: trustprofile.ProviderName(provider)}
-	}
-	return Certificate{Kind: kind, Issuer: trustpin.IssuerOf(tc.ConnectionState())}
+	return certificate(setuprun.CertificateOf(setupstore.TLSState(conn), string(kind), provider))
+}
+
+// certificate is the service's kind shown and issuer.
+func certificate(shown, issuer string) Certificate {
+	return Certificate{Kind: CertificateKind(shown), Issuer: issuer}
 }
 
 // Connected is the database and the role a connection reached, as the
@@ -71,8 +64,10 @@ type Connected struct {
 
 // ConnectedAs is what conn reached (Connected).
 func ConnectedAs(ctx context.Context, conn *pgx.Conn) (Connected, error) {
-	var c Connected
-	var err error
-	c.Database, c.User, err = store.ConnectedAs(ctx, setupstore.Port(conn))
-	return c, err
+	return connected(store.ConnectedAs(ctx, setupstore.Port(conn)))
+}
+
+// connected is the store's database and role, or its error.
+func connected(database, user string, err error) (Connected, error) {
+	return Connected{Database: database, User: user}, err
 }

@@ -26,7 +26,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/enginefiles"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/osusers"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
-	psetup "github.com/basaltdbhq/basaltdb/pkg/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -73,8 +72,7 @@ func (Backend) ConnHost(c setup.Conn) (string, int) {
 }
 
 func (Backend) ConnCertificate(c setup.Conn, kind, provider string) (string, string) {
-	cert := psetup.CertificateOf(pgxConn(c), psetup.CertificateKind(kind), provider)
-	return string(cert.Kind), cert.Issuer
+	return setup.CertificateOf(setupstore.TLSState(pgxConn(c)), kind, provider)
 }
 
 // ReadCredential reads the agent's connection string and refuses one with
@@ -169,10 +167,6 @@ func (Backend) PIISampler(q setup.Querier, timeout time.Duration, maxChars int) 
 }
 
 // Passkeys.
-
-func (Backend) RevokePasskey(ctx context.Context, q setup.Querier, credentialID []byte, force bool) (int, error) {
-	return guard.RevokePasskey(ctx, pgquerier.Unwrap(q), credentialID, force)
-}
 
 func (Backend) ListPasskeys(ctx context.Context, q setup.Querier) ([]setup.ActivePasskey, error) {
 	keys, err := ledger.ListPasskeys(ctx, pgquerier.Unwrap(q))

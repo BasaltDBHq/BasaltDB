@@ -2,6 +2,7 @@ package setupstore
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"time"
 
@@ -35,6 +36,27 @@ func (Store) BeginTx(ctx context.Context, q sqlport.Port) (sqlport.Port, error) 
 		return nil, err
 	}
 	return pgquerier.Neutralize(tx), nil
+}
+
+// BeginFunc runs fn in a transaction on the connection q runs on, as
+// pgx.BeginFunc does: committed when fn returns nil, rolled back when it
+// returns an error, which BeginFunc returns.
+func (Store) BeginFunc(ctx context.Context, q sqlport.Port, fn func(tx sqlport.Port) error) error {
+	conn, err := connOf(q)
+	if err != nil {
+		return err
+	}
+	return pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error { return fn(pgquerier.Neutralize(tx)) })
+}
+
+// TLSState is the TLS state of the connection conn, nil without TLS.
+func TLSState(conn *pgx.Conn) *tls.ConnectionState {
+	tc, ok := conn.PgConn().Conn().(*tls.Conn)
+	if !ok {
+		return nil
+	}
+	state := tc.ConnectionState()
+	return &state
 }
 
 // CommitTx commits the transaction BeginTx made.
@@ -111,6 +133,10 @@ func (Store) RecordTrustPin(ctx context.Context, q sqlport.Port, host string, po
 
 func (Store) ActivePasskeys(ctx context.Context, q sqlport.Port) ([]guardmodel.RegisteredPasskey, error) {
 	return guard.ActivePasskeys(ctx, pgquerier.Unwrap(q))
+}
+
+func (Store) RevokePasskey(ctx context.Context, q sqlport.Port, credentialID []byte, force bool) (int, error) {
+	return guard.RevokePasskey(ctx, pgquerier.Unwrap(q), credentialID, force)
 }
 
 func (Store) RegisterPasskey(ctx context.Context, q sqlport.Port, cred passkey.Credential, label string) error {

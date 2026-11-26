@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -28,6 +29,9 @@ type ContractBackend interface {
 	// and RollbackTx end it (a rollback after a commit is a no-op).
 	BeginTx(ctx context.Context, q Querier) (Querier, error)
 	CommitTx(ctx context.Context, tx Querier) error
+	// BeginFunc runs fn in a transaction on the connection q runs on:
+	// committed when fn returns nil, rolled back when it returns an error.
+	BeginFunc(ctx context.Context, q Querier, fn func(tx Querier) error) error
 	RollbackTx(ctx context.Context, tx Querier) error
 	// CommitAnswered reports whether a failed commit's outcome is known:
 	// answered with an error, turned into a rollback, or never sent.
@@ -47,6 +51,7 @@ type ContractBackend interface {
 	PasskeysInstalled(ctx context.Context, q Querier) (bool, error)
 	ActivePasskeys(ctx context.Context, q Querier) ([]guardmodel.RegisteredPasskey, error)
 	RegisterPasskey(ctx context.Context, q Querier, cred passkey.Credential, label string) error
+	RevokePasskey(ctx context.Context, q Querier, credentialID []byte, force bool) (int, error)
 }
 
 // Contract runs the setup contract on its backend.
@@ -153,6 +158,40 @@ type ContractChecked struct {
 type ContractPlan struct {
 	SQL      string
 	Warnings []string
+}
+
+// ContractPasskeyRequest is one registration of the person's portal
+// passkey: the request their answer is verified against, and the label the
+// passkey is stored with.
+type ContractPasskeyRequest struct {
+	Req   passkey.RegistrationRequest
+	Label string
+}
+
+// ContractPasskeyRequestFor rebuilds the registration request of a
+// challenge the caller issued, for a passkey named label (1 to
+// MaxPasskeyLabel bytes of UTF-8). The request copies the challenge's
+// bytes.
+func ContractPasskeyRequestFor(challenge, userID []byte, userName, displayName, label string) (ContractPasskeyRequest, error) {
+	if label == "" || len(label) > MaxPasskeyLabel || !utf8.ValidString(label) {
+		return ContractPasskeyRequest{}, fmt.Errorf("the passkey label must be 1 to %d bytes of UTF-8", MaxPasskeyLabel)
+	}
+	req, err := RegistrationRequestFor(challenge, userID, userName, displayName)
+	if err != nil {
+		return ContractPasskeyRequest{}, err
+	}
+	return ContractPasskeyRequest{Req: req, Label: label}, nil
+}
+
+// Verify checks the code the portal's registration page shows
+// (basalt-passkey.1....) against the request, and returns the passkey Run
+// registers.
+func (r ContractPasskeyRequest) Verify(code string) (ContractPasskey, error) {
+	cred, err := VerifyRegistrationCode(code, r.Req, passkey.Production)
+	if err != nil {
+		return ContractPasskey{}, err
+	}
+	return ContractPasskey{Cred: cred, Label: r.Label}, nil
 }
 
 // ContractPasskey is a verified portal passkey registration.

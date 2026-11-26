@@ -170,6 +170,10 @@ func (f *keptFixture) sign(a PluginOpenedApproval) {
 		}
 		_, err = guard.SubmitPluginApproval(ctx, pgxOf(f.agents[name].db), guardmodel.PluginApprovalResponse{ApprovalID: *a.ApprovalID, Assertion: as})
 		require.NoError(f.t, err)
+		r, ok, err = guard.ReadPluginApproval(ctx, pgxOf(f.agents[name].db), *a.ApprovalID)
+		require.NoError(f.t, err)
+		require.True(f.t, ok)
+		require.Equal(f.t, guardmodel.PluginApprovalStatusApproved, r.Status)
 		return
 	}
 	f.t.Fatalf("no agent opened plugin approval %s", *a.ApprovalID)

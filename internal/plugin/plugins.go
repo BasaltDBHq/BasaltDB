@@ -43,9 +43,8 @@ type Options struct {
 	units *UnitSource
 	// Ports are the adapters the host is built on; every one is required.
 	Ports Ports
-	// stateDir is where a same-user engine writes which entries it serves
-	// (pluginServingFile), and where every engine keeps its feed cursors;
-	// "" writes nothing and feeds no plugin.
+	// stateDir is where the engine keeps its feed cursors; "" feeds no
+	// plugin.
 	stateDir string
 	// feedTiming replaces the feed's intervals (tests); nil is the
 	// contract's.

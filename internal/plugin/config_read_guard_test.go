@@ -25,9 +25,10 @@ var fileReads = map[string]map[string]bool{
 	"config": {"Load": true, "LoadOpen": true, "LoadOpenRaw": true, "LoadNoFollow": true},
 }
 
-// methodReads are the method names that open or read a file by path (not
-// Open: the plugin methods have one).
-var methodReads = map[string]bool{"ReadFile": true, "OpenFile": true, "OpenRoot": true}
+// methodReads are the method names that open or read a file by path:
+// readCursor is the feed's Ports.ReadFeedCursor. A plugin method named Open
+// is caught too and listed with why it reads no file.
+var methodReads = map[string]bool{"ReadFile": true, "Open": true, "OpenFile": true, "OpenRoot": true, "readCursor": true}
 
 // receiverName names the value a read method is called on: "files" for the
 // Files port (an identifier or a field named files or Files), else the
@@ -64,6 +65,8 @@ var pluginFileReads = map[string]string{
 	"kept_upload.go:MarkExecutables:files.OpenRoot(t.Dir)":                                  "an upload's directory in the state directory, opened as a root",
 	"kept_upload.go:writePart:root.OpenFile(name)":                                          "writes a part of an upload, inside the upload's root, no link followed",
 	"kept_upload.go:writePart:files.OpenRoot(filepath.Join(s.uploadsDir(), u.id.String()))": "an upload's directory in the state directory, opened as a root",
+	"plugin_feed.go:load:r.f.readCursor(r.cursorDir())":                                     "a feed cursor in the state directory (Ports.ReadFeedCursor)",
+	"plugin_requests.go:OpenPlugin:k.Open(ctx)":                                             "PLUGIN_OPEN on the engine-kept plugins, not a file read",
 	"plugin_watch.go:step:files.ReadFile(w.ep.kept.EntriesPath())":                          "the engine-kept entries file, for its change",
 	"plugin_watch.go:stepKept:files.ReadFile(w.ep.kept.EntriesPath())":                      "the engine-kept entries file, for its change",
 	"plugins_service.go:osUnitSource:files.OpenFile(path)":                                  "a service plugin's systemd or launchd unit file",
@@ -210,12 +213,13 @@ func a() { stdos.ReadFile("p"); cfg.LoadOpenRaw("p", nil) }
 import "os"
 func a() { os.Stat("p"); os.WriteFile("p", nil, 0) }
 `)))
-	require.Equal(t, []string{"x.go:a:files.ReadFile(\"p\")", "x.go:b:files.OpenFile(path)", "x.go:c:files.OpenRoot(dir)", "x.go:d:root.OpenFile(name)", "x.go:e:fsys.ReadFile(p)"},
+	require.Equal(t, []string{"x.go:a:files.ReadFile(\"p\")", "x.go:b:files.OpenFile(path)", "x.go:c:files.OpenRoot(dir)", "x.go:d:root.OpenFile(name)", "x.go:e:fsys.ReadFile(p)", "x.go:f:r.f.readCursor(dir)"},
 		fileReadsIn("x.go", parse(`package p
 func a(files Files) { files.ReadFile("p"); files.Lstat("p") }
 func b() { s.files.OpenFile(path, 0, 0) }
 func c() { ep.o.Ports.Files.OpenRoot(dir) }
 func d() { root.OpenFile(name, 0, 0) }
 func e(fsys Files) { fsys.ReadFile(p) }
+func f() { r.f.readCursor(dir, name) }
 `)), "a read through the Files port, or a handle, under any name, is seen")
 }

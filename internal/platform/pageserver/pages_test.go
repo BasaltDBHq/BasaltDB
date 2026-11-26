@@ -22,11 +22,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalpage"
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/httpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
@@ -100,8 +100,8 @@ func (a *stubAgent) RevealRevert(context.Context, uuid.UUID, string, linksvc.Rev
 	return approval.RevealAnswer{}, linksvc.ErrNotThisAgent
 }
 
-func (a *stubAgent) RelayRevert(context.Context, revert.Response) (action.AppliedRevert, linksvc.Receipt, error) {
-	return action.AppliedRevert{}, linksvc.Receipt{}, linksvc.ErrNotThisAgent
+func (a *stubAgent) RelayRevert(context.Context, revert.Response) (revertstore.AppliedRevert, linksvc.Receipt, error) {
+	return revertstore.AppliedRevert{}, linksvc.Receipt{}, linksvc.ErrNotThisAgent
 }
 
 // site is the pages behind the real listener policy on a loopback port, as

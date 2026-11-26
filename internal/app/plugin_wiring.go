@@ -18,6 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pluginledger"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginfs"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginpath"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginstate"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/child"
@@ -47,6 +48,8 @@ var pluginPorts = plugin.Ports{
 	},
 	ReadConfig:      readEngineConfig,
 	WriteFeedCursor: pluginstate.WriteFeedCursor,
+	ReadFeedCursor:  pluginstate.ReadFeedCursor,
+	Files:           pluginfs.Files{},
 }
 
 // readEngineConfig is the plugin watch's read of engine.json: the engine
@@ -91,14 +94,16 @@ func (o pluginOptions) engine() plugin.Options {
 }
 
 func newEnginePlugins(cfg config.Config, configPath string, o pluginOptions, log *slog.Logger) *plugin.Plugins {
-	return plugin.New(cfg, configPath, o.engine(), log)
+	return plugin.NewPlugins(cfg, configPath, o.engine(), log)
 }
 
 func newEnginePluginsFor(cfg config.Config, configPath string, o pluginOptions, log *slog.Logger) *plugin.Plugins {
 	return plugin.NewFor(cfg, configPath, o.engine(), log)
 }
 
-var openKeptStore = plugin.OpenKeptStore
+func openKeptStore(cfg config.Config, stateDir string, log *slog.Logger) *plugin.Store {
+	return plugin.OpenKeptStore(pluginPorts.Files, cfg, stateDir, log)
+}
 
 // pluginLedger is one agent's ledger as the plugin event writer reaches it:
 // the agent's own connection, and the engine's admission of the agent (nil
@@ -117,7 +122,7 @@ func pluginLedgers(m map[string]pluginLedger) map[string]plugin.AgentLedger {
 }
 
 func recordPluginEvents(ctx context.Context, cfg config.Config, configPath string, ep *plugin.Plugins, ledgers map[string]pluginLedger, log *slog.Logger) {
-	plugin.RecordEvents(ctx, cfg, configPath, ep, pluginLedgers(ledgers), log)
+	plugin.RecordEvents(ctx, pluginPorts.Files, cfg, configPath, ep, pluginLedgers(ledgers), log)
 }
 
 // pluginAdmit is svc's admission for plugin records: plugin.ErrNotAdmitted

@@ -15,7 +15,7 @@ import (
 var t0 = time.Date(2026, 11, 14, 9, 0, 0, 0, time.UTC)
 
 func checker(dir string, rep *Report, err error) *Checker {
-	c := New(PortalverifyOptions{Base: "https://portal.example"}, dir, slog.New(slog.DiscardHandler), func() time.Time { return t0 })
+	c := NewChecker(PortalverifyOptions{Base: "https://portal.example"}, dir, slog.New(slog.DiscardHandler), func() time.Time { return t0 })
 	c.verify = func(context.Context, PortalverifyOptions) (*Report, error) { return rep, err }
 	return c
 }
@@ -88,7 +88,7 @@ func TestLastIsEmptyBeforeTheFirstCheckAndKeepsTheLatest(t *testing.T) {
 func TestRunChecksAtOnceAndAgainEachInterval(t *testing.T) {
 	t.Parallel()
 	calls := make(chan struct{}, 8)
-	c := New(PortalverifyOptions{Base: "https://portal.example"}, "", slog.New(slog.DiscardHandler), time.Now)
+	c := NewChecker(PortalverifyOptions{Base: "https://portal.example"}, "", slog.New(slog.DiscardHandler), time.Now)
 	c.verify = func(context.Context, PortalverifyOptions) (*Report, error) {
 		calls <- struct{}{}
 		return report(), nil

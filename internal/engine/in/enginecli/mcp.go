@@ -38,7 +38,7 @@ func RunMCPAt(ctx context.Context, args []string, io cli.Stdio, h cli.Machine, m
 		if cfg, err := config.Load(path); err == nil {
 			return cli.HoldsAgent(cfg, *name), true
 		}
-		return path == system && slices.Contains(engine.SocketAgents(config.DefaultSocketDir(runtime.GOOS)), *name), false
+		return path == system && slices.Contains(m.SocketAgents(config.DefaultSocketDir(runtime.GOOS)), *name), false
 	})
 	if err != nil {
 		return m.Fail(io.Err, "mcp", err)
@@ -53,7 +53,7 @@ func RunMCPAt(ctx context.Context, args []string, io cli.Stdio, h cli.Machine, m
 	} else {
 		// A service engine's config is the engine's own: the person can
 		// list its socket directory, not read the config.
-		names = engine.SocketAgents(socketDir)
+		names = m.SocketAgents(socketDir)
 	}
 	if *name == "" {
 		if len(names) != 1 {

@@ -121,6 +121,7 @@ var errNoUpload = &PluginhostError{Kind: KindNotFound, Message: "no such upload:
 // and the uploads. It is safe for concurrent use; uploads and the storage
 // cap are tracked in memory and rebuilt from disk at New.
 type Store struct {
+	files    Files
 	stateDir string
 	now      func() time.Time
 	goos     string
@@ -134,22 +135,25 @@ type Store struct {
 	copies int64
 }
 
-// NewPluginhost opens the store in stateDir: it makes the state directory when it is
-// missing (mode 0700), removes every upload an earlier run left, and counts
-// the copies. A state directory that is not a directory the engine's user
-// owns, writable by no one else, is refused.
-func NewPluginhost(stateDir string, now func() time.Time) (*Store, error) {
+// NewPluginhost opens the store in stateDir, on files: it makes the state
+// directory when it is missing (mode 0700), removes every upload an earlier
+// run left, and counts the copies. A state directory that is not a
+// directory the engine's user owns, writable by no one else, is refused.
+func NewPluginhost(files Files, stateDir string, now func() time.Time) (*Store, error) {
+	if files == nil {
+		return nil, errors.New("plugin: the kept store needs a file system")
+	}
 	if !filepath.IsAbs(stateDir) {
 		return nil, fmt.Errorf("the state directory %s is not an absolute path", stateDir)
 	}
-	s := &Store{stateDir: filepath.Clean(stateDir), now: now, goos: runtime.GOOS, uploads: map[uuid.UUID]*upload{}, lim: DefaultLimits()}
-	if err := os.MkdirAll(s.stateDir, pluginhostStateDirMode); err != nil {
+	s := &Store{files: files, stateDir: filepath.Clean(stateDir), now: now, goos: runtime.GOOS, uploads: map[uuid.UUID]*upload{}, lim: DefaultLimits()}
+	if err := s.files.MkdirAll(s.stateDir, pluginhostStateDirMode); err != nil {
 		return nil, fmt.Errorf("the state directory %s cannot be made: %w", s.stateDir, err)
 	}
-	if err := checkOwnDir(s.stateDir); err != nil {
+	if err := s.checkOwnDir(s.stateDir); err != nil {
 		return nil, err
 	}
-	if err := os.RemoveAll(s.uploadsDir()); err != nil {
+	if err := s.files.RemoveAll(s.uploadsDir()); err != nil {
 		return nil, fmt.Errorf("the uploads left in %s cannot be removed: %w", s.uploadsDir(), err)
 	}
 	s.recountCopies()
@@ -167,22 +171,22 @@ func (s *Store) Root() string { return filepath.Join(s.stateDir, pluginmodel.Plu
 // no added key; an engine-kept copy is verified with plugin.RequireApproval,
 // so only a built-in key makes a publisher known.
 func (s *Store) Trust() (TrustStore, error) {
-	return NewTrustStore(pluginmodel.ModeSameUser, s.goos, s.stateDir)
+	return NewTrustStore(s.files, pluginmodel.ModeSameUser, s.goos, s.stateDir)
 }
 
 func (s *Store) uploadsDir() string { return filepath.Join(s.stateDir, UploadsDir) }
 
 // checkOwnDir requires dir to be a directory (not a symlink) the engine's
 // OS user owns, writable by no one else.
-func checkOwnDir(dir string) error {
-	fi, err := os.Lstat(dir)
+func (s *Store) checkOwnDir(dir string) error {
+	fi, err := s.files.Lstat(dir)
 	if err != nil {
 		return fmt.Errorf("%s cannot be read: %w", dir, err)
 	}
 	if !fi.IsDir() {
 		return fmt.Errorf("%s is not a directory (a symlink is refused)", dir)
 	}
-	if uid, ok := ownerOf(fi); !ok || uid != uint32(os.Geteuid()) {
+	if uid, ok := s.files.Owner(fi); !ok || uid != uint32(os.Geteuid()) {
 		return fmt.Errorf("%s is not owned by the engine's OS user", dir)
 	}
 	if fi.Mode().Perm()&0o022 != 0 {
@@ -195,7 +199,7 @@ func checkOwnDir(dir string) error {
 func (s *Store) recountCopies() {
 	var n int64
 	// What cannot be read counts as nothing: the walk goes on.
-	_ = filepath.WalkDir(s.Root(), func(_ string, d fs.DirEntry, walkErr error) error {
+	_ = s.files.WalkDir(s.Root(), func(_ string, d fs.DirEntry, walkErr error) error {
 		if walkErr == nil && d.Type().IsRegular() {
 			if fi, err := d.Info(); err == nil {
 				n += fi.Size()

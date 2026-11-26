@@ -43,9 +43,8 @@ type Options struct {
 	units *UnitSource
 	// Ports are the adapters the host is built on; every one is required.
 	Ports Ports
-	// stateDir is where a same-user engine writes which entries it serves
-	// (pluginServingFile), and where every engine keeps its feed cursors;
-	// "" writes nothing and feeds no plugin.
+	// stateDir is where the engine keeps its feed cursors; "" feeds no
+	// plugin.
 	stateDir string
 	// feedTiming replaces the feed's intervals (tests); nil is the
 	// contract's.
@@ -152,10 +151,10 @@ type Plugins struct {
 	serving PluginServing
 }
 
-// New verifies the enabled plugin entries of cfg, read from
+// NewPlugins verifies the enabled plugin entries of cfg, read from
 // configPath. It returns nil, touching nothing on disk, when no entry is
 // enabled for an agent.
-func New(cfg config.Config, configPath string, o Options, log *slog.Logger) *Plugins {
+func NewPlugins(cfg config.Config, configPath string, o Options, log *slog.Logger) *Plugins {
 	if len(configuredPlugins(cfg)) == 0 && o.kept == nil {
 		return nil
 	}
@@ -174,7 +173,7 @@ func configuredPlugins(cfg config.Config) []config.Plugin {
 	return configured
 }
 
-// NewFor is New, also when no entry is enabled:
+// NewFor is NewPlugins, also when no entry is enabled:
 // a same-user engine keeps one so it can start an entry approved while it
 // runs (pluginWatch).
 func NewFor(cfg config.Config, configPath string, o Options, log *slog.Logger) *Plugins {
@@ -227,7 +226,7 @@ func NewFor(cfg config.Config, configPath string, o Options, log *slog.Logger) *
 	}
 	dir := filepath.Dir(configPath)
 	root, rootErr := Root(ep.mode, o.goos, dir)
-	trust, trustErr := NewTrustStore(ep.mode, o.goos, dir)
+	trust, trustErr := NewTrustStore(o.Ports.Files, ep.mode, o.goos, dir)
 	ep.root, ep.trust = root, trust
 	ep.rootErr = errors.Join(rootErr, trustErr)
 	for _, p := range configured {

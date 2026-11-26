@@ -11,6 +11,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -63,13 +64,13 @@ func (rc *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string
 // refused.
 func (rc *Service) revealRevertError(r action.Revert, err error, link string) error {
 	switch refusalOf(err).Reason {
-	case action.RevertRevealRefused:
+	case revertstore.RevertRevealRefused:
 		return linksvc.RevealRefused(guidance.CodeRevertInvalid, link)
-	case action.RevertNotFound:
+	case revertstore.RevertNotFound:
 		return linksvc.ErrNotThisAgent
-	case action.RevertExpiredReason:
+	case revertstore.RevertExpiredReason:
 		return rc.revertExpired(r)
-	case action.RevertNotPending:
+	case revertstore.RevertNotPending:
 		return &guidance.PageError{ToolError: &toolresult.ToolError{
 			Code:          guidance.CodeRevertInvalid,
 			Message:       "the hidden rows cannot be shown: the revert was signed or rejected meanwhile",

@@ -179,7 +179,7 @@ func newService(t *testing.T, goos, configPath string, opts ...option) *Service 
 		return st.core.Errors.ToolError(err)
 	}
 	delivery := linksvc.New(st.links, &st.delivery, st.reads, failure)
-	return NewService(st.core, &st.deps, delivery, st.status, admitted{})
+	return New(st.core, &st.deps, delivery, st.status, admitted{})
 }
 
 // testService is a service with what it takes to build it again under other

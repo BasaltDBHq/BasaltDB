@@ -558,14 +558,15 @@ func compareEntryKeys(a, b pluginmodel.EntryKey) int {
 	return cmp.Or(cmp.Compare(a.Name, b.Name), cmp.Compare(a.Instance, b.Instance))
 }
 
-// trustedKeys is the trust store of an engine run with cfg from configPath:
-// the keys the person added, or not read, logged, when it cannot be read.
-func trustedKeys(cfg config.Config, configPath string, log *slog.Logger) trustWant {
+// trustedKeys is the trust store of an engine run with cfg from configPath,
+// read through files: the keys the person added, or not read, logged, when
+// it cannot be read.
+func trustedKeys(files Files, cfg config.Config, configPath string, log *slog.Logger) trustWant {
 	mode := pluginmodel.ModeSameUser
 	if cfg.Service() {
 		mode = pluginmodel.ModeService
 	}
-	trust, err := NewTrustStore(mode, runtime.GOOS, filepath.Dir(configPath))
+	trust, err := NewTrustStore(files, mode, runtime.GOOS, filepath.Dir(configPath))
 	if err != nil {
 		log.Warn("plugin trust keys not recorded: the trust store cannot be read", "err", err)
 		return trustWant{}
@@ -581,9 +582,10 @@ func trustedKeys(cfg config.Config, configPath string, log *slog.Logger) trustWa
 // RecordEvents writes the start's plugin events (writePluginEvents)
 // and withholds from each agent the entries whose record failed, before
 // any plugin starts. ep is nil when no entry is enabled: removed or
-// disabled entries are still recorded then.
-func RecordEvents(ctx context.Context, cfg config.Config, configPath string, ep *Plugins, ledgers map[string]AgentLedger, log *slog.Logger) {
-	want := wantedPlugins(cfg, ep, trustedKeys(cfg, configPath, log))
+// disabled entries are still recorded then. The trust store is read through
+// files.
+func RecordEvents(ctx context.Context, files Files, cfg config.Config, configPath string, ep *Plugins, ledgers map[string]AgentLedger, log *slog.Logger) {
+	want := wantedPlugins(cfg, ep, trustedKeys(files, cfg, configPath, log))
 	passes := writePluginEvents(ctx, want, ledgers, log)
 	// Nothing runs yet: the records first, so status never shows a withhold
 	// the ledger does not record.

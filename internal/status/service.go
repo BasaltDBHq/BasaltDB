@@ -97,6 +97,9 @@ type Deps struct {
 	// The functions that read the host: all required.
 	// CrashReports are the crash reports in dirs, newest first.
 	CrashReports func(dirs ...string) []CrashReport
+	// CrashFile is the file of report id in the first of dirs that has
+	// one, "" when none does.
+	CrashFile func(dirs []string, id string) string
 	// LatestGuardVersion is the basalt_meta version this build installs.
 	LatestGuardVersion func() int
 	// UpdateMessage is the notice for the agent to relay, for the binary
@@ -157,10 +160,10 @@ type Service struct {
 	pending *handoff.SetupKeeper
 }
 
-// NewService returns the status use case over core and deps. It fills in
+// New returns the status use case over core and deps. It fills in
 // what deps leaves out: no probe reads a current guard, no finisher only
 // forgets the setup in memory, and the upgrade check asks the probe.
-func NewService(core Core, deps *Deps) *Service {
+func New(core Core, deps *Deps) *Service {
 	if deps.Probe == nil {
 		deps.Probe = noProbe{latest: deps.LatestGuardVersion}
 	}

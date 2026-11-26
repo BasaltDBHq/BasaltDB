@@ -14,6 +14,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -131,7 +132,7 @@ func expiredSteps(r action.Revert) []toolresult.NextStep {
 // scopeArgs names a revert scope as request_revert's arguments, its runs
 // and resources filters included, so a request the agent makes from these
 // steps covers no more than the person was shown.
-func scopeArgs(scope action.Scope) map[string]any {
+func scopeArgs(scope revertstore.Scope) map[string]any {
 	args := map[string]any{strings.ToLower(string(scope.Kind)) + "Id": scope.ID.String()}
 	if len(scope.Runs) > 0 {
 		runs := make([]string, 0, len(scope.Runs))
@@ -149,8 +150,8 @@ func scopeArgs(scope action.Scope) map[string]any {
 // proposalOf is the scope of revert r with the runs and tables of the
 // select its binding carries (the agent's proposal, or the person's
 // narrowing of it), so requesting r again keeps them.
-func proposalOf(r action.Revert) action.Scope {
-	scope := action.Scope{Kind: revert.Scope(r.Scope), ID: r.ScopeID}
+func proposalOf(r action.Revert) revertstore.Scope {
+	scope := revertstore.Scope{Kind: revert.Scope(r.Scope), ID: r.ScopeID}
 	// The agent's view hides a widened revert's binding (version 20): a new
 	// request then names only the revert's scope, a change, run or task of
 	// the agent's own (the person widens a run at most to its task), which
@@ -175,7 +176,7 @@ const maxFilterResourceChars = 32
 
 // filterText names scope's runs and resources filters for a person, "" when
 // it has none: the count of runs, the first resource and how many more.
-func filterText(scope action.Scope) string {
+func filterText(scope revertstore.Scope) string {
 	var parts []string
 	if n := len(scope.Runs); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d of its runs", n))
@@ -399,7 +400,7 @@ func (rc *Service) revertExpired(r action.Revert) error {
 // resources) will do; there is no other way to prepare it. The message names
 // the limit the tool ran under: request_revert's prepare has the 100
 // seconds of an MCP call, preview_revert the agent's statement timeout.
-func (rc *Service) prepareTimeout(tool string, scope action.Scope, storeCode string) error {
+func (rc *Service) prepareTimeout(tool string, scope revertstore.Scope, storeCode string) error {
 	te := &toolresult.ToolError{Code: guidance.CodeQueryTimeout, Reason: guidance.ReasonTimeLimit, StoreCode: storeCode, Message: fmt.Sprintf(
 		"preparing the revert of %s %s took longer than the %d seconds an MCP call may take; nothing was prepared. "+
 			"A narrower revert, with runs or resources, may fit.",
@@ -438,19 +439,19 @@ func statementLimitText(d time.Duration) string {
 // nothingToRevert tells the cases of nothing to revert apart: the scope
 // changed no rows a revert could restore (READS_ONLY), every row was
 // already reverted, or people changed every row since (people win).
-func (rc *Service) nothingToRevert(ctx context.Context, tool string, scope action.Scope, refused action.RevertRefusalError) error {
-	if refused.Reason == action.RevertReadsOnly {
+func (rc *Service) nothingToRevert(ctx context.Context, tool string, scope revertstore.Scope, refused revertstore.RevertRefusalError) error {
+	if refused.Reason == revertstore.RevertReadsOnly {
 		return rc.nothingToRevertError(ctx, tool, scope, guidance.ReasonReadsOnly, refused.Detail)
 	}
 	pv, perr := rc.store.Undo.PreviewRevert(ctx, scope, "", 1)
 	if perr != nil {
-		pv = action.PreviewPage{}
+		pv = revertstore.PreviewPage{}
 	}
 	return rc.nothingToRevertError(ctx, tool, scope, skipReason(pv), refused.Detail)
 }
 
 // nothingToRevertError builds NOTHING_TO_REVERT for reason.
-func (rc *Service) nothingToRevertError(ctx context.Context, tool string, scope action.Scope, reason, detail string) error {
+func (rc *Service) nothingToRevertError(ctx context.Context, tool string, scope revertstore.Scope, reason, detail string) error {
 	what := fmt.Sprintf("%s %s", strings.ToLower(string(scope.Kind)), scope.ID)
 	te := &toolresult.ToolError{Code: guidance.CodeNothingToRevert, Reason: reason}
 	te.Message = fmt.Sprintf("nothing to revert in %s; nothing was prepared (%s)", what, detail)
@@ -500,7 +501,7 @@ func (rc *Service) nothingToRevertError(ctx context.Context, tool string, scope 
 // skipReason is why a preview with no line to restore has nothing to revert:
 // every line skipped because it was reverted already, or because people
 // changed the rows since.
-func skipReason(pv action.PreviewPage) string {
+func skipReason(pv revertstore.PreviewPage) string {
 	if pv.Lines > 0 && pv.AllAlreadyReverted {
 		return guidance.ReasonAlreadyReverted
 	}

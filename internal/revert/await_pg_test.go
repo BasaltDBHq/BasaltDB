@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	corerevert "github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
@@ -42,7 +43,7 @@ func TestRequestRevertWaitCancelled(t *testing.T) {
 	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Mark leads won"}
 	require.NoError(t, guard.StartRun(ctx, a.Conn, in))
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'won' WHERE id = 86`))
-	prep, err := guard.PrepareRevert(ctx, a.Conn, action.Scope{Kind: corerevert.ScopeRun, ID: in.RunID}, "Undo")
+	prep, err := guard.PrepareRevert(ctx, a.Conn, revertstore.Scope{Kind: corerevert.ScopeRun, ID: in.RunID}, "Undo")
 	require.NoError(t, err)
 
 	// The revert use case as the engine runs its wait: the agent's store,

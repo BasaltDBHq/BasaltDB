@@ -10,10 +10,10 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
@@ -26,10 +26,10 @@ type slowPrepare struct {
 	timeout *time.Duration
 }
 
-func (s slowPrepare) PrepareRevert(_ context.Context, _ action.Scope, _ string, timeout time.Duration) (action.PreparedRevert, error) {
+func (s slowPrepare) PrepareRevert(_ context.Context, _ revertstore.Scope, _ string, timeout time.Duration) (revertstore.PreparedRevert, error) {
 	*s.timeout = timeout
 	canceled := store.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"})
-	return action.PreparedRevert{}, &action.RevertRefusalError{Reason: action.RevertTimedOut, StoreCode: "57014", Err: canceled}
+	return revertstore.PreparedRevert{}, &revertstore.RevertRefusalError{Reason: revertstore.RevertTimedOut, StoreCode: "57014", Err: canceled}
 }
 
 // A prepare too large for an MCP call is QUERY_TIMEOUT, and its message
@@ -41,7 +41,7 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	run := uuid.Must(uuid.NewV7())
 
 	_, err := svc.RequestRevert(context.Background(), RequestRevertParams{
-		Scope: action.Scope{Kind: revert.ScopeRun, ID: run}, Intent: "Undo",
+		Scope: revertstore.Scope{Kind: revert.ScopeRun, ID: run}, Intent: "Undo",
 	})
 	require.Equal(t, guardmodel.MCPPrepareTimeout, limit)
 	require.Equal(t, 100*time.Second, limit, "under Claude Code's 2-minute auto-background")
@@ -64,7 +64,7 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	// A call the client canceled is not the time limit.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err = svc.RequestRevert(ctx, RequestRevertParams{Scope: action.Scope{Kind: revert.ScopeRun, ID: run}, Intent: "Undo"})
+	_, err = svc.RequestRevert(ctx, RequestRevertParams{Scope: revertstore.Scope{Kind: revert.ScopeRun, ID: run}, Intent: "Undo"})
 	require.Equal(t, guidance.CodeUnavailable, testErrors().ToolError(err).Code)
 }
 
@@ -74,7 +74,7 @@ func TestPreviewRevertTimeLimitNamesTheStatementTimeout(t *testing.T) {
 	t.Parallel()
 	s := newService(t, "linux", "", withStatementTimeout(5*time.Second))
 	// A fixed id: a UUIDv7 starts with the clock, which can contain "100".
-	scope := action.Scope{Kind: revert.ScopeRun, ID: uuid.MustParse("0190a2b3-4c5d-7e6f-8a9b-0c1d2e3f4a5b")}
+	scope := revertstore.Scope{Kind: revert.ScopeRun, ID: uuid.MustParse("0190a2b3-4c5d-7e6f-8a9b-0c1d2e3f4a5b")}
 
 	preview := testErrors().ToolError(s.prepareTimeout(guidance.ToolPreviewRevert, scope, "57014"))
 	require.Equal(t, guidance.CodeQueryTimeout, preview.Code)
@@ -99,14 +99,14 @@ type countedReverts struct {
 func (countedReverts) HasChange(context.Context, uuid.UUID) (bool, error)  { return false, nil }
 func (countedReverts) HasTaskRun(context.Context, uuid.UUID) (bool, error) { return false, nil }
 
-func (r countedReverts) PreviewRevert(context.Context, action.Scope, string, int) (action.PreviewPage, error) {
+func (r countedReverts) PreviewRevert(context.Context, revertstore.Scope, string, int) (revertstore.PreviewPage, error) {
 	*r.guardCalls++
-	return action.PreviewPage{}, nil
+	return revertstore.PreviewPage{}, nil
 }
 
-func (r countedReverts) PrepareRevert(context.Context, action.Scope, string, time.Duration) (action.PreparedRevert, error) {
+func (r countedReverts) PrepareRevert(context.Context, revertstore.Scope, string, time.Duration) (revertstore.PreparedRevert, error) {
 	*r.guardCalls++
-	return action.PreparedRevert{}, nil
+	return revertstore.PreparedRevert{}, nil
 }
 
 // TestNotOwnScopeBeforeAnyGuardCall: preview_revert and request_revert
@@ -120,7 +120,7 @@ func TestNotOwnScopeBeforeAnyGuardCall(t *testing.T) {
 	for kind, reason := range map[revert.Scope]string{
 		revert.ScopeChange: "CHANGE", revert.ScopeRun: "RUN", revert.ScopeTask: "TASK",
 	} {
-		scope := action.Scope{Kind: kind, ID: uuid.Must(uuid.NewV7())}
+		scope := revertstore.Scope{Kind: kind, ID: uuid.Must(uuid.NewV7())}
 		_, err := svc.PreviewRevert(ctx, PreviewRevertParams{Scope: scope})
 		require.Equal(t, guidance.CodeNotFound, testErrors().ToolError(err).Code, "%v", err)
 		require.Equal(t, reason, testErrors().ToolError(err).Reason)

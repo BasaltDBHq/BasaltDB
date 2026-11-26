@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"runtime"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/handoff/out/handofffiles"
 )
 
 // handoffOptions reach the connect service and the collected database for
@@ -47,41 +47,11 @@ func (o handoffOptions) now() func() time.Time {
 }
 
 // connectOnlyAgent says whether a's pending setup is a connect-only one the
-// engine serves with ConnectOnly: waiting for its address, or refused. An
-// agent whose credential file exists with awaitingAddress still set is one
-// whose confirmation stopped half way (the engine stopped after it wrote
-// the credential): only that YES writes it, so the engine finishes it and
-// serves the agent on its credential.
+// engine serves with ConnectOnly, finishing a confirmation it stopped in
+// (handoff.ServesConnectOnly).
 func connectOnlyAgent(env agentEnv, a config.Agent, log *slog.Logger) (bool, error) {
-	if a.Setup == nil || !a.Setup.ConnectOnly() {
-		return false, nil
-	}
-	if a.Setup.Refused || env.asRoot {
-		// As root the engine touches none of the agent's files here: a
-		// confirmation it stopped in is finished by an engine started as
-		// the agent's OS user.
-		return true, nil
-	}
-	files := handoff.SetupFiles{ConfigPath: env.configPath, Agent: a.Name, CredFile: a.Store.CredentialFile, Pins: trustPins{}}
-	if _, err := os.Lstat(a.Store.CredentialFile); err != nil {
-		if errNotExist(err) {
-			return true, nil
-		}
-		return false, err
-	}
-	unlock, err := files.Lock()
-	if err != nil {
-		return false, err
-	}
-	defer unlock()
-	if err := files.RemoveSecret(); err != nil {
-		return false, err
-	}
-	if err := files.ConfirmSetup(a.Setup.SetupID); err != nil {
-		return false, err
-	}
-	log.Info("finished a confirmed connect-only setup the engine stopped in", "setupId", a.Setup.SetupID)
-	return false, nil
+	files := handofffiles.SetupFiles{ConfigPath: env.configPath, Agent: a.Name, CredFile: a.Store.CredentialFile, Pins: trustPins{}}
+	return handoff.ServesConnectOnly(a.Setup, env.asRoot, files, log)
 }
 
 // newConnectOnlyRuntime serves agent a while its connect-only setup waits:
@@ -110,11 +80,11 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 	// A root engine never collects, so it reads no probe cache either.
 	var cache handoff.ProbeCache
 	if !env.asRoot {
-		cache = handoff.FileCache{Dir: env.stateDir}
+		cache = handoff.NewFileCache(handofffiles.ProbeCacheFile{Dir: env.stateDir})
 	}
 	pending, err := handoff.New(handoff.Options{
 		Agent: a.Name, Setup: *a.Setup, Collector: collector, Prober: env.handoff.Prober,
-		Files:   handoff.SetupFiles{ConfigPath: env.configPath, Agent: a.Name, CredFile: a.Store.CredentialFile, Pins: trustPins{}},
+		Files:   handofffiles.SetupFiles{ConfigPath: env.configPath, Agent: a.Name, CredFile: a.Store.CredentialFile, Pins: trustPins{}},
 		Changed: reload, Log: log.With("component", "connect"), Now: env.handoff.now(), Cache: cache,
 	})
 	if err != nil {
@@ -148,7 +118,7 @@ func newRepin(env agentEnv, a config.Agent, cc *pgx.ConnConfig, log *slog.Logger
 		Setup: *a.Setup, Credential: setupcode.Address(t),
 		Collector: handoff.NewClient(env.handoff.HTTP, env.handoff.serviceURL(), env.keys, env.handoff.now()),
 		Prober:    env.handoff.Prober,
-		Files:     handoff.RepinSetupFiles{SetupFiles: handoff.SetupFiles{ConfigPath: env.configPath, Agent: a.Name, CredFile: a.Store.CredentialFile, Pins: trustPins{}}},
+		Files:     handofffiles.RepinSetupFiles{SetupFiles: handofffiles.SetupFiles{ConfigPath: env.configPath, Agent: a.Name, CredFile: a.Store.CredentialFile, Pins: trustPins{}}},
 		Log:       log.With("component", "connect"), Now: env.handoff.now(),
 	})
 	if err != nil {

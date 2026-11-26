@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
@@ -32,7 +33,7 @@ type revealCall struct {
 
 func (s revealStore) RevealHeld(_ context.Context, id uuid.UUID, held HeldRun, proof passkey.Assertion, key []byte) ([]approval.RevealedRow, error) {
 	*s.calls = append(*s.calls, revealCall{id: id, held: held, proof: proof, key: append([]byte(nil), key...)})
-	return nil, refused(action.ApprovalRevealRefused)
+	return nil, refused(approvalstore.ApprovalRevealRefused)
 }
 
 // The service reads only the binding's shared part and hands the store the

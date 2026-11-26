@@ -29,6 +29,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/contractdoc"
 )
@@ -116,13 +117,13 @@ func TestNothingLeaksToNotifier(t *testing.T) {
 
 	// A revert of the update, signed and applied; one of the insert,
 	// rejected with a note.
-	prep, err := guard.PrepareRevert(ctx, c, action.Scope{Kind: revert.ScopeChange, ID: updated}, "undo the rename "+marker)
+	prep, err := guard.PrepareRevert(ctx, c, revertstore.Scope{Kind: revert.ScopeChange, ID: updated}, "undo the rename "+marker)
 	require.NoError(t, err)
 	sig, err := pk.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, c, prep.RevertID, sig)
 	require.NoError(t, err)
-	rejected, err := guard.PrepareRevert(ctx, c, action.Scope{Kind: revert.ScopeChange, ID: inserted}, "undo the insert "+marker)
+	rejected, err := guard.PrepareRevert(ctx, c, revertstore.Scope{Kind: revert.ScopeChange, ID: inserted}, "undo the insert "+marker)
 	require.NoError(t, err)
 	_, err = guard.RejectRevert(ctx, c, rejected.RevertID, "not this one "+marker, nil)
 	require.NoError(t, err)
@@ -341,7 +342,7 @@ func TestBatchNeverReachesALaterRegistration(t *testing.T) {
 	e.stop()
 	e.applied("product_a")
 
-	f := newPluginFeed(e.host, e.served, e.pools, e.stateDir, testPorts.WriteFeedCursor, newPluginSenders(e.host, time.Now), RealClock(), e.log)
+	f := newPluginFeed(e.host, e.served, e.pools, e.stateDir, testPorts.WriteFeedCursor, testPorts.ReadFeedCursor, newPluginSenders(e.host, time.Now), RealClock(), e.log)
 	f.senders.sync([]pluginmodel.EntryKey{p.key})
 	t.Cleanup(f.senders.stop)
 	r := &feedReader{f: f, pair: feedPair{key: p.key, agent: "product_a"}, ledger: e.pools["product_a"], log: e.log}

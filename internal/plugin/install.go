@@ -62,7 +62,7 @@ func Stage(src, root, instance string, trust TrustStore, mode pluginmodel.Mode, 
 	if instance == "" {
 		instance = pluginmodel.DefaultInstance
 	}
-	srcRoot, err := os.OpenRoot(src)
+	srcRoot, err := trust.files.OpenRoot(src)
 	if err != nil {
 		return nil, pluginmodel.PathRefusal(src, "cannot be opened as a directory")
 	}
@@ -113,7 +113,7 @@ func Stage(src, root, instance string, trust TrustStore, mode pluginmodel.Mode, 
 
 	nameDir := filepath.Join(root, key.Name)
 	instDir := filepath.Join(nameDir, key.Instance)
-	if err := ensureDir(root, instDir, owner); err != nil {
+	if err := ensureDir(trust.files, root, instDir, owner); err != nil {
 		return nil, err
 	}
 	// The path rule holds where the copy is written before anything is
@@ -121,19 +121,19 @@ func Stage(src, root, instance string, trust TrustStore, mode pluginmodel.Mode, 
 	if err := checkUnder(owner, root, nameDir, instDir); err != nil {
 		return nil, err
 	}
-	tmp, err := os.MkdirTemp(instDir, stagingPrefix)
+	tmp, err := trust.files.MkdirTemp(instDir, stagingPrefix)
 	if err != nil {
 		return nil, pluginmodel.PathRefusal(instDir, "cannot hold a temporary copy")
 	}
 	s := &Staged{Key: key, root: root, owner: owner, trust: trust, opts: o}
 	s.Dir = tmp
 	if err := s.fill(srcRoot, src, m, manifest, sig, signed); err != nil {
-		_ = os.RemoveAll(tmp)
+		_ = trust.files.RemoveAll(tmp)
 		return nil, err
 	}
 	v, err := verifyCopy(root, key, filepath.Base(tmp), "", trust, owner, o)
 	if err != nil {
-		_ = os.RemoveAll(tmp)
+		_ = trust.files.RemoveAll(tmp)
 		return nil, err
 	}
 	s.Verified = v
@@ -144,11 +144,11 @@ func Stage(src, root, instance string, trust TrustStore, mode pluginmodel.Mode, 
 // when signed is false), and copies each listed file, into the temporary
 // copy.
 func (s *Staged) fill(srcRoot *os.Root, src string, m pluginmodel.Manifest, manifest, sig []byte, signed bool) error {
-	if err := writeNew(filepath.Join(s.Dir, ManifestFile), manifest, installedFileMode); err != nil {
+	if err := writeNew(s.trust.files, filepath.Join(s.Dir, ManifestFile), manifest, installedFileMode); err != nil {
 		return err
 	}
 	if signed {
-		if err := writeNew(filepath.Join(s.Dir, SignatureFile), sig, installedFileMode); err != nil {
+		if err := writeNew(s.trust.files, filepath.Join(s.Dir, SignatureFile), sig, installedFileMode); err != nil {
 			return err
 		}
 	}
@@ -184,10 +184,10 @@ func (s *Staged) copyFile(srcRoot *os.Root, src, rel string, command bool) error
 		mode = installedExecMode
 	}
 	dst := filepath.Join(s.Dir, filepath.FromSlash(rel))
-	if err := mkdirsIn(s.Dir, path.Dir(rel)); err != nil {
+	if err := mkdirsIn(s.trust.files, s.Dir, path.Dir(rel)); err != nil {
 		return err
 	}
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, installedFileMode)
+	out, err := s.trust.files.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, installedFileMode)
 	if err != nil {
 		return pluginmodel.PathRefusal(dst, "cannot be created")
 	}
@@ -258,21 +258,21 @@ func readSource(srcRoot *os.Root, src, name string, limit int64) ([]byte, error)
 }
 
 // mkdirsIn creates rel's directories inside base, each 0755.
-func mkdirsIn(base, rel string) error {
+func mkdirsIn(files Files, base, rel string) error {
 	if rel == "." || rel == "" {
 		return nil
 	}
 	cur := base
 	for _, part := range strings.Split(rel, "/") {
 		cur = filepath.Join(cur, part)
-		err := os.Mkdir(cur, dirMode)
+		err := files.Mkdir(cur, dirMode)
 		if errors.Is(err, fs.ErrExist) {
 			continue
 		}
 		if err != nil {
 			return pluginmodel.PathRefusal(cur, "cannot be created")
 		}
-		if err := os.Chmod(cur, dirMode); err != nil {
+		if err := files.Chmod(cur, dirMode); err != nil {
 			return pluginmodel.PathRefusal(cur, "cannot be set to mode 0755")
 		}
 	}
@@ -280,8 +280,8 @@ func mkdirsIn(base, rel string) error {
 }
 
 // writeNew creates path, which must not exist, with b and mode.
-func writeNew(p string, b []byte, mode os.FileMode) error {
-	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+func writeNew(files Files, p string, b []byte, mode os.FileMode) error {
+	f, err := files.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {
 		return pluginmodel.PathRefusal(p, "cannot be created")
 	}
@@ -315,35 +315,36 @@ func (s *Staged) Commit() (string, error) {
 	s.done = true
 	instDir := filepath.Dir(s.Dir)
 	final := filepath.Join(instDir, s.ManifestSHA256)
-	if err := os.Chmod(s.Dir, dirMode); err != nil {
-		_ = os.RemoveAll(s.Dir)
+	files := s.trust.files
+	if err := files.Chmod(s.Dir, dirMode); err != nil {
+		_ = files.RemoveAll(s.Dir)
 		return "", pluginmodel.PathRefusal(s.Dir, "cannot be set to mode 0755")
 	}
-	if _, err := os.Lstat(final); err == nil {
+	if _, err := files.Lstat(final); err == nil {
 		kept, verr := verifyCopy(s.root, s.Key, s.ManifestSHA256, s.ManifestSHA256, s.trust, s.owner, s.opts)
 		if verr == nil && kept.Signer == s.Signer && kept.SignerKeyID == s.SignerKeyID &&
-			(!s.opts.requireApproval || sameSignatureFile(final, s.Dir)) {
-			_ = os.RemoveAll(s.Dir)
+			(!s.opts.requireApproval || sameSignatureFile(files, final, s.Dir)) {
+			_ = files.RemoveAll(s.Dir)
 			s.Verified = kept
 			return final, nil
 		}
 		old := filepath.Join(instDir, oldPrefix+strings.TrimPrefix(filepath.Base(s.Dir), stagingPrefix))
-		if err := os.Rename(final, old); err != nil {
-			_ = os.RemoveAll(s.Dir)
+		if err := files.Rename(final, old); err != nil {
+			_ = files.RemoveAll(s.Dir)
 			return "", pluginmodel.PathRefusal(final, "exists, is not the staged copy, and cannot be moved aside")
 		}
-		if err := os.Rename(s.Dir, final); err != nil {
+		if err := files.Rename(s.Dir, final); err != nil {
 			// Put the copy that was in place back: an entry may still name it.
-			_ = os.Rename(old, final)
-			_ = os.RemoveAll(s.Dir)
+			_ = files.Rename(old, final)
+			_ = files.RemoveAll(s.Dir)
 			return "", pluginmodel.PathRefusal(final, "cannot be put in place")
 		}
-		_ = os.RemoveAll(old)
+		_ = files.RemoveAll(old)
 		s.Dir = final
 		return final, nil
 	}
-	if err := os.Rename(s.Dir, final); err != nil {
-		_ = os.RemoveAll(s.Dir)
+	if err := files.Rename(s.Dir, final); err != nil {
+		_ = files.RemoveAll(s.Dir)
 		return "", pluginmodel.PathRefusal(final, "cannot be put in place")
 	}
 	s.Dir = final
@@ -352,13 +353,13 @@ func (s *Staged) Commit() (string, error) {
 
 // sameSignatureFile reports whether copies a and b both hold no .sig, or
 // hold the same bytes in it.
-func sameSignatureFile(a, b string) bool {
+func sameSignatureFile(files Files, a, b string) bool {
 	read := func(dir string) ([]byte, bool, bool) {
 		p := filepath.Join(dir, SignatureFile)
-		if _, err := os.Lstat(p); errors.Is(err, fs.ErrNotExist) {
+		if _, err := files.Lstat(p); errors.Is(err, fs.ErrNotExist) {
 			return nil, false, true
 		}
-		raw, err := readNoFollow(p, MaxSignatureFileBytes)
+		raw, err := readNoFollow(files, p, MaxSignatureFileBytes)
 		return raw, true, err == nil
 	}
 	ra, hasA, okA := read(a)
@@ -372,24 +373,8 @@ func (s *Staged) Discard() error {
 		return nil
 	}
 	s.done = true
-	if err := os.RemoveAll(s.Dir); err != nil {
+	if err := s.trust.files.RemoveAll(s.Dir); err != nil {
 		return pluginmodel.PathRefusal(s.Dir, "cannot be removed")
 	}
 	return nil
-}
-
-// Install stages the plugin in src and commits it, with no consent step in
-// between. It returns the installed copy.
-func Install(src, root, instance string, trust TrustStore, mode pluginmodel.Mode, opts ...Option) (pluginmodel.Verified, error) {
-	s, err := Stage(src, root, instance, trust, mode, opts...)
-	if err != nil {
-		return pluginmodel.Verified{}, err
-	}
-	dir, err := s.Commit()
-	if err != nil {
-		return pluginmodel.Verified{}, err
-	}
-	v := s.Verified
-	v.Dir = dir
-	return v, nil
 }

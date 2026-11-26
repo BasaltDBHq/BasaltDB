@@ -14,29 +14,10 @@ import (
 )
 
 // inboundReachBaseline pins the outbound packages an inbound adapter links
-// today, as "inbound -> outbound". Setup's three adapters reach the guard
-// installer through pkg/setup. The list only shrinks: a new pair fails, and so
-// does a pair that no longer holds.
-var inboundReachBaseline = []string{
-	"internal/setup/in/localsetup -> internal/platform/postgres/demo",
-	"internal/setup/in/localsetup -> internal/platform/postgres/guard",
-	"internal/setup/in/localsetup -> internal/platform/postgres/pglargevalue",
-	"internal/setup/in/localsetup -> internal/platform/postgres/pgquerier",
-	"internal/setup/in/localsetup -> internal/platform/postgres/setupstore",
-	"internal/setup/in/localsetup -> internal/platform/postgres/sqlport",
-	"internal/setup/in/setupcli -> internal/platform/postgres/demo",
-	"internal/setup/in/setupcli -> internal/platform/postgres/guard",
-	"internal/setup/in/setupcli -> internal/platform/postgres/pglargevalue",
-	"internal/setup/in/setupcli -> internal/platform/postgres/pgquerier",
-	"internal/setup/in/setupcli -> internal/platform/postgres/setupstore",
-	"internal/setup/in/setupcli -> internal/platform/postgres/sqlport",
-	"internal/setup/in/setuppage -> internal/platform/postgres/demo",
-	"internal/setup/in/setuppage -> internal/platform/postgres/guard",
-	"internal/setup/in/setuppage -> internal/platform/postgres/pglargevalue",
-	"internal/setup/in/setuppage -> internal/platform/postgres/pgquerier",
-	"internal/setup/in/setuppage -> internal/platform/postgres/setupstore",
-	"internal/setup/in/setuppage -> internal/platform/postgres/sqlport",
-}
+// today, as "inbound -> outbound". It is empty: no inbound adapter links one.
+// The list only shrinks: a new pair fails, and so does a pair that no longer
+// holds.
+var inboundReachBaseline = []string{}
 
 // crossDomainInbound pins every import from a domain's in/ package into
 // another domain (its service, its in/ or its out/). A new edge fails until it
@@ -56,7 +37,6 @@ var crossDomainInbound = []string{
 	"internal/handoff/in/handoffcli -> internal/setup",
 	"internal/handoff/in/handoffmcp -> internal/status",
 	// local setup asks the PII service for column suggestions.
-	"internal/setup/in/localsetup -> internal/pii",
 	// the setup CLI installs the engine service, reads its crash loops and the
 	// handoff login refusal.
 	"internal/setup/in/setupcli -> internal/engine",
@@ -221,21 +201,9 @@ func TestInboundOnlyTranslates(t *testing.T) {
 // import a database driver today, with the reason. The list only shrinks: a
 // new file fails, and so does a listed file that no longer imports one.
 var inboundDriverBaseline = map[string]string{
-	"internal/platform/cli/host.go":              "its host port returns a *pgx.Conn",
-	"internal/platform/cli/io.go":                "its querier port uses pgx rows and command tags",
-	"internal/platform/cli/trust.go":             "parses the connection string and returns a *pgx.Conn",
-	"internal/setup/in/localsetup/agentjobs.go":  "runs the agent job SQL in a transaction",
-	"internal/setup/in/localsetup/backend.go":    "runs setup SQL on a pgx connection and transaction",
-	"internal/setup/in/localsetup/cause.go":      "reads the SQLSTATE of a pgconn.PgError",
-	"internal/setup/in/localsetup/classes.go":    "reads columns and writes labels with SQL",
-	"internal/setup/in/localsetup/confirm.go":    "reads the confirm facts with SQL",
-	"internal/setup/in/localsetup/doctor.go":     "runs the doctor checks with SQL",
-	"internal/setup/in/localsetup/fixes.go":      "applies fixes in a transaction",
-	"internal/setup/in/localsetup/localsetup.go": "checks role membership and runs setup SQL",
-	"internal/setup/in/localsetup/pin.go":        "dials the pinned admin connection",
-	"internal/setup/in/localsetup/repair.go":     "repairs the guard in a transaction",
-	"internal/setup/in/localsetup/run.go":        "runs the setup transaction",
-	"internal/setup/in/localsetup/trustfix.go":   "applies the trust fix in a transaction",
+	"internal/platform/cli/host.go":  "its host port returns a *pgx.Conn",
+	"internal/platform/cli/io.go":    "its querier port uses pgx rows and command tags",
+	"internal/platform/cli/trust.go": "parses the connection string and returns a *pgx.Conn",
 }
 
 // driverImport reports whether an import path is a database driver: pgx and

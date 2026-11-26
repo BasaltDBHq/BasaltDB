@@ -107,7 +107,7 @@ func runtimeOf(t *testing.T, a *guardtest.Agent, ep *Plugins) (*status.Service, 
 	if ep != nil {
 		deps.Plugins = ep
 	}
-	svc := status.NewService(core, &deps)
+	svc := status.New(core, &deps)
 	return svc, map[string]AgentLedger{"bot": {ports: testPorts, db: pool, admit: pluginAdmit(svc)}}
 }
 
@@ -136,6 +136,8 @@ var testPorts = Ports{
 		return cli.ReadEngineConfigAs(trustedOpener{}, euid, path)
 	},
 	WriteFeedCursor: pluginstate.WriteFeedCursor,
+	ReadFeedCursor:  pluginstate.ReadFeedCursor,
+	Files:           testFiles,
 }
 
 // trustedOpener is the app shell's hardened open (osservice.OpenTrustedFile).

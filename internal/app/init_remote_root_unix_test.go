@@ -17,7 +17,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
-	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // As root, init --remote reaches agents/ from / without following a link:
@@ -159,7 +158,7 @@ func TestEngineFinishesARootInitRotation(t *testing.T) {
 	clearSetup(t, cfg)
 	rotate := remoteDBRun(t, cfg, "--agent", "bot")
 	require.Equal(t, "AGENT", rotate.res.Kind)
-	pending := install.credFile + setup.PendingSuffix
+	pending := install.credFile + config.PendingSuffix
 	newPassword := credentialPassword(t, pending)
 	runViaConnect(t, d, rotate.res.Code)
 

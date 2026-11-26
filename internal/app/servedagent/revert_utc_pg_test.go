@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
@@ -67,7 +67,7 @@ func TestPreviewRevertShowsTimestamptzAsUTC(t *testing.T) {
 func TestRevertPlanShowsTimestamptzAsUTC(t *testing.T) {
 	t.Parallel()
 	e, run := stampsEnv(t, planRows)
-	prep, err := guard.PrepareRevert(context.Background(), e.a.Conn, action.Scope{Kind: revert.ScopeRun, ID: run}, "Undo the move")
+	prep, err := guard.PrepareRevert(context.Background(), e.a.Conn, revertstore.Scope{Kind: revert.ScopeRun, ID: run}, "Undo the move")
 	require.NoError(t, err)
 	require.True(t, prep.Batched)
 	page := callFits(t, e.h, "revert_plan", map[string]any{"revertId": prep.RevertID.String(), "limit": 20})

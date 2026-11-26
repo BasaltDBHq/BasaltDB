@@ -16,11 +16,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 )
@@ -38,14 +38,14 @@ func NewRevertHandlers(s *pageserver.Server) pageserver.RevertHandlers {
 // appliedDTO is the relay's answer for a revert: the applied revert, with
 // the engine's receipt or why there is none.
 type appliedDTO struct {
-	action.AppliedRevert
+	revertstore.AppliedRevert
 	Receipt   string `json:"receipt,omitempty"`
 	NoReceipt string `json:"noReceipt,omitempty"`
 }
 
 // relayedRevert is what RelayRevert returns, for Find.
 type relayedRevert struct {
-	applied action.AppliedRevert
+	applied revertstore.AppliedRevert
 	receipt linksvc.Receipt
 }
 

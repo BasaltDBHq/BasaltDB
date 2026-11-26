@@ -13,6 +13,7 @@ import (
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -47,17 +48,17 @@ func (l *failingNamesLedger) RecordRefusal(ctx context.Context, r action.Refusal
 // fixedHolds is the approval's store with a fixed preview and hold result.
 type fixedHolds struct {
 	approvalsvc.Store
-	preview    action.HeldPreview
+	preview    approvalstore.HeldPreview
 	previewErr error
 	holdErr    error
 }
 
-func (s fixedHolds) Preview(context.Context, action.Intent, agentstore.Request) (action.HeldPreview, error) {
+func (s fixedHolds) Preview(context.Context, action.Intent, agentstore.Request) (approvalstore.HeldPreview, error) {
 	return s.preview, s.previewErr
 }
 
-func (s fixedHolds) Hold(context.Context, action.Intent, action.HoldRequest) (action.Held, error) {
-	return action.Held{}, s.holdErr
+func (s fixedHolds) Hold(context.Context, action.Intent, approvalstore.HoldRequest) (approvalstore.Held, error) {
+	return approvalstore.Held{}, s.holdErr
 }
 
 // The seven ways a hold can fail before it is held, through the approval
@@ -82,20 +83,19 @@ func TestHoldExitsRecordWhatTheyRecordedBefore(t *testing.T) {
 	}{
 		{"not repeatable", fixedHolds{previewErr: notRepeatable}, guidance.CodeStatementRefused, string(action.ReasonNotRepeatable), true},
 		{"catalog read failing", fixedHolds{previewErr: catalog}, guidance.CodeStoreError, "", false},
-		{"preview run failing", fixedHolds{previewErr: &action.PreviewFailedError{Err: run}}, guidance.CodeStoreError, "", true},
+		{"preview run failing", fixedHolds{previewErr: &approvalstore.PreviewFailedError{Err: run}}, guidance.CodeStoreError, "", true},
 		{"no rows now", fixedHolds{}, guidance.CodeStoreError, guidance.ReasonNoRowsNow, false},
-		{"over the cap", fixedHolds{preview: action.HeldPreview{Lines: []string{strings.Repeat("x", guardmodel.MaxHeldLinesBytes+1)}}}, guidance.CodeStatementRefused, action.ReasonHoldTooLarge, true},
+		{"over the cap", fixedHolds{preview: approvalstore.HeldPreview{Lines: []string{strings.Repeat("x", guardmodel.MaxHeldLinesBytes+1)}}}, guidance.CodeStatementRefused, action.ReasonHoldTooLarge, true},
 		// Unreachable in practice: admission refuses a guard from before the
 		// 64 MiB cap (64 KiB a line) before any hold. Not a regression.
-		{"the hold failing on a long line", fixedHolds{preview: action.HeldPreview{Lines: []string{strings.Repeat("x", 64<<10+1)}}, holdErr: olderGuard}, guidance.CodeStoreError, "", false},
-		{"the guard's own cap", fixedHolds{preview: action.HeldPreview{Lines: []string{"x"}}, holdErr: guardTooLarge}, guidance.CodeStatementRefused, action.ReasonHoldTooLarge, false},
+		{"the hold failing on a long line", fixedHolds{preview: approvalstore.HeldPreview{Lines: []string{strings.Repeat("x", 64<<10+1)}}, holdErr: olderGuard}, guidance.CodeStoreError, "", false},
+		{"the guard's own cap", fixedHolds{preview: approvalstore.HeldPreview{Lines: []string{"x"}}, holdErr: guardTooLarge}, guidance.CodeStatementRefused, action.ReasonHoldTooLarge, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			ledger := &refusalLedger{}
-			wc := newTestService(t, "linux", "", func(s *settings) { s.store.Ledger = ledger })
-			approvals := approvalsvc.New(approvalsvc.Core{}, approvalsvc.StoreSet{Records: tc.store, Holds: tc.store, Proofs: tc.store}, &approvalsvc.Deps{}, nil, nil)
-			wc.SetPorts(nil, approvals, nil, nil, nil)
+			approvals := approvalsvc.New(approvalsvc.Core{}, approvalsvc.StoreSet{Records: tc.store, Holds: tc.store, Proofs: tc.store}, &approvalsvc.Deps{}, nil, nil, nil, nil)
+			wc := newTestService(t, "linux", "", func(s *settings) { s.store.Ledger, s.approvals = ledger, approvals })
 			req := agentstore.Request{Text: "DELETE FROM public.leads WHERE id = $1", Params: []any{1}}
 			in := action.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "drop a lead"}
 

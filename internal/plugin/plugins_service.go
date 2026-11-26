@@ -55,7 +55,7 @@ type UnitSource struct {
 func osUnitSource(p Ports) *UnitSource {
 	return &UnitSource{
 		ReadUnit: func(path string) ([]byte, error) {
-			f, err := os.Open(path)
+			f, err := p.Files.OpenFile(path, os.O_RDONLY, 0)
 			if err != nil {
 				return nil, err
 			}
@@ -207,7 +207,7 @@ func (ep *Plugins) units() *UnitSource {
 	return osUnitSource(ep.o.Ports)
 }
 
-// dialer is the options' dialer, which New requires.
+// dialer is the options' dialer, which NewPlugins requires.
 func (ep *Plugins) dialer() Dialer { return ep.o.Dialer }
 
 // initServiceUnits reads, once, what a service engine's plugin units must

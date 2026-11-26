@@ -12,11 +12,9 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"syscall"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
-	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 // EntriesPath is the entries file.
@@ -73,7 +71,7 @@ func withNamedAgents(cfg config.Config, entries []config.Plugin) config.Config {
 // readEntries reads the entries file's bytes, nil when it does not exist.
 func (s *Store) readEntries() ([]byte, error) {
 	p := s.EntriesPath()
-	f, err := os.OpenFile(p, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	f, err := s.files.OpenFile(p, os.O_RDONLY|s.files.NoFollow(), 0)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -89,13 +87,14 @@ func (s *Store) readEntries() ([]byte, error) {
 	if err != nil {
 		return nil, unsafe("cannot be read")
 	}
-	st, ok := fi.Sys().(*syscall.Stat_t)
+	links, ok := s.files.Links(fi)
+	uid, _ := s.files.Owner(fi)
 	switch {
 	case !fi.Mode().IsRegular():
 		return nil, unsafe("is not a regular file")
-	case !ok || st.Nlink != 1:
+	case !ok || links != 1:
 		return nil, unsafe("has more than one link")
-	case st.Uid != uint32(os.Geteuid()):
+	case uid != uint32(os.Geteuid()):
 		return nil, unsafe("is " + errNotEngineUser.Error())
 	case fi.Mode().Perm()&0o022 != 0:
 		return nil, unsafe("can be written by group or others")
@@ -118,7 +117,7 @@ func (s *Store) readEntries() ([]byte, error) {
 // overwritten (UNSAFE_PATH). change returns the entries to write; an error
 // from it writes nothing.
 func (s *Store) Update(cfg config.Config, change func([]config.Plugin) ([]config.Plugin, error)) error {
-	release, err := config.LockFile(filepath.Join(s.stateDir, lockFile))
+	release, err := s.files.Lock(filepath.Join(s.stateDir, lockFile))
 	if err != nil {
 		return refused(ReasonUnsafePath, "the lock %s cannot be taken: %s", filepath.Join(s.stateDir, lockFile), err)
 	}
@@ -143,7 +142,7 @@ func (s *Store) Update(cfg config.Config, change func([]config.Plugin) ([]config
 	}
 	// The entries record the person's approvals: the directory is synced so
 	// a written approval survives a crash.
-	return atomicfile.Write(filepath.Join(s.stateDir, EntriesFile), append(raw, '\n'), atomicfile.Options{Mode: privateFile, SyncDir: true})
+	return s.files.WriteAtomic(filepath.Join(s.stateDir, EntriesFile), append(raw, '\n'), privateFile, true)
 }
 
 // Stage checks the taken upload as a copy of entry (name, instance): it
@@ -189,7 +188,7 @@ func (s *Store) Stage(t *Taken, name, instance string, executables []string) (*S
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(s.Root(), copiesDirMode); err != nil {
+	if err := s.files.MkdirAll(s.Root(), copiesDirMode); err != nil {
 		return nil, refused(ReasonUnsafePath, "%s cannot be made", s.Root())
 	}
 	st, err := Stage(t.Dir, s.Root(), instance, trust, pluginmodel.ModeSameUser, RequireApproval(true))
@@ -205,12 +204,12 @@ func (t *Taken) Manifest() ([]byte, error) {
 	if !slices.Contains(t.Paths, ManifestFile) {
 		return nil, refused(ReasonBadManifest, "the upload holds no %s", ManifestFile)
 	}
-	root, err := os.OpenRoot(t.Dir)
+	root, err := t.s.files.OpenRoot(t.Dir)
 	if err != nil {
 		return nil, refused(ReasonUnsafePath, "the upload's directory cannot be opened")
 	}
 	defer func() { _ = root.Close() }()
-	f, err := root.OpenFile(ManifestFile, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	f, err := root.OpenFile(ManifestFile, os.O_RDONLY|t.s.files.NoFollow(), 0)
 	if err != nil {
 		return nil, refused(ReasonUnsafePath, "%s of the upload cannot be opened, or is a symlink", ManifestFile)
 	}
@@ -254,14 +253,14 @@ func (s *Store) Tidy(k pluginmodel.EntryKey) {
 	if filepath.Dir(filepath.Dir(inst)) != s.Root() {
 		return
 	}
-	_ = os.Remove(inst)
-	_ = os.Remove(filepath.Dir(inst))
+	_ = s.files.Remove(inst)
+	_ = s.files.Remove(filepath.Dir(inst))
 }
 
 // RemoveCopies removes entry k's copies but keep ("" removes every one),
 // and recounts the storage.
 func (s *Store) RemoveCopies(k pluginmodel.EntryKey, keep string) error {
-	err := Sweep(s.Root(), k, keep, pluginmodel.ModeSameUser)
+	err := Sweep(s.files, s.Root(), k, keep, pluginmodel.ModeSameUser)
 	s.recountCopies()
 	return err
 }
@@ -269,7 +268,7 @@ func (s *Store) RemoveCopies(k pluginmodel.EntryKey, keep string) error {
 // Sweep removes every copy under Root that no entry of entries names (a
 // crash between writing a copy and its entry), and recounts the storage.
 func (s *Store) Sweep(entries []config.Plugin) {
-	names, err := os.ReadDir(s.Root())
+	names, err := s.files.ReadDir(s.Root())
 	if err != nil {
 		return
 	}
@@ -278,7 +277,7 @@ func (s *Store) Sweep(entries []config.Plugin) {
 		keep[p.Key()] = p.ManifestSHA256
 	}
 	for _, n := range names {
-		insts, err := os.ReadDir(filepath.Join(s.Root(), n.Name()))
+		insts, err := s.files.ReadDir(filepath.Join(s.Root(), n.Name()))
 		if err != nil {
 			continue
 		}
@@ -288,7 +287,7 @@ func (s *Store) Sweep(entries []config.Plugin) {
 			if !ok {
 				sha = ""
 			}
-			_ = Sweep(s.Root(), k, sha, pluginmodel.ModeSameUser)
+			_ = Sweep(s.files, s.Root(), k, sha, pluginmodel.ModeSameUser)
 		}
 	}
 	s.recountCopies()

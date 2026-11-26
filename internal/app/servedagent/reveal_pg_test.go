@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -428,7 +429,7 @@ func TestAgentRoleCannotRevealDirectly(t *testing.T) {
 	// is the guard's own test (TestRevealApprovalRowsRefused).
 	store := agenttest.PgService(t, s.env.a.URL, agenttest.WithConns(1)).Store
 	in := guard.Intent{RunID: uuid.MustParse(s.heldRun), Text: "Lead 20 left"}
-	_, err = store.RevealHeld(ctx, uuid.MustParse(s.approval), action.HeldRun{Intent: action.Intent(in), Request: heldDropLead("20")}, made, key)
+	_, err = store.RevealHeld(ctx, uuid.MustParse(s.approval), approvalstore.HeldRun{Intent: action.Intent(in), Request: heldDropLead("20")}, made, key)
 	requireRevealRefused(t, err, guard.CodeApprovalInvalid)
 }
 
@@ -458,7 +459,7 @@ func TestApprovalRevealRowsChangedAndMismatch(t *testing.T) {
 		require.NoError(t, err)
 		ch, err := approvaltest.RevealChallenge(approval.KindApprove, id, fresh.RevealNonce, key, fb.RowsHash)
 		require.NoError(t, err)
-		return store.RevealHeld(context.Background(), id, action.HeldRun{Intent: action.Intent(in), Request: held}, s.personSigns(t)(ch), key)
+		return store.RevealHeld(context.Background(), id, approvalstore.HeldRun{Intent: action.Intent(in), Request: held}, s.personSigns(t)(ch), key)
 	}
 	_, err := reveal(heldDropLead("21"))
 	requireRevealRefused(t, err, guard.CodeApprovalInvalid)

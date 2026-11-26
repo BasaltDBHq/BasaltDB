@@ -7,9 +7,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 )
 
 // RevealNonce is the reveal nonce of the caller's own approval
@@ -33,17 +33,17 @@ func RevealNonce(ctx context.Context, q Querier, kind string, id uuid.UUID) ([]b
 // (approval.RevealKey; never the secret). Every proof or key failure is
 // REVERT_INVALID detail RevealRefused and changes nothing. Run it in its
 // own transaction.
-func RevealRevertRows(ctx context.Context, q Querier, revertID uuid.UUID, proof passkey.Assertion, key []byte) (action.RevealedRevert, error) {
+func RevealRevertRows(ctx context.Context, q Querier, revertID uuid.UUID, proof passkey.Assertion, key []byte) (revertstore.RevealedRevert, error) {
 	b, err := proofJSON(proof)
 	if err != nil {
-		return action.RevealedRevert{}, err
+		return revertstore.RevealedRevert{}, err
 	}
-	var out action.RevealedRevert
+	var out revertstore.RevealedRevert
 	// Plain SQL: one function call returning jsonb.
 	err = q.QueryRow(ctx, `SELECT basalt_meta.reveal_revert_rows($1::uuid, $2::jsonb, $3::bytea)`,
 		revertID.String(), b, key).Scan(&out)
 	if err != nil {
-		return action.RevealedRevert{}, err
+		return revertstore.RevealedRevert{}, err
 	}
 	return out, nil
 }

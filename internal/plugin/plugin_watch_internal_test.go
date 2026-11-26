@@ -85,7 +85,7 @@ func (f *pluginFixture) live(l pluginLedgers, o Options) *livePlugins {
 	ep := NewFor(cfg, f.configPath, o, log)
 	ledgers := l.pools(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	RecordEvents(ctx, cfg, f.configPath, ep, ledgers, log)
+	RecordEvents(ctx, testFiles, cfg, f.configPath, ep, ledgers, log)
 	require.NoError(t, ep.start(ctx))
 	lp := &livePlugins{t: t, f: f, ep: ep, w: newPluginWatch(ep, cfg, f.configPath, ledgers), ledgers: ledgers, ctx: ctx}
 	stopped := false
@@ -167,7 +167,7 @@ func TestApprovedPluginStartsWithoutRestart(t *testing.T) {
 	ep := NewFor(cfg, f.configPath, Options{Ports: testPorts, Dialer: dial.Dialer{}, SocketBase: f.sockBase, euid: os.Geteuid()}, log)
 	ledgers := l.pools(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	RecordEvents(ctx, cfg, f.configPath, ep, ledgers, log)
+	RecordEvents(ctx, testFiles, cfg, f.configPath, ep, ledgers, log)
 	done := make(chan struct{})
 	go func() { ep.Serve(ctx, cfg, f.configPath, ledgers); close(done) }()
 	t.Cleanup(func() { cancel(); <-done })

@@ -112,13 +112,21 @@ func newService(t *testing.T, goos, configPath string, opts ...option) *Service 
 	}
 	st.links.Now = st.core.Now
 	set := StoreSet{Records: st.store, Holds: st.store, Proofs: st.store}
-	ac := New(st.core, set, &st.deps, foundRuns{}, admitted{})
 	failure := func(_ string, _ map[string]any, err error) *toolresult.ToolError {
 		return st.core.Errors.ToolError(err)
 	}
-	ac.SetDelivery(linksvc.New(st.links, &st.delivery, ac, failure))
-	ac.SetReverts(noReverts{})
-	return ac
+	delivery := linksvc.New(st.links, &st.delivery, storeReads{st.store}, failure)
+	return New(st.core, set, &st.deps, delivery, noReverts{}, foundRuns{}, admitted{})
+}
+
+// storeReads is what the delivery use case reads of the approval records,
+// from the store as the app wires it; the pages show the rows' field order.
+type storeReads struct{ Records }
+
+func (storeReads) HasColumns() bool { return false }
+
+func (storeReads) ColumnOrder(context.Context, []string) (map[string][]string, error) {
+	return map[string][]string{}, nil
 }
 
 // testService is a service with what it takes to build it again under other

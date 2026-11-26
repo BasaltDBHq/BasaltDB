@@ -20,6 +20,7 @@ import (
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -377,7 +378,7 @@ func (a *docApprovals) Hold(_ context.Context, in action.Intent, req agentstore.
 		ID: id, RunID: in.RunID, Intent: in.Text, Request: action.HeldRequest{Kind: docRequestKind, Text: req.Text, Params: params}, Rows: len(lines),
 		Status: action.ApprovalPending, ExpiresAt: expires, Lines: lines, BindingText: "binding",
 	}
-	return approvalsvc.HeldWrite{Held: action.Held{ApprovalID: id, BindingText: "binding", ExpiresAt: expires}, Lines: lines}, nil
+	return approvalsvc.HeldWrite{Held: approvalstore.Held{ApprovalID: id, BindingText: "binding", ExpiresAt: expires}, Lines: lines}, nil
 }
 
 func (a *docApprovals) FindApproval(_ context.Context, id uuid.UUID) (action.Approval, error) {
@@ -385,7 +386,7 @@ func (a *docApprovals) FindApproval(_ context.Context, id uuid.UUID) (action.App
 	defer a.mu.Unlock()
 	ap, ok := a.approvals[id]
 	if !ok {
-		return action.Approval{}, &action.ApprovalRefusalError{Reason: action.ApprovalNotFound, Err: errNoApproval}
+		return action.Approval{}, &approvalstore.ApprovalRefusalError{Reason: approvalstore.ApprovalNotFound, Err: errNoApproval}
 	}
 	return ap, nil
 }
@@ -470,8 +471,8 @@ func newDocService(t *testing.T, opts ...docOption) (*agent.Service, *docStore, 
 			Data: store, Catalog: store, Ledger: store, Classes: docClasses{store},
 		},
 		nil, func() *guidance.UpdateInfo { return nil },
+		approvals, approvals, approvals, approvals, approvals,
 	)
-	svc.SetPorts(approvals, approvals, approvals, approvals, approvals)
 	return svc, store, approvals
 }
 
@@ -480,7 +481,6 @@ func TestDocumentStoreRunsTheAgentThroughThePorts(t *testing.T) {
 	ctx := context.Background()
 	svc, store, approvals := newDocService(t)
 	require.Equal(t, docFamily, svc.Family())
-	require.Equal(t, 5*time.Second, svc.StatementTimeout())
 
 	run, err := svc.StartRun(ctx, "move trial customers to pro", uuid.Nil)
 	require.NoError(t, err)

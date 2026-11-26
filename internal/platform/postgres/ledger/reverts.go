@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pglargevalue"
@@ -86,10 +87,10 @@ func ListOpenReverts(ctx context.Context, q guard.Querier, p action.RevertListPa
 
 // ListRevertLines returns one page of the lines of a batched plan the
 // calling role prepared, keyset on the line number.
-func ListRevertLines(ctx context.Context, q guard.Querier, p action.RevertLineParams) (pagination.Page[action.RevertLine], error) {
+func ListRevertLines(ctx context.Context, q guard.Querier, p revertstore.RevertLineParams) (pagination.Page[revertstore.RevertLine], error) {
 	sql, args, err := revertLinePage(p)
 	if err != nil {
-		return pagination.Page[action.RevertLine]{}, err
+		return pagination.Page[revertstore.RevertLine]{}, err
 	}
 	return collectRevertLines(ctx, q, p, sql, args)
 }
@@ -98,10 +99,10 @@ func ListRevertLines(ctx context.Context, q guard.Querier, p action.RevertLinePa
 // line's values and images too large for the agent are left out and named
 // in its largeValues, and its changeIds cut to the first
 // largevalue.MaxChangeIDs (CONTRACT.md, Large values).
-func ListRevertLinesMarked(ctx context.Context, q guard.Querier, p action.RevertLineParams) (pagination.Page[action.RevertLine], error) {
+func ListRevertLinesMarked(ctx context.Context, q guard.Querier, p revertstore.RevertLineParams) (pagination.Page[revertstore.RevertLine], error) {
 	page, args, err := revertLinePage(p)
 	if err != nil {
-		return pagination.Page[action.RevertLine]{}, err
+		return pagination.Page[revertstore.RevertLine]{}, err
 	}
 	// Plain SQL: a recursive CTE over the page (pglargevalue.ElideLines).
 	// The line past the limit only tells that another page follows: its
@@ -117,7 +118,7 @@ func ListRevertLinesMarked(ctx context.Context, q guard.Querier, p action.Revert
 
 // revertLinePage is the SQL of one page of a plan's lines, one more than
 // the limit.
-func revertLinePage(p action.RevertLineParams) (string, []any, error) {
+func revertLinePage(p revertstore.RevertLineParams) (string, []any, error) {
 	if p.Limit < 1 || p.Limit > pagination.MaxLimit {
 		return "", nil, fmt.Errorf("%w: limit %d", ErrInvalidParams, p.Limit)
 	}
@@ -143,20 +144,20 @@ func revertLinePage(p action.RevertLineParams) (string, []any, error) {
 }
 
 // collectRevertLines runs sql and returns its rows as one page of p.
-func collectRevertLines(ctx context.Context, q guard.Querier, p action.RevertLineParams, sql string, args []any) (pagination.Page[action.RevertLine], error) {
+func collectRevertLines(ctx context.Context, q guard.Querier, p revertstore.RevertLineParams, sql string, args []any) (pagination.Page[revertstore.RevertLine], error) {
 	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
-		return pagination.Page[action.RevertLine]{}, err
+		return pagination.Page[revertstore.RevertLine]{}, err
 	}
-	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (action.RevertLine, error) {
-		var l action.RevertLine
+	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (revertstore.RevertLine, error) {
+		var l revertstore.RevertLine
 		err := row.Scan(&l.No, &l.Text, &l.Outcome, &l.Conflict, &l.StoreCode, &l.Batch)
 		return l, err
 	})
 	if err != nil {
-		return pagination.Page[action.RevertLine]{}, err
+		return pagination.Page[revertstore.RevertLine]{}, err
 	}
-	page := pagination.Page[action.RevertLine]{Items: items}
+	page := pagination.Page[revertstore.RevertLine]{Items: items}
 	if len(items) > p.Limit {
 		page.Items = items[:p.Limit]
 		page.NextCursor = pagination.EncodeSeqCursor(int64(page.Items[p.Limit-1].No))

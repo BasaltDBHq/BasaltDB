@@ -1,5 +1,6 @@
-// Package pluginstate writes the plugin host's state files in the engine's
-// state directory: the outbound adapter behind plugin.Ports.WriteFeedCursor.
+// Package pluginstate reads and writes the plugin host's state files in the
+// engine's state directory: the outbound adapter behind
+// plugin.Ports.WriteFeedCursor and plugin.Ports.ReadFeedCursor.
 package pluginstate
 
 import (
@@ -25,4 +26,9 @@ func WriteFeedCursor(dir, name string, raw []byte) error {
 	// A cursor lost in a crash replays events, which at least once allows:
 	// no directory sync.
 	return atomicfile.Write(filepath.Join(dir, name), raw, atomicfile.Options{Mode: fileMode})
+}
+
+// ReadFeedCursor reads the cursor file name in dir whole.
+func ReadFeedCursor(dir, name string) ([]byte, error) {
+	return os.ReadFile(filepath.Join(dir, name))
 }

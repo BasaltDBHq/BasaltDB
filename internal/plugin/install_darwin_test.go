@@ -23,7 +23,7 @@ func TestInstallRefusesARootAnACLOpens(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o755), fi.Mode().Perm(), "the mode stays as it was")
 
-	_, err = Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser)
+	_, err = installCopy(f.src, f.root, "", f.trust)
 	ve := requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 	require.Equal(t, f.root, ve.File)
 	require.Equal(t, pluginmodel.WhyACLWritable, ve.Why)

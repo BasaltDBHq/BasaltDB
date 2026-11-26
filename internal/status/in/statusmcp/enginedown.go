@@ -3,6 +3,7 @@ package statusmcp
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"runtime"
 	"time"
@@ -143,6 +144,30 @@ func (d EngineDown) Abandoned(tool string) *toolresult.ToolError {
 		return te
 	}
 	return nil
+}
+
+// AnswerAbandoned answers on out a request line the engine took and never
+// answered (it closed the connection: it stopped, or it refused the peer),
+// always with an error and never by running the call again: a tools/call
+// gets UNAVAILABLE ENGINE_UNREACHABLE with its steps (Abandoned), any other
+// request a JSON-RPC error. A notification gets nothing.
+func (d EngineDown) AnswerAbandoned(out io.Writer, line []byte) error {
+	req, ok := mcpserver.RequestOf(line)
+	if !ok {
+		return nil
+	}
+	if req.Method != "tools/call" {
+		return mcpserver.WriteError(out, req.ID, mcpserver.ErrCodeServer, engine.AbandonedMessage)
+	}
+	var p struct {
+		Name string `json:"name"`
+	}
+	_ = json.Unmarshal(req.Params, &p) // a call without a name is still answered
+	te := d.Abandoned(p.Name)
+	if te == nil {
+		return mcpserver.WriteError(out, req.ID, mcpserver.ErrCodeServer, engine.AbandonedMessage)
+	}
+	return mcpserver.WriteToolError(out, req.ID, te)
 }
 
 // commands are d's commands for the operatedBy of the config the shim

@@ -18,7 +18,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
-	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
@@ -150,7 +149,7 @@ func TestARotatedCredentialIsPromotedWhenItsSetupIsRecorded(t *testing.T) {
 	pw2 := guard.NewPassword()
 	pending, err := guard.AgentConnString(d.URL, a.Role, pw2)
 	require.NoError(t, err)
-	require.NoError(t, config.WriteFile(r.credFile+handoff.PendingSuffix, []byte(pending+"\n")))
+	require.NoError(t, config.WriteFile(r.credFile+config.PendingSuffix, []byte(pending+"\n")))
 	rt := r.start(t)
 
 	st, err := rt.svc.status.Status(ctx)
@@ -171,7 +170,7 @@ func TestARotatedCredentialIsPromotedWhenItsSetupIsRecorded(t *testing.T) {
 	got, err := os.ReadFile(r.credFile)
 	require.NoError(t, err)
 	require.Equal(t, pending+"\n", string(got))
-	_, err = os.Lstat(r.credFile + handoff.PendingSuffix)
+	_, err = os.Lstat(r.credFile + config.PendingSuffix)
 	require.True(t, os.IsNotExist(err), "moved over the credential file")
 	require.Nil(t, r.configSetup(t))
 	_, err = rt.svc.agent.StartRun(ctx, "check the leads", uuid.Nil)
@@ -192,7 +191,7 @@ func TestTheSetupIsNotClearedWhileInitHoldsTheLock(t *testing.T) {
 		guardmodel.Setup{ID: r.setupID, Kind: guardmodel.SetupUpgrade, GuardVersion: guard.LatestVersion(), ExpiresAt: r.expires})
 	require.NoError(t, err)
 
-	unlock, err := config.LockFile(r.credFile + handoff.LockSuffix)
+	unlock, err := config.LockFile(r.credFile + config.LockSuffix)
 	require.NoError(t, err)
 	_, err = rt.svc.status.Status(ctx)
 	require.NoError(t, err)

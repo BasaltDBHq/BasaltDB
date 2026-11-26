@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
@@ -29,9 +29,9 @@ func TestToolPanicEndsTheCallNotTheEngine(t *testing.T) {
 	var gotTool string
 	var gotValue any
 	var gotStack []byte
-	s := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "1", OnPanic: func(tool string, v any, stack []byte) string {
+	s := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "1", OnPanic: func(tool string, v any, stack []byte) (string, string) {
 		gotTool, gotValue, gotStack = tool, v, stack
-		return "report-id-1"
+		return "error-id-1", "report-id-1"
 	}}, boomTool())
 	resps := serve(t, s, callBoom, `{"jsonrpc":"2.0","id":2,"method":"ping"}`)
 	require.Len(t, resps, 2, "the server answered the next request")
@@ -49,36 +49,21 @@ func TestToolPanicEndsTheCallNotTheEngine(t *testing.T) {
 	require.Contains(t, te.PersonMessage, "report-id-1")
 	require.Contains(t, te.PersonMessage, "status tool")
 	require.NotContains(t, te.PersonMessage, "basalt crash")
-	requireInternalFromCatalog(t, &te)
+	require.Equal(t, "error-id-1", te.ErrorID)
+	stepcatalogtest.RequireObeysCatalog(t, stepcatalogtest.Case{Tool: "boom"}, &te, mcpcontract.OperatedByPerson)
 }
 
 func TestToolPanicWithoutAReportStillAnswersInternal(t *testing.T) {
 	t.Parallel()
-	s := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "1", OnPanic: func(string, any, []byte) string { return "" }}, boomTool())
+	s := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "1", OnPanic: func(string, any, []byte) (string, string) { return "error-id-2", "" }}, boomTool())
 	text, isError := toolText(t, serve(t, s, callBoom)[0].Result)
 	require.True(t, isError)
 	var te toolresult.ToolError
 	require.NoError(t, json.Unmarshal([]byte(text), &te))
 	require.Equal(t, "INTERNAL", te.Code)
 	require.Contains(t, te.PersonMessage, "could not save a crash report")
-	requireInternalFromCatalog(t, &te)
-}
-
-// requireInternalFromCatalog holds a panicking tool's answer to the catalog's
-// INTERNAL entry, like every other tool error: its steps, a person's message
-// exactly when the entry asks for one, and the step and message rules.
-func requireInternalFromCatalog(t *testing.T, te *toolresult.ToolError) {
-	t.Helper()
-	entry, ok := guidance.Catalog().ErrorEntry("INTERNAL", "", "boom")
-	require.True(t, ok)
-	require.Equal(t, entry.Steps, stepcatalogtest.CatalogKinds(te.NextSteps))
-	require.Equal(t, entry.PersonMessage, te.PersonMessage != "")
-	require.NoError(t, guidance.CheckPersonMessage(te.PersonMessage))
-	stepcatalogtest.RequirePersonMessage(t, te.PersonMessage, te.Links)
-	kase := stepcatalogtest.Case{Tool: "boom"}
-	for _, st := range te.NextSteps {
-		stepcatalogtest.RequireStepObeysRules(t, st, kase, "INTERNAL")
-	}
+	require.Equal(t, "error-id-2", te.ErrorID)
+	stepcatalogtest.RequireObeysCatalog(t, stepcatalogtest.Case{Tool: "boom"}, &te, mcpcontract.OperatedByPerson)
 }
 
 // TestToolPanicIsNotRecoveredWithoutOnPanic: no hook, no change in behavior.

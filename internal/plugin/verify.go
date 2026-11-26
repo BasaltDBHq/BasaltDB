@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"maps"
-	"os"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -91,7 +90,7 @@ func verifyCopy(root string, key pluginmodel.EntryKey, dirName, wantSHA string, 
 	if err := checkUnder(owner, root, nameDir, instDir, dir); err != nil {
 		return pluginmodel.Verified{}, err
 	}
-	entries, err := walkCopy(dir, owner)
+	entries, err := walkCopy(trust.files, dir, owner)
 	if err != nil {
 		return pluginmodel.Verified{}, err
 	}
@@ -101,7 +100,7 @@ func verifyCopy(root string, key pluginmodel.EntryKey, dirName, wantSHA string, 
 
 	// 2. The manifest's hash.
 	manifestPath := filepath.Join(dir, ManifestFile)
-	manifest, err := readNoFollow(manifestPath, MaxManifestBytes)
+	manifest, err := readNoFollow(trust.files, manifestPath, MaxManifestBytes)
 	if err != nil {
 		return pluginmodel.Verified{}, err
 	}
@@ -131,7 +130,7 @@ func verifyCopy(root string, key pluginmodel.EntryKey, dirName, wantSHA string, 
 		return pluginmodel.Verified{}, err
 	}
 	for _, rel := range slices.Sorted(maps.Keys(m.Files)) {
-		if err := checkFileHash(filepath.Join(dir, filepath.FromSlash(rel)), m.Files[rel]); err != nil {
+		if err := checkFileHash(trust.files, filepath.Join(dir, filepath.FromSlash(rel)), m.Files[rel]); err != nil {
 			return pluginmodel.Verified{}, err
 		}
 	}
@@ -146,7 +145,7 @@ func verifySignature(dir string, manifest []byte, entries []copyEntry, trust Tru
 	if o.requireApproval && !hasFile(entries, SignatureFile) {
 		return signerOf(sigPath, manifest, nil, false, trust, o)
 	}
-	raw, err := readNoFollow(sigPath, MaxSignatureFileBytes)
+	raw, err := readNoFollow(trust.files, sigPath, MaxSignatureFileBytes)
 	if err != nil {
 		return "", "", err
 	}
@@ -194,9 +193,9 @@ func inFile(err error, full string) error {
 
 // walkCopy lists every path in the copy, checking the path rule at each:
 // no symlink, owned by owner, writable by no one else.
-func walkCopy(dir string, owner uint32) ([]copyEntry, error) {
+func walkCopy(files Files, dir string, owner uint32) ([]copyEntry, error) {
 	var out []copyEntry
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+	err := files.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return pluginmodel.PathRefusal(p, "cannot be read")
 		}
@@ -263,8 +262,8 @@ func checkContents(dir string, m pluginmodel.Manifest, entries []copyEntry, sigO
 
 // checkFileHash reads a listed file once, refusing a symlink or anything not
 // regular, and compares its SHA-256 with the manifest's.
-func checkFileHash(p, want string) error {
-	f, err := os.OpenFile(p, noFollowFlags(), 0)
+func checkFileHash(files Files, p, want string) error {
+	f, err := files.OpenFile(p, noFollowFlags(), 0)
 	if err != nil {
 		return pluginmodel.PathRefusal(p, "cannot be opened, or is a symlink")
 	}

@@ -32,7 +32,9 @@ import (
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/handoff/out/handofffiles"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
@@ -128,7 +130,7 @@ func runWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	}
 	// Folders first: an update of the computer drops empty ones and resets
 	// the rest to 0755, and the lock below makes the socket directory.
-	if err := engine.EnsureOwnDirs(cfg, agentUIDs, os.Geteuid()); err != nil {
+	if err := engine.EnsureOwnDirs(engineos.OS{}, cfg, agentUIDs, os.Geteuid()); err != nil {
 		return err
 	}
 	lock, err := pidlock.AcquireLock(engine.LockPath(cfg.SocketDir))
@@ -236,7 +238,7 @@ func runWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	gate := engine.NewCallGate()
 	if cfg.VaultEnabled() {
 		sessionPages = newPages(base, log.With("component", "vault-pages"))
-		dispatch = gatedDispatcher{gate: gate, next: sessionDispatcher{sessionPages}}
+		dispatch = vault.GatedDispatcher{Gate: gate, Next: sessionDispatcher{sessionPages}}
 	}
 	ev := openVault(cfg, env.stateDir, time.Now, log, relay, dispatch)
 	env.vault, env.receipts = ev, ev.Receipts()
@@ -278,7 +280,7 @@ func runWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		return errNoAgent
 	}
 	if site != nil {
-		site.pages.SetHome(newHomeSource(srv.homes, log.With("component", "home")))
+		site.pages.SetHome(newHomeSource(srv.homes))
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -337,7 +339,7 @@ func runWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if site != nil {
 		wg.Go(func() { site.serve(ctx, log) })
 	}
-	err = engine.New(log, mcpLines{}, agents).WithGate(gate).WithRestart(restart.Restart).Serve(ctx)
+	err = engine.New(log, mcpLines{}, engineos.OS{}, agents).WithGate(gate).WithRestart(restart.Restart).Serve(ctx)
 	select {
 	case <-reloading:
 		if errors.Is(err, engine.ErrRestart) {
@@ -392,7 +394,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			// only, and nothing that reads a database.
 			out.agents = append(out.agents, engine.Agent{
 				Name: a.Name, UID: uids[a.Name], SocketPath: cfg.SocketPath(a.Name),
-				Server: mcpServer{mcpserver.NewServer(env.serverInfo(nil), rt.tools...)},
+				Server: mcpServer{mcpserver.NewServer(env.serverInfo(nil, log.With("agent", a.Name)), rt.tools...)},
 			})
 			continue
 		}
@@ -411,23 +413,24 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			Name:       a.Name,
 			UID:        uids[a.Name],
 			SocketPath: cfg.SocketPath(a.Name),
-			Server:     mcpServer{mcpserver.NewServer(env.serverInfo(rt.svc.UpdateNotice), AgentTools(rt.svc)...).WithMethods(env.requests.uploadMethods(a.Name, rt.svc.PluginUploadsServed))},
+			Server:     mcpServer{mcpserver.NewServer(env.serverInfo(rt.svc.UpdateNotice, log.With("agent", a.Name)), AgentTools(rt.svc)...).WithMethods(env.requests.uploadMethods(a.Name, rt.svc.PluginUploadsServed))},
 		})
 	}
 	return out, nil
 }
 
 // serverInfo is what an agent's MCP server says of itself, with notice as
-// its update notice (nil for none). The hello answer carries who operates
-// the engine and its local page origin, so basalt mcp knows which links it
-// may open in the browser (CONTRACT.md, Auto-open).
-func (env agentEnv) serverInfo(notice func() string) mcpserver.Info {
+// its update notice (nil for none); a tool's panic is logged to log. The
+// hello answer carries who operates the engine and its local page origin, so
+// basalt mcp knows which links it may open in the browser (CONTRACT.md,
+// Auto-open).
+func (env agentEnv) serverInfo(notice func() string, log *slog.Logger) mcpserver.Info {
 	operatedBy := mcpcontract.OperatedByPerson
 	if env.cfg.AgentOperated() {
 		operatedBy = mcpcontract.OperatedByAgent
 	}
 	return mcpserver.Info{
-		Name: "basalt", Version: buildinfo.Version, Instructions: Instructions, Notice: notice, OnPanic: env.onPanic,
+		Name: "basalt", Version: buildinfo.Version, Instructions: Instructions, Notice: notice, OnPanic: env.onPanic(log),
 		OperatedBy: operatedBy, PagesOrigin: env.pagesOrigin,
 	}
 }
@@ -473,7 +476,7 @@ func setupJobs(cfg config.Config, configPath, origin string, log *slog.Logger, r
 	if cfg.AgentOperated() || os.Geteuid() == 0 || origin != setup.PageOrigin {
 		return nil
 	}
-	jobs, err := newLocalSetup(localsetup.Options{ConfigPath: configPath, Origin: origin, Configured: true, CredentialChanged: rotated})
+	jobs, err := newLocalSetup(setup.LocalOptions{ConfigPath: configPath, Origin: origin, Configured: true, CredentialChanged: rotated})
 	if err != nil {
 		log.Warn("the setup page cannot update or remove agents", "err", err)
 		return nil
@@ -595,7 +598,7 @@ func (env agentEnv) checkLink(a config.Agent) string {
 	if env.setupOrigin == "" {
 		return ""
 	}
-	link, err := localsetup.Link(env.setupOrigin, localsetup.Job{Job: localsetup.JobUpdate, Agent: a.Name, OSUser: a.OSUser})
+	link, err := localsetup.Link(env.setupOrigin, localsetup.Job{Job: setup.JobUpdate, Agent: a.Name, OSUser: a.OSUser})
 	if err != nil {
 		return ""
 	}
@@ -750,7 +753,7 @@ const guardLogTimeout = 15 * time.Second
 // following a link, from the computed credential path only (rootFiles).
 func agentFilesFor(env agentEnv, a config.Agent) (handoff.AgentFiles, error) {
 	if !env.asRoot {
-		return handoff.PathFiles{ConfigPath: env.configPath, CredFile: a.Store.CredentialFile}, nil
+		return handofffiles.PathFiles{ConfigPath: env.configPath, CredFile: a.Store.CredentialFile}, nil
 	}
 	return openRootFiles(env.configPath, a.Name, a.Store.CredentialFile)
 }

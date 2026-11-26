@@ -25,11 +25,13 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
@@ -67,7 +69,7 @@ type revealEnv struct {
 	logs    *syncBuffer
 	held    uuid.UUID
 	lines   []string
-	revert  action.PreparedRevert
+	revert  revertstore.PreparedRevert
 }
 
 func newRevealEnv(t *testing.T) *revealEnv {
@@ -96,7 +98,7 @@ func newRevealEnv(t *testing.T) *revealEnv {
 		_, err = store.WriteApproved(ctx, action.Intent(done), id, action.OpDelete, `DELETE FROM public.leads WHERE id = $1`, []any{json.Number("5")})
 		require.NoError(t, err)
 	})
-	e.revert, err = store.PrepareRevert(ctx, action.Scope{Kind: revert.ScopeRun, ID: done.RunID}, "Undo it", guardmodel.MCPPrepareTimeout)
+	e.revert, err = store.PrepareRevert(ctx, revertstore.Scope{Kind: revert.ScopeRun, ID: done.RunID}, "Undo it", guardmodel.MCPPrepareTimeout)
 	require.NoError(t, err)
 
 	// The held write the page reveals.
@@ -121,7 +123,7 @@ func (e *revealEnv) hold(t *testing.T, store *postgres.Store, in guard.Intent, i
 	req := action.Request{Text: stmt, Params: params}
 	p, err := store.Preview(ctx, action.Intent(in), req)
 	require.NoError(t, err)
-	held, err := store.Hold(ctx, action.Intent(in), action.HoldRequest{Op: action.OpDelete, Request: req, Assigned: p.Assigned, Lines: p.Lines})
+	held, err := store.Hold(ctx, action.Intent(in), approvalstore.HoldRequest{Op: action.OpDelete, Request: req, Assigned: p.Assigned, Lines: p.Lines})
 	require.NoError(t, err)
 	if id == 20 {
 		e.lines = p.Lines

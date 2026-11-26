@@ -1,6 +1,8 @@
 package app
 
 import (
+	"bytes"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -20,8 +22,14 @@ func TestOnPanicSavesAScrubbedSharedReport(t *testing.T) {
 		defer func() { _ = recover(); stack = debug.Stack() }()
 		panic("DELETE FROM customers WHERE email = 'a@b.example'")
 	}()
-	id := env.onPanic("write", "DELETE FROM customers WHERE email = 'a@b.example'", stack)
+	var logged bytes.Buffer
+	errorID, id := env.onPanic(slog.New(slog.NewJSONHandler(&logged, nil)))("write", "DELETE FROM customers WHERE email = 'a@b.example'", stack)
 	require.NotEmpty(t, id)
+	require.NotEmpty(t, errorID)
+	require.NotEqual(t, id, errorID)
+	require.Contains(t, logged.String(), `"error_id":"`+errorID+`"`)
+	require.Contains(t, logged.String(), `"report_id":"`+id+`"`)
+	require.NotContains(t, logged.String(), "customers", "the log carries the ids, not the panic's value")
 
 	dir := filepath.Join(state, servicespec.CrashDirName)
 	reports := crash.List(dir)
@@ -36,8 +44,34 @@ func TestOnPanicSavesAScrubbedSharedReport(t *testing.T) {
 	require.NotZero(t, info.Mode().Perm()&0o004, "the person can read what the engine saved")
 }
 
-func TestOnPanicWithAnUnwritableStateDirReturnsNoID(t *testing.T) {
+// With no report saved, the panic is still logged under the error id it
+// answers with.
+func TestOnPanicWithAnUnwritableStateDirReturnsNoReportID(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "file")
 	require.NoError(t, os.WriteFile(file, nil, 0o600))
-	require.Empty(t, agentEnv{stateDir: file}.onPanic("write", "x", nil))
+	var logged bytes.Buffer
+	errorID, id := agentEnv{stateDir: file}.onPanic(slog.New(slog.NewJSONHandler(&logged, nil)))("write", "secret-value", nil)
+	require.Empty(t, id)
+	require.NotEmpty(t, errorID)
+	require.Contains(t, logged.String(), `"error_id":"`+errorID+`"`)
+	require.NotContains(t, logged.String(), "secret-value")
+}
+
+// A report saved in a directory whose older reports cannot be pruned still
+// gives its id.
+func TestOnPanicThatCannotPruneReturnsTheReportID(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a directory without its read bit")
+	}
+	state := t.TempDir()
+	dir := filepath.Join(state, servicespec.CrashDirName)
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	require.NoError(t, os.Chmod(dir, 0o300))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	var logged bytes.Buffer
+	errorID, id := agentEnv{stateDir: state}.onPanic(slog.New(slog.NewJSONHandler(&logged, nil)))("write", "x", nil)
+	require.NotEmpty(t, errorID)
+	require.NotEmpty(t, id)
+	require.Contains(t, logged.String(), `"report_id":"`+id+`"`)
+	require.NotContains(t, logged.String(), "no crash report saved")
 }

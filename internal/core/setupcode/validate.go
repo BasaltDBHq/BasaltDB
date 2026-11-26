@@ -31,6 +31,10 @@ const (
 	uuidTimeHex = 12
 )
 
+// PlainName is a plain lowercase identifier, as a setup code's schema and
+// table names are: the setup page's picks and its table listing use it too.
+const PlainName = `[a-z_][a-z0-9_]{0,62}`
+
 // Patterns from setup-code.schema.json.
 var (
 	setupIDPattern     = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
@@ -38,7 +42,7 @@ var (
 	hostPattern        = regexp.MustCompile(`^[A-Za-z0-9.:_-]+$`)
 	supabaseRefPattern = regexp.MustCompile(`^[a-z0-9]{20}$`)
 	buildPattern       = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`)
-	tablePattern       = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}\.[a-z_][a-z0-9_]{0,62}$`)
+	tablePattern       = regexp.MustCompile(`^` + PlainName + `\.` + PlainName + `$`)
 	systemTablePattern = regexp.MustCompile(`^(pg_[a-z0-9_]*|information_schema|basalt_meta)\.`)
 	agentNamePattern   = regexp.MustCompile(`^[a-z][a-z0-9_]{0,54}$`)
 	expiresAtPattern   = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$`)

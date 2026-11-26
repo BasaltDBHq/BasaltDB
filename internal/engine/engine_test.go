@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 )
@@ -67,7 +68,7 @@ func startEngine(t *testing.T, agents ...engine.Agent) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	e := engine.New(slog.New(slog.DiscardHandler), mcpLines{}, agents)
+	e := engine.New(slog.New(slog.DiscardHandler), mcpLines{}, engineos.OS{}, agents)
 	go func() { done <- e.Serve(ctx) }()
 	t.Cleanup(func() {
 		cancel()
@@ -194,7 +195,7 @@ func TestPeerCredentialFailureClosesTheConnection(t *testing.T) {
 	bot := agent("bot", dir, myUID())
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	e := engine.New(slog.New(slog.DiscardHandler), mcpLines{}, []engine.Agent{bot}).
+	e := engine.New(slog.New(slog.DiscardHandler), mcpLines{}, engineos.OS{}, []engine.Agent{bot}).
 		WithPeerUID(func(*net.UnixConn) (uint32, error) { return 0, io.ErrUnexpectedEOF })
 	go func() { _ = e.Serve(ctx) }()
 	waitListening(t, bot.SocketPath)
@@ -234,7 +235,7 @@ func TestStaleSocketIsReplacedButOtherFilesAreNot(t *testing.T) {
 
 	other := agent("other", dir, myUID())
 	require.NoError(t, os.WriteFile(other.SocketPath, []byte("keep me"), 0o600))
-	err = engine.New(slog.New(slog.DiscardHandler), mcpLines{}, []engine.Agent{other}).Serve(context.Background())
+	err = engine.New(slog.New(slog.DiscardHandler), mcpLines{}, engineos.OS{}, []engine.Agent{other}).Serve(context.Background())
 	require.ErrorContains(t, err, "not a socket")
 	raw, err := os.ReadFile(other.SocketPath)
 	require.NoError(t, err)
@@ -254,10 +255,14 @@ func TestShimAnswersItselfWithoutAnEngine(t *testing.T) {
 
 func TestNewPanicsWithoutAgents(t *testing.T) {
 	t.Parallel()
-	require.Panics(t, func() { engine.New(slog.New(slog.DiscardHandler), mcpLines{}, nil) })
-	require.Panics(t, func() { engine.New(nil, mcpLines{}, []engine.Agent{agent("a", "/tmp", 0)}) })
-	require.Panics(t, func() { engine.New(slog.New(slog.DiscardHandler), nil, []engine.Agent{agent("a", "/tmp", 0)}) })
-	require.Panics(t, func() { engine.New(slog.New(slog.DiscardHandler), mcpLines{}, []engine.Agent{{Name: "a"}}) })
+	require.Panics(t, func() { engine.New(slog.New(slog.DiscardHandler), mcpLines{}, engineos.OS{}, nil) })
+	require.Panics(t, func() { engine.New(nil, mcpLines{}, engineos.OS{}, []engine.Agent{agent("a", "/tmp", 0)}) })
+	require.Panics(t, func() {
+		engine.New(slog.New(slog.DiscardHandler), nil, engineos.OS{}, []engine.Agent{agent("a", "/tmp", 0)})
+	})
+	require.Panics(t, func() {
+		engine.New(slog.New(slog.DiscardHandler), mcpLines{}, engineos.OS{}, []engine.Agent{{Name: "a"}})
+	})
 }
 
 // Refused peers are drained a few at a time per agent; past the cap the
@@ -269,7 +274,7 @@ func TestRefusedDrainsAreCapped(t *testing.T) {
 	bot := agent("bot", dir, myUID()+1)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	e := engine.New(slog.New(slog.DiscardHandler), mcpLines{}, []engine.Agent{bot}).WithRefusedDrains(2).
+	e := engine.New(slog.New(slog.DiscardHandler), mcpLines{}, engineos.OS{}, []engine.Agent{bot}).WithRefusedDrains(2).
 		// A long drain window, so no drain times out while the test runs.
 		WithRefuseDrain(time.Minute)
 	done := make(chan struct{})

@@ -3,7 +3,6 @@ package engine
 import (
 	"errors"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -25,12 +24,12 @@ func WaitsForConfigAt(t Terminal, euid int, configPath, systemPath string) bool 
 	if euid == 0 || configPath != systemPath {
 		return false
 	}
-	if _, err := os.Lstat(configPath); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := t.Lstat(configPath); !errors.Is(err, fs.ErrNotExist) {
 		return false
 	}
 	// The install made the folder for this engine's own user: a folder
 	// anyone else owns is not this engine's to wait in.
-	dir, err := os.Lstat(filepath.Dir(configPath))
+	dir, err := t.Lstat(filepath.Dir(configPath))
 	if err != nil || !dir.IsDir() {
 		return false
 	}
@@ -47,16 +46,12 @@ func EnginePath(path string) string {
 	return path
 }
 
-// SocketAgents are the agents with a socket in dir.
-func SocketAgents(dir string) []string {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
+// SocketAgents are the agents with a socket in dir on m.
+func SocketAgents(m Machine, dir string) []string {
 	var names []string
-	for _, e := range entries {
-		name, ok := strings.CutSuffix(e.Name(), ".sock")
-		if ok && e.Type()&os.ModeSocket != 0 && config.ValidAgentName(name) {
+	for _, f := range m.SocketFiles(dir) {
+		name, ok := strings.CutSuffix(f, ".sock")
+		if ok && config.ValidAgentName(name) {
 			names = append(names, name)
 		}
 	}

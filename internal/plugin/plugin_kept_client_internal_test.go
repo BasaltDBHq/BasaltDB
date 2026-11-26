@@ -42,10 +42,6 @@ func (c keptClient) PluginList(ctx context.Context) (PluginListResult, error) {
 	return c.s.List(ctx, c.scope)
 }
 
-func (c keptClient) PluginApprove(ctx context.Context, p PluginApproveParams) (PluginApproveResult, error) {
-	return c.s.Approve(ctx, p)
-}
-
 func (c keptClient) PluginDisable(ctx context.Context, p PluginEntryParams) (PluginEntryResult, error) {
 	return c.s.Disable(ctx, c.scope, p)
 }

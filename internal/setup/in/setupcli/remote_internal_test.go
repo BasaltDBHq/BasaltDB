@@ -75,15 +75,15 @@ func TestInitRemotePromoteRefusesAChangedPending(t *testing.T) {
 				credFile := filepath.Join(dir, "bot.url")
 				const old = "postgres://bt_agent_bot:old@db.example.com:5432/app\n"
 				require.NoError(t, config.WriteFile(credFile, []byte(old)))
-				require.NoError(t, config.WriteFile(credFile+setup.PendingSuffix, []byte("postgres://bt_agent_bot:new@db.example.com:5432/app\n")))
+				require.NoError(t, config.WriteFile(credFile+config.PendingSuffix, []byte("postgres://bt_agent_bot:new@db.example.com:5432/app\n")))
 				r := &remoteInit{credFile: credFile, files: open(t, dir)}
-				pending, err := setup.ReadCredentialIfAny(r.files, credFile+setup.PendingSuffix)
+				pending, err := setup.ReadCredentialIfAny(r.files, credFile+config.PendingSuffix)
 				require.NoError(t, err)
 
-				apply(t, credFile+setup.PendingSuffix)
+				apply(t, credFile+config.PendingSuffix)
 				err = r.promote(pending)
 				require.ErrorContains(t, err, "changed while basalt init ran; nothing changed, run it again")
-				require.FileExists(t, credFile+setup.PendingSuffix)
+				require.FileExists(t, credFile+config.PendingSuffix)
 				got, err := os.ReadFile(credFile)
 				require.NoError(t, err)
 				require.Equal(t, old, string(got), "the credential file is unchanged")
@@ -103,18 +103,18 @@ func TestInitRemotePromoteReturnsTheErrorReachingPending(t *testing.T) {
 	credFile := filepath.Join(dir, "bot.url")
 	const old = "postgres://bt_agent_bot:old@db.example.com:5432/app\n"
 	require.NoError(t, config.WriteFile(credFile, []byte(old)))
-	require.NoError(t, config.WriteFile(credFile+setup.PendingSuffix, []byte("postgres://bt_agent_bot:new@db.example.com:5432/app\n")))
+	require.NoError(t, config.WriteFile(credFile+config.PendingSuffix, []byte("postgres://bt_agent_bot:new@db.example.com:5432/app\n")))
 	files, err := credfiles.OpenRootCredFiles(filesHost{}, dir, os.Geteuid())
 	require.NoError(t, err)
 	t.Cleanup(files.Close)
 	r := &remoteInit{credFile: credFile, files: files}
-	pending, err := setup.ReadCredentialIfAny(r.files, credFile+setup.PendingSuffix)
+	pending, err := setup.ReadCredentialIfAny(r.files, credFile+config.PendingSuffix)
 	require.NoError(t, err)
 
 	elsewhere := filepath.Join(dir, "elsewhere.url")
-	require.NoError(t, os.Rename(credFile+setup.PendingSuffix, elsewhere))
-	require.NoError(t, os.Symlink(elsewhere, credFile+setup.PendingSuffix))
-	_, want := files.Stat(credFile + setup.PendingSuffix)
+	require.NoError(t, os.Rename(credFile+config.PendingSuffix, elsewhere))
+	require.NoError(t, os.Symlink(elsewhere, credFile+config.PendingSuffix))
+	_, want := files.Stat(credFile + config.PendingSuffix)
 	require.Error(t, want)
 	err = r.promote(pending)
 	require.Equal(t, want.Error(), err.Error(), "the open error itself")

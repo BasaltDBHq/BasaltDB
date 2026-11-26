@@ -117,15 +117,6 @@ type HeldRequest struct {
 	Params json.RawMessage
 }
 
-// ApprovalListParams lists held writes that can still be approved or
-// applied. RunID uuid.Nil means every run; Status "" means PENDING and
-// APPROVED.
-type ApprovalListParams struct {
-	pagination.Params
-	RunID  uuid.UUID
-	Status string
-}
-
 // Revert is a revert the calling role prepared (basalt_meta.agent_reverts).
 // Lines are every line of a one-call revert, or a batched plan's sample.
 // SignedAt, ApplyBy and the progress counts are set on batched plans.
@@ -177,27 +168,6 @@ type RevertProgress struct {
 type RevertListParams struct {
 	pagination.Params
 	Status string
-}
-
-// RevertLine is one line of a batched plan: its number (execution order),
-// the signed text, and what happened to it. StoreCode is the store's own
-// error code for a skipped line, when it has one. Batch is nil while
-// pending.
-type RevertLine struct {
-	No        int
-	Text      string
-	Outcome   string
-	Conflict  string
-	StoreCode string
-	Batch     *int
-}
-
-// RevertLineParams lists a batched plan's lines in number order. Outcome
-// "" lists every line.
-type RevertLineParams struct {
-	pagination.Params
-	RevertID uuid.UUID
-	Outcome  string
 }
 
 // RunListParams lists the calling agent's own runs (list_runs). StartTime

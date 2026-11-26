@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"time"
@@ -18,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
@@ -29,6 +29,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
+	"github.com/basaltdbhq/basaltdb/internal/status/out/crashfile"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 )
 
@@ -48,6 +49,7 @@ func AgentHostDeps() Deps {
 	d.Delivery.VaultConflict = vault.IsConflict
 	d.Delivery.ErrVaultNotConnected = vault.ErrNotConnected
 	d.Status.CrashReports = agentCrashReports
+	d.Status.CrashFile = crashfile.Find
 	d.Status.LatestGuardVersion = guard.LatestVersion
 	d.Status.UpdateMessage = agentUpdateMessage
 	d.Status.StartHoldOffUntil = agentStartHoldOffUntil
@@ -79,7 +81,7 @@ func AgentErrors() guidance.ErrorMap {
 // agentEngineHost is what the status of an engine that is down reads from
 // the host.
 func agentEngineHost() status.EngineHost {
-	return status.EngineHost{LatestGuardVersion: guard.LatestVersion, ReadLastStop: engine.ReadLastStop, StartHoldOffUntil: agentStartHoldOffUntil}
+	return status.EngineHost{LatestGuardVersion: guard.LatestVersion, ReadLastStop: engine.LastStopReader(engineos.OS{}), StartHoldOffUntil: agentStartHoldOffUntil}
 }
 
 func agentStartHoldOffUntil(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool) {
@@ -123,22 +125,7 @@ func NewEngineDownServer(down statusmcp.EngineDown) EngineDownServer {
 // ENGINE_UNREACHABLE with its steps, any other request a JSON-RPC error. A
 // notification gets nothing.
 func (s EngineDownServer) Abandoned(_ context.Context, out io.Writer, line []byte) error {
-	req, ok := mcpserver.RequestOf(line)
-	if !ok {
-		return nil
-	}
-	if req.Method != "tools/call" {
-		return mcpserver.WriteError(out, req.ID, mcpserver.ErrCodeServer, engine.AbandonedMessage)
-	}
-	var p struct {
-		Name string `json:"name"`
-	}
-	_ = json.Unmarshal(req.Params, &p) // a call without a name is still answered
-	te := s.down.Abandoned(p.Name)
-	if te == nil {
-		return mcpserver.WriteError(out, req.ID, mcpserver.ErrCodeServer, engine.AbandonedMessage)
-	}
-	return mcpserver.WriteToolError(out, req.ID, te)
+	return s.down.AnswerAbandoned(out, line)
 }
 
 // agentProbe is the store's probe as the agent reads it: the reinstall
@@ -146,12 +133,7 @@ func (s EngineDownServer) Abandoned(_ context.Context, out io.Writer, line []byt
 type agentProbe struct{ postgres.Probe }
 
 func (p agentProbe) ReinstallNotice(ctx context.Context, limit int) (string, bool, error) {
-	rs, err := p.Reinstalls(ctx)
-	if err != nil {
-		return "", false, err
-	}
-	msg, ok := ledger.ReinstallPersonMessage(rs, limit)
-	return msg, ok, nil
+	return ledger.ReadReinstallMessage(ctx, p.Probe, limit)
 }
 
 // agentAccess is pgcatalog.ListAccess as the agent reads it.

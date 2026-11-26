@@ -74,9 +74,10 @@ func RunLocal(c *cli.IO, h LocalHost, args []string) int {
 		}
 	case setup.EngineRemoved:
 		return removeEngineService(c, h)
-	case setup.EngineWaiting, setup.EngineResetAsked:
+	case setup.EngineWaiting, setup.EngineResetAsked, setup.EngineUpdated:
 		// EngineResetAsked is never the answer here: waitForSetupPage
 		// takes a "No" it finds at the start as an engine set up.
+		// EngineUpdated is only waitForRemoval's.
 	}
 	link, err := localsetup.Link(links.DefaultLocal, job)
 	if err != nil {
@@ -203,19 +204,23 @@ func waitForEngineBuild(c *cli.IO) (string, error) {
 // basalt mcp line: the agent is registered already. reset: the person
 // answered "No, this isn't mine" on the page and reset the engine through
 // the administrator dialog (Not your database), and init goes on to the
-// install.
+// install. The page's Update for the agent ends the wait at once: the
+// agent goes on.
 func changeLink(c *cli.IO, h LocalHost, job localsetup.Job) (code int, reset bool) {
 	job.Job, job.Demo = setup.JobChange, false
 	link, err := localsetup.Link(links.DefaultLocal, job)
 	if err != nil {
 		return c.Fail(err), false
 	}
+	// Taken before the link is out: an Update that finished before it, for
+	// an earlier init, does not end this one.
+	opened := c.Now()
 	fmt.Fprintln(c.Stdout, link)
 	if err := c.Host.OpenURL(c.Ctx, link); err != nil {
 		fmt.Fprintln(c.Stderr, "basalt: the browser did not open; open the link above by hand")
 	}
 	fmt.Fprintln(c.Stderr, "basalt: the engine on this computer is already set up. On the page that opened, update the guard or remove BasaltDB: type your database's admin connection string there, never here.")
-	switch waitForRemoval(c) {
+	switch waitForRemoval(c, job.Agent, opened) {
 	case setup.EngineRemoved:
 		return removeEngineService(c, h), false
 	case setup.EngineResetAsked:
@@ -223,6 +228,9 @@ func changeLink(c *cli.IO, h LocalHost, job localsetup.Job) (code int, reset boo
 			return code, false
 		}
 		return cli.ExitOK, true
+	case setup.EngineUpdated:
+		fmt.Fprintf(c.Stderr, "basalt: the guard is updated on the setup page. The agent %s can go on; it needs no restart.\n", job.Agent)
+		return cli.ExitOK, false
 	case setup.EngineWaiting, setup.EngineSetUp:
 	}
 	fmt.Fprintln(c.Stderr, "basalt: after a Remove on that page, run basalt init once more: it removes the engine service.")
@@ -231,19 +239,23 @@ func changeLink(c *cli.IO, h LocalHost, job localsetup.Job) (code int, reset boo
 
 // waitForRemoval asks the engine, for up to setup.RemovalWait (as long as an
 // approval wait), whether the page's Remove deleted engine.json
-// (ENGINE_REMOVED, EngineRemoved) or the person answered "No, this isn't
-// mine" (RESET_ASKED, EngineResetAsked). Any other answer, an Update
-// included, keeps waiting until the time is up (EngineSetUp).
-func waitForRemoval(c *cli.IO) setup.BasaltEngineState {
+// (ENGINE_REMOVED, EngineRemoved), the person answered "No, this isn't
+// mine" (RESET_ASKED, EngineResetAsked) or the page's Update for agent
+// finished after opened, when init opened the link (GUARD_UPDATED,
+// EngineUpdated). Any other answer, a fix included, keeps waiting until
+// the time is up (EngineSetUp).
+func waitForRemoval(c *cli.IO, agent string, opened time.Time) setup.BasaltEngineState {
 	ctx, cancel := context.WithTimeout(c.Ctx, setup.RemovalWait)
 	defer cancel()
 	for {
-		code, err := c.Host.SetupState(ctx, links.DefaultLocal)
+		code, err := c.Host.SetupState(ctx, links.DefaultLocal, agent, opened)
 		switch {
 		case err == nil && code == setup.CodeEngineRemoved:
 			return setup.EngineRemoved
 		case err == nil && code == setup.CodeResetAsked:
 			return setup.EngineResetAsked
+		case err == nil && code == setup.CodeGuardUpdated:
+			return setup.EngineUpdated
 		}
 		select {
 		case <-ctx.Done():
@@ -368,7 +380,8 @@ func waitForSetupPage(c *cli.IO) (setup.BasaltEngineState, error) {
 	defer cancel()
 	firstRuns := -1
 	for {
-		code, err := c.Host.SetupState(ctx, links.DefaultLocal)
+		// The empty probe: it names no agent, so it is never GUARD_UPDATED.
+		code, err := c.Host.SetupState(ctx, links.DefaultLocal, "", time.Time{})
 		switch {
 		case err == nil && code == setup.CodeJobUnavailable:
 			return setup.EngineSetUp, nil

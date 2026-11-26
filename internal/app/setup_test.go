@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -99,7 +100,7 @@ func (h *fakeHost) ServiceRuns(context.Context, string) (int, int, error) {
 	return runs, h.lastExit, nil
 }
 
-func (h *fakeHost) SetupState(context.Context, string) (string, error) {
+func (h *fakeHost) SetupState(context.Context, string, string, time.Time) (string, error) {
 	h.setupCalls++
 	if len(h.setupErrs) > 0 {
 		err := h.setupErrs[0]

@@ -62,6 +62,8 @@ type fakeHost struct {
 	setupCodes []string
 	setupErrs  []error
 	setupCalls int
+	// probes are the agent and since each SetupState call named.
+	probes []probe
 	// build is the build the engine reports ("" is this binary's own);
 	// buildErr, when set, is the engine not answering.
 	build    string
@@ -118,8 +120,15 @@ func (h *fakeHost) ServiceRuns(context.Context, string) (int, int, error) {
 	return runs, h.lastExit, nil
 }
 
-func (h *fakeHost) SetupState(context.Context, string) (string, error) {
+// probe is what one SetupState call named.
+type probe struct {
+	agent string
+	since time.Time
+}
+
+func (h *fakeHost) SetupState(_ context.Context, _, agent string, since time.Time) (string, error) {
 	h.setupCalls++
+	h.probes = append(h.probes, probe{agent, since})
 	if len(h.setupErrs) > 0 {
 		err := h.setupErrs[0]
 		h.setupErrs = h.setupErrs[1:]
@@ -664,6 +673,40 @@ func TestInitResetStops(t *testing.T) {
 	require.Empty(t, h.dialogs, "a No left from an earlier page resets nothing")
 	require.Len(t, h.opened, 1)
 	require.Equal(t, setup.JobChange, linkJob(t, h.opened[0]).Job)
+}
+
+// The page's Update for the agent within the wait: the init that opened
+// the link says the agent can go on and exits 0 at once, without waiting
+// out the 90 seconds and without a dialog. Its probes name the agent and
+// when this init opened the link, so the engine never answers it for an
+// Update that finished before.
+func TestInitEndsAsSoonAsThePageUpdatedTheGuard(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{nil, {"--agent", "sales_bot"}} {
+		agent := "demo_bot"
+		if len(args) == 2 {
+			agent = args[1]
+		}
+		h := newFakeHost()
+		h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+		h.setupCodes = []string{setup.CodeJobUnavailable, setup.CodeJobUnavailable, setup.CodeGuardUpdated, setup.CodeEngineRemoved}
+		start := time.Now()
+		r, _ := localInit(t, h, args...)
+		require.Less(t, time.Since(start), 10*time.Second, "%v: init ends within a poll step, not after the wait", args)
+		require.Equal(t, cli.ExitOK, r.code, r.stderr)
+		require.Contains(t, r.stderr, "basalt: the guard is updated on the setup page. The agent "+agent+" can go on; it needs no restart.\n")
+		require.NotContains(t, r.stderr, "after a Remove on that page")
+		require.Empty(t, h.dialogs, "an Update needs no password")
+		require.Len(t, h.opened, 1)
+		require.Equal(t, 3, h.setupCalls, "%v: the ENGINE_REMOVED after it is never asked", args)
+		require.Equal(t, probe{}, h.probes[0], "the probe before the link names nothing")
+		for _, p := range h.probes[1:] {
+			require.Equal(t, agent, p.agent)
+			require.False(t, p.since.Before(start), "since is this init's, after it started")
+			require.False(t, p.since.After(time.Now()))
+			require.Equal(t, h.probes[1].since, p.since, "one since for the whole wait")
+		}
+	}
 }
 
 func TestInitWaitsAsLongAsAnApprovalWait(t *testing.T) {

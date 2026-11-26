@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"io"
 	"os"
+	"time"
 )
 
 // Machine is what basalt init does on the machine beyond Postgres: elevate
@@ -31,11 +32,14 @@ type Machine interface {
 	// as root (service.DialogCommand), with a fixed environment and / as its
 	// directory.
 	AdminDialog(ctx context.Context, goos, prompt, script string, out io.Writer) error
-	// SetupState posts an empty request to the engine's setup check route
-	// at origin and returns the refusal code it answers: JOB_UNAVAILABLE
-	// from an engine that has a config, another code from one waiting for
-	// it. An error when nothing answers.
-	SetupState(ctx context.Context, origin string) (string, error)
+	// SetupState posts basalt init's probe to the engine's setup check
+	// route at origin and returns the refusal code it answers:
+	// JOB_UNAVAILABLE from an engine that has a config, another code from
+	// one waiting for it. agent "" is an empty request; else the probe
+	// names agent and since, when init opened its CHANGE link, and is
+	// answered GUARD_UPDATED once the page's Update for agent finished
+	// after since. An error when nothing answers.
+	SetupState(ctx context.Context, origin, agent string, since time.Time) (string, error)
 	// EngineBuild asks the engine's GET /healthz at origin for its build:
 	// "" from an engine too old to say. An error when nothing answers.
 	EngineBuild(ctx context.Context, origin string) (string, error)

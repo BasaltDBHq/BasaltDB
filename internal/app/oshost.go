@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/lib/browser"
@@ -36,8 +37,8 @@ func (osHost) AdminDialog(ctx context.Context, goos, prompt, script string, out 
 	return osservice.AdminDialog(ctx, goos, prompt, script, out)
 }
 
-func (osHost) SetupState(ctx context.Context, origin string) (string, error) {
-	return osservice.SetupState(ctx, origin, localsetup.SetupCheckPath)
+func (osHost) SetupState(ctx context.Context, origin, agent string, since time.Time) (string, error) {
+	return osservice.SetupState(ctx, origin, localsetup.SetupCheckPath, agent, since)
 }
 
 func (osHost) EngineBuild(ctx context.Context, origin string) (string, error) {

@@ -26,6 +26,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
@@ -221,7 +222,7 @@ func catalogCases() map[string]catalogCase {
 		stepcatalogtest.CaseKey("INVALID_ARGUMENT", "STALE_CURSOR", ""): {
 			"run_history",
 			map[string]any{"runId": caseRunID, "cursor": "x"},
-			plain(fmt.Errorf("%w: %w", ledger.ErrInvalidParams, errors.New("invalid cursor: missing id"))),
+			plain(fmt.Errorf("%w: %w: missing id", ledger.ErrInvalidParams, pagination.ErrStaleCursor)),
 		},
 
 		stepcatalogtest.CaseKey("INVALID_ARGUMENT", "SCOPE_FILTER", ""): {

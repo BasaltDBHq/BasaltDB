@@ -3,8 +3,28 @@ package pagination
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+
+	"github.com/google/uuid"
 )
+
+// ErrStaleCursor is a list cursor the engine cannot read: not one it
+// returned, or one from another list. Every decoder here wraps it, so a
+// caller tells a stale cursor apart with errors.Is, never by its text.
+var ErrStaleCursor = errors.New("invalid cursor")
+
+// StaleCursor is an ErrStaleCursor with its own message, for a list whose
+// cursor has its own shape.
+func StaleCursor(message string) error {
+	return staleCursorError(message)
+}
+
+type staleCursorError string
+
+func (e staleCursorError) Error() string { return string(e) }
+
+func (staleCursorError) Unwrap() error { return ErrStaleCursor }
 
 type cursorKey struct {
 	ID   string `json:"id,omitempty"`
@@ -17,16 +37,21 @@ func EncodeIDCursor(id string) string {
 	return encodeCursor(cursorKey{ID: id})
 }
 
-// DecodeIDCursor returns the id from an opaque cursor.
-func DecodeIDCursor(cursor string) (string, error) {
+// DecodeIDCursor returns the id from an opaque cursor. An id that is not
+// a UUID is a stale cursor, refused before it reaches a query.
+func DecodeIDCursor(cursor string) (uuid.UUID, error) {
 	k, err := decodeCursor(cursor)
 	if err != nil {
-		return "", err
+		return uuid.Nil, err
 	}
 	if k.ID == "" {
-		return "", fmt.Errorf("invalid cursor: missing id")
+		return uuid.Nil, fmt.Errorf("%w: missing id", ErrStaleCursor)
 	}
-	return k.ID, nil
+	id, err := uuid.Parse(k.ID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("%w: %w", ErrStaleCursor, err)
+	}
+	return id, nil
 }
 
 // EncodeNameCursor builds a cursor for name-ordered lists (revert lines, by line hash).
@@ -41,7 +66,7 @@ func DecodeNameCursor(cursor string) (string, error) {
 		return "", err
 	}
 	if k.Name == "" {
-		return "", fmt.Errorf("invalid cursor: missing name")
+		return "", fmt.Errorf("%w: missing name", ErrStaleCursor)
 	}
 	return k.Name, nil
 }
@@ -58,7 +83,7 @@ func DecodeSeqCursor(cursor string) (int64, error) {
 		return 0, err
 	}
 	if k.Seq <= 0 {
-		return 0, fmt.Errorf("invalid cursor: missing seq")
+		return 0, fmt.Errorf("%w: missing seq", ErrStaleCursor)
 	}
 	return k.Seq, nil
 }
@@ -77,11 +102,11 @@ func decodeCursor(cursor string) (cursorKey, error) {
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
-		return cursorKey{}, fmt.Errorf("invalid cursor encoding")
+		return cursorKey{}, fmt.Errorf("%w encoding", ErrStaleCursor)
 	}
 	var k cursorKey
 	if err := json.Unmarshal(raw, &k); err != nil {
-		return cursorKey{}, fmt.Errorf("invalid cursor payload")
+		return cursorKey{}, fmt.Errorf("%w payload", ErrStaleCursor)
 	}
 	return k, nil
 }

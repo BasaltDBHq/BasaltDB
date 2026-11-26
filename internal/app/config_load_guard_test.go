@@ -17,8 +17,13 @@ import (
 const configImport = "github.com/basaltdbhq/basaltdb/internal/config"
 
 // configLoaders are the config package's functions that read the engine
-// config from a path.
-var configLoaders = map[string]bool{"Load": true, "LoadOpen": true, "LoadOpenRaw": true, "LoadNoFollow": true}
+// config from a path: the loaders, and the writers that read it before they
+// change it. The *At variants, which take an opened directory, are not.
+var configLoaders = map[string]bool{
+	"Load": true, "LoadOpen": true, "LoadOpenRaw": true, "LoadNoFollow": true,
+	"UpsertAgent": true, "UpsertAgentVault": true, "UpsertedVault": true,
+	"ClearSetup": true, "UpdateConfig": true, "RemoveAgents": true,
+}
 
 // plainConfigLoads are the only places in cmd/basalt and internal/
 // allowed to call a config loader directly. Every other read goes through
@@ -56,7 +61,13 @@ var plainConfigLoads = map[string]string{
 	"internal/setup/in/localsetup/agentjobs.go:forget:Load": "a removal, after configuredAgent refused an engine that runs as root",
 	// The setup page's reset refuses an engine that runs as root before it
 	// reads the config.
-	"internal/setup/in/localsetup/reset.go:engineConfig:Load": "the setup page's reset, after refusing an engine that runs as root",
+	"internal/setup/in/localsetup/reset.go:engineConfig:Load":           "the setup page's reset, after refusing an engine that runs as root",
+	"internal/app/setup.go:agentServiceSpec:UpsertedVault":              "the hardened read: root opens the existing config through openEngineFile",
+	"internal/handoff/pathfiles.go:ClearSetup:ClearSetup":               "the engine's hand-off, as the engine's user",
+	"internal/handoff/setupfiles.go:change:UpdateConfig":                "the engine's hand-off, as the engine's user",
+	"internal/setup/in/localsetup/agentjobs.go:forget:RemoveAgents":     "a removal, after configuredAgent refused an engine that runs as root",
+	"internal/setup/in/localsetup/run.go:writeConfig:UpsertAgentVault":  "an engine with no config writes its first engine.json; WaitsForConfig never waits as root",
+	"internal/setup/in/setupcli/remote.go:writeConfig:UpsertAgentVault": "not as root: as root the upsert goes through the config directory opened without following links (configDir)",
 }
 
 // configLoadsIn lists the config loaders f refers to, as

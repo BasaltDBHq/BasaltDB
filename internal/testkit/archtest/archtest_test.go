@@ -3,13 +3,15 @@ package archtest
 import (
 	"flag"
 	"os"
+	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 )
 
-var update = flag.Bool("update", false, "rewrite baseline/ to match the violations that exist now")
+var update = flag.Bool("update", false, "remove the baseline/ lines that are no longer violated (it never adds one)")
 
 // moduleRoot finds the directory with go.mod above the test's directory.
 func moduleRoot(t *testing.T) string {
@@ -79,19 +81,8 @@ func TestArchitecture(t *testing.T) {
 	dir := filepath.Join(root, "internal", "testkit", "archtest", "baseline")
 
 	if *update {
-		if err := os.RemoveAll(dir); err != nil {
-			t.Fatal(err)
-		}
-		if len(got) == 0 {
-			return
-		}
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		for pkg, lines := range got {
-			if err := os.WriteFile(baselineFile(dir, pkg), []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
+		for _, l := range shrinkBaseline(t, dir, got) {
+			t.Errorf("%s\n\tnew violation; fix it (-update only removes baseline lines, it never adds one)", l)
 		}
 		return
 	}
@@ -140,6 +131,80 @@ func TestArchitecture(t *testing.T) {
 }
 
 // fixture writes a small module and returns its root.
+// shrinkBaseline rewrites the baseline in dir to the lines that are both
+// listed and still violated: a fixed violation leaves it, and a new one is
+// never added. It returns the violations the baseline does not list, as
+// "pkg: line", for the caller to fail on.
+func shrinkBaseline(t *testing.T, dir string, got violations) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	listed := map[string]bool{} // baseline file -> listed
+	for _, e := range entries {
+		if !e.IsDir() {
+			listed[filepath.Join(dir, e.Name())] = true
+		}
+	}
+	var refused []string
+	for pkg, lines := range got {
+		file := baselineFile(dir, pkg)
+		base := map[string]bool{}
+		if listed[file] {
+			for _, l := range readLines(t, file) {
+				base[l] = true
+			}
+		}
+		var keep []string
+		for _, l := range lines {
+			if base[l] {
+				keep = append(keep, l)
+			} else {
+				refused = append(refused, pkg+": "+l)
+			}
+		}
+		if len(keep) == 0 {
+			continue
+		}
+		delete(listed, file)
+		if err := os.WriteFile(file, []byte(strings.Join(keep, "\n")+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for file := range listed {
+		if err := os.Remove(file); err != nil {
+			t.Fatal(err)
+		}
+	}
+	slices.Sort(refused)
+	return refused
+}
+
+// -update removes the fixed lines and files and adds nothing: a new
+// violation, in a listed package or a new one, is returned, not written.
+func TestShrinkBaselineNeverAdds(t *testing.T) {
+	dir := fixture(t, map[string]string{
+		"internal_a.txt": "fixed\nkept\n",
+		"internal_b.txt": "gone\n",
+	})
+	refused := shrinkBaseline(t, dir, violations{
+		"internal/a": {"kept", "new in a"},
+		"internal/c": {"new in c"},
+	})
+	if want := []string{"internal/a: new in a", "internal/c: new in c"}; !slices.Equal(refused, want) {
+		t.Errorf("refused %q, want %q", refused, want)
+	}
+	if got := readLines(t, filepath.Join(dir, "internal_a.txt")); !slices.Equal(got, []string{"kept"}) {
+		t.Errorf("internal_a.txt = %q, want only the kept line", got)
+	}
+	for _, gone := range []string{"internal_b.txt", "internal_c.txt"} {
+		if _, err := os.Stat(filepath.Join(dir, gone)); !os.IsNotExist(err) {
+			t.Errorf("%s exists after -update (err %v); a fixed file is removed and a new one never written", gone, err)
+		}
+	}
+}
+
 func fixture(t *testing.T, files map[string]string) string {
 	t.Helper()
 	root := t.TempDir()
@@ -172,31 +237,36 @@ func TestRulesCatchViolations(t *testing.T) {
 	use := func(_, fn string) string { return "\nvar _ = sqlguard." + fn + "\n" }
 	files := map[string]string{
 		"go.mod":                                   "module " + modulePath + "\n",
-		"internal/adapter/outbound/db/db.go":       "package db\n",
+		"internal/platform/db/db.go":               "package db\n",
 		"internal/core/sqlguard/g.go":              guard,
 		"internal/core/leaky/l.go":                 "package leaky\n\nimport (\n\t\"os\"\n\t\"syscall\"\n\t\"time\"\n\t. \"strings\"\n)\n\nvar _ = os.Getenv\nvar _ = syscall.Getpid\nvar Now = time.Now\nvar Since = time.Since\n",
 		"internal/core/rnd/r.go":                   "package rnd\n\n" + imp("crypto/rand"),
 		"internal/core/granted/r.go":               "package granted\n\n" + imp("crypto/rand"),
 		"internal/core/setupcode/a.go":             "package setupcode\n\nimport \"net\"\n\nvar _ = net.JoinHostPort\nvar _ = net.Dial\n",
-		"internal/service/svc/s.go":                "package svc\n\n" + imp(m+"internal/adapter/outbound/db") + "import \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
-		"internal/adapter/inbound/in/i.go":         "package in\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + "var _ sqlguard.Limits\n",
-		"internal/adapter/outbound/other/o.go":     "package other\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + use("", "Other"),
-		"web/w.go":                                 "package web\n\n" + imp(m+"internal/service/svc") + "import \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + use("", "Other"),
-		"internal/service/svc2/s.go":               "package svc2\n\n" + imp(m+"web"),
+		"internal/agent/s.go":                      "package agent\n\n" + imp(m+"internal/platform/db") + "import \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
+		"internal/agent/in/agentmcp/i.go":          "package agentmcp\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + "var _ sqlguard.Limits\n",
+		"internal/agent/out/other/o.go":            "package other\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + use("", "Other"),
+		"web/w.go":                                 "package web\n\n" + imp(m+"internal/agent") + "import \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + use("", "Other"),
+		"internal/approval/s.go":                   "package approval\n\n" + imp(m+"web"),
 		"internal/app/a.go":                        "package app\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
 		"cmd/tool/c.go":                            "package main\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + "func main() {}\n",
 		"pkg/facade/p.go":                          "package facade\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
 		"pkg/lib2/p.go":                            "package lib2\n\n" + imp(m+"api/x"),
-		"pkg/setup/s.go":                           "package setup\n\n" + imp(m+"internal/adapter/outbound/db"),
-		"pkg/other/o.go":                           "package other\n\n" + imp(m+"internal/adapter/outbound/db"),
+		"pkg/setup/s.go":                           "package setup\n\n" + imp(m+"internal/platform/db"),
+		"pkg/other/o.go":                           "package other\n\n" + imp(m+"internal/platform/db"),
 		"api/x/x.go":                               "package x\n",
-		"internal/platform/vault/vaulttest/h.go":   "package vaulttest\n\n" + imp(m+"internal/service/svc"),
-		"internal/adapter/inbound/in2/i.go":        "package in2\n\n" + imp(m+"internal/platform/vault/vaulttest"),
-		"internal/service/svcpg/s.go":              "package svcpg\n\n" + imp("github.com/jackc/pgx/v5/pgconn", "database/sql", "net/http"),
-		"internal/service/svcpg/s_test.go":         "package svcpg\n\n" + imp("github.com/jackc/pgx/v5"),
-		"internal/adapter/outbound/pgadapter/p.go": "package pgadapter\n\n" + imp("github.com/jackc/pgx/v5"),
+		"internal/platform/vault/vaulttest/h.go":   "package vaulttest\n\n" + imp(m+"internal/agent"),
+		"internal/core/textrule/textruletest/h.go": "package textruletest\n\n" + imp(m+"internal/agent", "os"),
+		"internal/testkit/toolschema/t.go":         "package toolschema\n\n" + imp(m+"internal/platform/vault/vaulttest", m+"internal/core/textrule/textruletest"),
+		"internal/revert/in/revertmcp/i.go":        "package revertmcp\n\n" + imp(m+"internal/platform/vault/vaulttest"),
+		"internal/plugin/out/plugintransport/t.go": "package plugintransport\n\n" + imp(m+"internal/testkit/toolschema"),
+		"scripts/smoke/s.go":                       "package main\n\n" + imp(m+"internal/core/textrule/textruletest") + "func main() {}\n",
+		"e2e/release/r.go":                         "package release\n\n" + imp(m+"internal/platform/db", m+"internal/platform/vault/vaulttest"),
+		"internal/status/s.go":                     "package status\n\n" + imp("github.com/jackc/pgx/v5/pgconn", "database/sql", "net/http"),
+		"internal/status/s_test.go":                "package status\n\n" + imp("github.com/jackc/pgx/v5"),
+		"internal/status/out/pgadapter/p.go":       "package pgadapter\n\n" + imp("github.com/jackc/pgx/v5"),
 		"internal/oddball/o.go":                    "package oddball\n",
-		"ARCHITECTURE.md":                          "| `sqlguard` | sql | decision | 1 | - | `Other` |\n| `leaky` | x | types | 2 | - | - |\n| `rnd` | x | codec | 3 | `crypto/rand` | - |\n| `granted` | x | codec | 3 | - | - |\n| `setupcode` | x | codec | 3 | `net` | - |\n",
+		"ARCHITECTURE.md":                          "| `sqlguard` | sql | decision | 1 | - | `Other` |\n| `leaky` | x | types | 2 | - | - |\n| `rnd` | x | codec | 3 | `crypto/rand` | - |\n| `granted` | x | codec | 3 | - | - |\n| `setupcode` | x | codec | 3 | `net` | - |\n| `textrule` | x | types | 2 | - | - |\n",
 	}
 	root := fixture(t, files)
 	reg, err := parseRegister(filepath.Join(root, "ARCHITECTURE.md"))
@@ -208,16 +278,18 @@ func TestRulesCatchViolations(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string][]string{
-		"internal/service/svc":            {"imports internal/adapter/outbound/db"},
-		"internal/adapter/inbound/in":     {"i.go calls sqlguard.Check"},
-		"internal/adapter/inbound/in2":    {"imports internal/platform/vault/vaulttest"},
-		"internal/adapter/outbound/other": {"o.go calls sqlguard.Check"},
-		"web":                             {"imports internal/service/svc", "w.go calls sqlguard.Check"},
-		"cmd/tool":                        {"c.go calls sqlguard.Check"},
-		"pkg/facade":                      {"imports internal/core/sqlguard", "p.go calls sqlguard.Check"},
-		"pkg/lib2":                        {"imports api/x"},
-		"pkg/other":                       {"imports internal/adapter/outbound/db"},
-		"internal/service/svcpg": {
+		"internal/agent":                      {"imports internal/platform/db"},
+		"internal/agent/in/agentmcp":          {"i.go calls sqlguard.Check"},
+		"internal/revert/in/revertmcp":        {"imports internal/platform/vault/vaulttest (a test helper: only test files import it)"},
+		"internal/agent/out/other":            {"o.go calls sqlguard.Check"},
+		"internal/plugin/out/plugintransport": {"imports internal/testkit/toolschema (a test helper: only test files import it)"},
+		"e2e/release":                         {"imports internal/platform/vault/vaulttest (a test helper: only test files import it)"},
+		"web":                                 {"imports internal/agent", "w.go calls sqlguard.Check"},
+		"cmd/tool":                            {"c.go calls sqlguard.Check"},
+		"pkg/facade":                          {"imports internal/core/sqlguard", "p.go calls sqlguard.Check"},
+		"pkg/lib2":                            {"imports api/x"},
+		"pkg/other":                           {"imports internal/platform/db"},
+		"internal/status": {
 			"s.go imports database/sql (a service reaches the database and the network through a port)",
 			"s.go imports github.com/jackc/pgx/v5/pgconn (a service reaches the database and the network through a port)",
 			"s.go imports net/http (a service reaches the database and the network through a port)",
@@ -328,7 +400,7 @@ func TestNewTreeLayers(t *testing.T) {
 			"s.go imports net/http (a service reaches the database and the network through a port)",
 		},
 		"internal/setup/out/trustdir": {"imports internal/setup"},
-		"internal/platform/osservice": {"imports internal/plugin", "o.go calls pluginhost.UsePathRules (only internal/app installs the path rule)"},
+		"internal/platform/osservice": {"imports internal/plugin", "o.go calls plugin.UsePathRules (only internal/app installs the path rule)"},
 		"internal/zzz":                {"package is under internal/ but not in a layer"},
 	}
 	for pkg, lines := range want {
@@ -340,5 +412,87 @@ func TestNewTreeLayers(t *testing.T) {
 		if _, ok := want[pkg]; !ok {
 			t.Errorf("unexpected violations in %s: %q", pkg, got[pkg])
 		}
+	}
+}
+
+// wherePaths are the files and directories, from the module root, that the
+// "Where is a feature" section of the architecture doc at file names. A cell names
+// a path from the root, and may name more files after it by their name or a
+// path relative to that path's directory: `a/b/x.go`, `y.go`,
+// `schema/z.sql`. Backticked text that is not a path (a tool name) is left
+// out.
+func wherePaths(t *testing.T, file string) []string {
+	t.Helper()
+	var out []string
+	in := false
+	for _, line := range readLines(t, file) {
+		if strings.HasPrefix(line, "## ") {
+			in = line == "## Where is a feature"
+			continue
+		}
+		if !in || !strings.HasPrefix(line, "|") {
+			continue
+		}
+		for _, cell := range strings.Split(line, "|") {
+			dir := ""
+			for _, m := range backticked.FindAllStringSubmatch(cell, -1) {
+				p := m[1]
+				switch {
+				case strings.HasPrefix(p, "internal/"), strings.HasPrefix(p, "pkg/"), strings.HasPrefix(p, "cmd/"), strings.HasPrefix(p, "web/"), strings.HasPrefix(p, "api/"):
+					dir = p
+					if path.Ext(p) != "" {
+						dir = path.Dir(p)
+					}
+				case sourceFile.MatchString(p) && dir != "":
+					p = path.Join(dir, p)
+				default:
+					continue
+				}
+				out = append(out, p)
+			}
+		}
+	}
+	return out
+}
+
+var (
+	backticked = regexp.MustCompile("`([^`]+)`")
+	sourceFile = regexp.MustCompile(`^[\w./-]+\.(go|sql|js|json)$`)
+)
+
+// Every path the "Where is a feature" section names exists.
+func TestWhereIsAFeaturePathsExist(t *testing.T) {
+	root := moduleRoot(t)
+	paths := wherePaths(t, filepath.Join(root, "ARCHITECTURE.md"))
+	if len(paths) == 0 {
+		t.Fatal(`ARCHITECTURE.md's "Where is a feature" names no path: the check reads nothing`)
+	}
+	for _, p := range paths {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(p))); err != nil {
+			t.Errorf(`ARCHITECTURE.md, "Where is a feature": %s does not exist; point the row at where the code is now`, p)
+		}
+	}
+}
+
+// The path reader resolves a name after a path against that path's
+// directory, and skips what is not a path.
+func TestWherePathsReadsTheCells(t *testing.T) {
+	dir := fixture(t, map[string]string{
+		"ARCHITECTURE.md": "## Before\n\n| x | `internal/before.go` |\n\n## Where is a feature\n\n### Reverts\n\n" +
+			"| Step | Where |\n|---|---|\n" +
+			"| Tool `request_revert` | `internal/revert/in/revertmcp/tools.go`; the case in `internal/revert/service.go`, `rescope.go` |\n" +
+			"| SQL | `internal/platform/postgres/guard`, `schema/006_reverts.sql` |\n" +
+			"| Alone | `orphan.go` |\n\n## After\n\n| y | `internal/after.go` |\n",
+	})
+	got := wherePaths(t, filepath.Join(dir, "ARCHITECTURE.md"))
+	want := []string{
+		"internal/revert/in/revertmcp/tools.go",
+		"internal/revert/service.go",
+		"internal/revert/rescope.go",
+		"internal/platform/postgres/guard",
+		"internal/platform/postgres/guard/schema/006_reverts.sql",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }

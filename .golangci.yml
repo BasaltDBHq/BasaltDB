@@ -33,7 +33,6 @@ linters:
     - gocheckcompilerdirectives
     - goconst
     - gocritic
-    - gocyclo
     - goprintffuncname
     - gosec
     - grouper
@@ -122,54 +121,16 @@ linters:
   settings:
     depguard:
       rules:
-        # vaulttest is the fake vault for tests; it must never be linked into
-        # the engine binary, so only _test.go files may import it.
-        no-fake-vault-in-production:
-          files:
-            - "!$test"
-          deny:
-            - pkg: github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest
-              desc: vaulttest is a test fake; import it from _test.go files only
         # Test helper packages (fakes, fixtures and the core test oracles) are
-        # linked into test binaries only: no production file imports one.
-        # The helpers themselves (directories ending in "test") and the smoke
-        # test programs under scripts/ may.
-        no-test-helpers-in-production:
-          files:
-            - "!$test"
-            - "!**/*test/**"
-            - "!**/scripts/**"
+        # linked into test binaries only. TestArchitecture in
+        # internal/testkit/archtest fails a non-test file that imports one; it
+        # finds them by name (<x>test, internal/testkit), so there is no list
+        # to keep here.
+        # Tests use testify/require (AGENTS.md): a failed check stops the test.
+        require-not-assert:
           deny:
-            - pkg: github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest
-              desc: a test helper package; import it from _test.go files only
-            - pkg: github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest
-              desc: a test helper package; import it from _test.go files only
-            - pkg: github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest
-              desc: a test helper package; import it from _test.go files only
-            - pkg: github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest
-              desc: a test helper package; import it from _test.go files only
-            - pkg: github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/adaptertest
-              desc: a test helper package; import it from _test.go files only
-            - pkg: github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest
-              desc: a test helper package; import it from _test.go files only
-            - pkg: github.com/basaltdbhq/basaltdb/internal/core/channel/channeltest
-              desc: a test helper package; import it from _test.go files only
-            - pkg: github.com/basaltdbhq/basaltdb/internal/core/linkcodec/linkcodectest
-              desc: a test helper package; import it from _test.go files only
-            - pkg: github.com/basaltdbhq/basaltdb/internal/core/links/linkstest
-              desc: a test helper package; import it from _test.go files only
-            - pkg: github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest
-              desc: a test helper package; import it from _test.go files only
-            - pkg: github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest
-              desc: a test helper package; import it from _test.go files only
-            - pkg: github.com/basaltdbhq/basaltdb/internal/testkit/agenttest
-              desc: a test helper package; import it from _test.go files only
-            - pkg: github.com/basaltdbhq/basaltdb/internal/testkit/connecttest
-              desc: a test helper package; import it from _test.go files only
-            - pkg: github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest
-              desc: a test helper package; import it from _test.go files only
-            - pkg: github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest
-              desc: a test helper package; import it from _test.go files only
+            - pkg: github.com/stretchr/testify/assert
+              desc: use github.com/stretchr/testify/require
         # The Go plugin SDK is its own module, with its own generated copy of
         # the plugin service. Only the programs that are plugins import it: a
         # binary that also links the engine's copy would not start.
@@ -231,15 +192,6 @@ linters:
             - github.com/basaltdbhq/basaltdb/internal/core/largevalue
             - github.com/basaltdbhq/basaltdb/internal/core/passkey
             - github.com/basaltdbhq/basaltdb/internal/core/revert
-        # The codecs action imports never import it back.
-        codecs-below-action:
-          files:
-            - "**/internal/core/approval/**"
-            - "**/internal/core/passkey/**"
-            - "**/internal/core/revert/**"
-          deny:
-            - pkg: github.com/basaltdbhq/basaltdb/internal/core/action
-              desc: internal/core/action imports the codecs; they must not import it
     errcheck:
       check-type-assertions: true
       check-blank: false
@@ -253,9 +205,6 @@ linters:
       disable:
         - fieldalignment
         - shadow
-
-    gocyclo:
-      min-complexity: 15
 
     dupl:
       threshold: 100

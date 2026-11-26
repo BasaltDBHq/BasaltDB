@@ -40,7 +40,7 @@ var rulesInUse atomic.Pointer[rulesHolder]
 // check refuses: the host never trusts a path without the rule.
 func UsePathRules(r PathRules) {
 	if r == nil || !rulesInUse.CompareAndSwap(nil, &rulesHolder{r: r}) {
-		panic("pluginhost: UsePathRules called twice, or with no rule")
+		panic("plugin: UsePathRules called twice, or with no rule")
 	}
 }
 

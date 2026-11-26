@@ -66,20 +66,6 @@ const (
 	enforcementGuardOnly      = "GUARD_ONLY"
 )
 
-// Probe reads, on the agent's own credential, what status reports from the
-// database and what decides whether a tool call is served. The default
-// reports a current guard and no setups.
-type Probe interface {
-	GuardStatus(ctx context.Context) (guardmodel.Status, error)
-	SetupRecorded(ctx context.Context, id uuid.UUID) (bool, error)
-	LatestSetup(ctx context.Context) (guardmodel.AgentSetup, bool, error)
-	// LedgerBytes is the size of basalt_meta (status.ledger).
-	LedgerBytes(ctx context.Context) (int64, error)
-	// Reinstalls are the reinstalls the ledger and the engine's kept copy
-	// record (problem LEDGER_REINSTALLED).
-	ReinstallNotice(ctx context.Context, limit int) (message string, ok bool, err error)
-}
-
 type noProbe struct{ latest func() int }
 
 func (p noProbe) GuardStatus(context.Context) (guardmodel.Status, error) {
@@ -101,13 +87,6 @@ func (noProbe) LedgerBytes(context.Context) (int64, error) { return 0, errNoProb
 
 func (noProbe) ReinstallNotice(context.Context, int) (string, bool, error) { return "", false, nil }
 
-// VaultReporter says how the engine's connection to the hosted Vault stands
-// (status.vault, CONTRACT.md, Vault channel, Configuration and status).
-// Optional: without one, status leaves vault out.
-type VaultReporter interface {
-	VaultStatus() guidance.VaultStatus
-}
-
 // PortalFinding is what the engine's daily portal check last found
 // (CONTRACT.md, CLI, basalt portal verify). Mismatch is true when the portal
 // serves other pages than this build embeds; Summary counts them by status,
@@ -116,10 +95,4 @@ type PortalFinding struct {
 	CheckedAt time.Time
 	Mismatch  bool
 	Summary   string
-}
-
-// PortalReporter gives the last daily portal check. Optional: without one,
-// or before the first check, status says nothing about the portal.
-type PortalReporter interface {
-	PortalFinding() (PortalFinding, bool)
 }

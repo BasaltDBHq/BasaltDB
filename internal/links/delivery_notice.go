@@ -46,15 +46,6 @@ type RevertNotice struct {
 	Widened   bool
 }
 
-// Notifier tells the person a write is held or a revert waits for them.
-// The engine has no notifier today, so it is NoNotifier; it is the seam a
-// notification channel plugs into later. It only delivers the link;
-// approving and signing need the person's passkey.
-type Notifier interface {
-	NotifyHeld(ctx context.Context, n HeldNotice) error
-	NotifyRevert(ctx context.Context, n RevertNotice) error
-}
-
 // NoNotifier is the Notifier when none is configured.
 type NoNotifier struct{}
 

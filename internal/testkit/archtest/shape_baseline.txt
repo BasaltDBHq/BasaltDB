@@ -1,7 +1,4 @@
-internal/agent: query_service.go: newID: uuid.NewV7 silences the uniqueid lint (generate ids with internal/lib/uniqueid)
 internal/handoff/in/handoffmcp: connect_only.go: ConnectOnly.Tools returns []mcpserver.Tool (export one func Tools(port, mount) []mcpserver.Tool)
 internal/handoff/in/handoffmcp: connect_only.go: ConnectOnly.Tools uses mcpserver.RefuseAdminCredential (internal/app wraps every tool once)
-internal/plugin: kept_upload.go: Store.Begin: uuid.New silences the uniqueid lint (generate ids with internal/lib/uniqueid)
-internal/plugin: plugin_deliver.go: agentDeliverer.DeliverLink: uuid.NewV7 silences the uniqueid lint (generate ids with internal/lib/uniqueid)
 internal/status/in/statusmcp: enginedown.go: EngineDown.Tools returns []mcpserver.Tool (export one func Tools(port, mount) []mcpserver.Tool)
 internal/status/in/statusmcp: enginedown.go: EngineDown.Tools uses mcpserver.RefuseAdminCredential (internal/app wraps every tool once)

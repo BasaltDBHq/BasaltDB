@@ -8,7 +8,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
@@ -108,11 +107,6 @@ type Deps struct {
 	// StartHoldOffUntil is when the supervisor tries the engine again after
 	// it gave up (false when it holds nothing off).
 	StartHoldOffUntil func(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool)
-}
-
-// PasskeyLister lists the person's passkeys.
-type PasskeyLister interface {
-	Passkeys(ctx context.Context) ([]passkey.Credential, error)
 }
 
 // CrashReport is a crash report the engine saved: what status shows of it.

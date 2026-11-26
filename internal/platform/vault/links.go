@@ -174,13 +174,6 @@ func (cn *conn) sendNoWait(ctx context.Context, build func(ref int64) any, onAns
 	return nil
 }
 
-// pendingLen is how many requests wait for an answer.
-func (cn *conn) pendingLen() int {
-	cn.mu.Lock()
-	defer cn.mu.Unlock()
-	return len(cn.pending)
-}
-
 // send writes the request build makes with a fresh ref and keeps onAnswer
 // for the Vault's answer to that ref. It returns the ref.
 func (cn *conn) send(ctx context.Context, build func(ref int64) any, onAnswer func(answer)) (int64, error) {

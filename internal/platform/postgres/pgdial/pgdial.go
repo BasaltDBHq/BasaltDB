@@ -147,16 +147,6 @@ func PoolConfig(dsn string) (*pgxpool.Config, error) {
 	return cfg, nil
 }
 
-// TrustOf is what verifies the certificate of dsn's first host (TrustOfConfig).
-func TrustOf(dsn string) (trustprofile.Applied, []trustprofile.Refused, error) {
-	cfg, err := pgconn.ParseConfig(dsn)
-	if err != nil {
-		return trustprofile.Applied{}, nil, err
-	}
-	a, refused := TrustOfConfig(cfg)
-	return a, refused, nil
-}
-
 // TrustOfConfig is what verifies the certificate of cfg's first host, a
 // config as parsed (a pool's own, before BeforeConnect): the profile Trust
 // gives now, the connection's own sslrootcert, the system's authorities,

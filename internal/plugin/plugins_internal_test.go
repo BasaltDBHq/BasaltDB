@@ -524,3 +524,12 @@ func TestLocalPluginRefusedInServiceModeAndAsRoot(t *testing.T) {
 		require.Empty(t, ep.localRefusal(p, remote))
 	}
 }
+
+// run supervises the started entries until ctx is done and every one has
+// stopped.
+func (ep *Plugins) run(ctx context.Context) {
+	if err := ep.start(ctx); err != nil {
+		return
+	}
+	ep.sup.Wait()
+}

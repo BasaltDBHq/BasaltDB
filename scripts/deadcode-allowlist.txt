@@ -8,7 +8,6 @@ internal/app.NewAgentProbe
 internal/app.engineDownServer
 internal/config.LoadOpen
 internal/config.UpsertAgent
-internal/core/approval.AgentShown
 internal/core/approval.Challenge
 internal/core/approval.NewPluginApprovalResponse
 internal/core/approval.ParsePluginRequest
@@ -26,12 +25,8 @@ internal/core/linkcodec.DecodeRequest
 internal/core/linkcodec.Split
 internal/core/linkcodec.inflate
 internal/core/passkey.VerifyAssertion
-internal/engine.Engine.WithPeerUID
-internal/engine.Engine.WithRefuseDrain
-internal/engine/out/binwatch.Watcher.WithInterval
 internal/handoff.Repin.Done
 internal/handoff.Repin.Problem
-internal/ledger.Upkeep.Head
 internal/lib/logredact.NewJSONHandler
 internal/platform/postgres/guard.AppendTestMigrations
 internal/platform/postgres/guard.KeepTestMigrationsUpTo
@@ -46,12 +41,8 @@ internal/platform/postgres/guard.WriteClassification
 internal/platform/postgres/ledger.Passkey.Unused
 internal/platform/postgres/ledger.ReinstallNotice
 internal/platform/postgres/ledger.ReinstallNotices
-internal/platform/postgres/pgdial.TrustOf
-internal/platform/postgres/resultsize.IsSizeLimit
 internal/platform/postgres/store.NewPool
 internal/platform/shim.Serve
-internal/platform/vault.conn.pendingLen
-internal/plugin.Plugins.run
 internal/plugin/out/plugintransport/dial.SocketDirIs
 internal/status.ValidateURL
 internal/status.isLoopback

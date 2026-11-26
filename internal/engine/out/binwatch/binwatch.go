@@ -89,12 +89,6 @@ func (w *Watcher) Recheck() error {
 	return w.sys.Trusted(w.path)
 }
 
-// WithInterval sets how often the path is looked at (tests).
-func (w *Watcher) WithInterval(d time.Duration) *Watcher {
-	w.interval = d
-	return w
-}
-
 // Path is the binary path the engine restarts onto.
 func (w *Watcher) Path() string { return w.path }
 

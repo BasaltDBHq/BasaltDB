@@ -1,4 +1,4 @@
-package setup
+package setup_test
 
 import (
 	"context"
@@ -10,7 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
-	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // readsOnly is a transaction that answers the passkey lookup and refuses
@@ -43,12 +44,13 @@ func (r row) Scan(dest ...any) error {
 func TestRequirePasskeyOnlyReads(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	var e *setuprun.SetuprunRefusalError
+	var e *setup.SetuprunRefusalError
+	c := setup.NewContract(setupstore.New())
 	fresh := pgquerier.Neutralize(readsOnly{lookup: &pgconn.PgError{Code: "42P01"}})
 	has := pgquerier.Neutralize(readsOnly{})
-	require.True(t, errors.As(requirePasskey(ctx, fresh, false), &e))
-	require.Equal(t, CodePasskeyRequired, e.Code)
-	require.True(t, errors.As(requirePasskey(ctx, has, true), &e))
-	require.Equal(t, CodePasskeyRequired, e.Code)
-	require.NoError(t, requirePasskey(ctx, has, false))
+	require.True(t, errors.As(setup.ContractRequirePasskey(c, ctx, fresh, false), &e))
+	require.Equal(t, setup.SetuprunCodePasskeyRequired, e.Code)
+	require.True(t, errors.As(setup.ContractRequirePasskey(c, ctx, has, true), &e))
+	require.Equal(t, setup.SetuprunCodePasskeyRequired, e.Code)
+	require.NoError(t, setup.ContractRequirePasskey(c, ctx, has, false))
 }

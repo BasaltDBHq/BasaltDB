@@ -345,7 +345,7 @@ func TestRunStopsWhenNotApproved(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	stop := errors.New("not now")
 	_, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Approve: func(setup.Plan) error { return stop }})
-	require.ErrorIs(t, err, stop)
+	require.Same(t, stop, err, "Approve's error comes back as it is, not as an *Error")
 	require.Zero(t, installedVersion(t, d))
 }
 

@@ -13,7 +13,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/demo"
@@ -33,9 +32,10 @@ import (
 )
 
 // Backend implements the setup service's LocalBackend: the setup store
-// (which is also the shared run's SetuprunBackend), the engine's files, and
-// the connection, trust, classifier and passkey calls the local setup page's
-// jobs make.
+// (which is also the shared run's SetuprunBackend, and holds the label,
+// trust pin and passkey calls the setup contract shares), the engine's
+// files, and the connection, trust, classifier and passkey calls the local
+// setup page's jobs make.
 type Backend struct {
 	setupstore.Store
 	enginefiles.Files
@@ -120,10 +120,6 @@ func (Backend) AgentConnString(adminURL, role, password string) (string, error) 
 
 // Trust pins recorded in the database.
 
-func (Backend) RecordTrustPin(ctx context.Context, q setup.Querier, host string, port int, sha256 string) error {
-	return guard.RecordTrustPin(ctx, pgquerier.Unwrap(q), host, port, sha256)
-}
-
 func (Backend) RecordedTrustPin(ctx context.Context, q setup.Querier, host string, port int) (string, bool, error) {
 	return guard.RecordedTrustPin(ctx, pgquerier.Unwrap(q), host, port)
 }
@@ -140,22 +136,6 @@ func (Backend) RecordedTrustPinTx(ctx context.Context, q setup.Querier, n guardm
 
 func (Backend) PIIUnclassified(ctx context.Context, q setup.Querier) ([]guardmodel.UnclassifiedColumn, error) {
 	return guard.PIIUnclassified(ctx, pgquerier.Unwrap(q))
-}
-
-func (Backend) ReadLabels(ctx context.Context, q setup.Querier, n guardmodel.Names, tables []string) ([]guardmodel.ColumnLabel, error) {
-	conn, err := pgxConnOf(q)
-	if err != nil {
-		return nil, err
-	}
-	return guard.ReadLabels(ctx, conn, n, tables)
-}
-
-func (Backend) WriteLabels(ctx context.Context, q setup.Querier, n guardmodel.Names, tables []string, changes []guardmodel.LabelChange, restPublic bool, at time.Time) (int, error) {
-	tx, err := pgxTx(q)
-	if err != nil {
-		return 0, err
-	}
-	return guard.WriteLabels(ctx, tx, n, tables, changes, restPublic, at)
 }
 
 func (Backend) AgentUnlabeled(ctx context.Context, q setup.Querier, n guardmodel.Names, role string) ([]guardmodel.AgentColumn, error) {
@@ -189,14 +169,6 @@ func (Backend) PIISampler(q setup.Querier, timeout time.Duration, maxChars int) 
 }
 
 // Passkeys.
-
-func (Backend) ActivePasskeys(ctx context.Context, q setup.Querier) ([]guardmodel.RegisteredPasskey, error) {
-	return guard.ActivePasskeys(ctx, pgquerier.Unwrap(q))
-}
-
-func (Backend) RegisterPasskey(ctx context.Context, q setup.Querier, cred passkey.Credential, label string) error {
-	return guard.RegisterPasskey(ctx, pgquerier.Unwrap(q), cred, label)
-}
 
 func (Backend) RevokePasskey(ctx context.Context, q setup.Querier, credentialID []byte, force bool) (int, error) {
 	return guard.RevokePasskey(ctx, pgquerier.Unwrap(q), credentialID, force)

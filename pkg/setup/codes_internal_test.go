@@ -1,12 +1,15 @@
 package setup
 
 import (
+	"context"
 	"errors"
+	"io"
 	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
@@ -22,4 +25,19 @@ func TestGuardUnusableIsItsOwnCode(t *testing.T) {
 	require.True(t, errors.As(err, &e))
 	require.Equal(t, CodeGuardUnusable, e.Code)
 	require.Equal(t, msg, e.Message)
+}
+
+// An unconfirmed commit reaches the caller as SETUP_UNCONFIRMED, listed in
+// Codes, with the setup's text unchanged: never that nothing changed.
+func TestSetupUnconfirmedIsItsOwnCode(t *testing.T) {
+	t.Parallel()
+	lost := &setuprun.UnconfirmedError{Err: io.ErrUnexpectedEOF}
+	err := asError(setuprun.Refused(context.Background(), store, nil, setupcode.Payload{}, lost))
+	var e *Error
+	require.True(t, errors.As(err, &e))
+	require.Equal(t, CodeSetupUnconfirmed, e.Code)
+	require.Equal(t, "the database did not confirm the setup, so it may or may not have run. Check the setup again to see which", e.Message)
+	require.NotContains(t, e.Message, "othing changed")
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	require.Contains(t, Codes(), CodeSetupUnconfirmed)
 }

@@ -2,7 +2,6 @@ package mcpcontract_test
 
 import (
 	"bytes"
-	"crypto/rand"
 	"encoding/json"
 	"flag"
 	"os"
@@ -81,10 +80,16 @@ func largestAccepted(limit int, ok func(n int) bool) int {
 
 func pageLimitsFromGo(t *testing.T) pageLimits {
 	t.Helper()
-	req, err := passkey.NewRegistrationRequest(rand.Reader, "a", "a")
-	require.NoError(t, err)
+	challengeLen := largestAccepted(1024, func(n int) bool {
+		_, err := passkey.RegistrationRequestFor(make([]byte, n), make([]byte, 16), "a", "a")
+		return err == nil
+	})
+	userIDLen := largestAccepted(1024, func(n int) bool {
+		_, err := passkey.RegistrationRequestFor(make([]byte, challengeLen), make([]byte, n), "a", "a")
+		return err == nil
+	})
 	maxLabel := largestAccepted(1024, func(n int) bool {
-		_, err := passkey.RegistrationRequestFor(req.Challenge, req.UserID, strings.Repeat("a", n), "a")
+		_, err := passkey.RegistrationRequestFor(make([]byte, challengeLen), make([]byte, userIDLen), strings.Repeat("a", n), "a")
 		return err == nil
 	})
 
@@ -106,7 +111,7 @@ func pageLimitsFromGo(t *testing.T) pageLimits {
 		},
 		Links: linkLimits{MaxFragmentLength: linkcodec.MaxFragmentLen, MaxInflatedBytes: linkcodec.MaxInflatedBytes},
 		Passkey: passkeyLimits{
-			ChallengeBytes: len(req.Challenge), UserIDBytes: len(req.UserID), MaxLabelBytes: maxLabel,
+			ChallengeBytes: challengeLen, UserIDBytes: userIDLen, MaxLabelBytes: maxLabel,
 		},
 		AgentName: rule,
 	}

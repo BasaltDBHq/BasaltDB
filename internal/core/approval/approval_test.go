@@ -130,7 +130,7 @@ func buildFixtures(t *testing.T) fixtures {
 	f.Response.JSON = string(body)
 
 	rreq := passkey.RegistrationRequest{Challenge: seq(32, 0x40), UserID: seq(16, 0x80), UserName: "app", DisplayName: "BasaltDB · app"}
-	rfrag, err := rreq.Fragment()
+	rfrag, err := passkey.EncodeCode(passkey.RegistrationRequestPrefix, rreq)
 	require.NoError(t, err)
 	f.RegistrationRequest.Challenge = rreq.Challenge.String()
 	f.RegistrationRequest.UserID = rreq.UserID.String()

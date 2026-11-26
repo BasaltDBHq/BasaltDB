@@ -78,16 +78,18 @@ func personPasskey(t *testing.T) (*passkeytest.Authenticator, func(context.Conte
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	return person, func(context.Context) (setup.Passkey, error) {
-		req, err := setup.NewPasskeyRequest(rand.Reader, "db · bot", "db")
+		c := setup.PasskeyChallenge{Challenge: make([]byte, 32), UserID: make([]byte, 16), UserName: "db · bot", DisplayName: "BasaltDB · db"}
+		if _, err := rand.Read(c.Challenge); err != nil {
+			return setup.Passkey{}, err
+		}
+		if _, err := rand.Read(c.UserID); err != nil {
+			return setup.Passkey{}, err
+		}
+		req, err := setup.PasskeyRequestFor(c, "db · bot")
 		if err != nil {
 			return setup.Passkey{}, err
 		}
-		link, err := req.Link()
-		if err != nil {
-			return setup.Passkey{}, err
-		}
-		_, frag, _ := strings.Cut(link, "#")
-		page, err := passkeytest.ParseRegistrationRequest(frag)
+		page, err := passkey.RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
 		if err != nil {
 			return setup.Passkey{}, err
 		}

@@ -27,11 +27,6 @@ internal/core/linkcodec.Decode
 internal/core/linkcodec.DecodeRequest
 internal/core/linkcodec.Split
 internal/core/linkcodec.inflate
-internal/core/links.Register
-internal/core/passkey.NewRegistrationRequest
-internal/core/passkey.NormalizePairingCode
-internal/core/passkey.PairingCode
-internal/core/passkey.RegistrationRequest.Fragment
 internal/core/passkey.VerifyAssertion
 internal/core/pii.CardDetector.Detect
 internal/core/pii.DictionaryDetector.Detect
@@ -164,7 +159,6 @@ internal/plugin.ParsePrivateKey
 internal/plugin.Plugins.run
 internal/plugin.SignManifest
 internal/plugin/out/plugintransport/dial.SocketDirIs
-internal/setup.NewRegistrationRequest
 internal/setup/out/trustdir.Add
 internal/setup/out/trustdir.Disable
 internal/setup/out/trustdir.Remove
@@ -172,7 +166,5 @@ internal/setup/out/trustdir.otherRoots
 internal/status.ValidateURL
 internal/status.isLoopback
 internal/status.localStatus.report
-pkg/setup.NewPasskeyRequest
-pkg/setup.PasskeyRequest.Link
 pkg/trustprofile.NameFor
 pkg/trustprofile.SetSystemRootsForTest

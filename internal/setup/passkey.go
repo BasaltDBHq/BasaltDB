@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -13,18 +12,6 @@ import (
 
 // MaxPasskeyLabel is the registration request's label limit in bytes.
 const MaxPasskeyLabel = 64
-
-// NewRegistrationRequest draws a passkey registration request from rnd
-// (crypto/rand.Reader outside tests) for a passkey named label on
-// database: the picker shows "BasaltDB · <database>", or label when that
-// is too long.
-func NewRegistrationRequest(rnd io.Reader, label, database string) (passkey.RegistrationRequest, error) {
-	display := "BasaltDB · " + database
-	if len(display) > MaxPasskeyLabel {
-		display = label
-	}
-	return passkey.NewRegistrationRequest(rnd, label, display)
-}
 
 // VerifyRegistrationCode checks a pasted registration code against req.
 func VerifyRegistrationCode(code string, req passkey.RegistrationRequest, rp passkey.Relying) (passkey.Credential, error) {

@@ -142,7 +142,6 @@ const importer = `package main
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"net/netip"
 	"time"
@@ -185,7 +184,7 @@ func main() {
 	})
 	fmt.Println(res.Ran, err, setup.Codes())
 	// The laptop's way: asked for after the setup committed.
-	laptopReq, _ := setup.NewPasskeyRequest(rand.Reader, "label", "db")
+	laptopReq, _ := setup.PasskeyRequestFor(challenge, "label")
 	_, err = setup.Run(ctx, conn, req, setup.RunInput{
 		AskPasskey: func(context.Context) (setup.Passkey, error) { return laptopReq.Verify("basalt-passkey.1.x") },
 	})

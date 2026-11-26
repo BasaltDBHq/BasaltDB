@@ -56,7 +56,6 @@ var outImportBaseline = []string{
 var pkgLogicBaseline = []string{
 	"pkg/setup: (*Passkey).verified",
 	"pkg/setup: (Description).AcceptsTrustRoot",
-	"pkg/setup: (PasskeyRequest).Link",
 	"pkg/setup: (PasskeyRequest).Verify",
 	"pkg/setup: activePasskeys",
 	"pkg/setup: adminAt",
@@ -74,7 +73,6 @@ var pkgLogicBaseline = []string{
 	"pkg/setup: ConnectedAs",
 	"pkg/setup: describe",
 	"pkg/setup: Describe",
-	"pkg/setup: NewPasskeyRequest",
 	"pkg/setup: newSetup",
 	"pkg/setup: PasskeyRequestFor",
 	"pkg/setup: pgxTx",

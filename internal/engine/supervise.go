@@ -112,6 +112,9 @@ func runChild(ctx context.Context, o SuperviseOptions, startedBy string) error {
 	return wait()
 }
 
+// configFlag is the engine's flag that names its config file.
+const configFlag = "--config"
+
 // ChildDeps is what ChildStarter starts a supervised engine with: the
 // machine its binary is looked up on, the terminal that tells whether
 // another engine holds the lock, and Start, which runs a process and
@@ -133,7 +136,7 @@ func ChildStarter(d ChildDeps, startedFrom, configPath, lockPath, stateDir strin
 		if err != nil {
 			return nil, err
 		}
-		wait, err := d.Start(ctx, exe, []string{"engine", "--config", configPath, "--started-by", startedBy}, out, errw)
+		wait, err := d.Start(ctx, exe, []string{engineCommand, configFlag, configPath, "--started-by", startedBy}, out, errw)
 		if err != nil {
 			return nil, err
 		}

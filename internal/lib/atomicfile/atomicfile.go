@@ -57,7 +57,7 @@ func WriteFunc(path string, o Options, write func(f *os.File) error) error {
 		return err
 	}
 	if o.SyncDir {
-		return syncDir(dir)
+		return SyncDir(dir)
 	}
 	return nil
 }

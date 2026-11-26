@@ -362,7 +362,7 @@ func TestLoadOrCreateKeysRemovesStaleTemps(t *testing.T) {
 	for _, p := range []string{stale, fresh, unrelated} {
 		require.NoError(t, os.WriteFile(p, []byte("x"), 0o600))
 	}
-	old := time.Now().Add(-2 * staleTempAge)
+	old := time.Now().Add(-2 * time.Minute) // older than ownerfile's stale age
 	require.NoError(t, os.Chtimes(stale, old, old))
 	require.NoError(t, os.Chtimes(unrelated, old, old))
 

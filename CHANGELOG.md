@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - A read and a refused action are recorded with qualified resource names, as a write is: the agent's `leads` is `public.leads` in `run_history` and the ledger, resolved with the agent's own `search_path`. A read recorded the name as the agent wrote it, and a refused action recorded no resource at all. The guard gets schema version 12 (breaking): run `basalt init` again and update the guard on the page it opens.
 - The next step of `APPROVAL_INVALID` `DIFFERENT_WRITE` now repeats the held write's large integer params exactly. They were rounded through a float, so sending the step as it was refused the write again.
+- The engine's key files (`channel.json`, `pii.key`) and a remote plugin entry's `auth.credentialFile` are refused when the file has a second hard link, as an agent's credential file already was: another link is another path to the same secret. Every key and credential file is now read with the same checks, and must belong to the user the engine runs as. A kept plugin approval, a trusted plugin key and `last-stop.json` now survive a crash right after they are written.
 
 ## [0.1.0-alpha] - 2026-11-24
 

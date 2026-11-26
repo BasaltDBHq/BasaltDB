@@ -5,7 +5,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +12,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/ownerfile"
 )
 
 // ErrLocked is a lock another process (or another holder in this one)
@@ -238,34 +239,34 @@ func ReadOwnCredential(path string) (string, os.FileInfo, error) {
 }
 
 // ReadOwnCredentialLimit is ReadOwnCredential for a file of at most limit
-// bytes, counted as stored (before the surrounding space is trimmed).
+// bytes, counted as stored (before the surrounding space is trimmed). The
+// checks are ownerfile's, owned by this process's effective user.
 func ReadOwnCredentialLimit(path string, limit int) (string, os.FileInfo, error) {
-	f, err := openNoFollow(path)
-	if err != nil {
-		return "", nil, err
+	raw, fi, err := ownerfile.Read(path, ownerfile.Rules{MaxBytes: int64(limit)})
+	defer clear(raw)
+	return credentialText(path, raw, fi, err)
+}
+
+// credentialText is a credential file's trimmed text, or why the read of
+// path failed, named with the path. A file that is empty or over its limit is
+// one error. A missing file stays fs.ErrNotExist.
+func credentialText(path string, raw []byte, fi os.FileInfo, err error) (string, os.FileInfo, error) {
+	if re := ownerfile.Refusal(err); re != nil {
+		switch re.Rule {
+		case ownerfile.TooLarge:
+			return "", nil, fmt.Errorf("credential file %s is empty or too large", path)
+		case ownerfile.Mode:
+			return "", nil, fmt.Errorf("credential file %s is mode %o; it must be readable by the engine's user only (0600)", path, re.Perm)
+		case ownerfile.Symlink, ownerfile.NotRegular, ownerfile.HardLinks, ownerfile.Owner, ownerfile.Changed, ownerfile.Unlinked:
+		}
+		return "", nil, fmt.Errorf("credential file %s: %w", path, re)
 	}
-	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return "", nil, err
-	}
-	if fi.Mode().Perm()&credentialPermMask != 0 {
-		return "", nil, fmt.Errorf("%s is mode %o; a credential file is readable by its owner only (0600)", path, fi.Mode().Perm())
-	}
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		return "", nil, errors.New("cannot read the file's owner")
-	}
-	if uint64(st.Uid) != uint64(os.Geteuid()) {
-		return "", nil, fmt.Errorf("%s is owned by uid %d, not this process's user", path, st.Uid)
-	}
-	raw, err := io.ReadAll(io.LimitReader(f, int64(limit)+1))
 	if err != nil {
 		return "", nil, err
 	}
 	dsn := strings.TrimSpace(string(raw))
-	if dsn == "" || len(raw) > limit {
-		return "", nil, fmt.Errorf("%s is empty or too large", path)
+	if dsn == "" {
+		return "", nil, fmt.Errorf("credential file %s is empty or too large", path)
 	}
 	return dsn, fi, nil
 }

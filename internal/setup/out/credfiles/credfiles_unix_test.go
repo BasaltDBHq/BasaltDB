@@ -3,6 +3,7 @@
 package credfiles
 
 import (
+	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/lib/ownerfile"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
@@ -67,14 +69,31 @@ func TestRootCredFilesReadsRootOrTheDirOwner(t *testing.T) {
 	require.Equal(t, me, r.self)
 
 	r.self, r.owner = me+1, me // root is another uid; agents/ is this user's
+	fi, err := os.Stat(dir)
+	require.NoError(t, err)
 	for uid, want := range map[int]bool{me + 1: true, me: true, me + 2: false} {
-		ok, _ := r.ownedBy(uint32(uid))
-		require.Equal(t, want, ok, uid)
+		err := ownerfile.CheckOwner(ownedBy(t, fi, uid), r.rules())
+		require.Equal(t, want, err == nil, "%d: %v", uid, err)
 	}
 	r.owner = -1 // a root-owned agents/
-	ok, _ := r.ownedBy(uint32(me))
-	require.False(t, ok)
+	err = ownerfile.CheckOwner(ownedBy(t, fi, me), r.rules())
+	require.EqualError(t, err, fmt.Sprintf("owned by uid %d, not root", me))
 }
+
+// ownedBy is fi with its owner set to uid.
+func ownedBy(t *testing.T, fi os.FileInfo, uid int) os.FileInfo {
+	t.Helper()
+	st := *fi.Sys().(*syscall.Stat_t)
+	st.Uid = uint32(uid)
+	return statInfo{FileInfo: fi, st: &st}
+}
+
+type statInfo struct {
+	os.FileInfo
+	st *syscall.Stat_t
+}
+
+func (s statInfo) Sys() any { return s.st }
 
 // A credential file the engine's user wrote is not root's to trust: pgx
 // reads files for the caller from some parameters (passfile, sslkey, ...)

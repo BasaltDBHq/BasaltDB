@@ -31,22 +31,25 @@ func TestLoadKeysRefusesAFIFOWithoutBlocking(t *testing.T) {
 	}
 }
 
-// statInfo is an os.FileInfo whose owner is set by the test.
-type statInfo struct {
-	os.FileInfo
-	st *syscall.Stat_t
-}
-
-func (s statInfo) Sys() any { return s.st }
-
-func TestCheckOwnerRefusesAnotherUser(t *testing.T) {
+func TestLoadKeysRefusesASecondHardLink(t *testing.T) {
 	path := filepath.Join(t.TempDir(), pii.KeyFileName)
 	require.NoError(t, os.WriteFile(path, make([]byte, pii.MasterKeySize), 0o600))
-	fi, err := os.Stat(path)
+	other := filepath.Join(t.TempDir(), "elsewhere")
+	require.NoError(t, os.Link(path, other))
+	_, err := LoadKeys(path, rand.Reader)
+	require.ErrorContains(t, err, "more than one hard link")
+	require.NoError(t, os.Remove(other))
+	_, err = LoadKeys(path, rand.Reader)
 	require.NoError(t, err)
-	require.NoError(t, checkOwner(fi), "the file this process wrote is its own")
+}
 
-	st := *fi.Sys().(*syscall.Stat_t)
-	st.Uid++
-	require.ErrorContains(t, checkOwner(statInfo{FileInfo: fi, st: &st}), "not by the engine's user")
+func TestLoadKeysRefusesAnotherOwnersFile(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("chown needs root; ownerfile's tests prove the owner rule")
+	}
+	path := filepath.Join(t.TempDir(), pii.KeyFileName)
+	require.NoError(t, os.WriteFile(path, make([]byte, pii.MasterKeySize), 0o600))
+	require.NoError(t, os.Chown(path, 4242, 4242))
+	_, err := LoadKeys(path, rand.Reader)
+	require.ErrorContains(t, err, "owned by uid 4242")
 }

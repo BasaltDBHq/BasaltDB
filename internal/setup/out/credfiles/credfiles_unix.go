@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/lib/ownerfile"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 )
 
@@ -60,16 +61,14 @@ func CredentialOwner(dirUID int) int {
 	return dirUID
 }
 
-// ownedBy accepts a credential file owned by this process's user or by the
+// rules accept a credential file owned by this process's user or by the
 // directory's owner, the engine's user root hands them to.
-func (r RootCredFiles) ownedBy(uid uint32) (bool, string) {
-	if (r.self >= 0 && uint64(uid) == uint64(r.self)) || (r.owner >= 0 && uint64(uid) == uint64(r.owner)) {
-		return true, ""
+func (r RootCredFiles) rules() ownerfile.Rules {
+	want := "root"
+	if r.owner >= 0 {
+		want = fmt.Sprintf("root or uid %d (the owner of %s)", r.owner, r.dir.Path())
 	}
-	if r.owner < 0 {
-		return false, "root"
-	}
-	return false, fmt.Sprintf("root or uid %d (the owner of %s)", r.owner, r.dir.Path())
+	return ownerfile.Rules{Owners: []int{r.self, r.owner}, OwnerName: want, MaxBytes: MaxCredentialBytes}
 }
 
 // name is path's file name, refusing a path outside the opened directory.
@@ -108,7 +107,7 @@ func (r RootCredFiles) Read(path string) (string, os.FileInfo, error) {
 		return "", nil, err
 	}
 	defer f.Close()
-	dsn, fi, err := readCredentialFrom(f, r.ownedBy)
+	dsn, fi, err := readCredentialFrom(f, r.rules())
 	if err != nil {
 		return "", nil, err
 	}

@@ -103,28 +103,3 @@ func LoadOrCreateKeys(path string, now func() time.Time) (*channel.EngineKeys, e
 	defer clear(raw)
 	return channel.ParseKeyFile(path, raw)
 }
-
-// LoadKeys reads and checks an existing key file. It never writes.
-func LoadKeys(path string) (*channel.EngineKeys, error) {
-	raw, err := readKeyFile(path)
-	if err != nil {
-		return nil, err
-	}
-	defer clear(raw)
-	return channel.ParseKeyFile(path, raw)
-}
-
-// readKeyFile reads path after checking its directory (checkStateDir), with
-// ownerfile's checks on the opened file itself: a regular file with one
-// link, owned by this process's user, mode 0600 or narrower, of a sane size.
-// A file swapped between the checks and the read is refused.
-func readKeyFile(path string) ([]byte, error) {
-	if err := checkStateDir(filepath.Dir(path)); err != nil {
-		return nil, keyFileErr(path, err)
-	}
-	raw, _, err := ownerfile.Read(path, keyRules)
-	if err != nil {
-		return nil, keyFileErr(path, reason(err))
-	}
-	return raw, nil
-}

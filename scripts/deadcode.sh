@@ -30,29 +30,58 @@ fi
 # deadcode reports only packages a root reaches, so a package no root reaches
 # would hide all its code. Every module package must be reached on linux or
 # darwin, except:
-#   - test helpers: internal/testkit/..., scripts/..., a path element that
-#     ends in "test", the end-to-end test's helper and the test plugin;
+#   - internal/testkit/... and scripts/...;
+#   - the test helpers named below. A package with a path element ending in
+#     "test" must be on that list, so a new helper is added on purpose;
 #   - packages with no non-test Go function (nofunc): they cannot hold dead
 #     code, and the check fails when one gains a function;
 #   - api/plugin, the exported plugin contract package: its consumers and the
 #     contract tests call its helpers.
 helpers="e2e/release/installscript
+internal/core/approval/approvaltest
+internal/core/channel/channeltest
+internal/core/linkcodec/linkcodectest
+internal/core/links/linkstest
+internal/core/passkey/passkeytest
+internal/core/revert/reverttest
+internal/core/textrule/textruletest
+internal/platform/mcpserver/mcptest
+internal/platform/postgres/guard/guardtest
+internal/platform/vault/pagetest
+internal/platform/vault/vaulttest
+internal/plugin/out/plugintransport/adaptertest
 internal/plugin/out/plugintransport/testnotifier
-internal/plugin/out/plugintransport/testnotifier/cmd/basalt-test-notifier"
+internal/plugin/out/plugintransport/testnotifier/cmd/basalt-test-notifier
+pkg/trustprofile/trustprofiletest"
 nofunc="api/connect
 api/mcp/vault
 internal/app/servedagent"
 contract="api/plugin"
+exempt="$helpers
+$nofunc
+$contract"
 for os in linux darwin; do
 	# shellcheck disable=SC2086
 	GOOS=$os GOARCH=amd64 CGO_ENABLED=0 go list -deps $roots
 done | LC_ALL=C sort -u >"$tmp/reached"
-go list ./... | LC_ALL=C sort >"$tmp/all"
-unreached=$(LC_ALL=C comm -23 "$tmp/all" "$tmp/reached" | sed "s|^$prefix||" |
-	grep -Ev '^(internal/testkit|scripts)(/|$)|(^|/)[^/]*test(/|$)' |
-	grep -vxF "$helpers
-$nofunc
-$contract" || true)
+go list ./... | sed "s|^$prefix||" | awk '!/^(internal\/testkit|scripts)(\/|$)/' | LC_ALL=C sort >"$tmp/all"
+printf '%s\n' "$exempt" | LC_ALL=C sort >"$tmp/exempt"
+sed "s|^$prefix||" "$tmp/reached" | LC_ALL=C sort >"$tmp/reached.rel"
+
+unlisted=$(awk -F/ '{for (i = 1; i <= NF; i++) if ($i ~ /test$/) {print; next}}' "$tmp/all" |
+	LC_ALL=C comm -23 - "$tmp/exempt")
+if [ -n "$unlisted" ]; then
+	echo "New test helper packages (a path element ends in \"test\"); add them to helpers in scripts/deadcode.sh if they are test helpers, or rename them:" >&2
+	printf '%s\n' "$unlisted" | sed 's/^/  /' >&2
+	exit 1
+fi
+stale=$(LC_ALL=C comm -13 "$tmp/all" "$tmp/exempt")
+if [ -n "$stale" ]; then
+	echo "scripts/deadcode.sh exempts packages that no longer exist; delete them from its lists:" >&2
+	printf '%s\n' "$stale" | sed 's/^/  /' >&2
+	exit 1
+fi
+unreached=$(LC_ALL=C comm -23 "$tmp/all" "$tmp/reached.rel" | LC_ALL=C comm -23 - "$tmp/exempt")
 if [ -n "$unreached" ]; then
 	echo "No root (cmd/basalt, internal/testkit/pkgroot) reaches these packages, so deadcode cannot see them:" >&2
 	printf '%s\n' "$unreached" | sed 's/^/  /' >&2

@@ -392,7 +392,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			// only, and nothing that reads a database.
 			out.agents = append(out.agents, engine.Agent{
 				Name: a.Name, UID: uids[a.Name], SocketPath: cfg.SocketPath(a.Name),
-				Server: mcpServer{mcpserver.NewServer(env.serverInfo(nil), rt.tools...)},
+				Server: mcpServer{mcpserver.NewServer(env.serverInfo(nil, log), rt.tools...)},
 			})
 			continue
 		}
@@ -411,23 +411,24 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			Name:       a.Name,
 			UID:        uids[a.Name],
 			SocketPath: cfg.SocketPath(a.Name),
-			Server:     mcpServer{mcpserver.NewServer(env.serverInfo(rt.svc.UpdateNotice), AgentTools(rt.svc)...).WithMethods(env.requests.uploadMethods(a.Name, rt.svc.PluginUploadsServed))},
+			Server:     mcpServer{mcpserver.NewServer(env.serverInfo(rt.svc.UpdateNotice, log), AgentTools(rt.svc)...).WithMethods(env.requests.uploadMethods(a.Name, rt.svc.PluginUploadsServed))},
 		})
 	}
 	return out, nil
 }
 
 // serverInfo is what an agent's MCP server says of itself, with notice as
-// its update notice (nil for none). The hello answer carries who operates
-// the engine and its local page origin, so basalt mcp knows which links it
-// may open in the browser (CONTRACT.md, Auto-open).
-func (env agentEnv) serverInfo(notice func() string) mcpserver.Info {
+// its update notice (nil for none); a tool's panic is logged to log. The
+// hello answer carries who operates the engine and its local page origin, so
+// basalt mcp knows which links it may open in the browser (CONTRACT.md,
+// Auto-open).
+func (env agentEnv) serverInfo(notice func() string, log *slog.Logger) mcpserver.Info {
 	operatedBy := mcpcontract.OperatedByPerson
 	if env.cfg.AgentOperated() {
 		operatedBy = mcpcontract.OperatedByAgent
 	}
 	return mcpserver.Info{
-		Name: "basalt", Version: buildinfo.Version, Instructions: Instructions, Notice: notice, OnPanic: env.onPanic,
+		Name: "basalt", Version: buildinfo.Version, Instructions: Instructions, Notice: notice, OnPanic: env.onPanic(log),
 		OperatedBy: operatedBy, PagesOrigin: env.pagesOrigin,
 	}
 }

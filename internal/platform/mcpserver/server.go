@@ -54,11 +54,12 @@ type Info struct {
 	// result carries it as an extra text item.
 	Notice func() string
 	// OnPanic, optional, is called when a tool panics, with the tool's
-	// name, the panic value and the stack. It saves a crash report and
-	// returns its id ("" when it saved none). With it set, the panic ends
-	// that call with an INTERNAL error instead of the process; without it
-	// the panic is not recovered.
-	OnPanic func(tool string, v any, stack []byte) (reportID string)
+	// name, the panic value and the stack. It logs the panic under an
+	// error id and saves a crash report, and returns the error id and the
+	// report's id ("" when it saved none). With it set, the panic ends that
+	// call with an INTERNAL error carrying both instead of the process;
+	// without it the panic is not recovered.
+	OnPanic func(tool string, v any, stack []byte) (errorID, reportID string)
 	// OperatedBy and PagesOrigin, optional, go in the hello answer
 	// (Hello.OperatedBy, Hello.PagesOrigin).
 	OperatedBy  string

@@ -85,8 +85,8 @@ func Seed(ctx context.Context, tx pgx.Tx) (guardmodel.DemoPlan, error) {
 // Counts is the row count of each sample table.
 func Counts(ctx context.Context, q guard.Querier) (leads, notes int, err error) {
 	// Plain SQL: counts of fixed demo tables.
-	err = q.QueryRow(ctx, `SELECT (SELECT count(*) FROM basalt_demo.leads)::int,
-		(SELECT count(*) FROM basalt_demo.lead_notes)::int`).Scan(&leads, &notes)
+	err = q.QueryRow(ctx, `SELECT (SELECT count(id) FROM basalt_demo.leads)::int,
+		(SELECT count(id) FROM basalt_demo.lead_notes)::int`).Scan(&leads, &notes)
 	return leads, notes, err
 }
 

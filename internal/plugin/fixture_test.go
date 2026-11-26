@@ -117,7 +117,7 @@ func (f *fixture) writeSigned(dir string, manifest []byte, signer *ecdsa.Private
 
 func (f *fixture) install(instance string) pluginmodel.Verified {
 	f.t.Helper()
-	v, err := Install(f.src, f.root, instance, f.trust, pluginmodel.ModeSameUser)
+	v, err := installCopy(f.src, f.root, instance, f.trust, pluginmodel.ModeSameUser)
 	require.NoError(f.t, err)
 	return v
 }
@@ -149,4 +149,20 @@ func entries(t *testing.T, dir string) []string {
 		out = append(out, d.Name())
 	}
 	return out
+}
+
+// installCopy stages the plugin in src and commits it, with no consent step
+// in between, and returns the installed copy.
+func installCopy(src, root, instance string, trust TrustStore, mode pluginmodel.Mode, opts ...Option) (pluginmodel.Verified, error) {
+	s, err := Stage(src, root, instance, trust, mode, opts...)
+	if err != nil {
+		return pluginmodel.Verified{}, err
+	}
+	dir, err := s.Commit()
+	if err != nil {
+		return pluginmodel.Verified{}, err
+	}
+	v := s.Verified
+	v.Dir = dir
+	return v, nil
 }

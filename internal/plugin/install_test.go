@@ -57,7 +57,7 @@ func TestSignatureVectorInstalls(t *testing.T) {
 	f := newFixture(t)
 	vector := filepath.Join(contractTestdata, "signed")
 
-	_, err := Install(vector, f.root, "", f.trust, pluginmodel.ModeSameUser)
+	_, err := installCopy(vector, f.root, "", f.trust, pluginmodel.ModeSameUser)
 	ve := requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 	require.Contains(t, ve.Why, "not trusted", "the vector's key is not trusted yet")
 
@@ -68,7 +68,7 @@ func TestSignatureVectorInstalls(t *testing.T) {
 	require.True(t, added)
 	require.Equal(t, "jNZPxNG5htlwfhg4ZgknAA", id)
 
-	v, err := Install(vector, f.root, "", f.trust, pluginmodel.ModeSameUser)
+	v, err := installCopy(vector, f.root, "", f.trust, pluginmodel.ModeSameUser)
 	require.NoError(t, err)
 	require.Equal(t, id, v.SignerKeyID)
 	require.ElementsMatch(t, []string{ManifestFile, SignatureFile, "bin"}, entries(t, v.Dir))
@@ -93,7 +93,7 @@ func TestChangedByteRefused(t *testing.T) {
 	g := newFixture(t)
 	srcModel := filepath.Join(g.src, "model", "weights.bin")
 	require.NoError(t, os.WriteFile(srcModel, []byte("TOP-SECRET-MODEL-WEIGHTz"), 0o644))
-	_, err = Install(g.src, g.root, "", g.trust, pluginmodel.ModeSameUser)
+	_, err = installCopy(g.src, g.root, "", g.trust, pluginmodel.ModeSameUser)
 	ve = requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 	require.True(t, strings.HasSuffix(ve.File, filepath.Join("model", "weights.bin")))
 	requireNoSecrets(t, err)
@@ -104,7 +104,7 @@ func TestChangedByteRefused(t *testing.T) {
 	m := localManifest()
 	m[len(m)-2] = ' '
 	require.NoError(t, os.WriteFile(filepath.Join(h.src, ManifestFile), m, 0o644))
-	_, err = Install(h.src, h.root, "", h.trust, pluginmodel.ModeSameUser)
+	_, err = installCopy(h.src, h.root, "", h.trust, pluginmodel.ModeSameUser)
 	ve = requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 	require.Contains(t, ve.Why, "does not verify")
 }
@@ -117,7 +117,7 @@ func TestUntrustedKeyRefused(t *testing.T) {
 	other, err := GenerateKey()
 	require.NoError(t, err)
 	f.writeSigned(f.src, localManifest(), other)
-	_, err = Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser)
+	_, err = installCopy(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser)
 	ve := requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 	require.Contains(t, ve.Why, "not trusted")
 	require.Empty(t, entries(t, filepath.Join(f.root, "acme-ner", pluginmodel.DefaultInstance)))
@@ -177,7 +177,7 @@ func TestSymlinkRefused(t *testing.T) {
 	model := filepath.Join(f.src, "model", "weights.bin")
 	require.NoError(t, os.Remove(model))
 	require.NoError(t, os.Symlink(outside, model))
-	_, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser)
+	_, err := installCopy(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser)
 	ve := requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 	require.Equal(t, model, ve.File)
 
@@ -186,7 +186,7 @@ func TestSymlinkRefused(t *testing.T) {
 	elsewhere := filepath.Join(g.base, "elsewhere")
 	require.NoError(t, os.Rename(filepath.Join(g.src, "model"), elsewhere))
 	require.NoError(t, os.Symlink(elsewhere, filepath.Join(g.src, "model")))
-	_, err = Install(g.src, g.root, "", g.trust, pluginmodel.ModeSameUser)
+	_, err = installCopy(g.src, g.root, "", g.trust, pluginmodel.ModeSameUser)
 	requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 
 	// A link that stays inside the source is refused too, for a listed
@@ -197,7 +197,7 @@ func TestSymlinkRefused(t *testing.T) {
 		orig := filepath.Join(k.src, rel)
 		require.NoError(t, os.Rename(orig, target))
 		require.NoError(t, os.Symlink(target, orig))
-		_, err = Install(k.src, k.root, "", k.trust, pluginmodel.ModeSameUser)
+		_, err = installCopy(k.src, k.root, "", k.trust, pluginmodel.ModeSameUser)
 		ve = requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 		require.Equal(t, orig, ve.File, rel)
 		require.Contains(t, ve.Why, "symlink", rel)
@@ -302,7 +302,7 @@ func TestStageChecksDestination(t *testing.T) {
 	instDir := filepath.Join(f.root, "acme-ner", pluginmodel.DefaultInstance)
 	require.NoError(t, os.MkdirAll(instDir, 0o755))
 	require.NoError(t, os.Chmod(instDir, 0o775))
-	_, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser)
+	_, err := installCopy(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser)
 	ve := requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 	require.Equal(t, instDir, ve.File)
 	require.Empty(t, entries(t, instDir))
@@ -315,7 +315,7 @@ func TestNothingCreatedUnderWritableDir(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	require.NoError(t, os.Chmod(f.configDir, 0o770))
-	_, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser)
+	_, err := installCopy(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser)
 	requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 	_, statErr := os.Lstat(f.root)
 	require.ErrorIs(t, statErr, os.ErrNotExist, "no plugin root was created")
@@ -332,7 +332,7 @@ func TestNothingCreatedUnderWritableDir(t *testing.T) {
 	require.ErrorIs(t, statErr, os.ErrNotExist, "no trust store was created")
 
 	// A missing trust store still checks the directories above it.
-	_, err = Install(g.src, g.root, "", g.trust, pluginmodel.ModeSameUser)
+	_, err = installCopy(g.src, g.root, "", g.trust, pluginmodel.ModeSameUser)
 	ve = requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 	require.Equal(t, g.configDir, ve.File)
 }
@@ -498,7 +498,7 @@ func TestRemoteManifestSignatureOnly(t *testing.T) {
 	src := filepath.Join(f.base, "remote")
 	f.writeSigned(src, []byte(remoteManifest), f.signer)
 
-	v, err := Install(src, f.root, "", f.trust, pluginmodel.ModeSameUser)
+	v, err := installCopy(src, f.root, "", f.trust, pluginmodel.ModeSameUser)
 	require.NoError(t, err)
 	require.True(t, v.Manifest.Endpoint.IsRemote())
 	require.Empty(t, v.Manifest.Files)
@@ -518,7 +518,7 @@ func TestRemoteManifestSignatureOnly(t *testing.T) {
 	other, err := GenerateKey()
 	require.NoError(t, err)
 	f.writeSigned(src, []byte(remoteManifest), other)
-	_, err = Install(src, f.root, "second", f.trust, pluginmodel.ModeSameUser)
+	_, err = installCopy(src, f.root, "second", f.trust, pluginmodel.ModeSameUser)
 	requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 }
 

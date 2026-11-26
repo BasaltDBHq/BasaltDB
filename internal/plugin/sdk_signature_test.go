@@ -44,7 +44,7 @@ func TestSignaturesMadeByTheSDKVerify(t *testing.T) {
 			require.NoError(t, err)
 			f.trustKey(pub)
 
-			v, err := Install(dir, f.root, "default", f.trust, pluginmodel.ModeSameUser)
+			v, err := installCopy(dir, f.root, "default", f.trust, pluginmodel.ModeSameUser)
 			require.NoError(t, err)
 			require.Equal(t, id, v.SignerKeyID)
 

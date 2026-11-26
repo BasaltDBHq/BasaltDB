@@ -27,17 +27,16 @@ var fileReads = map[string]map[string]bool{
 // by path, as file:function:package.call(path argument), with why none is
 // engine.json.
 var pluginFileReads = map[string]string{
-	"install.go:copyFile:os.OpenFile(dst)":                                                      "creates a copy's file in the plugin root (O_EXCL)",
-	"install.go:writeNew:os.OpenFile(p)":                                                        "creates a new file in the plugin root (O_EXCL)",
-	"kept_entries.go:readEntries:os.OpenFile(p)":                                                "the engine-kept entries file in the state directory, no link followed",
-	"plugin_feed.go:load:os.ReadFile(filepath.Join(r.cursorDir(), r.pair.agent+\".json\"))":     "a feed cursor in the state directory",
-	"plugin_watch.go:step:os.ReadFile(w.ep.kept.EntriesPath())":                                 "the engine-kept entries file, for its change",
-	"plugin_watch.go:stepKept:os.ReadFile(w.ep.kept.EntriesPath())":                             "the engine-kept entries file, for its change",
-	"plugin_watch.go:ReadPluginServing:os.ReadFile(filepath.Join(stateDir, PluginServingFile))": "PluginServingFile in the state directory, read by the CLI",
-	"plugins_service.go:osUnitSource:os.Open(path)":                                             "a service plugin's systemd or launchd unit file",
-	"trust.go:readNoFollow:os.OpenFile(path)":                                                   "a copy's manifest or signature, no link followed",
-	"trust.go:readOwned:os.OpenFile(path)":                                                      "a key in the trust store, no link followed, owner checked",
-	"verify.go:checkFileHash:os.OpenFile(p)":                                                    "a copy's file in the plugin root, no link followed",
+	"install.go:copyFile:os.OpenFile(dst)":                                                  "creates a copy's file in the plugin root (O_EXCL)",
+	"install.go:writeNew:os.OpenFile(p)":                                                    "creates a new file in the plugin root (O_EXCL)",
+	"kept_entries.go:readEntries:os.OpenFile(p)":                                            "the engine-kept entries file in the state directory, no link followed",
+	"plugin_feed.go:load:os.ReadFile(filepath.Join(r.cursorDir(), r.pair.agent+\".json\"))": "a feed cursor in the state directory",
+	"plugin_watch.go:step:os.ReadFile(w.ep.kept.EntriesPath())":                             "the engine-kept entries file, for its change",
+	"plugin_watch.go:stepKept:os.ReadFile(w.ep.kept.EntriesPath())":                         "the engine-kept entries file, for its change",
+	"plugins_service.go:osUnitSource:os.Open(path)":                                         "a service plugin's systemd or launchd unit file",
+	"trust.go:readNoFollow:os.OpenFile(path)":                                               "a copy's manifest or signature, no link followed",
+	"trust.go:readOwned:os.OpenFile(path)":                                                  "a key in the trust store, no link followed, owner checked",
+	"verify.go:checkFileHash:os.OpenFile(p)":                                                "a copy's file in the plugin root, no link followed",
 }
 
 // fileReadsIn lists the calls of fileReads in f, as name:function:pkg.call.

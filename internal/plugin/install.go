@@ -377,19 +377,3 @@ func (s *Staged) Discard() error {
 	}
 	return nil
 }
-
-// Install stages the plugin in src and commits it, with no consent step in
-// between. It returns the installed copy.
-func Install(src, root, instance string, trust TrustStore, mode pluginmodel.Mode, opts ...Option) (pluginmodel.Verified, error) {
-	s, err := Stage(src, root, instance, trust, mode, opts...)
-	if err != nil {
-		return pluginmodel.Verified{}, err
-	}
-	dir, err := s.Commit()
-	if err != nil {
-		return pluginmodel.Verified{}, err
-	}
-	v := s.Verified
-	v.Dir = dir
-	return v, nil
-}

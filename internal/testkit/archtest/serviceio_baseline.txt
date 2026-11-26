@@ -71,10 +71,7 @@ internal/plugin kept_upload.go: os.MkdirAll
 internal/plugin kept_upload.go: os.OpenRoot
 internal/plugin kept_upload.go: os.RemoveAll
 internal/plugin plugin_feed.go: os.ReadFile
-internal/plugin plugin_watch.go: internal/lib/atomicfile.Write
-internal/plugin plugin_watch.go: os.MkdirAll
 internal/plugin plugin_watch.go: os.ReadFile
-internal/plugin plugin_watch.go: os.Remove
 internal/plugin plugins_service.go: os.Open
 internal/plugin sweep.go: os.Lstat
 internal/plugin sweep.go: os.ReadDir

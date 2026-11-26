@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -704,71 +703,6 @@ func (s *KeptPlugins) EndDisabled(ctx context.Context) {
 			s.endAll(ctx, p.Key(), p.Agents)
 		}
 	}
-}
-
-// Approve is PLUGIN_APPROVE: a relay. Each database is asked in parallel,
-// through its agents in name order, for the agent that opened the approval
-// (the one whose row carries the binding text), and the signature is
-// submitted with that agent's credential: the guard verifies it. The
-// submit's error is returned as is: a pluginmodel.StoreError when the store
-// answered (its code and message as the store gave them, which callers may
-// print), the driver's error when it did not.
-func (s *KeptPlugins) Approve(ctx context.Context, p PluginApproveParams) (PluginApproveResult, error) {
-	byDB := map[string][]string{}
-	for _, name := range slices.Sorted(maps.Keys(s.agents)) {
-		a := s.agents[name]
-		key := fmt.Sprintf("%s\x00%d\x00%s", a.host, a.port, a.database)
-		byDB[key] = append(byDB[key], name)
-	}
-	type found struct {
-		agent      string
-		unanswered bool
-	}
-	results := make(chan found, len(byDB))
-	var wg sync.WaitGroup
-	for _, names := range byDB {
-		wg.Go(func() {
-			ctx, cancel := context.WithTimeout(ctx, keptDatabaseTimeout)
-			defer cancel()
-			for _, name := range names {
-				r, ok, err := s.ports.Guard.ReadPluginApproval(ctx, s.agents[name].db, p.ApprovalID)
-				switch {
-				case err != nil && transientErr(s.ports.Guard, err):
-					results <- found{unanswered: true}
-					return
-				case err != nil || !ok:
-					continue
-				case r.BindingText != "":
-					results <- found{agent: name}
-					return
-				}
-			}
-			results <- found{}
-		})
-	}
-	wg.Wait()
-	close(results)
-	opener, unanswered := "", false
-	for f := range results {
-		if f.agent != "" {
-			opener = f.agent
-		}
-		unanswered = unanswered || f.unanswered
-	}
-	switch {
-	case opener == "" && unanswered:
-		return PluginApproveResult{}, &PersonError{Code: CodeRefused, Message: "DATABASE_UNREACHABLE: no answering database holds plugin approval " +
-			p.ApprovalID.String() + ", and one does not answer; try again once it does"}
-	case opener == "":
-		return PluginApproveResult{}, &PersonError{Code: CodeNotFound, Message: "no database of this engine holds plugin approval " + p.ApprovalID.String()}
-	}
-	ctx, cancel := context.WithTimeout(ctx, keptDatabaseTimeout)
-	defer cancel()
-	at, err := s.ports.Guard.SubmitPluginApproval(ctx, s.agents[opener].db, guardmodel.PluginApprovalResponse{ApprovalID: p.ApprovalID, Assertion: p.Assertion})
-	if err != nil {
-		return PluginApproveResult{}, err
-	}
-	return PluginApproveResult{ApprovalID: p.ApprovalID, Status: string(guardmodel.PluginApprovalStatusApproved), ApprovedAt: at.UTC()}, nil
 }
 
 // List is PLUGIN_LIST: config entries, then engine-kept ones, in name and

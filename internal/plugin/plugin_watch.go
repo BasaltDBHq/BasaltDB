@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"maps"
 	"os"
-	"path/filepath"
 	"slices"
 	"sync"
 	"time"
@@ -17,7 +16,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
-	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 // Timing of the plugin watch (CONTRACT.md, Plugins, Plugin changes while
@@ -79,8 +77,6 @@ type pluginWatch struct {
 	// retry: a PLUGIN_DISABLED could not be written; the next check writes
 	// it.
 	retry bool
-	// serving is PluginServingFile as last written.
-	serving []byte
 	// On a same-user engine that keeps entries of its own: base is the
 	// config entries last read from engine.json (effective), and keptRaw
 	// the entries file last applied. A change of the entries file applies
@@ -142,7 +138,7 @@ func (w *pluginWatch) run(ctx context.Context, clock Clock) {
 		case reply = <-w.ep.kick:
 		}
 		w.step(ctx)
-		w.writeServing()
+		w.publishServing()
 		if reply != nil {
 			close(reply)
 		}
@@ -677,11 +673,6 @@ const whyConfigInvalid = "engine.json changed and the engine cannot read its plu
 // serve runs the started entries, and in same-user mode watches for plugin
 // changes, until ctx is done and every plugin has stopped.
 func (ep *Plugins) Serve(ctx context.Context, cfg config.Config, configPath string, ledgers map[string]AgentLedger) {
-	// A file an earlier engine left (a crash, a reused pid) never speaks
-	// for this one.
-	if ep.o.stateDir != "" {
-		_ = os.Remove(filepath.Join(ep.o.stateDir, PluginServingFile))
-	}
 	if err := ep.start(ctx); err != nil {
 		return
 	}
@@ -696,10 +687,8 @@ func (ep *Plugins) Serve(ctx context.Context, cfg config.Config, configPath stri
 	feed.Go(func() { ep.delivery.run(ctx, ledgers) })
 	if ep.mode == pluginmodel.ModeSameUser || ep.kept != nil {
 		w := newPluginWatch(ep, cfg, configPath, ledgers)
-		w.writeServing()
+		w.publishServing()
 		w.run(ctx, ep.o.clock)
-		// Stopping: nothing is served any more, before the plugins drain.
-		w.removeServing()
 	}
 	feed.Wait()
 	ep.sup.Wait()
@@ -713,20 +702,10 @@ func (ep *Plugins) servedEntries() []pluginmodel.Entry {
 	return slices.Clone(ep.entries)
 }
 
-// PluginServingFile is the file in a same-user engine's state directory
-// that says which entries the running engine serves, to which agents, on
-// which approval, and whether each answers READY (CONTRACT.md, Plugin
-// changes while the engine runs). basalt plugin enable --approval-id reads
-// it to wait until the plugin runs. It holds no value from a plugin or its
-// config. It is advice only: nothing is served because of it.
-const PluginServingFile = "plugin-serving.json"
-
-// PluginServing is PluginServingFile's content.
+// PluginServing is what the running engine serves, as the watch last
+// published it: PLUGIN_LIST reads it (servingOf).
 type PluginServing struct {
-	// EnginePID is the engine that wrote it; a reader trusts it only while
-	// that engine holds the engine lock.
-	EnginePID int                  `json:"enginePid"`
-	Entries   []PluginServingEntry `json:"entries"`
+	Entries []PluginServingEntry `json:"entries"`
 }
 
 // PluginServingEntry is one entry the engine runs.
@@ -745,21 +724,9 @@ type PluginServingAgent struct {
 	ApprovalID string `json:"approvalId,omitempty"`
 }
 
-// ReadPluginServing reads PluginServingFile from stateDir.
-func ReadPluginServing(stateDir string) (PluginServing, error) {
-	var out PluginServing
-	raw, err := os.ReadFile(filepath.Join(stateDir, PluginServingFile))
-	if err != nil {
-		return out, err
-	}
-	err = json.Unmarshal(raw, &out)
-	return out, err
-}
-
-// writeServing writes PluginServingFile when what runs changed since the
-// last write: whole, by rename, mode 0600.
-func (w *pluginWatch) writeServing() {
-	st := PluginServing{EnginePID: os.Getpid(), Entries: []PluginServingEntry{}}
+// publishServing publishes what runs for PLUGIN_LIST.
+func (w *pluginWatch) publishServing() {
+	st := PluginServing{Entries: []PluginServingEntry{}}
 	for _, k := range slices.SortedFunc(maps.Keys(w.running), compareEntryKeys) {
 		r := w.running[k]
 		e := PluginServingEntry{
@@ -778,33 +745,4 @@ func (w *pluginWatch) writeServing() {
 	w.ep.mu.Lock()
 	w.ep.serving = st
 	w.ep.mu.Unlock()
-	// A service engine's state directory is its own: PLUGIN_LIST says what
-	// it serves instead of the file.
-	if w.ep.o.stateDir == "" || w.ep.mode != pluginmodel.ModeSameUser {
-		return
-	}
-	raw, err := json.Marshal(st)
-	if err != nil || bytes.Equal(raw, w.serving) {
-		return
-	}
-	// What runs is shown again at the next change: no directory sync.
-	err = os.MkdirAll(w.ep.o.stateDir, stateDirMode)
-	if err == nil {
-		err = atomicfile.Write(filepath.Join(w.ep.o.stateDir, PluginServingFile), raw, atomicfile.Options{Mode: privateFile})
-	}
-	if err != nil {
-		w.log.Warn("which plugins run could not be written to the state directory", "err", err)
-		return
-	}
-	w.serving = raw
 }
-
-// removeServing removes PluginServingFile as the engine stops.
-func (w *pluginWatch) removeServing() {
-	if w.ep.o.stateDir != "" {
-		_ = os.Remove(filepath.Join(w.ep.o.stateDir, PluginServingFile))
-	}
-}
-
-// stateDirMode keeps the engine's state to its own OS user.
-const stateDirMode = 0o700

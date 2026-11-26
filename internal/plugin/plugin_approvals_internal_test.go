@@ -88,7 +88,7 @@ func (f *pluginFixture) installCopyOver(instance, hooks, transport string, signe
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(src, SignatureFile), sig, 0o644))
 	}
-	v, err := Install(src, f.root, instance, f.trust, pluginmodel.ModeSameUser, RequireApproval(!signed))
+	v, err := installCopy(src, f.root, instance, f.trust, pluginmodel.ModeSameUser, RequireApproval(!signed))
 	require.NoError(t, err)
 	// The longest timeout: the plugin is this test binary, built with -race.
 	return config.Plugin{Name: "acme-ner", Instance: instance, ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: []string{}, TimeoutMs: config.MaxPluginTimeoutMs}
@@ -735,7 +735,7 @@ func (f *pluginFixture) installRemote() config.Plugin {
 }
 `
 	require.NoError(t, os.WriteFile(filepath.Join(src, ManifestFile), []byte(manifest), 0o644))
-	v, err := Install(src, f.root, "default", f.trust, pluginmodel.ModeSameUser, RequireApproval(true))
+	v, err := installCopy(src, f.root, "default", f.trust, pluginmodel.ModeSameUser, RequireApproval(true))
 	require.NoError(t, err)
 	return config.Plugin{Name: "acme-ner", Instance: "default", ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: []string{}}
 }

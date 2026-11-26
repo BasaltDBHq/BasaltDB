@@ -243,7 +243,7 @@ func (f *pluginFixture) install(instance, transport string, agents ...string) co
 	sig, err := SignManifest([]byte(manifest), key)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(src, SignatureFile), sig, 0o644))
-	v, err := Install(src, f.root, instance, f.trust, pluginmodel.ModeSameUser)
+	v, err := installCopy(src, f.root, instance, f.trust, pluginmodel.ModeSameUser)
 	require.NoError(t, err)
 	p := config.Plugin{Name: "acme-ner", Instance: instance, ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: agents, TimeoutMs: config.MaxPluginTimeoutMs}
 	f.cfg.Plugins = append(f.cfg.Plugins, p)

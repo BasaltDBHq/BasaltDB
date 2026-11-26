@@ -158,12 +158,10 @@ internal/platform/postgres/store.NewPool
 internal/platform/shim.Serve
 internal/platform/vault.conn.pendingLen
 internal/plugin.GenerateKey
-internal/plugin.Install
 internal/plugin.KeyID
 internal/plugin.MarshalPrivateKey
 internal/plugin.ParsePrivateKey
 internal/plugin.Plugins.run
-internal/plugin.ReadPluginServing
 internal/plugin.SignManifest
 internal/plugin/out/plugintransport/dial.SocketDirIs
 internal/setup.NewRegistrationRequest

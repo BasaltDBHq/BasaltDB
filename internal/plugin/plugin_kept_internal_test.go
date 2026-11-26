@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -30,6 +31,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
@@ -152,16 +154,25 @@ func (f *keptFixture) add(instance string, agents ...string) (PluginOpenResult, 
 	})
 }
 
-// sign signs approval a with the person's passkey and relays it over the
-// socket.
+// sign signs approval a with the person's passkey and submits it through
+// the agent that opened it (the one whose row carries the binding text),
+// as the approval page does.
 func (f *keptFixture) sign(a PluginOpenedApproval) {
 	f.t.Helper()
 	require.NotNil(f.t, a.ApprovalID, a.Refused)
 	as, err := f.pk.Sign(approval.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(f.t, err)
-	res, err := f.client.PluginApprove(context.Background(), PluginApproveParams{ApprovalID: *a.ApprovalID, Assertion: as})
-	require.NoError(f.t, err)
-	require.Equal(f.t, "APPROVED", res.Status)
+	ctx := context.Background()
+	for _, name := range slices.Sorted(maps.Keys(f.agents)) {
+		r, ok, err := testPorts.Guard.ReadPluginApproval(ctx, f.agents[name].db, *a.ApprovalID)
+		if err != nil || !ok || r.BindingText == "" {
+			continue
+		}
+		_, err = testPorts.Guard.SubmitPluginApproval(ctx, f.agents[name].db, guardmodel.PluginApprovalResponse{ApprovalID: *a.ApprovalID, Assertion: as})
+		require.NoError(f.t, err)
+		return
+	}
+	f.t.Fatalf("no agent opened plugin approval %s", *a.ApprovalID)
 }
 
 func (f *keptFixture) entries() []config.Plugin {

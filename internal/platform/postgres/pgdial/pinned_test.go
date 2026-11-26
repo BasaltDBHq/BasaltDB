@@ -101,3 +101,30 @@ func TestPinnedLoginNeedsVerifyFull(t *testing.T) {
 		require.Error(t, err, mode)
 	}
 }
+
+// PinnedHost answers for a host the current trust pins, with its port and
+// the pinned roots; a host no pin covers, a pin that does not apply
+// (sslmode below verify-full) and a string pgx cannot parse answer no pin.
+// Not parallel: it sets this process's trust profiles.
+func TestPinnedHostReadsThePinOfTheCurrentTrust(t *testing.T) {
+	ca, _ := trustprofiletest.Chain(t, pinnedHost)
+	set := trustprofiletest.Set(t, nil, pinFor(t, ca, false))
+	pgdial.SetTrust(func() *trustprofile.Set { return set })
+	t.Cleanup(func() { pgdial.SetTrust(nil) })
+
+	host, port, roots, ok := pgdial.PinnedHost(pinnedAdmin + pinnedHost + ":5433/app?sslmode=verify-full")
+	require.True(t, ok)
+	require.Equal(t, pinnedHost, host)
+	require.Equal(t, 5433, port)
+	require.Len(t, roots, 1)
+	require.Equal(t, trustprofile.DERSHA256(ca), trustprofile.DERSHA256(roots[0]))
+
+	for _, dsn := range []string{
+		pinnedAdmin + "db.other.example:5432/app?sslmode=verify-full",
+		pinnedAdmin + pinnedHost + ":5432/app?sslmode=require",
+		"postgres://%zz",
+	} {
+		_, _, _, ok := pgdial.PinnedHost(dsn)
+		require.False(t, ok, dsn)
+	}
+}

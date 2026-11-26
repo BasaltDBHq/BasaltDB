@@ -25,6 +25,7 @@ package pgdial
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"strings"
@@ -155,6 +156,23 @@ func PoolConfig(dsn string) (*pgxpool.Config, error) {
 func TrustOfConfig(cfg *pgconn.Config) (trustprofile.Applied, []trustprofile.Refused) {
 	set := Trust()
 	return trustprofile.Explain(cfg, set), set.Refused()
+}
+
+// PinnedHost is dsn's host, as pinned, and its port, with the certificates
+// the host is pinned to, when the trust profile a connection opened now
+// uses for it (Trust) is that host's pin (trustprofile.PinName). ok is
+// false otherwise, and for a string pgx cannot parse.
+func PinnedHost(dsn string) (host string, port int, roots []*x509.Certificate, ok bool) {
+	cfg, err := pgconn.ParseConfig(dsn)
+	if err != nil {
+		return "", 0, nil, false
+	}
+	a := trustprofile.Explain(cfg, Trust())
+	host = trustprofile.NormalizeHost(cfg.Host)
+	if a.Profile == nil || a.Profile.Name != trustprofile.PinName(host) {
+		return "", 0, nil, false
+	}
+	return host, int(cfg.Port), a.Profile.Certificates(), true
 }
 
 // CertificateNotVerified reports whether err is a server certificate that

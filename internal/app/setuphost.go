@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
@@ -32,8 +31,14 @@ import (
 // package's own functions.
 type shell struct{}
 
-func (shell) Connect(ctx context.Context, dsn string) (*pgx.Conn, error) {
-	return pgdial.Connect(ctx, dsn)
+// Connect opens the connection with pgdial and hands the CLI its
+// driver-free port (pgConn).
+func (shell) Connect(ctx context.Context, dsn string) (cli.Conn, error) {
+	conn, err := pgdial.Connect(ctx, dsn)
+	if err != nil {
+		return nil, err
+	}
+	return newPGConn(conn), nil
 }
 
 func (shell) WithCertificateHint(dsn string, err error) error {
@@ -42,7 +47,29 @@ func (shell) WithCertificateHint(dsn string, err error) error {
 
 func (shell) CertificateNotVerified(err error) bool { return pgdial.CertificateNotVerified(err) }
 
-func (shell) CurrentTrustProfileSet() *trustprofile.Set { return pgdial.Trust() }
+func (shell) PinnedHost(dsn string) (cli.PinnedHost, bool) {
+	host, port, roots, ok := pgdial.PinnedHost(dsn)
+	return cli.PinnedHost{Host: host, Port: port, Roots: roots}, ok
+}
+
+// pgConn is a pgx connection as the CLI's cli.Conn: its queries through
+// pgquerier.Neutral, which carries the connection for the adapters that
+// read it back (pgquerier.Of), and its close the connection's own.
+type pgConn struct {
+	pgquerier.Neutral
+	close func(context.Context) error
+}
+
+// newPGConn is conn as a cli.Conn.
+func newPGConn(conn interface {
+	pgquerier.Querier
+	Close(ctx context.Context) error
+},
+) cli.Conn {
+	return pgConn{Neutral: pgquerier.Neutralize(conn), close: conn.Close}
+}
+
+func (c pgConn) Close(ctx context.Context) error { return c.close(ctx) }
 
 func (shell) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
 	return osservice.OpenTrustedFile(path, owner)

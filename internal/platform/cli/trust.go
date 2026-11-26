@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -38,22 +35,18 @@ func RootChangedOn(ctx context.Context, sh Host, dsn string, err error, dial tru
 	if !sh.CertificateNotVerified(err) {
 		return nil
 	}
-	cfg, perr := pgconn.ParseConfig(dsn)
-	if perr != nil {
-		return nil //nolint:nilerr // a string pgx cannot parse has no pinned host to compare
-	}
-	a := trustprofile.Explain(cfg, sh.CurrentTrustProfileSet())
-	host := trustprofile.NormalizeHost(cfg.Host)
-	if a.Profile == nil || a.Profile.Name != trustprofile.PinName(host) {
+	pinned, ok := sh.PinnedHost(dsn)
+	if !ok {
 		return nil
 	}
-	chain, ferr := trustpin.Fetch(ctx, dial, host, int(cfg.Port))
+	host := pinned.Host
+	chain, ferr := trustpin.Fetch(ctx, dial, host, pinned.Port)
 	if ferr != nil {
 		return nil //nolint:nilerr // the chain cannot be read now: the certificate error is said as it is
 	}
 	top := chain[len(chain)-1]
-	pinnedTo := make([]string, 0, len(a.Profile.Certificates()))
-	for _, c := range a.Profile.Certificates() {
+	pinnedTo := make([]string, 0, len(pinned.Roots))
+	for _, c := range pinned.Roots {
 		if trustprofile.DERSHA256(c) == trustprofile.DERSHA256(top) {
 			return nil
 		}
@@ -66,7 +59,7 @@ func RootChangedOn(ctx context.Context, sh Host, dsn string, err error, dial tru
 
 // Connect opens one connection, usable through a transaction pooler
 // (pgdial).
-func Connect(ctx context.Context, sh Host, dsn string) (*pgx.Conn, error) {
+func Connect(ctx context.Context, sh Host, dsn string) (Conn, error) {
 	conn, err := sh.Connect(ctx, dsn)
 	if err != nil {
 		if changed := rootChanged(ctx, sh, dsn, err); changed != nil {

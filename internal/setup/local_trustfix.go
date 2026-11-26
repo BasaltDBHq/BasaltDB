@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
-	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
+	"github.com/basaltdbhq/basaltdb/internal/core/trustpin"
+	"github.com/basaltdbhq/basaltdb/internal/core/trustprofile"
 )
 
 // TRUST: the certificate (CONTRACT.md, The Update check). The engine pins
@@ -134,7 +134,7 @@ func (s *LocalService) readTrust(ctx context.Context, j agentJob) (trustCase, er
 		return trustCase{}, timeLimit(ctx, refuse(CodeDatabaseUnreachable, "The database could not be reached. Check the host and port in the admin connection string."))
 	}
 	now := s.opts.Now()
-	tc := trustCase{agentHost: h, seen: trustpin.Check(chain, h.host, now)}
+	tc := trustCase{agentHost: h, seen: trustpin.Check(chain, h.host, now, s.opts.PinRoots)}
 	tc.changed = !pinHolds(h.pin, tc.seen.SHA256)
 	if !tc.changed {
 		// MISMATCH or nothing: the engine's pin still verifies, so nothing is
@@ -155,7 +155,7 @@ func (s *LocalService) readTrust(ctx context.Context, j agentJob) (trustCase, er
 		r.TrustRoot, r.Pinned = presentedRoot(tc.seen), pinnedSHA(h.pin, "")
 		return trustCase{}, r
 	}
-	_, next, err := trustpin.Approved(chain, h.host, now, j.req.TrustRoot)
+	_, next, err := trustpin.Approved(chain, h.host, now, j.req.TrustRoot, s.opts.PinRoots)
 	if err != nil {
 		return trustCase{}, refuse(CodeTrustRootMismatch, "The database presents another certificate authority than the one you trusted. Nothing changed; check it again.")
 	}

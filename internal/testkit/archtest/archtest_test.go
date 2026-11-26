@@ -251,7 +251,8 @@ func TestRulesCatchViolations(t *testing.T) {
 		"internal/core/leaky/l.go":                 "package leaky\n\nimport (\n\t\"os\"\n\t\"syscall\"\n\t\"time\"\n\t. \"strings\"\n)\n\nvar _ = os.Getenv\nvar _ = syscall.Getpid\nvar Now = time.Now\nvar Since = time.Since\n",
 		"internal/core/rnd/r.go":                   "package rnd\n\n" + imp("crypto/rand"),
 		"internal/core/granted/r.go":               "package granted\n\n" + imp("crypto/rand"),
-		"internal/core/setupcode/a.go":             "package setupcode\n\nimport \"net\"\n\nvar _ = net.JoinHostPort\nvar _ = net.Dial\n",
+		"internal/core/setupcode/a.go":             "package setupcode\n\nimport \"net\"\n\nvar _ = net.JoinHostPort\nvar _ = net.Dial\nvar _ = net.ParseIP\n",
+		"internal/core/trustprofile/a.go":          "package trustprofile\n\nimport (\n\t\"io/fs\"\n\t\"net\"\n)\n\nvar _ fs.FS\nvar _ = fs.ReadDir\nvar _ = fs.Glob\nvar _ = net.ParseIP\nvar _ = net.JoinHostPort\n",
 		"internal/agent/s.go":                      "package agent\n\n" + imp(m+"internal/platform/db") + "import \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
 		"internal/agent/in/agentmcp/i.go":          "package agentmcp\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + "var _ sqlguard.Limits\n",
 		"internal/agent/out/other/o.go":            "package other\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + use("", "Other"),
@@ -283,7 +284,7 @@ func TestRulesCatchViolations(t *testing.T) {
 		"internal/agent/agenttest/main.go":         "package main\n\n" + imp(m+"internal/platform/db") + "func main() {}\n",
 		"internal/platform/vault/v.go":             "package vault\n",
 		"internal/approval/a.go":                   "package approval\n\n" + imp(m+"internal/agent/loadtest"),
-		"ARCHITECTURE.md":                          "| `leakytest` | x | types | 2 | - | - |\n| `sqlguard` | sql | decision | 1 | - | `Other` |\n| `leaky` | x | types | 2 | - | - |\n| `rnd` | x | codec | 3 | `crypto/rand` | - |\n| `granted` | x | codec | 3 | - | - |\n| `setupcode` | x | codec | 3 | `net` | - |\n| `textrule` | x | types | 2 | - | - |\n",
+		"ARCHITECTURE.md":                          "| `leakytest` | x | types | 2 | - | - |\n| `sqlguard` | sql | decision | 1 | - | `Other` |\n| `leaky` | x | types | 2 | - | - |\n| `rnd` | x | codec | 3 | `crypto/rand` | - |\n| `granted` | x | codec | 3 | - | - |\n| `setupcode` | x | codec | 3 | `net` | - |\n| `trustprofile` | x | types | 2 | `io/fs`, `net` | - |\n| `textrule` | x | types | 2 | - | - |\n",
 	}
 	root := fixture(t, files)
 	reg, err := parseRegister(filepath.Join(root, "ARCHITECTURE.md"))
@@ -321,7 +322,14 @@ func TestRulesCatchViolations(t *testing.T) {
 		"cmd/loadtest":                {"imports internal/platform/db"},
 		"internal/agent/agenttest":    {"imports internal/platform/db"},
 		"internal/core/granted":       {"r.go imports crypto/rand (core must stay pure)"},
-		"internal/core/setupcode":     {"a.go uses net.Dial (the register grants net for JoinHostPort only)"},
+		"internal/core/setupcode": {
+			"a.go uses net.Dial (the register grants net for JoinHostPort only)",
+			"a.go uses net.ParseIP (the register grants net for JoinHostPort only)",
+		},
+		"internal/core/trustprofile": {
+			"a.go uses io/fs.Glob (the register grants io/fs for FS, ReadDir, ReadFile only)",
+			"a.go uses net.JoinHostPort (the register grants net for ParseIP only)",
+		},
 		"internal/core/leaky": {
 			"l.go calls time.Now (core must stay pure)",
 			"l.go calls time.Since (core must stay pure)",
@@ -351,7 +359,7 @@ func TestRegisterChecksCatchProblems(t *testing.T) {
 		"internal/core/extra/a.go":   "package extra\n",
 		"internal/core/chan/a.go":    "package channel\n",
 		"internal/core/dec/a.go":     "package dec\n\nfunc Real() {}\n",
-		"ARCHITECTURE.md":            "| `badkind` | x | gadget | 1 | - | - |\n| `badrow` | x | types | 4 | - | `Zed` |\n| `extra` | x | codec | 3 | `crypto/rand`, `net` | - |\n| `dec` | x | decision | 1 | - | `Real`, `Missing` |\n| `chan` | x | codec | 3 | `os` | `Nope` |\n| `ghost` | x | types | 2 | - | - |\n",
+		"ARCHITECTURE.md":            "| `badkind` | x | gadget | 1 | - | - |\n| `badrow` | x | types | 4 | - | `Zed` |\n| `extra` | x | codec | 3 | `crypto/rand`, `net`, `io/fs` | - |\n| `dec` | x | decision | 1 | - | `Real`, `Missing` |\n| `chan` | x | codec | 3 | `os` | `Nope` |\n| `ghost` | x | types | 2 | - | - |\n",
 	})
 	reg, err := parseRegister(filepath.Join(root, "ARCHITECTURE.md"))
 	if err != nil {
@@ -369,6 +377,7 @@ func TestRegisterChecksCatchProblems(t *testing.T) {
 		`register row badrow: admitted-by "4"`,
 		`register row extra: extra import "crypto/rand" is not allowed`,
 		`register row extra: extra import "net" is not allowed`,
+		`register row extra: extra import "io/fs" is not allowed`,
 		`register row chan: extra import "os" is not allowed`,
 		`register row dec: codec function "Missing" is not an exported function`,
 		`register row chan: codec function "Nope" is not an exported function`,

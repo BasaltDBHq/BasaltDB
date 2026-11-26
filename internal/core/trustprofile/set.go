@@ -5,7 +5,6 @@ import (
 	"embed"
 	"io/fs"
 	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -51,13 +50,14 @@ type Set struct {
 }
 
 // NewSet is the set of builtin and operator profiles; refused are the
-// operator files that were not loaded. Two profiles of one origin with the
-// same name keep the first.
+// operator files that were not loaded, their paths with slashes (a refused
+// file's name is its path.Base). Two profiles of one origin with the same
+// name keep the first.
 func NewSet(builtin, operator []*Profile, refused []Refused) *Set {
 	s := &Set{refused: slices.Clone(refused)}
 	off := map[string]bool{}
 	for _, r := range refused {
-		off[strings.TrimSuffix(filepath.Base(r.File), jsonExt)] = true
+		off[strings.TrimSuffix(path.Base(r.File), jsonExt)] = true
 	}
 	ops := map[string]*Profile{}
 	for _, p := range uniqueByName(operator) {
@@ -137,29 +137,42 @@ func longest(group []*Profile, host string, exact bool) *Profile {
 // Refused are the operator files that were not loaded.
 func (s *Set) Refused() []Refused { return slices.Clone(s.refused) }
 
+// Profiles are every profile of s, operator ones first, each with its
+// state. Package pkg/trustprofile's tests read it; it is not a method so
+// that the public Set gains none.
+func Profiles(s *Set) []Listed { return slices.Clone(s.listed) }
+
 //go:embed profiles
 var builtinFS embed.FS
 
 // builtinDir is the embedded directory of the built-in profiles.
 const builtinDir = "profiles"
 
-// BuiltIns are the embedded profiles, read once. The files are fixed at
+// LoadBuiltIns is the embedded profiles, read once on the first call of
+// the function it returns, their pools from roots. The files are fixed at
 // build time and pinned by tests, so one that does not load is a broken
-// build.
-var BuiltIns = sync.OnceValue(func() []*Profile {
-	ps, err := LoadFS(builtinFS, builtinDir, BuiltIn)
-	if err != nil {
-		panic("trustprofile: a built-in profile does not load: " + err.Error())
-	}
-	return ps
-})
+// build. Package pkg/trustprofile holds the one the engine shares
+// (trustprofile.BuiltIns).
+func LoadBuiltIns(roots Roots) func() []*Profile {
+	return sync.OnceValue(func() []*Profile {
+		ps, err := LoadFS(builtinFS, builtinDir, BuiltIn, roots)
+		if err != nil {
+			panic("trustprofile: a built-in profile does not load: " + err.Error())
+		}
+		return ps
+	})
+}
 
-// BuiltInSet is the set of the built-in profiles alone.
-var BuiltInSet = sync.OnceValue(func() *Set { return NewSet(BuiltIns(), nil, nil) })
+// SetOf is the set of the profiles builtins gives alone, built once on the
+// first call of the function it returns.
+func SetOf(builtins func() []*Profile) func() *Set {
+	return sync.OnceValue(func() *Set { return NewSet(builtins(), nil, nil) })
+}
 
 // LoadFS loads every *.json profile in dir of fsys, its roots files read
-// from the same directory, failing on the first that does not load.
-func LoadFS(fsys fs.FS, dir string, origin Origin) ([]*Profile, error) {
+// from the same directory, failing on the first that does not load. Each
+// profile's Parse reads roots.
+func LoadFS(fsys fs.FS, dir string, origin Origin, roots Roots) ([]*Profile, error) {
 	entries, err := fs.ReadDir(fsys, dir)
 	if err != nil {
 		return nil, err
@@ -173,7 +186,7 @@ func LoadFS(fsys fs.FS, dir string, origin Origin) ([]*Profile, error) {
 		if err != nil {
 			return nil, err
 		}
-		p, err := Parse(raw, origin, func(name string) ([]byte, error) { return fs.ReadFile(fsys, path.Join(dir, name)) })
+		p, err := Parse(raw, origin, func(name string) ([]byte, error) { return fs.ReadFile(fsys, path.Join(dir, name)) }, roots)
 		if err != nil {
 			return nil, &FileError{File: e.Name(), Err: err}
 		}
@@ -222,7 +235,7 @@ func (e *FileError) Unwrap() error { return e.Err }
 // left out.
 func (s *Set) Replacing(name string, add *Profile) *Set {
 	var ops, builtin []*Profile
-	for _, l := range s.listed {
+	for _, l := range Profiles(s) {
 		switch {
 		case l.Origin == Operator && l.Name == name:
 		case l.Origin == Operator:

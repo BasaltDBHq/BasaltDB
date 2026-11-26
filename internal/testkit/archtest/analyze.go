@@ -74,6 +74,28 @@ var allowed = map[string][]string{
 	lWeb:      {lCore, lLib},
 }
 
+// pkgForwards are the core packages a package under pkg/ imports on top of
+// its layer's list, each edge by name: another program needs the engine's
+// own trust code, so pkg/trustprofile and pkg/trustpin are aliases and
+// forwards to it. A new edge fails, and so does a listed one the package
+// no longer imports (TestPkgForwardsAreListed).
+var pkgForwards = map[string][]string{
+	"pkg/trustprofile": {"internal/core/trustprofile"},
+	"pkg/trustpin":     {"internal/core/trustpin"},
+}
+
+// pkgDecisionForwards are the decision functions a package under pkg/ may
+// call, as package -> decision package -> functions: pkg/trustpin forwards
+// Check and Approved because another program's service runs the same pin
+// check as the engine's. Any other call from pkg/ to a decision fails, and
+// so does a listed one the package no longer makes
+// (TestPkgDecisionForwardsAreListed). The forwards, of the same names, are
+// for other modules: no package of this one but pkg/ and the dead code
+// root calls them (TestDecisionForwardsOnlyForOtherModules).
+var pkgDecisionForwards = map[string]map[string][]string{
+	"pkg/trustpin": {"trustpin": {"Check", "Approved"}},
+}
+
 // pkgImportsAllowlist lists, as "<package>: <import>", the packages one
 // package under pkg/ imports on top of its layer's list. pkg/setup is the
 // second composition root: it forwards to the setup service and builds the
@@ -505,7 +527,7 @@ func checkLayer(v violations, rel, layer, target string) {
 		v.add(rel, "imports "+target+" (an internal/platform package imports no domain service)")
 		return
 	}
-	if in(ok, tl) || in(pkgExtra[rel], target) {
+	if in(ok, tl) || in(pkgExtra[rel], target) || in(pkgForwards[rel], target) {
 		return
 	}
 	v.add(rel, "imports "+target)
@@ -586,12 +608,15 @@ func checkDecisionCalls(v violations, rel string, f *goFile, decisions map[strin
 		if in(storePkgs, rel) && dec == sqlguardPkg && in(strings.Fields(storeCallsOnly), sel.Sel.Name) {
 			return true
 		}
+		if in(pkgDecisionForwards[rel][dec], sel.Sel.Name) {
+			return true
+		}
 		v.add(rel, fmt.Sprintf("%s calls %s.%s", f.name, dec, sel.Sel.Name))
 		return true
 	})
 }
 
-var bannedExact = []string{"os", "io/fs", "io/ioutil", "path/filepath", netPkg, "os/exec", "math/rand", "database/sql", "database/sql/driver", "syscall"}
+var bannedExact = []string{"os", ioFSPkg, "io/ioutil", "path/filepath", netPkg, "os/exec", "math/rand", "database/sql", "database/sql/driver", "syscall"}
 
 func bannedImport(p string) bool {
 	switch {
@@ -650,29 +675,48 @@ func checkPurity(v violations, reg *register, rel string, f *goFile) {
 		if ip == "time" && in([]string{"Now", "Since", "Until"}, sel.Sel.Name) {
 			v.add(rel, f.name+" calls time."+sel.Sel.Name+" (core must stay pure)")
 		}
-		if only, limited := extraOnly[ip]; limited && in(extras, ip) && !in(only, sel.Sel.Name) {
+		if only, limited := extraOnly[area][ip]; limited && in(extras, ip) && !in(only, sel.Sel.Name) {
 			v.add(rel, fmt.Sprintf("%s uses %s.%s (the register grants %s for %s only)", f.name, ip, sel.Sel.Name, ip, strings.Join(only, ", ")))
 		}
 		return true
 	})
 }
 
-// extraOnly limits an extra import to the names listed: setupcode may
-// import net for net.JoinHostPort and nothing else of it.
-var extraOnly = map[string][]string{netPkg: {"JoinHostPort"}}
+// extraOnly limits an extra import of a core package to the names listed:
+// setupcode may import net for net.JoinHostPort, and trustprofile net for
+// net.ParseIP and io/fs for fs.FS, fs.ReadDir and fs.ReadFile, and nothing
+// else of them.
+var extraOnly = map[string]map[string][]string{
+	coreSetupcode:    {netPkg: {"JoinHostPort"}},
+	coreTrustprofile: {netPkg: {"ParseIP"}, ioFSPkg: {"FS", "ReadDir", "ReadFile"}},
+}
+
+// The core packages granted an extra import.
+const (
+	coreSetupcode    = "setupcode"
+	coreTrustprofile = "trustprofile"
+)
 
 // netPkg is the standard library's net package.
 const netPkg = "net"
 
+// ioFSPkg is the standard library's io/fs package.
+const ioFSPkg = "io/fs"
+
 // extraAllowed reports whether the register may grant core package name the
 // extra import e: crypto/rand for key and salt generation in channel and
-// setupcode, net for setupcode's database address (net.JoinHostPort).
+// setupcode, net for setupcode's database address (net.JoinHostPort) and
+// trustprofile's exact-address match entries (net.ParseIP), and io/fs for
+// trustprofile's LoadFS, which reads the profiles of the fs.FS its caller
+// gives.
 func extraAllowed(name, e string) bool {
 	switch e {
 	case "crypto/rand":
-		return name == "channel" || name == "setupcode"
+		return name == "channel" || name == coreSetupcode
 	case netPkg:
-		return name == "setupcode"
+		return name == coreSetupcode || name == coreTrustprofile
+	case ioFSPkg:
+		return name == coreTrustprofile
 	}
 	return false
 }
@@ -703,7 +747,7 @@ func checkRegister(pkgs map[string]*goPkg, reg *register) []string {
 		}
 		for _, e := range row.extras {
 			if !extraAllowed(name, e) {
-				problems = append(problems, fmt.Sprintf("register row %s: extra import %q is not allowed (only crypto/rand, only for channel and setupcode; net, only for setupcode)", name, e))
+				problems = append(problems, fmt.Sprintf("register row %s: extra import %q is not allowed (only crypto/rand, only for channel and setupcode; net, only for setupcode and trustprofile; io/fs, only for trustprofile)", name, e))
 			}
 		}
 		if len(row.codecs) > 0 && row.kind != kindDecision {

@@ -21,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
+	coretrust "github.com/basaltdbhq/basaltdb/internal/core/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -184,6 +185,9 @@ type LocalOptions struct {
 	Profiles func() *trustprofile.Set
 	// Probe reads the chain a host presents (LocalBackend.FetchChain outside tests).
 	Probe func(ctx context.Context, host string, port int) ([]*x509.Certificate, error)
+	// PinRoots are the roots the pin check reads (LocalBackend.PinRoots
+	// outside tests).
+	PinRoots coretrust.Roots
 	// SampleColumn reads a column's sample for the check's suggestions
 	// (the classifier's sampler outside tests).
 	SampleColumn func(ctx context.Context, conn Conn, col piistore.Column) (piistore.Sample, error)
@@ -237,6 +241,9 @@ func NewLocal(o LocalOptions) (*LocalService, error) {
 	}
 	if o.Probe == nil {
 		o.Probe = o.Backend.FetchChain
+	}
+	if o.PinRoots == nil {
+		o.PinRoots = o.Backend.PinRoots()
 	}
 	if o.Euid == nil {
 		o.Euid = os.Geteuid

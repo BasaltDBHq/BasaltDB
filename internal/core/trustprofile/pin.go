@@ -22,8 +22,8 @@ type PinFiles struct {
 
 // NewPin is the pin for host holding cert (pin-<host>, match =host), with
 // verify: ca when caOnly (a certificate that does not name the host). It is
-// built in memory and written nowhere.
-func NewPin(host string, cert *x509.Certificate, caOnly bool) (PinFiles, error) {
+// built in memory and written nowhere. Its Parse reads roots.
+func NewPin(host string, cert *x509.Certificate, caOnly bool, roots Roots) (PinFiles, error) {
 	h := NormalizeHost(host)
 	match, err := NormalizeMatch("=" + h)
 	if err != nil {
@@ -41,7 +41,7 @@ func NewPin(host string, cert *x509.Certificate, caOnly bool) (PinFiles, error) 
 		return PinFiles{}, err
 	}
 	raw = append(raw, '\n')
-	p, err := Parse(raw, Operator, func(string) ([]byte, error) { return pemBytes, nil })
+	p, err := Parse(raw, Operator, func(string) ([]byte, error) { return pemBytes, nil }, roots)
 	if err != nil {
 		return PinFiles{}, err
 	}

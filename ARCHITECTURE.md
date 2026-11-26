@@ -16,7 +16,7 @@ internal/core                  types, decisions, codecs; no I/O
 internal/lib                   helpers with no BasaltDB knowledge
 web/                           route data and embedded pages
 internal/testkit               shared test fakes and the architecture test
-pkg/                           public Go API: only what other repos import (setup, trustprofile, trustpin)
+pkg/                           public Go API: only what other repos import (setup, trustprofile, trustprofile/trustprofiletest, trustpin)
 api/                           the contract files: proto, schemas, vectors
 ```
 

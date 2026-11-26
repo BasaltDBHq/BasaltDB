@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/agent/in/agentmcp"
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
@@ -207,7 +206,7 @@ func TestErrorIDIsInTheBodyAndTheLogLine(t *testing.T) {
 		var logged strings.Builder
 		d := deps()
 		d.Core.Log = slog.New(slog.NewTextHandler(&logged, nil))
-		call := agentmcp.Wrap(NewService(d), "query", func(context.Context, json.RawMessage) (any, error) { return nil, cause })
+		call := gate{svc: NewService(d)}.wrap("query", func(context.Context, json.RawMessage) (any, error) { return nil, cause })
 
 		_, err := call(context.Background(), nil)
 		var te *toolresult.ToolError
@@ -226,7 +225,7 @@ func TestErrorIDIsInTheBodyAndTheLogLine(t *testing.T) {
 
 func TestErrorIDOnlyOnInternalAndUnavailable(t *testing.T) {
 	t.Parallel()
-	call := agentmcp.Wrap(NewService(deps()), "query", func(context.Context, json.RawMessage) (any, error) {
+	call := gate{svc: NewService(deps())}.wrap("query", func(context.Context, json.RawMessage) (any, error) {
 		return nil, &guidance.ArgumentError{Message: "bad"}
 	})
 	_, err := call(context.Background(), nil)

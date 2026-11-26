@@ -7,7 +7,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
-	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
 // --- list_runs ---
@@ -62,12 +61,4 @@ func (h handlers) listRuns(ctx context.Context, raw json.RawMessage) (any, error
 		items = append(items, runSummaryFromDomain(r))
 	}
 	return pagination.ToMCP(pagination.Page[runSummaryDTO]{Items: items, NextCursor: page.NextCursor}), nil
-}
-
-// RunTools are the tools that list the agent's runs.
-func RunTools(svc Agent, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool) []mcpserver.Tool {
-	h := handlers{svc: svc}
-	return []mcpserver.Tool{
-		mount("list_runs", h.listRuns),
-	}
 }

@@ -75,6 +75,8 @@ func degradedTools(call func(tool string) func(context.Context, json.RawMessage)
 	contracts := mcpcontract.MustLoad()
 	out := make([]mcpserver.Tool, 0, len(contracts))
 	for _, c := range contracts {
+		// status is served even if its contract were not IMPLEMENTED: on purpose,
+		// a degraded agent always answers status.
 		if c.Status != mcpcontract.StatusImplemented && c.Name != guidance.ToolStatus {
 			continue
 		}

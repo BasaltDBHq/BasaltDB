@@ -88,7 +88,7 @@ func recvType(fd *ast.FuncDecl) string {
 	return ""
 }
 
-func funcName(fd *ast.FuncDecl) string {
+func shapeFuncName(fd *ast.FuncDecl) string {
 	if r := recvType(fd); r != "" {
 		return r + "." + fd.Name.Name
 	}
@@ -336,7 +336,7 @@ func idNolints(file string) ([]string, error) {
 func enclosing(f *ast.File, pos ast.Node) string {
 	for _, d := range f.Decls {
 		if fd, ok := d.(*ast.FuncDecl); ok && fd.Pos() <= pos.Pos() && pos.End() <= fd.End() {
-			return funcName(fd)
+			return shapeFuncName(fd)
 		}
 	}
 	return "package level"
@@ -380,7 +380,7 @@ func shapeViolations(root string) ([]string, error) {
 					continue
 				}
 				if tools, plain := returnsTools(fd, mcp, named); tools && (!plain || fd.Name.Name != "Tools" || fd.Recv != nil || !takesMount(fd)) {
-					add(rel, "%s: %s returns []mcpserver.Tool (export one func Tools(port, mount) []mcpserver.Tool)", f.name, funcName(fd))
+					add(rel, "%s: %s returns []mcpserver.Tool (export one func Tools(port, mount) []mcpserver.Tool)", f.name, shapeFuncName(fd))
 				}
 			}
 			if !inbound || mcp == "" {

@@ -4,6 +4,16 @@ All notable changes to BasaltDB are recorded in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- A setup code run against the wrong database (`TARGET_MISMATCH`) now tells the person to paste the admin connection string of the code's database on the page, or to ask the agent for a new code. It no longer says to run a command. The refusals that told the person to fix or update "this computer" now say what to do on the connect page: `UNSUPPORTED_FORMAT` says to try again later and `BINARY_TOO_OLD` to try again shortly, since the connect service runs the code; `SETUP_ID_IN_FUTURE` and `EXPIRY_TOO_FAR` say to check the clock of the agent's machine; and a code the database's clock refuses says to check the database's clock, no longer "this computer's".
+
+### Removed
+
+- The Go setup package (`pkg/setup`) drops `Request.ConnectPage` and the `CONNECT_ONLY` refusal (`CodeConnectOnly`), left from the removed laptop setup command. Every request is run the way the connect page runs it: a code without a target is accepted, `Check` always returns the column labels (and, for a code with a target, the passkeys), and `Run` refuses a code with ticks and no `Included` with `NO_TABLES`. The laptop's passkey step goes too: `RunInput.AskPasskey`, `RunInput.AddPasskey` and the `PASSKEY_NOT_REGISTERED` refusal (`CodePasskeyNotRegistered`). A run needs `RunInput.Passkey` whenever the database has no active portal passkey. The contract no longer promises OSC 8 terminal hyperlinks, which the CLI never printed.
+
 ## [0.1.0-alpha] - 2026-11-24
 
 The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup moves from the terminal to a page: the agent runs `basalt init` and the person finishes on the page it links. The CLI only starts things. Expect bugs and breaking changes between alpha releases, and read "Breaking for alpha installs" before you upgrade.

@@ -96,19 +96,17 @@ func TestInitRemoteMakesAConnectOnlyCode(t *testing.T) {
 	require.True(t, s.AwaitingAddress)
 	require.False(t, s.Refused)
 
-	// The link and the fingerprint, no laptop command.
+	// The link and the fingerprint.
 	require.Equal(t, links.Portal+"/connect#"+r.res.Code, r.res.ConnectURL)
 	pm := r.res.PersonMessage
 	require.Contains(t, pm, r.res.Fingerprint)
 	require.Contains(t, pm, "connection string")
-	require.NotContains(t, pm, "--setup-code")
 	require.NoError(t, guidance.CheckPersonMessage(pm), pm)
 	mcptest.Require(t, pm, []toolresult.Link{{Label: guidance.LabelConnect, URL: r.res.ConnectURL}})
 
-	// Text: the link and the fingerprint, no laptop command.
+	// Text: the link and the fingerprint.
 	require.Contains(t, r.stdout, "\n\n"+r.res.ConnectURL+"\n\n")
 	require.Contains(t, r.stdout, "Setup fingerprint: "+r.res.Fingerprint+"\n")
-	require.NotContains(t, r.stdout, "--setup-code")
 }
 
 // While the code waits and has not expired, a re-run prints it again, so
@@ -250,7 +248,6 @@ func TestInitRemoteConnectOnlyOverTheBudget(t *testing.T) {
 	require.NoError(t, guidance.CheckPersonMessage(r.res.PersonMessage), r.res.PersonMessage)
 	mcptest.Require(t, r.res.PersonMessage, nil)
 	require.Contains(t, r.stdout, "\n\n"+r.res.Code+"\n\n")
-	require.NotContains(t, r.stdout, "--setup-code")
 }
 
 // Not as root, the path a bot's engine user takes: init makes the engine's

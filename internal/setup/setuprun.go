@@ -1,6 +1,6 @@
 // Package setup runs a setup code as the database's admin: the checks,
-// the questions, the one transaction and record_setup (CONTRACT.md, Setup
-// from your laptop). The connect service, through the public package
+// the questions, the one transaction and record_setup (CONTRACT.md,
+// Setup). The connect service, through the public package
 // pkg/setup, uses it, so the setup has one implementation; pkg/setup is
 // its API for other modules, without this module's internal types.
 //
@@ -33,7 +33,6 @@ const (
 	SetuprunCodeAnswersInvalid  = "ANSWERS_INVALID"
 	SetuprunCodePasskeyRequired = "PASSKEY_REQUIRED"
 	SetuprunCodePasskeyInvalid  = "PASSKEY_INVALID"
-	CodePasskeyMissing          = "PASSKEY_NOT_REGISTERED" //nolint:gosec // a refusal code, not a credential
 	SetuprunCodeNoTables        = "NO_TABLES"
 	// SetuprunCodeTablesChanged: the tables changed since they were listed.
 	SetuprunCodeTablesChanged = "TABLES_CHANGED"
@@ -133,12 +132,6 @@ func (s *Setup) listedSchemas() []string {
 // publicSchema is the schema a dropped role's tables are ticked in.
 const publicSchema = "public"
 
-// errTicksRequired refuses to grant a listing the person did not tick: an
-// AGENT code whose role does not exist and that names no tables.
-func errTicksRequired(agent string) error {
-	return setuprunRefuse(SetuprunCodeNoTables, fmt.Sprintf("%s has no tables in this database: tick the tables to give %s on the connect page. Nothing changed", agent, agent))
-}
-
 // Include gives Prepare the tables the person left ticked on the connect
 // page. Prepare checks them after the database's own refusals (so a code
 // that already ran is USED, whatever the ticks): for a code without ticks
@@ -185,19 +178,12 @@ func errTablesChanged() error {
 }
 
 // NewSetuprun decodes code and applies the checks that need no database, in the
-// contract's order (step 1): the codec, CONNECT_ONLY unless connectPage
-// (the laptop command refuses a code without target before the clock
-// checks; the connect service runs it), then this clock and this binary's
-// guard (setupcode.CheckLocal).
-func NewSetuprun(b SetuprunBackend, code string, now time.Time, connectPage bool) (*Setup, error) {
+// contract's order (step 1): the codec (a code without target is
+// accepted), then this clock and this binary's guard (setupcode.CheckLocal).
+func NewSetuprun(b SetuprunBackend, code string, now time.Time) (*Setup, error) {
 	p, err := setupcode.Decode(code)
 	if err != nil {
 		return nil, err
-	}
-	if !connectPage {
-		if err := setupcode.CheckNotConnectOnly(p); err != nil {
-			return nil, err
-		}
 	}
 	if err := setupcode.CheckLocal(p, now, b.LatestVersion()); err != nil {
 		return nil, err
@@ -604,10 +590,16 @@ func (p *Prepared) Plan(ctx context.Context, allRows []string) (guardmodel.Scrip
 	return script, nil
 }
 
+// errPlannedUnticked is a plan of a setup whose tables are ticked on the
+// page (Ticked) made without its ticks. Prepare refuses such a setup
+// NO_TABLES first, so it never happens; the check keeps plan from ever
+// granting every listed table if it did.
+var errPlannedUnticked = errors.New("setup: a setup with ticks planned without them")
+
 func (p *Prepared) plan(ctx context.Context, policies []guardmodel.BlindTable) (guardmodel.Script, error) {
-	if (p.asInstall || p.noGrants) && p.Ticked() && !p.ticks {
+	if p.Ticked() && !p.ticks {
 		// Never every table in public: only the ones the person ticked.
-		return guardmodel.Script{}, errTicksRequired(p.P.Agent.Name)
+		return guardmodel.Script{}, errPlannedUnticked
 	}
 	opts := guardmodel.InitOptions{Names: p.Names, UpTo: p.P.Guard.To}
 	agent := ""
@@ -743,7 +735,7 @@ func Refused(ctx context.Context, b SetuprunBackend, q Querier, p setupcode.Payl
 		expires, _ := p.ExpiresTime() // the code passed Decode, so it parses
 		return &SetuprunRefusalError{Code: detail, Err: err, Message: fmt.Sprintf("this setup code expired on %s by the database's clock. Ask %s for a new one", expires.UTC().Format("2006-01-02 15:04 UTC"), agent)}
 	default:
-		return &SetuprunRefusalError{Code: detail, Err: err, Message: fmt.Sprintf("the database's clock refuses this setup code (%s): check the database's and this computer's clocks, or ask %s for a new code", detail, agent)}
+		return &SetuprunRefusalError{Code: detail, Err: err, Message: fmt.Sprintf("the database's clock refuses this setup code (%s): check the database's clock, or ask %s for a new code", detail, agent)}
 	}
 }
 

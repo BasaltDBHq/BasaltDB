@@ -186,7 +186,7 @@ const (
 )
 
 // Who operates the engine's machine: engine.json operatedBy (CONTRACT.md,
-// Setup from your laptop).
+// Setup).
 const (
 	OperatedByPerson = "PERSON"
 	OperatedByAgent  = "AGENT"

@@ -18,7 +18,7 @@
       "type": "string",
       "format": "uri",
       "pattern": "^(https://[A-Za-z0-9._~:/?#\\[\\]@!$&'()*+,;=%-]+|http://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]+)?([/?#][A-Za-z0-9._~:/?#\\[\\]@!$&'()*+,;=%-]*)?)$",
-      "description": "The URL exactly as it stands on its own line in personMessage: https, or http for a loopback host (localhost, 127.0.0.1, [::1]), with only RFC 3986 characters (bytes 0x21 to 0x7E), so the CLI can print it as an OSC 8 hyperlink (CONTRACT.md, Terminal hyperlinks)."
+      "description": "The URL exactly as it stands on its own line in personMessage: https, or http for a loopback host (localhost, 127.0.0.1, [::1]), with only RFC 3986 characters (bytes 0x21 to 0x7E), so no control byte reaches a terminal (CONTRACT.md, Links in the terminal)."
     }
   }
 }

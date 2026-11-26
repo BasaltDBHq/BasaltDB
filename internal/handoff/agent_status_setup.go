@@ -13,7 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
-// setupView is the agent's setup from the laptop as status reports it.
+// setupView is the agent's setup as status reports it.
 type setupView struct {
 	Status guidance.SetupStatus
 	// code and fingerprint are the pending code's while it is still live

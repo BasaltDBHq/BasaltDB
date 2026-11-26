@@ -1,6 +1,6 @@
 // Package setupcode encodes, decodes and checks the setup code that carries
 // an install from the bot's machine to the person's own computer
-// (CONTRACT.md, Setup from your laptop):
+// (CONTRACT.md, Setup):
 //
 //	basalt-setup.1.<b64url(deflate-raw(json))>.<check>
 //
@@ -10,7 +10,7 @@
 // The code-maker writes every field, so nothing in it is trusted: Decode
 // refuses anything outside setup-code.schema.json and the rules the schema
 // cannot state, and CheckLocal and CheckDatabase apply the clock and the
-// database's state on the person's computer.
+// database's state where the code runs, the connect service.
 package setupcode
 
 import (

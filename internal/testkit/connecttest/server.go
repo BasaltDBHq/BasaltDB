@@ -113,10 +113,9 @@ func (s *Server) Advance(d time.Duration) { s.skew.Add(int64(d)) }
 // Now is the service's clock.
 func (s *Server) Now() time.Time { return time.Now().Add(time.Duration(s.skew.Load())) }
 
-// request is a setup request as the connect service makes it: a
-// connect-only code is accepted (ConnectPage).
+// request is a setup request as the connect service makes it.
 func (s *Server) request(code string) setup.Request {
-	return setup.Request{Code: code, Now: s.Now(), ConnectPage: true}
+	return setup.Request{Code: code, Now: s.Now()}
 }
 
 // afterOpen is the request for CheckSetup and RunSetup: a code the page

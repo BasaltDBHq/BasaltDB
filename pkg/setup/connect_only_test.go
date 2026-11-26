@@ -25,28 +25,14 @@ func connectOnly(t *testing.T) func(p *setupcode.Payload) {
 	}
 }
 
-func connectPage(code string) setup.Request {
-	return setup.Request{Code: code, Now: time.Now(), ConnectPage: true}
-}
-
-// The laptop path refuses a connect-only code first, before the clock;
-// the connect page describes it with no target and the schema it asks for.
-func TestConnectOnlyRefusedOnTheLaptop(t *testing.T) {
+// A connect-only code is described with no target and the schema it asks
+// for.
+func TestConnectOnlyDescribed(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t)
 	code := newCode(t, d, connectOnly(t))
 
-	_, err := setup.Describe(request(code))
-	require.Equal(t, setup.CodeConnectOnly, codeOf(t, err))
-	require.Contains(t, err.Error(), "This setup code is for the connect page: open the link bot sent")
-	_, err = setup.Describe(setup.Request{Code: code, Now: time.Now().Add(48 * time.Hour)})
-	require.Equal(t, setup.CodeConnectOnly, codeOf(t, err), "before the clock checks")
-	_, err = setup.Check(context.Background(), d.Admin, request(code))
-	require.Equal(t, setup.CodeConnectOnly, codeOf(t, err))
-	_, err = setup.Run(context.Background(), d.Admin, request(code), setup.RunInput{})
-	require.Equal(t, setup.CodeConnectOnly, codeOf(t, err))
-
-	desc, err := setup.Describe(connectPage(code))
+	desc, err := setup.Describe(request(code))
 	require.NoError(t, err)
 	require.Nil(t, desc.Target)
 	require.Equal(t, []string{"public"}, desc.AllTablesSchemas)
@@ -72,7 +58,7 @@ func TestConnectOnlyAllTablesInstalls(t *testing.T) {
 		CREATE SCHEMA crm_app; CREATE TABLE crm_app.accounts (id bigint PRIMARY KEY)`)
 	code := newCode(t, d, connectOnly(t))
 
-	checked, err := setup.Check(ctx, d.Admin, connectPage(code))
+	checked, err := setup.Check(ctx, d.Admin, request(code))
 	require.NoError(t, err)
 	require.Equal(t, setup.ConnDatabase(d.Admin.Config()), checked.Database)
 	want := []string{"public.lead_notes", "public.lead_owner", "public.leads", "public.note_tags", "public.payroll"}
@@ -107,33 +93,36 @@ func TestConnectOnlyAllTablesInstalls(t *testing.T) {
 // setup's transaction, and compared with the plan's. The Approve callbacks
 // run their SQL on the admin connection, so inside that same transaction:
 // this tests that RecheckTables sees a change made after the plan and
-// before the script, not a change from another session. Without ticks (the
-// laptop command), a table made after the plan stops the setup; with
-// ticks, a ticked table dropped meanwhile does, and one made meanwhile is
-// not included. Either way TABLES_CHANGED, nothing changed. (A second
-// session could not drop payroll here: the setup's transaction holds a
-// lock on it from the row-level security read.)
+// before the script, not a change from another session. Without ticks (an
+// AGENT code whose role exists), a table made after the plan stops the
+// setup; with ticks, a ticked table dropped meanwhile does, and one made
+// meanwhile is not included. Either way TABLES_CHANGED, nothing changed.
+// (A second session could not drop payroll here: the setup's transaction
+// holds a lock on it from the row-level security read.)
 func TestAllTablesReadAgainInTheTransaction(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
 	d := guardtest.New(t).WithDemo(t)
+	before := installTwoOfFive(t, d)
 	code := newCode(t, d, func(p *setupcode.Payload) {
+		p.Kind, p.Agent.Verifier = setupcode.KindAgent, ""
 		p.Agent.Write, p.Agent.Read = nil, nil
 		p.Agent.AllTables = &setupcode.AllTables{Schemas: []string{"public"}}
 	})
-	_, give := personPasskey(t)
-	_, err := setup.Run(ctx, d.Admin, request(code), setup.RunInput{
-		Passkey: verified(t, give),
+	checked, err := setup.Check(ctx, d.Admin, request(code))
+	require.NoError(t, err)
+	require.False(t, checked.Ticked, "the role exists: no ticks")
+	_, err = setup.Run(ctx, d.Admin, request(code), setup.RunInput{
 		Approve: func(setup.Plan) error {
 			d.Exec(t, `CREATE TABLE public.made_meanwhile (id bigint PRIMARY KEY)`)
 			return nil
 		},
 	})
 	require.Equal(t, setup.CodeTablesChanged, codeOf(t, err))
-	require.Zero(t, installedVersion(t, d), "nothing changed")
-	require.False(t, roleExists(t, d, d.Names.Prefix+"_agent_bot"))
+	require.Equal(t, before, roleACL(t, d, d.Names.Prefix+"_agent_bot"), "nothing changed")
 
+	_, give := personPasskey(t)
 	d = guardtest.New(t).WithDemo(t)
 	code = newCode(t, d, connectOnly(t))
 	_, err = setup.Run(ctx, d.Admin, ticked(code, "public.leads", "public.payroll"), setup.RunInput{
@@ -160,7 +149,7 @@ func TestAllTablesReadAgainInTheTransaction(t *testing.T) {
 }
 
 func ticked(code string, tables ...string) setup.Request {
-	r := connectPage(code)
+	r := request(code)
 	r.Included = &setup.Included{Tables: tables}
 	return r
 }
@@ -196,7 +185,7 @@ func TestTickedTables(t *testing.T) {
 		_, err := setup.Check(ctx, d.Admin, ticked(code, c.tables...))
 		require.Equal(t, c.code, codeOf(t, err), name)
 	}
-	_, err := setup.Run(ctx, d.Admin, connectPage(code), setup.RunInput{})
+	_, err := setup.Run(ctx, d.Admin, request(code), setup.RunInput{})
 	require.Equal(t, setup.CodeNoTables, codeOf(t, err), "the page always sends its ticks")
 
 	checked, err := setup.Check(ctx, d.Admin, ticked(code, "public.leads", "public.events"))
@@ -231,16 +220,16 @@ func TestAllTablesNoTables(t *testing.T) {
 	ctx := context.Background()
 	d := guardtest.New(t)
 	code := newCode(t, d, connectOnly(t))
-	_, err := setup.Check(ctx, d.Admin, connectPage(code))
+	_, err := setup.Check(ctx, d.Admin, request(code))
 	require.Equal(t, setup.CodeNoTables, codeOf(t, err))
-	_, err = setup.Run(ctx, d.Admin, connectPage(code), setup.RunInput{})
+	_, err = setup.Run(ctx, d.Admin, request(code), setup.RunInput{})
 	require.Equal(t, setup.CodeNoTables, codeOf(t, err))
 	require.Zero(t, installedVersion(t, d), "nothing changed")
 }
 
 // A connect-only recovery code (AGENT with a verifier) creates the role as
 // an INSTALL does when it does not exist, with the person's ticks, and
-// rotates its password with the laptop's warning when it does.
+// rotates its password with the summary's warning when it does.
 func TestConnectOnlyRecoveryCode(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -252,12 +241,12 @@ func TestConnectOnlyRecoveryCode(t *testing.T) {
 	_, give := personPasskey(t)
 
 	first := newCode(t, d, recovery)
-	checked, err := setup.Check(ctx, d.Admin, connectPage(first))
+	checked, err := setup.Check(ctx, d.Admin, request(first))
 	require.NoError(t, err)
 	require.True(t, checked.RunsAsInstall)
 	require.True(t, checked.Ticked, "it runs as an INSTALL: the person ticks the tables")
 	require.Contains(t, checked.Summary[0], "This creates the agent bot")
-	_, err = setup.Run(ctx, d.Admin, connectPage(first), setup.RunInput{Passkey: verified(t, give)})
+	_, err = setup.Run(ctx, d.Admin, request(first), setup.RunInput{Passkey: verified(t, give)})
 	require.Equal(t, setup.CodeNoTables, codeOf(t, err), "no ticks: never every table in public")
 	_, err = setup.Run(ctx, d.Admin, ticked(first, "public.leads"), setup.RunInput{Passkey: verified(t, give)})
 	require.NoError(t, err)
@@ -267,13 +256,13 @@ func TestConnectOnlyRecoveryCode(t *testing.T) {
 	require.True(t, exists)
 
 	second := newCode(t, d, recovery)
-	checked, err = setup.Check(ctx, d.Admin, connectPage(second))
+	checked, err = setup.Check(ctx, d.Admin, request(second))
 	require.NoError(t, err)
 	require.False(t, checked.RunsAsInstall)
 	require.False(t, checked.Ticked)
 	require.Contains(t, checked.Summary[0], "This replaces the password of the existing agent bot")
 	require.Contains(t, checked.Summary[0], "Run it only if bot itself gave you this code.")
-	res, err := setup.Run(ctx, d.Admin, connectPage(second), setup.RunInput{})
+	res, err := setup.Run(ctx, d.Admin, request(second), setup.RunInput{})
 	require.NoError(t, err)
 	require.True(t, res.Ran)
 }

@@ -444,8 +444,7 @@ func TestInitRemoteHandsTheConnectLinkOnlyWithTheVaultOn(t *testing.T) {
 				requireConnectGuidance(t, r.res)
 				return
 			}
-			require.Empty(t, r.res.ConnectURL, "no link, no laptop command: the code is pasted at the connect page")
-			require.NotContains(t, r.res.PersonMessage, "--setup-code")
+			require.Empty(t, r.res.ConnectURL, "no link: the code is pasted at the connect page")
 			require.Contains(t, r.res.PersonMessage, "portal.basaltvault.app/connect")
 			require.LessOrEqual(t, utf8.RuneCountInString(r.res.PersonMessage), guidance.MaxPersonMessageLength)
 		})

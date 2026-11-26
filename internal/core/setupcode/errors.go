@@ -1,8 +1,8 @@
 package setupcode
 
-// Refusal names why a setup code is refused (CONTRACT.md, Setup from your
-// laptop). The codec's are the first four; the rest are the person's
-// computer's checks against its clock, its binary and the database.
+// Refusal names why a setup code is refused (CONTRACT.md, The setup
+// checks). The codec's are the first four; the rest are the runner's
+// checks against its clock, its binary and the database.
 type Refusal string
 
 // Refusals.
@@ -22,15 +22,12 @@ const (
 	RefusalSuperseded      Refusal = "SUPERSEDED"
 	RefusalRoleExists      Refusal = "ROLE_EXISTS"
 	RefusalRoleMissing     Refusal = "ROLE_MISSING"
-	// RefusalConnectOnly is a connect-only code on the laptop path: only the
-	// connect page runs it.
-	RefusalConnectOnly Refusal = "CONNECT_ONLY"
 )
 
 // Fixed messages (CONTRACT.md, The setup code).
 const (
 	msgNotASetupCode = "This is not a Basalt setup code."
-	msgUnsupported   = "This setup code is newer than basalt on this computer: update it from the release page."
+	msgUnsupported   = "This setup code is in a newer format than the connect service reads yet: try again later."
 	msgDamaged       = "This setup code is damaged; copy it again."
 	msgInvalid       = "This setup code is not valid"
 )

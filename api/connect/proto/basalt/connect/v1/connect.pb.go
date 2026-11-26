@@ -163,7 +163,7 @@ type SetupSummary struct {
 	// The engine's fingerprint, when the code carries an engine key.
 	EngineFingerprint string `protobuf:"bytes,14,opt,name=engine_fingerprint,json=engineFingerprint,proto3" json:"engine_fingerprint,omitempty"`
 	// The summary lines that do not depend on the database, in the words
-	// the removed laptop command showed.
+	// of the setup checks (CONTRACT.md, The setup checks).
 	Lines []string `protobuf:"bytes,15,rep,name=lines,proto3" json:"lines,omitempty"`
 	// The schemas of agent.allTables (public only); empty when the code
 	// names its tables in write and read.
@@ -560,7 +560,7 @@ type CheckSetupResponse struct {
 	// True when RunSetup needs a passkey registration.
 	PasskeyNeeded bool `protobuf:"varint,2,opt,name=passkey_needed,json=passkeyNeeded,proto3" json:"passkey_needed,omitempty"`
 	// Lines that depend on the database's state, in the words
-	// the removed laptop command showed.
+	// of the setup checks (CONTRACT.md, The setup checks).
 	Notes []string `protobuf:"bytes,3,rep,name=notes,proto3" json:"notes,omitempty"`
 	// True for an UPGRADE code with nothing to do: RunSetup then changes and
 	// records nothing.
@@ -1187,7 +1187,7 @@ type Question struct {
 	Kind string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
 	// schema.table.
 	Table string `protobuf:"bytes,2,opt,name=table,proto3" json:"table,omitempty"`
-	// The question, in the words the removed laptop command asked it.
+	// The question, in the words of the setup checks.
 	Text string `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
 	// The answers allowed: ALL_ROWS or NONE.
 	Choices       []string `protobuf:"bytes,4,rep,name=choices,proto3" json:"choices,omitempty"`
@@ -2516,7 +2516,7 @@ type Refusal struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// SCREAMING_SNAKE_CASE, from the refusals table in CONTRACT.md, Connect.
 	Reason string `protobuf:"bytes,1,opt,name=reason,proto3" json:"reason,omitempty"`
-	// The fixed message, in the words the laptop command uses. Never holds
+	// The fixed message, in the words of the setup checks. Never holds
 	// the connection string.
 	Message string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	// Set when trying again later can work.

@@ -363,55 +363,6 @@ func TestRunWithoutTheNeededPasskey(t *testing.T) {
 	require.False(t, committed)
 	require.Zero(t, installedVersion(t, d), "the migrations rolled back")
 	require.False(t, roleExists(t, d, d.Names.Prefix+"_agent_bot"))
-
-	// AddPasskey asks for one even when the database has one.
-	_, give := personPasskey(t)
-	_, err = setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Passkey: verified(t, give)})
-	require.NoError(t, err)
-	change := func() string {
-		return newCode(t, d, func(p *setupcode.Payload) { p.Kind, p.Agent.Verifier = setupcode.KindAgent, "" })
-	}
-	_, err = setup.Run(ctx, d.Admin, request(change()), setup.RunInput{AddPasskey: true})
-	require.Equal(t, setup.CodePasskeyRequired, codeOf(t, err))
-
-	// Passkey and AskPasskey together are a mistake, refused before anything.
-	_, err = setup.Run(ctx, d.Admin, request(change()), setup.RunInput{Passkey: verified(t, give), AskPasskey: give})
-	require.Error(t, err)
-}
-
-// The laptop's passkey step comes after the setup committed: when it
-// fails, the setup has run and Run says so.
-func TestRunAsksForThePasskeyAfterCommitting(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	d := guardtest.New(t).WithDemo(t)
-	var order []string
-	res, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{
-		Committed: func(setup.Result) { order = append(order, "committed") },
-		AskPasskey: func(context.Context) (setup.Passkey, error) {
-			order = append(order, "asked")
-			return setup.Passkey{}, errors.New("no code pasted")
-		},
-	})
-	require.Equal(t, setup.CodePasskeyNotRegistered, codeOf(t, err))
-	require.Contains(t, err.Error(), "the setup ran but no passkey was registered")
-	require.True(t, res.Ran, "the setup ran")
-	require.Equal(t, []string{"committed", "asked"}, order)
-
-	// A Passkey that Verify did not make is refused.
-	res, err = setup.Run(ctx, d.Admin, request(newCode(t, d, func(p *setupcode.Payload) {
-		p.Kind, p.Agent.Verifier = setupcode.KindAgent, ""
-	})), setup.RunInput{AskPasskey: func(context.Context) (setup.Passkey, error) { return setup.Passkey{}, nil }})
-	require.Equal(t, setup.CodePasskeyNotRegistered, codeOf(t, err))
-	require.True(t, res.Ran)
-
-	// The person's passkey, asked for and registered.
-	person, give := personPasskey(t)
-	res, err = setup.Run(ctx, d.Admin, request(newCode(t, d, func(p *setupcode.Payload) {
-		p.Kind, p.Agent.Verifier = setupcode.KindAgent, ""
-	})), setup.RunInput{AskPasskey: give})
-	require.NoError(t, err)
-	require.Equal(t, person.ID, res.Passkey.CredentialID)
 }
 
 // A passkey the database refuses to register rolls the whole setup back:

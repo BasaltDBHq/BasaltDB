@@ -246,7 +246,7 @@ func (r RemoteRun) withSetupGuidance(res RemoteInitResult, s config.Setup, conne
 }
 
 // connectOnlyResult is the result of a connect-only code: the connect link
-// and the fingerprint, no laptop command. A link over the budget is left
+// and the fingerprint. A link over the budget is left
 // out: the text says to paste the code at the connect page.
 func (r RemoteRun) connectOnlyResult(res RemoteInitResult, s config.Setup, connectBudget int) RemoteInitResult {
 	res.ConnectOnly = true

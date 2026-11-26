@@ -1,6 +1,6 @@
-// Package setup runs a Basalt setup code against a person's database, as
-// the removed laptop command did on their own computer (CONTRACT.md, The
-// setup checks), for a program other than the basalt CLI.
+// Package setup runs a Basalt setup code against a person's database
+// (CONTRACT.md, The setup checks), for a program other than the basalt
+// CLI: the connect service.
 //
 // Three steps match a page that runs a setup:
 //
@@ -44,20 +44,15 @@ type Request struct {
 	Code string
 	// Now is the clock the code's times are checked against.
 	Now time.Time
-	// ConnectPage accepts a connect-only code (no target), which only the
-	// connect service runs, with the database of the connection it opened.
-	// Unset, such a code is refused CONNECT_ONLY first, as the laptop
-	// command refuses it.
-	ConnectPage bool
 	// Included are the tables the person left ticked on the connect page
 	// (CONTRACT.md, Connect, Tables on the connect page); nil is no ticks
-	// (the laptop command, and CheckSetup, which lists every table). The
-	// connect page ticks tables of an INSTALL code with agent.allTables:
-	// Check and Run then cover exactly the included tables (their
-	// questions, columns and grants), an entry the listing lacks is
-	// TABLES_CHANGED, and none at all is NO_TABLES. For any other code its
-	// Tables must be empty (ANSWERS_INVALID). Run with ConnectPage refuses
-	// such a code without Included, NO_TABLES.
+	// (CheckSetup, which lists every table). The connect page ticks tables
+	// of an INSTALL code with agent.allTables: Check and Run then cover
+	// exactly the included tables (their questions, columns and grants), an
+	// entry the listing lacks is TABLES_CHANGED, and none at all is
+	// NO_TABLES. For any other code its Tables must be empty
+	// (ANSWERS_INVALID). Run refuses such a code without Included,
+	// NO_TABLES.
 	Included *Included
 }
 
@@ -168,7 +163,7 @@ func described(d setuprun.ContractDescription, err error) (Description, error) {
 
 // contractRequest is req as the setup service takes it.
 func contractRequest(req Request) setuprun.ContractRequest {
-	return setuprun.ContractRequest{Code: req.Code, Now: req.Now, ConnectPage: req.ConnectPage, Included: (*setuprun.ContractIncluded)(req.Included)}
+	return setuprun.ContractRequest{Code: req.Code, Now: req.Now, Included: (*setuprun.ContractIncluded)(req.Included)}
 }
 
 // description is the service's description of a code.
@@ -223,12 +218,11 @@ type Checked struct {
 	// order and then column order, with its class in the database now
 	// (UNCLASSIFIED with none stored, and in a database with no guard
 	// yet); for an UPGRADE code, which names no agent, the columns of every
-	// table with a readable column (pii_readable_columns()). Only with
-	// Request.ConnectPage.
+	// table with a readable column (pii_readable_columns()).
 	Columns []ColumnLabel
 	// Passkeys are the database's active passkeys, for a code with a
 	// target (the connect page's passkey list, CONTRACT.md, Update on the
-	// connect page). Only with Request.ConnectPage.
+	// connect page).
 	Passkeys []ActivePasskey
 }
 
@@ -372,20 +366,11 @@ type RunInput struct {
 	// before record_setup, whether or not the database needs one. A
 	// failure to register it rolls the whole setup back. An UPGRADE code
 	// with nothing to do runs nothing, so it stores no passkey either
-	// (Result.NothingToDo set, Result.Passkey nil).
+	// (Result.NothingToDo set, Result.Passkey nil). Without it and with a
+	// passkey needed (the database has no active portal passkey), Run
+	// refuses PASSKEY_REQUIRED in the transaction, before the setup's
+	// script runs: nothing changes.
 	Passkey *Passkey
-	// AskPasskey is the passkey step (The setup checks,
-	// step 7): Run calls it at most once, after the setup committed, and
-	// only when the database has no active portal passkey or AddPasskey is
-	// set. When it fails, the setup has run and Run returns
-	// PASSKEY_NOT_REGISTERED. Set Passkey or AskPasskey, not both.
-	//
-	// With neither set and a passkey needed, Run refuses PASSKEY_REQUIRED
-	// in the transaction, before the setup's script runs: nothing changes.
-	AskPasskey func(ctx context.Context) (Passkey, error)
-	// AddPasskey asks for the person's passkey even when the database has
-	// an active portal passkey.
-	AddPasskey bool
 	// Approve, when set, is shown the SQL before it runs. An error stops
 	// the run with nothing changed, and Run returns that error as it is.
 	// It runs inside the setup's open transaction, which holds locks on the
@@ -393,7 +378,7 @@ type RunInput struct {
 	// not wait on a person there.
 	Approve func(Plan) error
 	// Committed, when set, is called once the setup's transaction
-	// committed, before AskPasskey.
+	// committed.
 	Committed func(Result)
 	// ColumnClasses are the classes the person set on the connect page, at
 	// most 500, written in the setup's transaction after the grants, as
@@ -449,24 +434,13 @@ type Result struct {
 // plain one (ANSWERS_INVALID) before any read, then applies every refusal
 // of Check, in their order, and refuses an answer to a question Check
 // would not ask, or to one question twice (ANSWERS_INVALID). A refusal is
-// an *Error. Only with RunInput.AskPasskey
-// can the setup run without the passkey it needs: Run then returns
-// PASSKEY_NOT_REGISTERED, and Result says the setup ran.
+// an *Error.
 func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result, error) {
-	if in.Passkey != nil && in.AskPasskey != nil {
-		return Result{}, errors.New("setup: RunInput.Passkey and RunInput.AskPasskey are both set")
-	}
 	// Approve's error is Run's as it is, never an *Error.
 	var approveErr error
-	cin := setuprun.ContractRunInput{AllRows: in.Answers.AllRows, AddPasskey: in.AddPasskey, RestPublic: in.RestPublic}
+	cin := setuprun.ContractRunInput{AllRows: in.Answers.AllRows, RestPublic: in.RestPublic}
 	if in.Passkey != nil {
 		cin.Passkey = &in.Passkey.p
-	}
-	if in.AskPasskey != nil {
-		cin.AskPasskey = func(ctx context.Context) (setuprun.ContractPasskey, error) {
-			pk, err := in.AskPasskey(ctx)
-			return pk.p, err
-		}
 	}
 	if in.Approve != nil {
 		cin.Approve = func(p setuprun.ContractPlan) error {
@@ -531,9 +505,6 @@ const (
 	// CodePasskeyInvalid is a RunInput.Passkey that PasskeyRequest.Verify
 	// did not make.
 	CodePasskeyInvalid = setuprun.SetuprunCodePasskeyInvalid
-	// CodePasskeyNotRegistered is a setup that ran without registering the
-	// passkey it needed: only with RunInput.AskPasskey.
-	CodePasskeyNotRegistered = setuprun.CodePasskeyMissing
 	// CodeNoTables is an agent.allTables code whose schemas hold no table
 	// the admin role owns, or a connect page that ticked none: nothing
 	// changed.
@@ -544,9 +515,6 @@ const (
 	// CodeClassesChanged is a column label whose class stored now is not
 	// the one the page showed, or whose column is gone: nothing changed.
 	CodeClassesChanged = setuprun.SetuprunCodeClassesChanged
-	// CodeConnectOnly is a connect-only code given without
-	// Request.ConnectPage: only the connect page runs it.
-	CodeConnectOnly = string(setupcode.RefusalConnectOnly)
 	// CodeGuardUnusable is a database with an older BasaltDB install this
 	// version can neither install over nor update: remove it first, as the
 	// message's link says. Nothing changed.
@@ -568,8 +536,8 @@ var codes = []string{
 	string(setupcode.RefusalPrefixMismatch), string(setupcode.RefusalUsed), string(setupcode.RefusalSuperseded),
 	string(setupcode.RefusalRoleExists), string(setupcode.RefusalRoleMissing),
 	CodeEngineRevoked, CodeTargetMismatch, CodeTablesMissing,
-	CodeAnswersInvalid, CodePasskeyRequired, CodePasskeyInvalid, CodePasskeyNotRegistered, CodeSetupFailed,
-	CodeNoTables, CodeConnectOnly, CodeTablesChanged, CodeClassesChanged, CodeGuardUnusable,
+	CodeAnswersInvalid, CodePasskeyRequired, CodePasskeyInvalid, CodeSetupFailed,
+	CodeNoTables, CodeTablesChanged, CodeClassesChanged, CodeGuardUnusable,
 	CodeSetupUnconfirmed,
 }
 

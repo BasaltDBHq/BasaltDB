@@ -1,6 +1,6 @@
 package app
 
-// The address hand-off end to end (CONTRACT.md, Setup from your laptop, The
+// The address hand-off end to end (CONTRACT.md, Setup, The
 // engine and a connect-only code; Connect, The address hand-off): basalt
 // init --remote makes a connect-only code with no --database-url, the
 // connect page's calls run it in a real Postgres behind a TLS proxy that

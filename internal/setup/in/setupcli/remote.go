@@ -134,7 +134,7 @@ func printRemoteMCP(c *cli.IO, res setup.RemoteInitResult) error {
 }
 
 // printConnectOnly prints a connect-only code's result: the connect link
-// and the fingerprint, never a laptop command, or, over the link budget,
+// and the fingerprint, or, over the link budget,
 // the code to paste at the connect page.
 func printConnectOnly(c *cli.IO, res setup.RemoteInitResult, expires time.Time) error {
 	until := expires.UTC().Format("2006-01-02 15:04 UTC")

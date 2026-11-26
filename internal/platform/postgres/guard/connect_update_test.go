@@ -61,7 +61,7 @@ func TestRevokePasskeyWithTheAdminStringAlone(t *testing.T) {
 	const stmt = `DELETE FROM public.leads WHERE id = $1`
 	held, _ := previewAndHold(t, a.Conn, in, stmt, []any{3}, []string{})
 	code := updateCode(t, d, nil)
-	req := setup.Request{Code: code, Now: time.Now(), ConnectPage: true}
+	req := setup.Request{Code: code, Now: time.Now()}
 
 	// Check lists the passkeys for a code with a target.
 	checked, err := setup.Check(ctx, d.Admin, req)
@@ -71,10 +71,10 @@ func TestRevokePasskeyWithTheAdminStringAlone(t *testing.T) {
 	require.Equal(t, setup.PortalRPID, checked.Passkeys[0].RPID)
 
 	other := updateCode(t, d, func(pl *setupcode.Payload) { pl.Target.Database = "another_db" })
-	_, err = setup.RevokePasskey(ctx, d.Admin, setup.Request{Code: other, Now: time.Now(), ConnectPage: true}, p.ID)
+	_, err = setup.RevokePasskey(ctx, d.Admin, setup.Request{Code: other, Now: time.Now()}, p.ID)
 	require.Equal(t, setup.CodeTargetMismatch, setupCodeOf(t, err))
 	wrongPrefix := updateCode(t, d, func(pl *setupcode.Payload) { pl.Prefix = "zz" })
-	_, err = setup.RevokePasskey(ctx, d.Admin, setup.Request{Code: wrongPrefix, Now: time.Now(), ConnectPage: true}, p.ID)
+	_, err = setup.RevokePasskey(ctx, d.Admin, setup.Request{Code: wrongPrefix, Now: time.Now()}, p.ID)
 	require.Equal(t, string(setupcode.RefusalPrefixMismatch), setupCodeOf(t, err))
 	_, err = setup.RevokePasskey(ctx, d.Admin, req, []byte("not a passkey"))
 	require.Equal(t, setup.CodeAnswersInvalid, setupCodeOf(t, err))
@@ -101,7 +101,7 @@ func TestLabelsOnAnAgentCodeAfterInstall(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	d.NewAgent(t, "bot", leads, leads)
 	person(t, d)
-	req := setup.Request{Code: updateCode(t, d, nil), Now: time.Now(), ConnectPage: true}
+	req := setup.Request{Code: updateCode(t, d, nil), Now: time.Now()}
 	checked, err := setup.Check(ctx, d.Admin, req)
 	require.NoError(t, err)
 	require.NotEmpty(t, checked.Columns)
@@ -143,7 +143,7 @@ func TestCheckPasskeysWithoutAGuard(t *testing.T) {
 		require.NoError(t, err)
 		p.Kind, p.Guard.From, p.Agent.Verifier = setupcode.KindInstall, 0, verifier
 	})
-	checked, err := setup.Check(context.Background(), d.Admin, setup.Request{Code: code, Now: time.Now(), ConnectPage: true})
+	checked, err := setup.Check(context.Background(), d.Admin, setup.Request{Code: code, Now: time.Now()})
 	require.NoError(t, err)
 	require.Empty(t, checked.Passkeys)
 	require.True(t, checked.PasskeyNeeded)
@@ -161,7 +161,7 @@ func TestUpgradeWithNothingToDoRecordsTheTrustPin(t *testing.T) {
 	code := updateCode(t, d, func(p *setupcode.Payload) {
 		p.Kind, p.Agent, p.Guard.From = setupcode.KindUpgrade, nil, 0
 	})
-	req := setup.Request{Code: code, Now: time.Now(), ConnectPage: true}
+	req := setup.Request{Code: code, Now: time.Now()}
 	const pin = "5f9b77951a7aa1303f9b58eea9bfa89e5f9b77951a7aa1303f9b58eea9bfa89e"
 	_, err := setup.Run(ctx, d.Admin, req, setup.RunInput{RestPublic: true, TrustPin: &setup.TrustPin{Host: "db.internal.example.com", Port: 5432, SHA256: pin}})
 	require.Equal(t, setup.CodeAnswersInvalid, setupCodeOf(t, err))

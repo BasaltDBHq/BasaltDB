@@ -10,7 +10,7 @@ import (
 )
 
 // ClockSkew is the clock difference tolerated between the code-maker and
-// the person's computer (RI-13). Expiry itself has no skew.
+// the connect service, which runs the code (RI-13). Expiry itself has no skew.
 const ClockSkew = 5 * time.Minute
 
 // timeLayout is how refusals show a time: 2026-11-12 07:02 UTC.
@@ -22,7 +22,7 @@ const timeLayout = "2006-01-02 15:04 UTC"
 // does not have. Every guard version records setups.
 const MinGuardVersion = 1
 
-// CheckLocal applies the person's computer's checks to a decoded code, in
+// CheckLocal applies the runner's own checks to a decoded code, in
 // the contract's order: EXPIRED (now at or past expiresAt),
 // SETUP_ID_IN_FUTURE (the setupId's time more than ClockSkew ahead),
 // EXPIRY_TOO_FAR (expiresAt more than Lifetime and ClockSkew ahead), then
@@ -47,22 +47,12 @@ func CheckLocal(p Payload, now time.Time, binaryGuardVersion int) error {
 	case expires.After(now.Add(Lifetime + ClockSkew)):
 		return refuseWith(RefusalExpiryTooFar, futureMessage(agent))
 	case p.Guard.To > binaryGuardVersion:
-		return refuseWith(RefusalBinaryTooOld, "Update basalt on this computer to at least "+p.Build+".")
+		return refuseWith(RefusalBinaryTooOld, "This setup code needs BasaltDB "+p.Build+" or later: try again shortly.")
 	case p.Guard.To < MinGuardVersion:
 		return refuseWith(RefusalGuardTooOld, fmt.Sprintf("This setup code is for guard version %d, but setup codes need guard version %d or later. "+
 			"Ask %s for a new code made with an up-to-date basalt.", p.Guard.To, MinGuardVersion, agent))
 	}
 	return nil
-}
-
-// CheckNotConnectOnly refuses a connect-only code (no target) on the laptop
-// path (removed), before the clock checks: only the connect
-// page runs it (CONNECT_ONLY).
-func CheckNotConnectOnly(p Payload) error {
-	if !p.ConnectOnly() {
-		return nil
-	}
-	return refuseWith(RefusalConnectOnly, "This setup code is for the connect page: open the link "+p.agentWord()+" sent.")
 }
 
 // HasVerifier reports whether p sets the agent's password: an INSTALL
@@ -79,7 +69,7 @@ func (p Payload) KeepsGrants() bool {
 }
 
 func futureMessage(agent string) string {
-	return "This setup code claims a time in the future. Check this computer's clock, or ask " + agent + " for a new code."
+	return "This setup code claims a time in the future. Check the clock of the machine " + agent + " runs on, or ask " + agent + " for a new code."
 }
 
 // agentWord names the agent in messages: its name, or "your agent" for an
@@ -91,8 +81,8 @@ func (p Payload) agentWord() string {
 	return p.Agent.Name
 }
 
-// Database is what the person's computer read with the admin connection
-// string.
+// Database is what the runner (the connect service) read with the admin
+// connection string.
 type Database struct {
 	// Prefix of the installed basalt_meta (its owner role is
 	// <prefix>_guard); empty when none is installed.

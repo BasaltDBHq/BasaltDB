@@ -93,7 +93,7 @@ type approvalReads struct{ approvalsvc.Records }
 func (approvalReads) HasColumns() bool { return false }
 
 func (approvalReads) ColumnOrder(context.Context, []string) (map[string][]string, error) {
-	return nil, nil
+	return map[string][]string{}, nil
 }
 
 // statementLimit is the store's statement timeout, which a revert's answer

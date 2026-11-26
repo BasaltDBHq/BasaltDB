@@ -126,7 +126,7 @@ type storeReads struct{ Records }
 func (storeReads) HasColumns() bool { return false }
 
 func (storeReads) ColumnOrder(context.Context, []string) (map[string][]string, error) {
-	return nil, nil
+	return map[string][]string{}, nil
 }
 
 // testService is a service with what it takes to build it again under other

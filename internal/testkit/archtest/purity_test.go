@@ -103,7 +103,6 @@ var pkgLogicBaseline = []string{
 	"pkg/trustprofile: (*Profile).matchLen",
 	"pkg/trustprofile: (*Profile).VerifiesCA",
 	"pkg/trustprofile: (*Set).For",
-	"pkg/trustprofile: (*Set).Named",
 	"pkg/trustprofile: (*Set).Replacing",
 	"pkg/trustprofile: allNumeric",
 	"pkg/trustprofile: BuiltIns",

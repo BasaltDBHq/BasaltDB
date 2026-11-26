@@ -127,7 +127,7 @@ func TestOperatorReplacesAndDisables(t *testing.T) {
 	require.Nil(t, set.For(rdsHost))
 	require.Nil(t, set.For(supabaseHost), "a refused file named after a built-in keeps the built-in off")
 	states := map[string]trustprofile.State{}
-	for _, l := range set.Profiles() {
+	for _, l := range trustprofile.Profiles(set) {
 		states[string(l.Origin)+"/"+l.Name] = l.State
 	}
 	require.Equal(t, map[string]trustprofile.State{
@@ -401,7 +401,7 @@ func TestTrustScope(t *testing.T) {
 	require.NotNil(t, rds)
 	_, err = ca.Verify(x509.VerifyOptions{Roots: rds})
 	require.Error(t, err, "the RDS host does not trust the Supabase root")
-	for _, root := range set.Named("aws-rds").Certificates() {
+	for _, root := range trustprofile.BuiltInNamed("aws-rds").Certificates() {
 		_, err = root.Verify(x509.VerifyOptions{Roots: rds})
 		require.NoError(t, err, "the RDS host trusts %s", root.Subject)
 	}

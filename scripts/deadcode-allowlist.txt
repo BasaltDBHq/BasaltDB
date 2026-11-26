@@ -166,5 +166,4 @@ internal/setup/out/trustdir.otherRoots
 internal/status.ValidateURL
 internal/status.isLoopback
 internal/status.localStatus.report
-pkg/trustprofile.NameFor
 pkg/trustprofile.SetSystemRootsForTest

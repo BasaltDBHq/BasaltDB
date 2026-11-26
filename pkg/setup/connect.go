@@ -80,13 +80,14 @@ func ConnectReachBody(setupID, fingerprint, at string, a Target, result, reason 
 
 // VerifyConnectCollect checks a CollectAddress signature (64 bytes r || s)
 // by the engine key engineKey (91-byte P-256 SPKI DER with an uncompressed
-// point; any other encoding is refused). nil is a valid signature.
+// point; any other encoding is refused). It returns nil for a valid signature.
 func VerifyConnectCollect(engineKey, signature []byte, setupID, fingerprint, at string) error {
 	return channel.VerifyKeySignature(engineKey, channel.ContextConnectCollect, channel.ConnectCollectBody(setupID, fingerprint, at), signature)
 }
 
 // VerifyConnectReach checks a ReportReach signature as VerifyConnectCollect
-// checks a CollectAddress one, over ConnectReachBody.
+// checks a CollectAddress one, over ConnectReachBody. It returns nil for a
+// valid signature.
 func VerifyConnectReach(engineKey, signature []byte, setupID, fingerprint, at string, a Target, result, reason string) error {
 	return channel.VerifyKeySignature(engineKey, channel.ContextConnectReach,
 		channel.ConnectReachBody(setupID, fingerprint, at, a.Host, a.Port, a.Database, a.SupabaseRef, result, reason), signature)

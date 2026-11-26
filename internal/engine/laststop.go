@@ -56,13 +56,6 @@ func AnotherEngineRuns(t Terminal, lockPath string) bool {
 	return t.HeldAtEveryLook(func() bool { return t.LockHolderRuns(lockPath) }, time.Sleep)
 }
 
-// BinaryWatch finds the binary this process was started from.
-type BinaryWatch interface {
-	// ExecPath is the path this process was started from as arg0 names it,
-	// looked up on PATH, and checked to be the running binary exe.
-	ExecPath(arg0, exe string) (string, error)
-}
-
 // SuperviseBinaryPath is the path the supervisor was started from: a
 // crash restart resolves it again, so a new file at the same path is run
 // and a missing one is not looped on.

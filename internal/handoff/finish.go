@@ -23,27 +23,6 @@ const pendingLoginTimeout = 15 * time.Second
 // included, as basalt init --remote bounds the one it reads.
 const maxPendingBytes = 4096
 
-// FinishFiles reaches an agent's .pending credential, its credential file,
-// its .lock and the engine config the finisher clears the setup from.
-type FinishFiles interface {
-	// ReadPending reads the .pending credential, trimmed: an error wrapping
-	// fs.ErrNotExist when there is none, and an error when the file holds
-	// more than limit bytes.
-	ReadPending(limit int) (string, os.FileInfo, error)
-	// Promote moves the .pending credential over the credential file, once
-	// .pending still names the file read (pending).
-	Promote(pending os.FileInfo) error
-	Lock() (func(), error)
-	ClearSetup(agent, id string) (bool, error)
-}
-
-// AgentLogin is the agent's own connection the finisher reads with.
-type AgentLogin interface {
-	// SetupRecorded reports whether setup id is recorded in the database.
-	SetupRecorded(ctx context.Context, id uuid.UUID) (bool, error)
-	Close(ctx context.Context) error
-}
-
 // LoginTarget is a credential without its password.
 type LoginTarget struct {
 	Host     string

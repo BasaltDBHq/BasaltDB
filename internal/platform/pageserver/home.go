@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/web"
 )
@@ -37,6 +38,22 @@ const (
 	// HomeUnknown is a row that could not be read.
 	HomeUnknown = "UNKNOWN"
 )
+
+// HomeGuardOf is the guard's state in the home page's words: anything a
+// database update would change needs one, and a guard that could not be read
+// (nil) is UNKNOWN.
+func HomeGuardOf(st *guardmodel.Status) string {
+	if st == nil {
+		return HomeUnknown
+	}
+	switch st.State {
+	case guardmodel.GuardOK, guardmodel.GuardNewer:
+		return HomeGuardCurrent
+	case guardmodel.GuardUpgradeAvailable, guardmodel.GuardOutdated, guardmodel.GuardMissing:
+		return HomeGuardNeedsUpdate
+	}
+	return HomeUnknown
+}
 
 // Database kinds (Home.Providers, HomeCheck.Provider): the kind only.
 const (

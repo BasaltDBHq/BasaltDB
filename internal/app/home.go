@@ -9,8 +9,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
@@ -70,39 +68,6 @@ type homeAgent struct {
 	link string
 }
 
-// homeHealth reads the guard and the passkeys that can sign on the pages'
-// origin, as status counts them. A read that fails is UNKNOWN or nil.
-func (s *Service) homeHealth(ctx context.Context) (guard string, passkeys *int) {
-	guard = pageserver.HomeUnknown
-	if p := s.deps.Status.Probe; p == nil {
-		guard = pageserver.HomeGuardCurrent
-	} else if st, err := p.GuardStatus(ctx); err == nil {
-		guard = homeGuard(st)
-	} else {
-		s.deps.Core.Log.Debug("home: read the guard", "err", err)
-	}
-	all, err := s.deps.Status.Passkeys.Passkeys(ctx)
-	if err != nil {
-		s.deps.Core.Log.Debug("home: count passkeys", "err", err)
-		return guard, nil
-	}
-	keys, _ := passkey.OnPagesOrigin(all, s.deps.Core.PagesBase)
-	n := len(keys)
-	return guard, &n
-}
-
-// homeGuard is the guard state in the home page's words: anything a
-// database update would change needs one.
-func homeGuard(st guardmodel.Status) string {
-	switch st.State {
-	case guardmodel.GuardOK, guardmodel.GuardNewer:
-		return pageserver.HomeGuardCurrent
-	case guardmodel.GuardUpgradeAvailable, guardmodel.GuardOutdated, guardmodel.GuardMissing:
-		return pageserver.HomeGuardNeedsUpdate
-	}
-	return pageserver.HomeUnknown
-}
-
 // homeSource answers the home page for the engine's agents.
 type homeSource struct {
 	agents []homeAgent
@@ -150,8 +115,8 @@ func (h *homeSource) read(ctx context.Context) pageserver.Home {
 			}
 		}
 		if a.svc != nil {
-			g, p := a.svc.homeHealth(ctx)
-			guards, passkeys = append(guards, g), append(passkeys, p)
+			g, p := a.svc.status.HomeHealth(ctx)
+			guards, passkeys = append(guards, pageserver.HomeGuardOf(g)), append(passkeys, p)
 		}
 	}
 	slices.Sort(out.Providers)

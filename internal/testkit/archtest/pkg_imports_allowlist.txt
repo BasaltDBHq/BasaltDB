@@ -1,3 +1,7 @@
+pkg/setup: internal/core/channel
+pkg/setup: internal/core/guardmodel
+pkg/setup: internal/core/passkey
+pkg/setup: internal/core/setupcode
 pkg/setup: internal/handoff
 pkg/setup: internal/platform/postgres/setupstore
 pkg/setup: internal/setup

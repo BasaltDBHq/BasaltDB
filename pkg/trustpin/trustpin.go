@@ -20,6 +20,7 @@ import (
 	"time"
 
 	core "github.com/basaltdbhq/basaltdb/internal/core/trustpin"
+	"github.com/basaltdbhq/basaltdb/internal/lib/certroots"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgtls"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -43,7 +44,7 @@ type Seen = core.Seen
 // trust store (trustprofile.SystemRoots) and, for Public, the public roots
 // the binary carries as well (trustprofile.PublicRoots).
 func Check(chain []*x509.Certificate, host string, now time.Time) Seen {
-	return core.Check(chain, host, now)
+	return core.Check(chain, host, now, certroots.Store{})
 }
 
 // SubjectOf is c's subject as Subject gives a chain top's: RFC 2253,
@@ -73,7 +74,7 @@ func ValidSHA256(fp string) bool { return core.ValidSHA256(fp) }
 // the approval. The approval is never trusted on its own: the chain is the
 // caller's own reading.
 func Approved(chain []*x509.Certificate, host string, now time.Time, approved string) (Seen, *trustprofile.Profile, error) {
-	return core.Approved(chain, host, now, approved)
+	return core.Approved(chain, host, now, approved, certroots.Store{})
 }
 
 // Name is a certificate authority's short name, as the confirm step shows

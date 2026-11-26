@@ -77,7 +77,7 @@ type RootFile = core.RootFile
 // suffix on their own (CheckOperatorMatch). Any failure refuses the whole
 // profile.
 func Parse(raw []byte, origin Origin, read func(name string) ([]byte, error)) (*Profile, error) {
-	return core.Parse(raw, origin, read)
+	return core.Parse(raw, origin, read, certroots.Store{})
 }
 
 // ParseCAs is every certificate in a PEM file, each a CA (basicConstraints
@@ -170,15 +170,15 @@ func NewSet(builtin, operator []*Profile, refused []Refused) *Set {
 // BuiltIns are the embedded profiles, read once. The files are fixed at
 // build time and pinned by tests, so one that does not load is a broken
 // build.
-var BuiltIns = core.BuiltIns
+var BuiltIns = core.LoadBuiltIns(certroots.Store{})
 
 // BuiltInSet is the set of the built-in profiles alone.
-var BuiltInSet = core.BuiltInSet
+var BuiltInSet = core.SetOf(BuiltIns)
 
 // LoadFS loads every *.json profile in dir of fsys, its roots files read
 // from the same directory, failing on the first that does not load.
 func LoadFS(fsys fs.FS, dir string, origin Origin) ([]*Profile, error) {
-	return core.LoadFS(fsys, dir, origin)
+	return core.LoadFS(fsys, dir, origin, certroots.Store{})
 }
 
 // FileName is the file a profile called name is kept in.
@@ -200,7 +200,7 @@ type PinFiles = core.PinFiles
 // verify: ca when caOnly (a certificate that does not name the host). It is
 // built in memory and written nowhere.
 func NewPin(host string, cert *x509.Certificate, caOnly bool) (PinFiles, error) {
-	return core.NewPin(host, cert, caOnly)
+	return core.NewPin(host, cert, caOnly, certroots.Store{})
 }
 
 // CheckOperatorMatch refuses an operator's suffix entry that is a public
@@ -250,4 +250,6 @@ var PublicRoots = certroots.PublicRoots
 // IsPublic reports whether c is, or chains to, a publicly trusted root:
 // one of PublicRoots, or a root of system (the system's trust store when
 // nil, which also holds the roots an administrator added).
-func IsPublic(c *x509.Certificate, system *x509.CertPool) bool { return certroots.IsPublic(c, system) }
+func IsPublic(c *x509.Certificate, system *x509.CertPool) bool {
+	return core.IsPublic(c, system, certroots.Store{})
+}

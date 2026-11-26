@@ -21,7 +21,7 @@ func init() {
 }
 
 // SetSystemRootsForTest makes pool the system's trust store for SystemRoots
-// and IsPublic with a nil pool, until restore is called. Only tests call it.
+// and Store.System, until restore is called. Only tests call it.
 func SetSystemRootsForTest(pool *x509.CertPool) (restore func()) {
 	old := systemRoots.Load()
 	f := func() (*x509.CertPool, error) { return pool, nil } //nolint:unparam // the same type as x509.SystemCertPool
@@ -49,25 +49,6 @@ var PublicRoots = sync.OnceValue(func() *x509.CertPool {
 	return pool
 })
 
-// IsPublic reports whether c is, or chains to, a publicly trusted root:
-// one of PublicRoots, or a root of system (the system's trust store when
-// nil, which also holds the roots an administrator added).
-func IsPublic(c *x509.Certificate, system *x509.CertPool) bool {
-	opts := x509.VerifyOptions{Roots: PublicRoots(), KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}
-	if _, err := c.Verify(opts); err == nil {
-		return true
-	}
-	if system == nil {
-		var err error
-		if system, err = SystemRoots(); err != nil || system == nil {
-			return false // PublicRoots answered for the public authorities
-		}
-	}
-	opts.Roots = system
-	_, err := c.Verify(opts)
-	return err == nil
-}
-
 // WithSystem is the system's authorities and cas. Without a system pool (an
 // error loading it) it is cas alone. It reads x509.SystemCertPool itself,
 // not SystemRoots. The pool is never changed after.
@@ -81,3 +62,23 @@ func WithSystem(cas []*x509.Certificate) *x509.CertPool {
 	}
 	return pool
 }
+
+// Store is the system's trust store and the public roots, as a check that
+// takes its roots as an argument reads them.
+type Store struct{}
+
+// System is SystemRoots, or an empty pool when it fails or gives none:
+// never nil, since a nil pool would mean the system's store again.
+func (Store) System() *x509.CertPool {
+	pool, err := SystemRoots()
+	if err != nil || pool == nil {
+		return x509.NewCertPool()
+	}
+	return pool
+}
+
+// Public is PublicRoots.
+func (Store) Public() *x509.CertPool { return PublicRoots() }
+
+// WithSystem is WithSystem.
+func (Store) WithSystem(cas []*x509.Certificate) *x509.CertPool { return WithSystem(cas) }

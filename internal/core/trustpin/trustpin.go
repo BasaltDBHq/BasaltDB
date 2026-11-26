@@ -15,7 +15,6 @@ import (
 	"unicode"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/trustprofile"
-	"github.com/basaltdbhq/basaltdb/internal/lib/certroots"
 )
 
 // Seen is what Check found in a chain for a host.
@@ -45,23 +44,20 @@ type Seen struct {
 func (s Seen) Pinnable() bool { return !s.Public && (s.Full || s.NameOnly) }
 
 // Check is what chain, leaf first, proves for host, against the system's
-// trust store (certroots.SystemRoots) and, for Public, the public roots
-// the binary carries as well (certroots.PublicRoots).
-func Check(chain []*x509.Certificate, host string, now time.Time) Seen {
+// trust store (roots.System) and, for Public, the public roots the binary
+// carries as well (roots.Public).
+func Check(chain []*x509.Certificate, host string, now time.Time, roots trustprofile.Roots) Seen {
 	top := chain[len(chain)-1]
 	s := Seen{Top: top, SHA256: trustprofile.DERSHA256(top)}
 	inter := x509.NewCertPool()
 	for _, c := range chain[1:] {
 		inter.AddCert(c)
 	}
-	system, serr := certroots.SystemRoots()
-	if serr != nil || system == nil {
-		system = x509.NewCertPool() // PublicRoots still answer for the public authorities
-	}
+	system := roots.System() // empty when it does not load: the public roots still answer
 	opts := x509.VerifyOptions{DNSName: host, Roots: system, Intermediates: inter, CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	_, err := chain[0].Verify(opts)
 	s.System = err == nil
-	s.Public = s.System || publicChain(chain, inter, now, system)
+	s.Public = s.System || publicChain(chain, inter, now, system, roots)
 	opts.Roots = x509.NewCertPool()
 	opts.Roots.AddCert(top)
 	_, err = chain[0].Verify(opts)
@@ -77,16 +73,16 @@ func Check(chain []*x509.Certificate, host string, now time.Time) Seen {
 
 // publicChain reports whether the leaf chains, without the name, to a
 // public root or a root of system, or any certificate of chain is, or
-// chains to, one (certroots.IsPublic).
-func publicChain(chain []*x509.Certificate, inter *x509.CertPool, now time.Time, system *x509.CertPool) bool {
-	for _, roots := range []*x509.CertPool{certroots.PublicRoots(), system} {
-		opts := x509.VerifyOptions{Roots: roots, Intermediates: inter, CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}
+// chains to, one (trustprofile.IsPublic).
+func publicChain(chain []*x509.Certificate, inter *x509.CertPool, now time.Time, system *x509.CertPool, roots trustprofile.Roots) bool {
+	for _, pool := range []*x509.CertPool{roots.Public(), system} {
+		opts := x509.VerifyOptions{Roots: pool, Intermediates: inter, CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}
 		if _, err := chain[0].Verify(opts); err == nil {
 			return true
 		}
 	}
 	for _, c := range chain {
-		if certroots.IsPublic(c, system) {
+		if trustprofile.IsPublic(c, system, roots) {
 			return true
 		}
 	}
@@ -179,9 +175,9 @@ const sha256HexLen = 64
 // also for a malformed approved) and the chain verifies against it
 // (ErrNotPinnable). A public chain is never pinned (ErrPublic), whatever
 // the approval. The approval is never trusted on its own: the chain is the
-// caller's own reading.
-func Approved(chain []*x509.Certificate, host string, now time.Time, approved string) (Seen, *trustprofile.Profile, error) {
-	s := Check(chain, host, now)
+// caller's own reading. Check and the pin read roots.
+func Approved(chain []*x509.Certificate, host string, now time.Time, approved string, roots trustprofile.Roots) (Seen, *trustprofile.Profile, error) {
+	s := Check(chain, host, now, roots)
 	if s.Public {
 		return s, nil, ErrPublic
 	}
@@ -191,7 +187,7 @@ func Approved(chain []*x509.Certificate, host string, now time.Time, approved st
 	if !s.Full && !s.NameOnly {
 		return s, nil, ErrNotPinnable
 	}
-	pin, err := trustprofile.NewPin(host, s.Top, !s.Full)
+	pin, err := trustprofile.NewPin(host, s.Top, !s.Full, roots)
 	if err != nil {
 		return s, nil, err
 	}

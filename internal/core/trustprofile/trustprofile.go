@@ -33,8 +33,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-
-	"github.com/basaltdbhq/basaltdb/internal/lib/certroots"
 )
 
 // Origin is where a profile comes from.
@@ -152,8 +150,9 @@ func (p *Profile) Exact() bool { return exactOnly(p.Match) }
 // certificates in them. A disabled profile is only an operator's and names
 // nothing else. An operator profile's suffix entries must not be a public
 // suffix on their own (CheckOperatorMatch). Any failure refuses the whole
-// profile.
-func Parse(raw []byte, origin Origin, read func(name string) ([]byte, error)) (*Profile, error) {
+// profile. The profile's Pool, and the public-root check on an operator
+// verify: ca profile, read roots.
+func Parse(raw []byte, origin Origin, read func(name string) ([]byte, error), roots Roots) (*Profile, error) {
 	if len(raw) > MaxProfileBytes {
 		return nil, fmt.Errorf("the profile is over %d bytes", MaxProfileBytes)
 	}
@@ -184,11 +183,11 @@ func Parse(raw []byte, origin Origin, read func(name string) ([]byte, error)) (*
 	if err != nil {
 		return nil, err
 	}
-	if err := checkNotPublic(s, origin, files); err != nil {
+	if err := checkNotPublic(s, origin, files, roots); err != nil {
 		return nil, err
 	}
 	p := &Profile{Spec: s, Origin: origin, Files: files}
-	p.pool = sync.OnceValue(func() *x509.CertPool { return certroots.WithSystem(p.Certificates()) })
+	p.pool = sync.OnceValue(func() *x509.CertPool { return roots.WithSystem(p.Certificates()) })
 	p.own = sync.OnceValue(func() *x509.CertPool {
 		pool := x509.NewCertPool()
 		for _, c := range p.Certificates() {

@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/trustprofile"
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 // certLife is how long the test certificates are valid.

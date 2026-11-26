@@ -22,15 +22,6 @@ type (
 	Result = interface{ RowsAffected() int64 }
 )
 
-// Querier is the admin connection or transaction a plan or an apply runs on.
-// It is an alias of the interface itself, so an adapter that cannot import
-// this package still implements SetuprunBackend.
-type Querier = interface {
-	Exec(ctx context.Context, sql string, args ...any) (Result, error)
-	Query(ctx context.Context, sql string, args ...any) (Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) Row
-}
-
 // TxRunner runs fn in one transaction on the admin connection: committed
 // when fn returns nil, rolled back when it returns an error, which TxRunner
 // returns.

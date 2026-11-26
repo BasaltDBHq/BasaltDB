@@ -6,12 +6,6 @@ import (
 	"strings"
 )
 
-// Machine is what the printed basalt mcp command reads of the computer.
-type Machine interface {
-	// Executable is the absolute, link-resolved path of the running binary.
-	Executable() (string, error)
-}
-
 // MCPBinary is the program of the printed basalt mcp command: the absolute,
 // link-resolved path of the running binary, which the agent app finds
 // whatever its PATH is. Bare basalt only when the path is unknown.

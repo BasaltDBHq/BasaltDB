@@ -3,15 +3,13 @@ package setup
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
-	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
 )
 
 // The Update check on the connect page (CONTRACT.md, Connect, Update on the
@@ -31,28 +29,6 @@ type ActivePasskey struct {
 
 // PortalRPID is the relying party of the portal's passkeys.
 const PortalRPID = passkey.RPID
-
-// activePasskeys are the database's active passkeys; none in a database
-// with no guard yet.
-func activePasskeys(ctx context.Context, q guard.Querier) ([]ActivePasskey, error) {
-	var installed bool
-	// Plain SQL: a catalog presence check.
-	if err := q.QueryRow(ctx, "SELECT pg_catalog.to_regclass('basalt_meta.passkeys') IS NOT NULL").Scan(&installed); err != nil {
-		return nil, err
-	}
-	if !installed {
-		return nil, nil
-	}
-	keys, err := guard.ActivePasskeys(ctx, q)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]ActivePasskey, 0, len(keys))
-	for _, k := range keys {
-		out = append(out, ActivePasskey{CredentialID: bytes.Clone(k.ID), Label: k.Label, RPID: k.RPID, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt})
-	}
-	return out, nil
-}
 
 // AcceptsTrustRoot reports whether a certificate authority the person
 // trusted on the connect page (trustRoot) may be used for d: a connect-only
@@ -83,78 +59,23 @@ type Revoked struct {
 // active passkey is ANSWERS_INVALID, nothing changed. A refusal is an
 // *Error.
 func RevokePasskey(ctx context.Context, conn *pgx.Conn, req Request, credentialID []byte) (Revoked, error) {
-	s, err := setuprun.NewSetuprun(store, req.Code, req.Now, true)
+	r, err := contract.RevokePasskey(ctx, setupstore.Port(conn), adminAt(conn), contractRequest(req), credentialID)
 	if err != nil {
 		return Revoked{}, asError(err)
 	}
-	if s.P.Target == nil {
-		return Revoked{}, asError(&setuprun.SetuprunRefusalError{Code: string(setupcode.RefusalInvalid), Message: "a connect-only setup code names no database to remove a passkey from; ask your agent for a new one"})
-	}
-	if err := setuprun.CheckConnTarget(s.P, adminAt(conn)); err != nil {
-		return Revoked{}, asError(err)
-	}
-	installed, err := guard.InstalledPrefix(ctx, conn)
-	if err != nil {
-		return Revoked{}, asError(err)
-	}
-	// The prefix check alone of the database's state: the role is given as
-	// existing so no other refusal of step 4 applies here.
-	if err := setupcode.CheckDatabase(s.P, setupcode.Database{Prefix: installed, Roles: []string{s.P.Role()}}); err != nil {
-		return Revoked{}, asError(err)
-	}
-	var out Revoked
-	err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
-		active, err := activePasskeys(ctx, tx)
-		if err != nil {
-			return err
-		}
-		label, found := "", false
-		for _, k := range active {
-			if bytes.Equal(k.CredentialID, credentialID) {
-				label, found = k.Label, true
-			}
-		}
-		if !found {
-			return &setuprun.SetuprunRefusalError{Code: CodeAnswersInvalid, Message: msgPasskeyNotActive}
-		}
-		if _, err := guard.RevokePasskey(ctx, tx, credentialID, true); err != nil {
-			return err
-		}
-		left, err := activePasskeys(ctx, tx)
-		if err != nil {
-			return err
-		}
-		for _, k := range left {
-			if k.RPID == PortalRPID {
-				out.Remaining = append(out.Remaining, k)
-			}
-		}
-		out.Lines = revokedLines(label, len(out.Remaining))
-		return nil
-	})
-	if err != nil {
-		return Revoked{}, asError(err)
-	}
-	return out, nil
+	return Revoked{Remaining: activePasskeys(r.Remaining), Lines: r.Lines}, nil
 }
 
-// msgPasskeyNotActive is the contract's ANSWERS_INVALID message for a
-// passkey that is not active.
-const msgPasskeyNotActive = "This passkey is not active any more. Nothing changed."
-
-// revokedLines are the fixed sentences after a removal.
-func revokedLines(label string, portal int) []string {
-	out := []string{fmt.Sprintf("The passkey %s is removed: it can no longer approve or undo anything.", printable(label))}
-	if portal == 0 {
-		return append(out, "No passkey of this site is left: add one on this device before you approve.")
+// activePasskeys are the service's passkeys as the contract shows them:
+// nil stays nil (a database without the guard, or none left), and an
+// empty list stays empty (the guard, and no active passkey).
+func activePasskeys(keys []guardmodel.RegisteredPasskey) []ActivePasskey {
+	if keys == nil {
+		return nil
+	}
+	out := make([]ActivePasskey, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, ActivePasskey{CredentialID: bytes.Clone(k.ID), Label: k.Label, RPID: k.RPID, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt})
 	}
 	return out
-}
-
-// printable is label as a sentence shows it: quoted, a blank one named.
-func printable(label string) string {
-	if label == "" {
-		return "without a name"
-	}
-	return fmt.Sprintf("%q", label)
 }

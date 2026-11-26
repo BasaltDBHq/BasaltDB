@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -18,36 +19,6 @@ import (
 // connection a program other than the basalt CLI opened (pkg/setup, which
 // translates its types to and from these). It is its own use case, apart
 // from the local setup page's jobs (LocalService).
-
-// ContractBackend is the database side of the setup contract: the shared
-// run's backend, the setup's transaction on the admin connection, and the
-// label, trust pin and passkey calls it makes.
-type ContractBackend interface {
-	SetuprunBackend
-	// BeginTx begins a transaction on the connection q runs on; CommitTx
-	// and RollbackTx end it (a rollback after a commit is a no-op).
-	BeginTx(ctx context.Context, q Querier) (Querier, error)
-	CommitTx(ctx context.Context, tx Querier) error
-	RollbackTx(ctx context.Context, tx Querier) error
-	// CommitAnswered reports whether a failed commit's outcome is known:
-	// answered with an error, turned into a rollback, or never sent.
-	CommitAnswered(err error) bool
-	// ConnectedAs is the database and role q reached, as the server says
-	// them: current_database() and session_user.
-	ConnectedAs(ctx context.Context, q Querier) (database, user string, err error)
-	// ReadLabels and ReadReadableLabels run on a connection's port;
-	// ReadableTables and WriteLabels on a transaction's.
-	ReadLabels(ctx context.Context, conn Querier, n guardmodel.Names, tables []string) ([]guardmodel.ColumnLabel, error)
-	ReadReadableLabels(ctx context.Context, conn Querier, n guardmodel.Names) ([]guardmodel.ColumnLabel, error)
-	ReadableTables(ctx context.Context, tx Querier, n guardmodel.Names) ([]string, error)
-	WriteLabels(ctx context.Context, tx Querier, n guardmodel.Names, tables []string, changes []guardmodel.LabelChange, restPublic bool, at time.Time) (int, error)
-	RecordTrustPin(ctx context.Context, q Querier, host string, port int, sha256 string) error
-	// PasskeysInstalled reports whether the database has the guard's
-	// passkeys table.
-	PasskeysInstalled(ctx context.Context, q Querier) (bool, error)
-	ActivePasskeys(ctx context.Context, q Querier) ([]guardmodel.RegisteredPasskey, error)
-	RegisterPasskey(ctx context.Context, q Querier, cred passkey.Credential, label string) error
-}
 
 // Contract runs the setup contract on its backend.
 type Contract struct{ be ContractBackend }
@@ -153,6 +124,40 @@ type ContractChecked struct {
 type ContractPlan struct {
 	SQL      string
 	Warnings []string
+}
+
+// ContractPasskeyRequest is one registration of the person's portal
+// passkey: the request their answer is verified against, and the label the
+// passkey is stored with.
+type ContractPasskeyRequest struct {
+	Req   passkey.RegistrationRequest
+	Label string
+}
+
+// ContractPasskeyRequestFor rebuilds the registration request of a
+// challenge the caller issued, for a passkey named label (1 to
+// MaxPasskeyLabel bytes of UTF-8). The request copies the challenge's
+// bytes.
+func ContractPasskeyRequestFor(challenge, userID []byte, userName, displayName, label string) (ContractPasskeyRequest, error) {
+	if label == "" || len(label) > MaxPasskeyLabel || !utf8.ValidString(label) {
+		return ContractPasskeyRequest{}, fmt.Errorf("the passkey label must be 1 to %d bytes of UTF-8", MaxPasskeyLabel)
+	}
+	req, err := RegistrationRequestFor(challenge, userID, userName, displayName)
+	if err != nil {
+		return ContractPasskeyRequest{}, err
+	}
+	return ContractPasskeyRequest{Req: req, Label: label}, nil
+}
+
+// Verify checks the code the portal's registration page shows
+// (basalt-passkey.1....) against the request, and returns the passkey Run
+// registers.
+func (r ContractPasskeyRequest) Verify(code string) (ContractPasskey, error) {
+	cred, err := VerifyRegistrationCode(code, r.Req, passkey.Production)
+	if err != nil {
+		return ContractPasskey{}, err
+	}
+	return ContractPasskey{Cred: cred, Label: r.Label}, nil
 }
 
 // ContractPasskey is a verified portal passkey registration.

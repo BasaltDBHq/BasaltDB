@@ -261,7 +261,7 @@ func TestRulesCatchViolations(t *testing.T) {
 		"cmd/tool/c.go":                            "package main\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + "func main() {}\n",
 		"pkg/facade/p.go":                          "package facade\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
 		"pkg/lib2/p.go":                            "package lib2\n\n" + imp(m+"api/x"),
-		"pkg/setup/s.go":                           "package setup\n\n" + imp(m+"internal/platform/db"),
+		"pkg/setup/s.go":                           "package setup\n\n" + imp(m+"internal/setup", m+"internal/platform/postgres/setupstore", m+"internal/platform/db"),
 		"pkg/other/o.go":                           "package other\n\n" + imp(m+"internal/platform/db"),
 		"api/x/x.go":                               "package x\n",
 		"internal/platform/vault/vaulttest/h.go":   "package vaulttest\n\n" + imp(m+"internal/agent"),
@@ -306,6 +306,9 @@ func TestRulesCatchViolations(t *testing.T) {
 		"pkg/facade":                          {"imports internal/core/sqlguard", "p.go calls sqlguard.Check"},
 		"pkg/lib2":                            {"imports api/x"},
 		"pkg/other":                           {"imports internal/platform/db"},
+		// pkg/setup imports only its allowlist beyond its layer: the setup
+		// service and adapter pass, another outbound package does not.
+		"pkg/setup": {"imports internal/platform/db"},
 		"internal/status": {
 			"s.go imports database/sql (a service reaches the database and the network through a port)",
 			"s.go imports github.com/jackc/pgx/v5/pgconn (a service reaches the database and the network through a port)",

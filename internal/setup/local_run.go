@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -455,15 +454,6 @@ func (f engineFiles) writeConfig(req Request, uid uint32) error {
 		OperatedBy: "PERSON", PersonUIDs: []uint32{uid}, VaultDefault: config.VaultOff,
 	}, config.Agent{Name: req.Agent, OSUser: req.OSUser, Store: config.PostgresStore(f.credential)})
 	return err
-}
-
-// Users looks OS users up.
-type Users interface {
-	Lookup(name string) (*user.User, error)
-	LookupID(uid string) (*user.User, error)
-	GroupIDs(u *user.User) ([]string, error)
-	// Self is this engine's own uid.
-	Self() int
 }
 
 // checkOSUser accepts the agent's OS user: one that exists, is not root,

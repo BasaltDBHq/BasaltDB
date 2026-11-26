@@ -1,18 +1,13 @@
 package setup
 
 import (
-	"fmt"
-	"unicode/utf8"
-
-	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // PasskeyRequest is one registration of the person's portal passkey: the
 // link they open, and the request their answer is verified against.
 type PasskeyRequest struct {
-	req   passkey.RegistrationRequest
-	label string
+	r setuprun.ContractPasskeyRequest
 }
 
 // PasskeyChallenge is a registration request a caller made and showed the
@@ -36,32 +31,30 @@ type PasskeyChallenge struct {
 // checks the browser's answer against that challenge and user id. The
 // request copies the challenge's bytes.
 func PasskeyRequestFor(c PasskeyChallenge, label string) (PasskeyRequest, error) {
-	if label == "" || len(label) > setuprun.MaxPasskeyLabel || !utf8.ValidString(label) {
-		return PasskeyRequest{}, fmt.Errorf("the passkey label must be 1 to %d bytes of UTF-8", setuprun.MaxPasskeyLabel)
-	}
-	req, err := setuprun.RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
-	if err != nil {
-		return PasskeyRequest{}, err
-	}
-	return PasskeyRequest{req: req, label: label}, nil
+	return passkeyRequest(setuprun.ContractPasskeyRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName, label))
+}
+
+// passkeyRequest is the service's registration request, or its error.
+func passkeyRequest(r setuprun.ContractPasskeyRequest, err error) (PasskeyRequest, error) {
+	return PasskeyRequest{r: r}, err
 }
 
 // Verify checks the code the registration page shows
 // (basalt-passkey.1....) against the request and the portal, and returns
 // the passkey Run registers.
 func (r PasskeyRequest) Verify(code string) (Passkey, error) {
-	cred, err := setuprun.VerifyRegistrationCode(code, r.req, passkey.Production)
-	if err != nil {
-		return Passkey{}, err
-	}
-	return Passkey{cred: cred, label: r.label}, nil
+	return verifiedPasskey(r.r.Verify(code))
+}
+
+// verifiedPasskey is the service's verified passkey, or its error.
+func verifiedPasskey(p setuprun.ContractPasskey, err error) (Passkey, error) {
+	return Passkey{p: p}, err
 }
 
 // Passkey is a verified portal passkey registration. Only
 // PasskeyRequest.Verify makes one.
 type Passkey struct {
-	cred  passkey.Credential
-	label string
+	p setuprun.ContractPasskey
 }
 
 // RegisteredPasskey is a passkey a run stored.

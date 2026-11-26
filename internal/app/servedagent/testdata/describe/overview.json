@@ -21,10 +21,10 @@
     {
       "action": "TELL_AGENT",
       "actor": "PERSON",
-      "text": "Tell the agent when it needs one of these tables: it gives you a link where you pick them."
+      "text": "Tell the agent when it needs one of these resources: it gives you a link where you pick them."
     }
   ],
-  "personMessage": "1 table in this database is not granted to the agent, so it cannot see it. To give it one, tell the agent: it gives you a link where you pick the tables.",
+  "personMessage": "1 resource in this database is not granted to the agent, so it cannot see it. To give it one, tell the agent: it gives you a link where you pick the resources.",
   "resources": [
     {
       "access": [

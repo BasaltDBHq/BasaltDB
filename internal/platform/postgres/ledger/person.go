@@ -116,7 +116,7 @@ func (l *Person) RescopeRevert(ctx context.Context, id uuid.UUID, runs []uuid.UU
 	if err != nil {
 		return action.PreparedRevert{}, err
 	}
-	scope := action.Scope{Kind: revert.Scope(r.Scope), ID: r.ScopeID, Runs: runs, Tables: tables}
+	scope := action.Scope{Kind: revert.Scope(r.Scope), ID: r.ScopeID, Runs: runs, Resources: tables}
 	var out action.PreparedRevert
 	err = pgx.BeginTxFunc(ctx, l.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		var err error

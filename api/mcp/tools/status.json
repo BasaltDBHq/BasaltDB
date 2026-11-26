@@ -328,10 +328,10 @@
         "type": "object",
         "additionalProperties": false,
         "required": ["read", "write"],
-        "description": "The tables this agent's role can read and write. Absent when the database cannot be read.",
+        "description": "The resources this agent's role can read and write (Postgres: tables). Absent when the database cannot be read.",
         "properties": {
-          "read": { "type": "array", "items": { "type": "string" }, "description": "Tables the agent can read (schema-qualified), sorted; at most 200." },
-          "write": { "type": "array", "items": { "type": "string" }, "description": "Tables the agent can insert into, update or delete from, sorted; at most 200." },
+          "read": { "type": "array", "items": { "type": "string" }, "description": "Resources the agent can read, in the store's form (Postgres: schema.table), sorted; at most 200." },
+          "write": { "type": "array", "items": { "type": "string" }, "description": "Resources the agent can insert into, update or delete from, sorted; at most 200." },
           "truncated": { "type": "boolean", "description": "True when a list was cut at 200 names." }
         }
       },

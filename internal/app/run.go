@@ -648,11 +648,8 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 			pool.Reset()
 		})
 	}
-	finisher := &handoff.Finisher{
-		ConfigPath: env.configPath, Agent: a.Name, CredFile: a.Store.CredentialFile, Files: files,
-		Login: targetOf(pool.Config().ConnConfig), Parse: parseLogin, Password: password, Reset: pool.Reset,
-		Connect: connectAgent, Log: log,
-	}
+	finisher := agentFinisher(env.configPath, a.Name, a.Store.CredentialFile, files,
+		targetOf(pool.Config().ConnConfig), password, pool.Reset, log)
 	// Every read a tool call makes on the agent's connection is charged to
 	// the call's result budget (CONTRACT.md, QUERY_TIMEOUT SIZE_LIMIT, one
 	// budget per call). Reads outside a call (upkeep, the person's socket)

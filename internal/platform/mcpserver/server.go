@@ -16,6 +16,7 @@ import (
 	"runtime/debug"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -337,24 +338,10 @@ func (s *Server) call(ctx context.Context, tool Tool, args json.RawMessage) (out
 			if v == nil {
 				return
 			}
-			out, err = nil, panicError(s.info.OnPanic(tool.Name, v, debug.Stack()))
+			out, err = nil, guidance.PanicError(s.info.OnPanic(tool.Name, v, debug.Stack()))
 		}()
 	}
 	return tool.Call(budget.With(ctx), args)
-}
-
-// panicError is the INTERNAL error a tool that panicked answers with.
-func panicError(reportID string) *toolresult.ToolError {
-	te := &toolresult.ToolError{
-		Code: "INTERNAL", Message: "internal engine error",
-		NextSteps: []toolresult.NextStep{{Actor: toolresult.ActorAgent, Action: toolresult.ActionStop, Text: "Stop. Do not retry this call: the engine failed inside it."}},
-	}
-	if reportID == "" {
-		return te
-	}
-	te.PersonMessage = "The basalt engine hit an internal error and saved a crash report. " +
-		"Its id is " + reportID + ". The status tool names the report's file and the link to file it on GitHub."
-	return te
 }
 
 // addNotice appends the server's notice to res once per connection.

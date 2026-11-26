@@ -277,16 +277,16 @@ func TestPickResolvesOnce(t *testing.T) {
 		return nil, errors.New("no such host")
 	})
 	ctx := context.Background()
-	_, err := pick(ctx, r, "mixed.example.com")
+	_, err := Pick(ctx, r, "mixed.example.com")
 	require.ErrorIs(t, err, setupcode.ErrAddressInvalid)
-	_, err = pick(ctx, r, "metadata.example.com")
+	_, err = Pick(ctx, r, "metadata.example.com")
 	require.ErrorIs(t, err, setupcode.ErrAddressInvalid)
-	_, err = pick(ctx, r, "10.0.0.1")
+	_, err = Pick(ctx, r, "10.0.0.1")
 	require.ErrorIs(t, err, setupcode.ErrAddressInvalid, "an IP literal is checked as it is")
-	a, err := pick(ctx, r, "dual.example.com")
+	a, err := Pick(ctx, r, "dual.example.com")
 	require.NoError(t, err)
 	require.Equal(t, netip.MustParseAddr("8.8.4.4"), a)
-	_, err = pick(ctx, r, "nowhere.example.com")
+	_, err = Pick(ctx, r, "nowhere.example.com")
 	require.ErrorIs(t, err, errUnresolved)
 }
 
@@ -819,7 +819,7 @@ func TestSavedConnStringVerifiesSupabaseHost(t *testing.T) {
 	}
 	var pg *pgconn.PgError
 	require.ErrorAs(t, login(host), &pg)
-	require.Equal(t, sqlstateInvalidPassword, pg.Code)
+	require.Equal(t, "28P01", pg.Code) // invalid_password
 	require.Equal(t, ReasonTLSNotVerified, reasonOf(login("db.otherprojectref000000.supabase.co")))
 
 	// In production the engine opens it with Supabase's real root.

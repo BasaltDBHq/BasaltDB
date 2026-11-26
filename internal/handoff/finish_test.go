@@ -97,9 +97,21 @@ func fileFinisher(t *testing.T, id uuid.UUID) (*Finisher, *recordingPassword, *b
 			t.Fatal("no login expected")
 			return nil, errors.New("no login expected")
 		},
-		Log: slog.New(slog.NewTextHandler(logs, nil)),
+		Errors: pgErrors{},
+		Log:    slog.New(slog.NewTextHandler(logs, nil)),
 	}
 	return f, pw, logs
+}
+
+// pgErrors is setup.DBErrors on pgx's server errors, as internal/app gives.
+type pgErrors struct{}
+
+func (pgErrors) ServerMessage(err error) (string, bool) {
+	var pg *pgconn.PgError
+	if !errors.As(err, &pg) {
+		return "", false
+	}
+	return pg.Message, true
 }
 
 // A .pending credential for another database is logged once per setup, not

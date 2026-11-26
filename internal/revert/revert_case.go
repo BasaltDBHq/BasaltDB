@@ -50,7 +50,7 @@ type RunFinder interface {
 type Delivery interface {
 	AwaitWhile(ctx context.Context, wait time.Duration, pending func() bool, refresh func(context.Context) error) error
 	CarriesLarge(cost int64) bool
-	ColumnsOf(ctx context.Context, lines []string) approval.ColumnOrder
+	FieldsOf(ctx context.Context, lines []string) approval.FieldOrder
 	CredentialIDs(ctx context.Context) ([]passkey.Bytes, error)
 	Deliver(n linksvc.LinkNotice)
 	LargeShortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, cost int64) (string, error)

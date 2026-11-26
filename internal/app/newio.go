@@ -24,7 +24,7 @@ func newIO(ctx context.Context, std cli.Stdio, getenv func(string) string) *cli.
 		Getenv: getenv, Now: time.Now, Rand: rand.Reader, Goos: runtime.GOOS, Host: osHost{},
 		Shell: sh,
 		AgentLogin: func(ctx context.Context, dsn string) (cli.AgentConn, error) {
-			return handoffcli.LoginAsAgent(ctx, sh, dsn)
+			return handoffcli.LoginAsAgent(ctx, sh, pgErrors{}, dsn)
 		},
 		Dial: func(ctx context.Context, dsn string) (*pgx.Conn, error) {
 			return cli.Connect(ctx, sh, dsn)

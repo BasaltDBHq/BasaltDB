@@ -183,7 +183,7 @@ func TestRevertScopeFilters(t *testing.T) {
 	require.Len(t, lines, 2, "lead 31 and owner 1, run B only")
 
 	ownerOnly := onlyB
-	ownerOnly.Tables = []string{"public.lead_owner"}
+	ownerOnly.Resources = []string{"public.lead_owner"}
 	lines, err = guard.PreviewRevert(ctx, e.bot.Conn, ownerOnly)
 	require.NoError(t, err)
 	require.Len(t, lines, 1)
@@ -219,7 +219,7 @@ func TestRevertScopeFilters(t *testing.T) {
 	// that does not exist all read the same.
 	tableText := func(table string) string {
 		s := e.taskScope()
-		s.Tables = []string{table}
+		s.Resources = []string{table}
 		_, err := guard.PreviewRevert(ctx, e.bot.Conn, s)
 		requireScopeRefused(t, err, guard.ScopeFilter)
 		return strings.ReplaceAll(scopeErrorText(t, err), table, "<table>")
@@ -233,7 +233,7 @@ func TestRevertScopeFilters(t *testing.T) {
 	// typed READS_ONLY with the sentence as its hint (version 11).
 	empty := e.taskScope()
 	empty.Runs = []uuid.UUID{e.botA.RunID}
-	empty.Tables = []string{"public.lead_owner"}
+	empty.Resources = []string{"public.lead_owner"}
 	_, err = guard.PreviewRevert(ctx, e.bot.Conn, empty)
 	requireCode(t, err, guard.CodeNothingToRevert)
 	var pg *pgconn.PgError
@@ -448,7 +448,7 @@ func TestRevertScopeTableFilterApplies(t *testing.T) {
 	e := newScopeTask(t)
 	ctx := context.Background()
 	p := person(t, e.d)
-	s := action.Scope{Kind: revert.ScopeRun, ID: e.botB.RunID, Tables: []string{"public.lead_owner"}}
+	s := action.Scope{Kind: revert.ScopeRun, ID: e.botB.RunID, Resources: []string{"public.lead_owner"}}
 	prep, err := guard.PrepareRevert(ctx, e.bot.Conn, s, "Only the owner")
 	require.NoError(t, err)
 	as, err := p.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)

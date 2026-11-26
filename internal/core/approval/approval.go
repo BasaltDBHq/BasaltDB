@@ -174,20 +174,20 @@ type Request struct {
 	// agent), served only by the engine, never carried in a long link.
 	RevealNonce   passkey.Bytes   `json:"revealNonce,omitempty"`
 	CredentialIDs []passkey.Bytes `json:"credentialIds,omitempty"`
-	// Columns orders each resource's fields as its store does, for the
+	// Fields orders each resource's fields as its store does, for the
 	// page's display only (CONTRACT.md, Local pages): served only by the
 	// engine, never signed, never carried in a link.
-	Columns ColumnOrder `json:"columns,omitempty"`
+	Fields FieldOrder `json:"fields,omitempty"`
 }
 
-// ColumnOrder maps a resource, as the lines spell it, to its field names in
+// FieldOrder maps a resource, as the lines spell it, to its field names in
 // the store's order. A present but null value decodes to an empty, non-nil
 // map, so a link that names the field at all is told apart from one without
 // it.
-type ColumnOrder map[string][]string
+type FieldOrder map[string][]string
 
 // UnmarshalJSON decodes the map; null is an empty map, not an absent one.
-func (c *ColumnOrder) UnmarshalJSON(b []byte) error {
+func (c *FieldOrder) UnmarshalJSON(b []byte) error {
 	var m map[string][]string
 	if err := json.Unmarshal(b, &m); err != nil {
 		return err

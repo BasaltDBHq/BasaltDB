@@ -34,11 +34,11 @@ export const MAX_REVERT_BATCH = 200; // decision N12-3: lines per apply_revert_b
 export const REVERT_APPLY_HOURS = 24; // decision N12-2: a signed large plan runs within 24 hours
 export const ALG_ES256 = -7;
 
-const MAX_FRAGMENT_LENGTH = 1 << 20;
-const MAX_INFLATED_BYTES = 1 << 20;
-const CHALLENGE_BYTES = 32;
-const USER_ID_BYTES = 16;
-const MAX_LABEL_BYTES = 64;
+export const MAX_FRAGMENT_LENGTH = 1 << 20;
+export const MAX_INFLATED_BYTES = 1 << 20;
+export const CHALLENGE_BYTES = 32;
+export const USER_ID_BYTES = 16;
+export const MAX_LABEL_BYTES = 64;
 const SHA256_HEX_LENGTH = 64;
 
 export class CodeError extends Error {

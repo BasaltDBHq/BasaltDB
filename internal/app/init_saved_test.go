@@ -23,8 +23,8 @@ func TestServiceInstallRefusesAConnectionURLInitArg(t *testing.T) {
 	require.NoError(t, os.WriteFile(cfg, []byte("{}\n"), 0o600))
 	spec := servicespec.Spec{GOOS: "linux", Binary: "/b", ConfigPath: cfg, User: "basalt"}
 	for _, bad := range []string{"--write=postgres://u:p@h/db", "--os-user=password=x", "--database-url=x", "bot"} {
-		_, err := agentSpecFromStdin(strings.NewReader("postgres://a:b@h/d\n"), spec,
-			agentInstall{name: "bot", osUser: "tester", initArgs: []string{"--agent=bot", bad}}, true, false)
+		_, err := serviceInstaller().AgentSpec(strings.NewReader("postgres"+"://a:b@h/d\n"), spec,
+			agentInstall{Name: "bot", OSUser: "tester", InitArgs: []string{"--agent=bot", bad}}, true, false)
 		require.Error(t, err, bad)
 	}
 	raw, err := os.ReadFile(cfg)
@@ -46,14 +46,14 @@ func TestKeptCredentialSpec(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)
 	spec := servicespec.Spec{GOOS: "linux", Binary: "/b", ConfigPath: cfg, User: me(t)}
-	a := agentInstall{name: "bot", osUser: "tester", keepCredential: true, initArgs: []string{"--agent=bot"}}
+	a := agentInstall{Name: "bot", OSUser: "tester", KeepCredential: true, InitArgs: []string{"--agent=bot"}}
 
-	_, err := keptCredentialSpec(spec, a, false)
+	_, err := serviceInstaller().KeptCredentialSpec(spec, a, false)
 	require.ErrorContains(t, err, "--rotate-password", "a missing credential file is refused")
 
 	cred := filepath.Join(filepath.Dir(cfg), "agents", "bot.url")
 	require.NoError(t, config.WriteFile(cred, []byte("postgres://r:p@h/d\n")))
-	got, err := keptCredentialSpec(spec, a, false)
+	got, err := serviceInstaller().KeptCredentialSpec(spec, a, false)
 	require.NoError(t, err)
 	// The kept file is written back unchanged by the install, which owns it
 	// to the engine user, so a changed user can still read it.
@@ -78,15 +78,15 @@ func TestKeptCredentialSpecForAWaitingAgent(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, config.WriteFile(cfg, raw))
 	spec := servicespec.Spec{GOOS: "linux", Binary: "/b", ConfigPath: cfg, User: me(t)}
-	a := agentInstall{name: "bot", osUser: "tester", keepCredential: true, initArgs: []string{"--agent=bot"}}
+	a := agentInstall{Name: "bot", OSUser: "tester", KeepCredential: true, InitArgs: []string{"--agent=bot"}}
 
-	_, err = keptCredentialSpec(spec, a, false)
+	_, err = serviceInstaller().KeptCredentialSpec(spec, a, false)
 	require.ErrorContains(t, err, ".secret", "the engine's user must own the password the YES writes")
 	require.NoError(t, config.WriteFile(config.SecretPath(cred, "bot"), []byte("pw\n")))
-	got, err := keptCredentialSpec(spec, a, false)
+	got, err := serviceInstaller().KeptCredentialSpec(spec, a, false)
 	require.NoError(t, err)
 	require.Len(t, got.Files, 1, "no credential file is written")
-	dry, err := keptCredentialSpec(spec, a, true)
+	dry, err := serviceInstaller().KeptCredentialSpec(spec, a, true)
 	require.NoError(t, err)
 	require.Len(t, dry.Files, 1, "a dry run shows the same plan")
 	var written config.Config
@@ -97,7 +97,7 @@ func TestKeptCredentialSpecForAWaitingAgent(t *testing.T) {
 	raw, err = json.Marshal(config.Config{SocketDir: "/run/basalt", Agents: []config.Agent{{Name: "bot", OSUser: "tester", Store: config.PostgresStore(cred)}}})
 	require.NoError(t, err)
 	require.NoError(t, config.WriteFile(cfg, raw))
-	_, err = keptCredentialSpec(spec, a, false)
+	_, err = serviceInstaller().KeptCredentialSpec(spec, a, false)
 	require.ErrorContains(t, err, "--rotate-password")
 }
 

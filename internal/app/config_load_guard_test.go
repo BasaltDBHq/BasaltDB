@@ -32,6 +32,8 @@ var configLoaders = map[string]bool{
 // of the port stay in view.
 var portConfigLoaders = map[string]string{
 	"LoadConfig": "Load", "UpsertAgentVault": "UpsertAgentVault", "RemoveAgents": "RemoveAgents",
+	// setup.ServiceHost's, for basalt service install.
+	"LoadConfigNoFollow": "LoadNoFollow", "UpsertedVault": "UpsertedVault",
 }
 
 // importedNames is every name file f imports a package under.
@@ -65,8 +67,10 @@ var plainConfigLoads = map[string]string{
 	"internal/status/in/statusmcp/enginedown.go:LoadEngineDown:Load": "basalt mcp, as the agent's user",
 	// service install, as root, reads only pii.maxMemoryMB for the unit's
 	// memory limits, refusing a link at the config; the config itself is
-	// read again through openEngineFile before anything is written.
-	"internal/app/engine_commands.go:runServiceAt:LoadNoFollow": "the unit's memory limit only",
+	// read again through credfiles.OpenEngineFile before anything is written.
+	"internal/setup/service_install.go:Install:LoadNoFollow": "the unit's memory limit only",
+	// The service install's host forwards it for Install, listed above.
+	"internal/app/setuphost.go:LoadConfigNoFollow:LoadNoFollow": "a one-line forward; its caller, Install, is listed above",
 	// basalt mcp reads the socket directory and the agents from the config,
 	// as the agent's OS user.
 	"internal/engine/in/enginecli/mcp.go:RunMCPAt:Load": "basalt mcp, as the agent's user",
@@ -84,12 +88,13 @@ var plainConfigLoads = map[string]string{
 	"internal/setup/local_agentjobs.go:forget:Load": "a removal, after configuredAgent refused an engine that runs as root",
 	// The setup page's reset refuses an engine that runs as root before it
 	// reads the config.
-	"internal/setup/local_reset.go:engineConfig:Load":                      "the setup page's reset, after refusing an engine that runs as root",
-	"internal/app/setup.go:agentServiceSpec:UpsertedVault":                 "the hardened read: root opens the existing config through openEngineFile",
-	"internal/handoff/out/handofffiles/pathfiles.go:ClearSetup:ClearSetup": "the engine's hand-off, as the engine's user",
-	"internal/handoff/out/handofffiles/setupfiles.go:change:UpdateConfig":  "never as root: a root engine never collects an address (ErrEngineAsRoot), so the confirm step that writes the config is never reached",
-	"internal/setup/local_agentjobs.go:forget:RemoveAgents":                "a removal, after configuredAgent refused an engine that runs as root",
-	"internal/setup/local_run.go:writeConfig:UpsertAgentVault":             "an engine with no config writes its first engine.json; WaitsForConfig never waits as root",
+	"internal/setup/local_reset.go:engineConfig:Load":                             "the setup page's reset, after refusing an engine that runs as root",
+	"internal/setup/out/credfiles/service_install.go:UpsertedVault:UpsertedVault": "the hardened read: root opens the existing config through OpenEngineFile",
+	"internal/setup/service_install.go:agentServiceSpec:UpsertedVault":            "through setup.ServiceHost: the credfiles adapter above",
+	"internal/handoff/out/handofffiles/pathfiles.go:ClearSetup:ClearSetup":        "the engine's hand-off, as the engine's user",
+	"internal/handoff/out/handofffiles/setupfiles.go:change:UpdateConfig":         "never as root: a root engine never collects an address (ErrEngineAsRoot), so the confirm step that writes the config is never reached",
+	"internal/setup/local_agentjobs.go:forget:RemoveAgents":                       "a removal, after configuredAgent refused an engine that runs as root",
+	"internal/setup/local_run.go:writeConfig:UpsertAgentVault":                    "an engine with no config writes its first engine.json; WaitsForConfig never waits as root",
 	// The setup page's engine files forward each loader for the callers
 	// listed above (setup.EngineFiles), which reach them by port.
 	"internal/setup/out/enginefiles/enginefiles.go:LoadConfig:Load":                   "a one-line forward; its callers are listed above",

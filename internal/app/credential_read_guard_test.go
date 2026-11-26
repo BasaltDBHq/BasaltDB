@@ -17,8 +17,7 @@ import (
 
 const pgdialImport = "github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 
-// appImport is this package: it forwards credfiles' reader, so a call through
-// it from another package is a read too.
+// appImport is this package: it has no credential reader of its own.
 const appImport = "github.com/basaltdbhq/basaltdb/internal/app"
 
 // credentialReaders are the functions that read an agent's credential file:
@@ -40,10 +39,10 @@ var (
 
 // credfilesImport is the setup domain's credential file adapter: the readers
 // of basalt init --remote and basalt service install.
-// portCredentialReaders are the methods of setup.EngineFiles that forward a
-// credential reader: a call to one on any receiver other than a package
+// portCredentialReaders are the methods of setup.EngineFiles and
+// setup.ServiceHost that forward a credential reader: a call to one on any receiver other than a package
 // counts as a read, so the callers of the port stay in view.
-var portCredentialReaders = map[string]bool{"ReadCredentialFile": true}
+var portCredentialReaders = map[string]bool{"ReadCredentialFile": true, "ReadKeptCredential": true}
 
 const credfilesImport = "github.com/basaltdbhq/basaltdb/internal/setup/out/credfiles"
 
@@ -57,12 +56,9 @@ type readerPkg struct {
 	readers map[string]bool
 }
 
-// readerPkgs are the packages with credential readers, by import path. app
-// forwards credfiles' reader, which only it may reach (it imports the
-// adapter): a call through app is a read too.
+// readerPkgs are the packages with credential readers, by import path.
 var readerPkgs = map[string]readerPkg{
 	credfilesImport: {name: "credfiles", folder: "internal/setup/out/credfiles", readers: credfilesCredentialReaders},
-	appImport:       {name: "app", folder: "internal/app", readers: map[string]bool{"readKeptCredential": true}},
 }
 
 // folderReaders is the readers an unqualified call counts as in folder.
@@ -79,11 +75,11 @@ func folderReaders(folder string) map[string]bool {
 // call pgdial.CheckForeignDSN, each with why root never connects with a
 // string another user wrote there. Every other read must call it.
 var uncheckedCredentialReads = map[string]string{
-	"internal/setup/out/credfiles/keptcred_unix.go:ReadKeptCredential:readOwnedCredential": "service install writes it back for the engine's user and never connects with it",
-	"internal/app/engine_commands.go:keptCredentialSpec:readKeptCredential":                "service install writes it back for the engine's user and never connects with it",
-	// app forwards credfiles.ReadKeptCredential: a read site of its own, added
-	// with the move.
-	"internal/app/setupfiles.go:readKeptCredential:credfiles.ReadKeptCredential":                         "a one-line forward; its one caller, keptCredentialSpec, is listed above",
+	"internal/setup/out/credfiles/keptcred_unix.go:ReadKeptCredential:readOwnedCredential":     "service install writes it back for the engine's user and never connects with it",
+	"internal/setup/service_install.go:ServiceInstaller.KeptCredentialSpec:ReadKeptCredential": "service install writes it back for the engine's user and never connects with it",
+	// app forwards credfiles.ReadKeptCredential for setup.ServiceHost: a read
+	// site of its own.
+	"internal/app/setuphost.go:setupHost.ReadKeptCredential:credfiles.ReadKeptCredential":                "a one-line forward; its one caller, KeptCredentialSpec, is listed above",
 	"internal/setup/out/credfiles/keptcred_unix.go:readOwnCredential:readCredentialFile":                 "only a file this process's user owns (ownedByThisUser): root's own as root",
 	"internal/setup/out/credfiles/keptcred_unix.go:readCredentialFile:readCredentialFrom":                "its owner rule is its caller's, and its callers are listed here",
 	"internal/setup/out/credfiles/pathfiles.go:PathCredFiles.Read:readOwnCredential":                     "init --remote not as root",
@@ -339,11 +335,14 @@ import (
 func (s *t) a() { s.be.ReadCredentialFile("p"); other.ReadCredentialFile("p") }
 func b() { d, _ := files.ReadCredentialFile("p"); pgdial.CheckForeignDSN(d) }
 `), "internal/x"), "a call through the engine-files port is a read, on any receiver but a package")
+	require.Equal(t, map[string]bool{"x.go:t.c:ReadKeptCredential": false}, credentialReadsIn("x.go", parse(`package setup
+func (s t) c() { s.Host.ReadKeptCredential("p", "u") }
+`), "internal/setup"), "a call through the service install's host is a read")
 }
 
 // The guard follows credfiles' readers: qualified from any package, under
 // an alias or a dot-import, unqualified inside credfiles' own folder, and
-// through app's forwarder; not another package's function of the same name.
+// not another package's function of the same name.
 func TestCredentialReadGuardSeesCredfilesReaders(t *testing.T) {
 	t.Parallel()
 	parse := func(src string) *ast.File {
@@ -387,14 +386,10 @@ func a() { readCredentialFrom(f, nil); ReadKeptCredential(h, "p", "u") }
 import "example.com/other/credfiles"
 func a() { credfiles.ReadKeptCredential(h, "p", "u") }
 `), "internal/handoff"), "another package named credfiles is not this one")
-	require.Equal(t, map[string]bool{"x.go:a:app.readKeptCredential": false}, credentialReadsIn("x.go", parse(`package main
-import "`+appImport+`"
-func a() { app.readKeptCredential(h, "p", "u") }
-`), "cmd/basalt"), "app forwards credfiles' reader to cmd: a call through it is a read")
 	require.Empty(t, credentialReadsIn("x.go", parse(`package main
 import "`+appImport+`"
 func a() { app.ReadOwnCredential("p") }
-`), "cmd/basalt"), "app forwards only readKeptCredential")
+`), "cmd/basalt"), "app is no reader package")
 }
 
 // The reader table names real code: each package's folder holds Go files of

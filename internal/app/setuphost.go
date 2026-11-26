@@ -2,13 +2,16 @@ package app
 
 import (
 	"context"
+	"io"
 	"os"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/keyfile"
@@ -16,7 +19,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/credfiles"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/enginefiles"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
@@ -136,3 +141,40 @@ func probeLogin(c *cli.IO) func(context.Context, string) error {
 type pgErrors struct{}
 
 func (pgErrors) ServerMessage(err error) (string, bool) { return pgdial.ServerMessage(err) }
+
+// The service install's host (setup.ServiceHost): each method is the
+// adapter call it is named after.
+
+func (setupHost) LoadConfigNoFollow(path string) (config.Config, error) {
+	return config.LoadNoFollow(path)
+}
+
+func (setupHost) LoadEngineConfigAsSelf(path string) (config.Config, error) {
+	return cli.LoadEngineConfigAs(shell{}, os.Geteuid(), path)
+}
+
+func (setupHost) LockConfigAs(path string, uid int) (config.HeldLock, error) {
+	return config.LockConfigAs(path, uid)
+}
+
+func (h setupHost) ReadKeptCredential(path, engineUser string) (string, error) {
+	return credfiles.ReadKeptCredential(h, path, engineUser)
+}
+
+func (h setupHost) UpsertedVault(configPath, engineUser string, s config.Settings, a config.Agent) ([]byte, config.VaultWritten, error) {
+	return credfiles.UpsertedVault(h, configPath, engineUser, s, a)
+}
+
+func (setupHost) CredentialMissing(path string) bool { return credfiles.CredentialMissing(path) }
+
+func (setupHost) CheckAgentOSUser(osUser, engineUser string) error {
+	return setupcli.CheckAgentOSUser(osUser, engineUser)
+}
+
+func (setupHost) WithPluginUnits(spec servicespec.Spec, cfg config.Config, warn io.Writer) servicespec.Spec {
+	return plugin.ServiceUnits{Files: pluginPorts.Files, TerminalText: cli.TerminalText}.WithPluginUnits(spec, cfg, warn)
+}
+
+func (setupHost) InstallUnits(ctx context.Context, spec servicespec.Spec, dryRun bool, out, errw io.Writer) error {
+	return osservice.InstallService(ctx, spec, dryRun, out, errw)
+}

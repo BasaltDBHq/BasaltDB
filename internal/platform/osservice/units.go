@@ -41,7 +41,7 @@ const (
 )
 
 // pluginHostOf is what s's plugin units hide and who reaches their
-// sockets. It is plugin.HostFor's, from the fields withPluginUnits copied out
+// sockets. It is plugin.HostFor's, from the fields plugin.ServiceUnits copied out
 // of it.
 func pluginHostOf(s servicespec.Spec) servicespec.PluginHost {
 	h := servicespec.PluginHost{

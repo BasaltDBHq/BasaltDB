@@ -24,27 +24,27 @@ func TestServiceInstallKeepsTheVaultOnARerun(t *testing.T) {
 	install := func(a agentInstall) (string, string) {
 		t.Helper()
 		var lines bytes.Buffer
-		a.report = func(v config.VaultWritten) { lines.WriteString(a.vaultChoice().Line(v)) }
-		got, err := agentSpecFromStdin(strings.NewReader("postgres://agent:pw@h/db\n"), spec, a, true, false)
+		a.Report = func(v config.VaultWritten) { lines.WriteString(a.VaultChoice().Line(v)) }
+		got, err := serviceInstaller().AgentSpec(strings.NewReader("postgres"+"://agent:pw@h/db\n"), spec, a, true, false)
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(cfgPath, got.Files[0].Content, config.FileMode))
 		c, err := config.Load(cfgPath)
 		require.NoError(t, err)
 		return c.Vault, lines.String()
 	}
-	a := agentInstall{name: "bot", osUser: agentOSUser(t), personUIDs: []uint32{4242}}
+	a := agentInstall{Name: "bot", OSUser: agentOSUser(t), PersonUIDs: []uint32{4242}}
 
-	a.vaultDefault = config.VaultOff
+	a.VaultDefault = config.VaultOff
 	v, line := install(a)
 	require.Equal(t, config.VaultOff, v, "a new config takes the default")
 	require.Equal(t, "basalt: vault: off ("+setup.PersonDefaultWhy+")\n", line)
 
-	a.vault, a.vaultDefault = config.VaultOn, ""
+	a.Vault, a.VaultDefault = config.VaultOn, ""
 	v, line = install(a)
 	require.Equal(t, config.VaultOn, v, "--vault is the person's choice")
 	require.Equal(t, "basalt: vault: on (--vault=on)\n", line)
 
-	a.vault, a.vaultDefault = "", config.VaultOff
+	a.Vault, a.VaultDefault = "", config.VaultOff
 	v, line = install(a)
 	require.Equal(t, config.VaultOn, v, "a rerun without --vault never undoes the choice")
 	require.Equal(t, "basalt: vault: on (kept from engine.json; --vault=off to change)\n", line)

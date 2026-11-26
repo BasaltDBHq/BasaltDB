@@ -8,10 +8,6 @@ internal/app.NewAgentProbe
 internal/app.engineDownServer
 internal/config.LoadOpen
 internal/config.UpsertAgent
-internal/core/approval.Challenge
-internal/core/approval.NewPluginApprovalResponse
-internal/core/approval.ParsePluginRequest
-internal/core/approval.VerifyPlugin
 internal/core/channel.Initiator.ReadWelcome
 internal/core/channel.Initiator.readWelcome
 internal/core/channel.WriteHello

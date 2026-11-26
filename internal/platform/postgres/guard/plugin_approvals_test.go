@@ -18,7 +18,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -43,7 +42,7 @@ func intPtr(v int) *int { return &v }
 // signPlugin signs a plugin approval's binding text with p.
 func signPlugin(t *testing.T, p *passkeytest.Authenticator, a guardmodel.PluginApproval) guardmodel.PluginApprovalResponse {
 	t.Helper()
-	as, err := p.Sign(approval.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := p.Sign(passkeytest.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	return guardmodel.PluginApprovalResponse{ApprovalID: a.ID, Assertion: as}
 }
@@ -235,12 +234,12 @@ func TestAgentCannotForgePluginApproved(t *testing.T) {
 		_, err = guard.SubmitPluginApproval(ctx, a.Conn, signPlugin(t, stranger, opened))
 		requireInvalid(t, err, "unknown passkey")
 
-		as, err := p.Sign(approval.Challenge(opened.BindingText+" "), passkeytest.FlagsUPUV, nil)
+		as, err := p.Sign(passkeytest.Challenge(opened.BindingText+" "), passkeytest.FlagsUPUV, nil)
 		require.NoError(t, err)
 		_, err = guard.SubmitPluginApproval(ctx, a.Conn, guardmodel.PluginApprovalResponse{ApprovalID: opened.ID, Assertion: as})
 		requireInvalid(t, err, "client data does not match")
 
-		as, err = p.Sign(approval.Challenge(opened.BindingText), passkeytest.FlagUP, nil)
+		as, err = p.Sign(passkeytest.Challenge(opened.BindingText), passkeytest.FlagUP, nil)
 		require.NoError(t, err)
 		_, err = guard.SubmitPluginApproval(ctx, a.Conn, guardmodel.PluginApprovalResponse{ApprovalID: opened.ID, Assertion: as})
 		requireInvalid(t, err, "verification required")

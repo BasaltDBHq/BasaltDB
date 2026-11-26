@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
@@ -46,7 +45,7 @@ func TestAHeldDeleteOfALargeValueIsApproved(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, strings.Repeat("x", bigValue), oldBody, "the line carries the value whole")
 
-	as, err := e.person.Sign(approval.Challenge(held.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := e.person.Sign(passkeytest.Challenge(held.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.SubmitApproval(ctx, e.a.Conn, id, as)
 	require.NoError(t, err)

@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
@@ -382,7 +381,7 @@ func TestRevertScopeEmptyTaskProposal(t *testing.T) {
 	require.NoError(t, err, "the Go codec accepts the empty proposal")
 	require.True(t, b.Empty())
 
-	as, err := p.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := p.Sign(passkeytest.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, other.Conn, prep.RevertID, as)
 	requireCode(t, err, guard.CodeNothingToRevert)
@@ -451,7 +450,7 @@ func TestRevertScopeTableFilterApplies(t *testing.T) {
 	s := revertstore.Scope{Kind: revert.ScopeRun, ID: e.botB.RunID, Resources: []string{"public.lead_owner"}}
 	prep, err := guard.PrepareRevert(ctx, e.bot.Conn, s, "Only the owner")
 	require.NoError(t, err)
-	as, err := p.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := p.Sign(passkeytest.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	out, err := guard.ApplyRevert(ctx, e.bot.Conn, prep.RevertID, as)
 	require.NoError(t, err)

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
@@ -78,7 +79,7 @@ func TestPluginLinkRoundTrip(t *testing.T) {
 			require.Equal(t, "basalt-plugin-"+id.String()+".txt", file.FileName)
 			require.Equal(t, frag, file.Text)
 
-			got, b, err := approval.ParsePluginRequest("#" + frag)
+			got, b, err := approvaltest.ParsePluginRequest("#" + frag)
 			if v.Expect.Error != "" || (v.Expect.SettingsMatch != nil && !*v.Expect.SettingsMatch) {
 				require.ErrorIs(t, err, approval.ErrInvalid)
 				return
@@ -170,14 +171,14 @@ func TestPluginRequestRefuses(t *testing.T) {
 	// Only format 2.
 	f2, err := good.Fragment()
 	require.NoError(t, err)
-	_, _, err = approval.ParsePluginRequest("1." + strings.TrimPrefix(f2, linkcodec.Format2))
+	_, _, err = approvaltest.ParsePluginRequest("1." + strings.TrimPrefix(f2, linkcodec.Format2))
 	require.ErrorIs(t, err, approval.ErrInvalid)
 
 	// Exactly two texts: a held write's link with lines is not a plugin
 	// approval's.
 	three, err := linkcodec.EncodeRequest(v.Binding, []string{v.Settings, "{}"}, nil)
 	require.NoError(t, err)
-	_, _, err = approval.ParsePluginRequest(three)
+	_, _, err = approvaltest.ParsePluginRequest(three)
 	require.ErrorIs(t, err, approval.ErrInvalid)
 }
 
@@ -215,24 +216,24 @@ func TestVerifyPlugin(t *testing.T) {
 	id := pluginID(t, v.Binding)
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
-	as, err := person.Sign(approval.Challenge(v.Binding), passkeytest.FlagsUPUV, nil)
+	as, err := person.Sign(passkeytest.Challenge(v.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	body, err := json.Marshal(approval.NewPluginApprovalResponse(id, as))
+	body, err := json.Marshal(approvaltest.NewPluginResponse(id, as))
 	require.NoError(t, err)
 	resp, err := approval.DecodePluginResponse(body)
 	require.NoError(t, err)
 
-	count, err := approval.VerifyPlugin(v.Binding, person.Credential(), resp)
+	count, err := approvaltest.VerifyPlugin(v.Binding, person.Credential(), resp)
 	require.NoError(t, err)
 	require.Equal(t, uint32(1), count)
 
 	other := strings.Replace(v.Binding, `"0.3.1"`, `"0.3.2"`, 1)
-	_, err = approval.VerifyPlugin(other, person.Credential(), resp)
+	_, err = approvaltest.VerifyPlugin(other, person.Credential(), resp)
 	require.ErrorIs(t, err, passkey.ErrRejected)
 
 	moved := resp
 	moved.ApprovalID = uuid.Must(uuid.NewV7())
-	_, err = approval.VerifyPlugin(v.Binding, person.Credential(), moved)
+	_, err = approvaltest.VerifyPlugin(v.Binding, person.Credential(), moved)
 	require.ErrorContains(t, err, "binding for")
 }
 

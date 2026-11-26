@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -148,17 +149,17 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 	require.Equal(t, passkey.Bytes(person.ID), req.CredentialIDs[0])
 
 	// A signature over another text is refused by Postgres: nothing approved.
-	forged, err := person.Sign(approval.Challenge(opened.BindingText+" "), passkeytest.FlagsUPUV, nil)
+	forged, err := person.Sign(passkeytest.Challenge(opened.BindingText+" "), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	status, out = p.approve(opened.ID, secret, approval.NewPluginApprovalResponse(opened.ID, forged))
+	status, out = p.approve(opened.ID, secret, approvaltest.NewPluginResponse(opened.ID, forged))
 	require.Equal(t, http.StatusConflict, status, out)
 	require.Equal(t, "APPROVAL_INVALID", out["code"])
 	require.Equal(t, "The plugin approval code did not verify, so nothing was approved. Approve again on this page.", out["personMessage"])
 	require.Zero(t, pluginApprovedRows(t, d, bot.Role))
 
-	signed, err := person.Sign(approval.Challenge(opened.BindingText), passkeytest.FlagsUPUV, nil)
+	signed, err := person.Sign(passkeytest.Challenge(opened.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	status, out = p.approve(opened.ID, secret, approval.NewPluginApprovalResponse(opened.ID, signed))
+	status, out = p.approve(opened.ID, secret, approvaltest.NewPluginResponse(opened.ID, signed))
 	require.Equal(t, http.StatusOK, status, out)
 	require.Equal(t, "APPROVED", out["status"])
 	require.Equal(t, opened.ID.String(), out["approvalId"])
@@ -168,7 +169,7 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 	}
 
 	// Signed: the page can do nothing more with it.
-	status, out = p.approve(opened.ID, secret, approval.NewPluginApprovalResponse(opened.ID, signed))
+	status, out = p.approve(opened.ID, secret, approvaltest.NewPluginResponse(opened.ID, signed))
 	require.Equal(t, http.StatusConflict, status, out)
 	require.Equal(t, "APPROVAL_INVALID", out["code"])
 	require.Equal(t, "This plugin approval is already signed. The plugin starts within a few seconds of the signature.", out["personMessage"])

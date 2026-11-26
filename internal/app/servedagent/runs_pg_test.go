@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
@@ -88,7 +87,7 @@ func TestListRunsCountsWhatEachRunDid(t *testing.T) {
 	prep, err := guard.PrepareRevert(ctx, e.a.Conn,
 		revertstore.Scope{Kind: revert.ScopeChange, ID: uuid.MustParse(str(t, undo["changeId"]))}, "Undo lead 66")
 	require.NoError(t, err)
-	as, err := e.person.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := e.person.Sign(passkeytest.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, e.a.Conn, prep.RevertID, as)
 	require.NoError(t, err)

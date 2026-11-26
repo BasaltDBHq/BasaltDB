@@ -135,7 +135,7 @@ func (l pluginLedgers) open(t *testing.T, opener string, d guardmodel.PluginAppr
 // connection.
 func (l pluginLedgers) sign(t *testing.T, pk *passkeytest.Authenticator, relay string, a guardmodel.PluginApproval) {
 	t.Helper()
-	as, err := pk.Sign(approval.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := pk.Sign(passkeytest.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.SubmitPluginApproval(context.Background(), pgxOf(l.dbs[relay].db), guardmodel.PluginApprovalResponse{ApprovalID: a.ID, Assertion: as})
 	require.NoError(t, err)
@@ -274,7 +274,7 @@ func TestExpiredPendingIsReported(t *testing.T) {
 	l := newPluginLedgers(t, f)
 	a := l.open(t, "product_a", honestDetail(p, approval.AgentName("product_a")), p.ApprovalSettings())
 	pk := l.person(t)
-	as, err := pk.Sign(approval.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := pk.Sign(passkeytest.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	l.d.Exec(t, `UPDATE basalt_meta.plugin_approvals SET expires_at = now() - interval '1 second'`)
 

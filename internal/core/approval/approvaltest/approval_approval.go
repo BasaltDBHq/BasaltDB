@@ -8,6 +8,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 )
 
 // fromCompact is the request a format 2 link carries, its id read from the
@@ -58,7 +59,7 @@ func Verify(bindingText string, cred passkey.Credential, r approval.Response) (u
 	if b.ApprovalID != r.ApprovalID {
 		return 0, approval.Invalid("response is for approval %s, binding for %s", r.ApprovalID, b.ApprovalID)
 	}
-	count, err := passkey.VerifyAssertion(cred, approval.Challenge(bindingText), r.Assertion())
+	count, err := passkey.VerifyAssertion(cred, passkeytest.Challenge(bindingText), r.Assertion())
 	if err != nil {
 		return 0, fmt.Errorf("approval %s: %w", r.ApprovalID, err)
 	}

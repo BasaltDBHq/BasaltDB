@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -44,7 +43,7 @@ func (p localPages) signRevertPage(id, secret string, person *passkeytest.Authen
 	require.Equal(p.t, http.StatusOK, p.get("/api/v1/reverts/"+id, secret, &req))
 	b, err := req.Check()
 	require.NoError(p.t, err)
-	as, err := person.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
+	as, err := person.Sign(passkeytest.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(p.t, err)
 	body, err := json.Marshal(reverttest.NewResponse(b.RevertID, as))
 	require.NoError(p.t, err)
@@ -99,7 +98,7 @@ func longLinkBinding(t *testing.T, link string) (uuid.UUID, string) {
 
 func signBinding(t *testing.T, signer *passkeytest.Authenticator, binding string) passkey.Assertion {
 	t.Helper()
-	as, err := signer.Sign(approval.Challenge(binding), passkeytest.FlagsUPUV, nil)
+	as, err := signer.Sign(passkeytest.Challenge(binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	return as
 }

@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -121,7 +120,7 @@ func TestPageAPIBodiesGolden(t *testing.T) {
 	forger, err := passkeytest.New(e.person.Credential().Relying)
 	require.NoError(t, err)
 	forger.ID = e.person.ID
-	as, err := forger.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
+	as, err := forger.Sign(passkeytest.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	c.post("revert_apply_bad_assertion", revertPath(revertID)+"/apply", secret, reverttest.NewResponse(revertID, as))
 

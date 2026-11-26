@@ -111,7 +111,7 @@ func buildFixtures(t *testing.T) fixtures {
 	f.Request.CredentialIDs = []string{passkey.Bytes(seq(16, 1)).String()}
 	f.Request.Fragment = frag
 	f.Request.RowsHash = approval.RowsHash(lines)
-	f.Request.Challenge = passkey.Bytes(approval.Challenge(binding)).String()
+	f.Request.Challenge = passkey.Bytes(passkeytest.Challenge(binding)).String()
 
 	resp := approval.Response{
 		ApprovalID:        approvalID,
@@ -327,7 +327,7 @@ func TestVerify(t *testing.T) {
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 
-	as, err := person.Sign(approval.Challenge(binding), passkeytest.FlagsUPUV, nil)
+	as, err := person.Sign(passkeytest.Challenge(binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	body, err := json.Marshal(approvaltest.NewResponse(approvalID, as))
 	require.NoError(t, err)
@@ -353,7 +353,7 @@ func TestVerify(t *testing.T) {
 		agent, err := passkeytest.New(passkey.Production)
 		require.NoError(t, err)
 		agent.ID = person.ID
-		forged, err := agent.Sign(approval.Challenge(binding), passkeytest.FlagsUPUV, nil)
+		forged, err := agent.Sign(passkeytest.Challenge(binding), passkeytest.FlagsUPUV, nil)
 		require.NoError(t, err)
 		_, err = approvaltest.Verify(binding, person.Credential(), approvaltest.NewResponse(approvalID, forged))
 		require.ErrorContains(t, err, "bad passkey signature")
@@ -376,7 +376,7 @@ func TestDecodeResponseRefuses(t *testing.T) {
 func TestChallengeHashesUTF8Bytes(t *testing.T) {
 	t.Parallel()
 	want := sha256.Sum256([]byte("é"))
-	require.True(t, bytes.Equal(want[:], approval.Challenge("é")))
+	require.True(t, bytes.Equal(want[:], passkeytest.Challenge("é")))
 }
 
 // The engine relays only texts that follow the text rules: Fragment, and

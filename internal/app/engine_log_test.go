@@ -11,7 +11,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 )
 
-// The log basalt engine and basalt mcp write (engineLog) prints a short
+// The log basalt engine and basalt mcp write (logredact.NewTextLogger) prints a short
 // link's secret neither as a string nor inside an error, and an error that
 // wraps a link token with %v prints no token.
 func TestEngineLogRedactsLinkSecrets(t *testing.T) {

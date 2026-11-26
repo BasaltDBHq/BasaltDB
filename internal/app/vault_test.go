@@ -25,7 +25,7 @@ func TestServiceInstallKeepsTheVaultOnARerun(t *testing.T) {
 		t.Helper()
 		var lines bytes.Buffer
 		a.Report = func(v config.VaultWritten) { lines.WriteString(a.VaultChoice().Line(v)) }
-		got, err := serviceInstaller().AgentSpec(strings.NewReader("postgres" + "://agent:pw@h/db\n"), spec, a, true, false)
+		got, err := serviceInstaller().AgentSpec(strings.NewReader("postgres"+"://agent:pw@h/db\n"), spec, a, true, false)
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(cfgPath, got.Files[0].Content, config.FileMode))
 		c, err := config.Load(cfgPath)

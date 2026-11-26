@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/user"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -21,13 +22,16 @@ import (
 type fakeServiceHost struct {
 	calls     []string
 	installed servicespec.Spec
+	// lockDir, when set, takes a real config lock there as this process's
+	// user; otherwise a lock is refused.
+	lockDir string
 }
 
 func (h *fakeServiceHost) OSDefaultUser(string) string { return "basalt" }
 
 func (h *fakeServiceHost) OSLookupUID(string) int {
 	h.calls = append(h.calls, "uid")
-	return 1
+	return os.Getuid()
 }
 
 func (h *fakeServiceHost) LoadConfigNoFollow(string) (config.Config, error) {
@@ -39,9 +43,12 @@ func (h *fakeServiceHost) LoadEngineConfigAsSelf(string) (config.Config, error) 
 	return config.Config{}, os.ErrNotExist
 }
 
-func (h *fakeServiceHost) LockConfigAs(string, int) (config.HeldLock, error) {
+func (h *fakeServiceHost) LockConfigAs(_ string, uid int) (config.HeldLock, error) {
 	h.calls = append(h.calls, "lock")
-	return config.HeldLock{}, errors.New("no lock in a dry run")
+	if h.lockDir == "" {
+		return config.HeldLock{}, errors.New("no lock in a dry run")
+	}
+	return config.LockConfigAs(filepath.Join(h.lockDir, "engine.json"), uid)
 }
 
 func (h *fakeServiceHost) ReadKeptCredential(string, string) (string, error) {
@@ -50,7 +57,7 @@ func (h *fakeServiceHost) ReadKeptCredential(string, string) (string, error) {
 
 func (h *fakeServiceHost) UpsertedVault(string, string, config.Settings, config.Agent) ([]byte, config.VaultWritten, error) {
 	h.calls = append(h.calls, "upsert")
-	return nil, config.VaultWritten{}, nil
+	return []byte("{}\n"), config.VaultWritten{}, nil
 }
 func (h *fakeServiceHost) CredentialMissing(string) bool         { return true }
 func (h *fakeServiceHost) CheckAgentOSUser(string, string) error { return nil }
@@ -105,4 +112,23 @@ func TestServiceInstallRefusesABadSudoUID(t *testing.T) {
 	}, strings.NewReader(""), io.Discard, io.Discard)
 	require.ErrorContains(t, err, setup.EnvSudoUID+": ")
 	require.Equal(t, []string{"load"}, h.calls)
+}
+
+// A real install holds the config lock from before the agent's config is
+// read until the units are installed and the lock is handed to the
+// engine's user, and tells the person the vault it wrote.
+func TestServiceInstallHoldsTheLockUntilTheUnitsAreInstalled(t *testing.T) {
+	t.Parallel()
+	h := &fakeServiceHost{lockDir: t.TempDir()}
+	var errw bytes.Buffer
+	err := setup.ServiceInstaller{Host: h, Users: installUsers{}}.Install(context.Background(), setup.ServiceInstall{
+		GOOS: "linux", Binary: "/usr/local/bin/basalt", ConfigPath: "/etc/basalt/engine.json", User: "basalt",
+		CredentialStdin: true,
+		Agent:           setup.AgentInstall{Name: "bot", OSUser: "bot", PersonUIDs: []uint32{4242}},
+	}, strings.NewReader("postgres"+"://agent:pw@h/db\n"), io.Discard, &errw)
+	require.NoError(t, err)
+	require.Equal(t, []string{"load", "uid", "lock", "upsert", "load", "install", "uid"}, h.calls)
+	require.Equal(t, "{}\n", string(h.installed.Files[0].Content))
+	require.Equal(t, "postgres"+"://agent:pw@h/db\n", string(h.installed.Files[1].Content))
+	require.Contains(t, errw.String(), "vault:", "the vault line")
 }

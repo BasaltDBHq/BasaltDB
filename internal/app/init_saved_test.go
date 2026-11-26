@@ -23,7 +23,7 @@ func TestServiceInstallRefusesAConnectionURLInitArg(t *testing.T) {
 	require.NoError(t, os.WriteFile(cfg, []byte("{}\n"), 0o600))
 	spec := servicespec.Spec{GOOS: "linux", Binary: "/b", ConfigPath: cfg, User: "basalt"}
 	for _, bad := range []string{"--write=postgres://u:p@h/db", "--os-user=password=x", "--database-url=x", "bot"} {
-		_, err := serviceInstaller().AgentSpec(strings.NewReader("postgres" + "://a:b@h/d\n"), spec,
+		_, err := serviceInstaller().AgentSpec(strings.NewReader("postgres"+"://a:b@h/d\n"), spec,
 			agentInstall{Name: "bot", OSUser: "tester", InitArgs: []string{"--agent=bot", bad}}, true, false)
 		require.Error(t, err, bad)
 	}

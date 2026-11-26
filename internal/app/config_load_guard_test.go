@@ -67,7 +67,7 @@ var plainConfigLoads = map[string]string{
 	"internal/status/in/statusmcp/enginedown.go:LoadEngineDown:Load": "basalt mcp, as the agent's user",
 	// service install, as root, reads only pii.maxMemoryMB for the unit's
 	// memory limits, refusing a link at the config; the config itself is
-	// read again through openEngineFile before anything is written.
+	// read again through credfiles.OpenEngineFile before anything is written.
 	"internal/setup/service_install.go:Install:LoadNoFollow": "the unit's memory limit only",
 	// The service install's host forwards it for Install, listed above.
 	"internal/app/setuphost.go:LoadConfigNoFollow:LoadNoFollow": "a one-line forward; its caller, Install, is listed above",

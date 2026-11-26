@@ -56,9 +56,7 @@ type readerPkg struct {
 	readers map[string]bool
 }
 
-// readerPkgs are the packages with credential readers, by import path. app
-// forwards credfiles' reader, which only it may reach (it imports the
-// adapter): a call through app is a read too.
+// readerPkgs are the packages with credential readers, by import path.
 var readerPkgs = map[string]readerPkg{
 	credfilesImport: {name: "credfiles", folder: "internal/setup/out/credfiles", readers: credfilesCredentialReaders},
 }

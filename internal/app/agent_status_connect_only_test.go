@@ -22,7 +22,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgerrors"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
 
@@ -76,10 +78,10 @@ const answerNo = "NO"
 
 func connectOnlyServer(t *testing.T, operatedBy string, h handoff.Handoff) handoffmcp.ConnectOnly {
 	t.Helper()
-	cmds, err := newCommands("bot", "", "linux", testManager())
+	cmds, err := newCommands("bot", "", "linux", osservice.Manager())
 	require.NoError(t, err)
 	return handoffmcp.ConnectOnly{
-		Errors: testErrors(), LatestGuardVersion: guard.LatestVersion,
+		Errors: pgerrors.Map(), LatestGuardVersion: guard.LatestVersion,
 		Name: "bot", Commands: cmds, OperatedBy: operatedBy, PagesBase: "https://portal.basaltvault.app",
 		ConnectBudget: links.DefaultBudget, Handoff: h,
 		Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
@@ -282,7 +284,7 @@ func TestConfirmDatabaseOnAServedAgent(t *testing.T) {
 // waiting one with its connect link.
 func TestEngineDownReportsAConnectOnlySetup(t *testing.T) {
 	t.Parallel()
-	cmds, err := newCommands("bot", "", "linux", testManager())
+	cmds, err := newCommands("bot", "", "linux", osservice.Manager())
 	require.NoError(t, err)
 	waiting := connectOnlySetup(statusNow.Add(time.Hour))
 	refused := waiting

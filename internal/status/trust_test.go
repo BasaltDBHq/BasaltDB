@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgerrors"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
 )
@@ -47,7 +48,7 @@ func trustLocal(t *testing.T, probe *fakeProbe, rep TrustReporter) guidance.Stat
 	t.Helper()
 	cmds := commandsAt("")
 	r, err := localStatus{
-		Errors: testErrors(), LatestGuardVersion: guard.LatestVersion,
+		Errors: pgerrors.Map(), LatestGuardVersion: guard.LatestVersion,
 		Name: "bot", Commands: cmds.Foreground(), EngineRunning: true, Trust: rep, Probe: probe,
 		Passkeys: func(context.Context) ([]passkey.Credential, error) {
 			return []passkey.Credential{{Relying: passkey.Relying{Origin: links.DefaultLocal}}}, nil

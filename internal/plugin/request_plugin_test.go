@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgerrors"
 )
 
 const (
@@ -115,7 +116,7 @@ func callPlugin(t *testing.T, s *Service, args map[string]any, meta json.RawMess
 
 func requireReason(t *testing.T, err error, code, reason string) *toolresult.ToolError {
 	t.Helper()
-	te := testErrorMap().ToolError(err)
+	te := pgerrors.Map().ToolError(err)
 	require.Equal(t, code, te.Code, te.Message)
 	require.Equal(t, reason, te.Reason)
 	return te

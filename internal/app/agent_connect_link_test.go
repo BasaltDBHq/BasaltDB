@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 )
 
@@ -97,7 +98,7 @@ func TestStatusProblemsHandTheConnectLinkFirst(t *testing.T) {
 			setApprovals(&d, keys{n: 1})
 			d.Status.Setup = pendingSetup(tc.kind, soon)
 			d.Core.Now = func() time.Time { return statusNow }
-			cmds, err := newCommands("bot", "", "linux", testManager())
+			cmds, err := newCommands("bot", "", "linux", osservice.Manager())
 			require.NoError(t, err)
 			d.Core.Commands = cmds
 			r, err := NewService(d).status.Status(context.Background())

@@ -44,11 +44,7 @@ func newCommands(t *testing.T, configPath string) guidance.Commands {
 	const name = "bot"
 	require.True(t, config.ValidAgentName(name), name)
 	require.True(t, configPath == "" || filepath.IsAbs(configPath), configPath)
-	return guidance.NewCommands(name, configPath, config.DefaultPath("linux"), "linux", testManager())
-}
-
-func testManager() guidance.ServiceManager {
-	return guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
+	return guidance.NewCommands(name, configPath, config.DefaultPath("linux"), "linux", osservice.Manager())
 }
 
 func testEngineHost() status.EngineHost {

@@ -5,7 +5,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"errors"
 	"log/slog"
 	"sync"
 	"testing"
@@ -26,8 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgerrors"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
@@ -120,25 +118,6 @@ func findProblem(t *testing.T, r guidance.StatusReport, code string) guidance.Pr
 	return guidance.Problem{}
 }
 
-// testErrors is the error map the app fills with the adapters' errors.
-func testErrors() guidance.ErrorMap {
-	return guidance.ErrorMap{
-		InvalidParams: ledger.ErrInvalidParams,
-		InvalidIntent: guard.ErrInvalidIntent,
-		RowTooLarge: func(err error) (string, bool) {
-			var rl *resultsize.RowTooLargeError
-			if errors.As(err, &rl) {
-				return rl.Error(), true
-			}
-			return "", false
-		},
-	}
-}
-
-func testManager() guidance.ServiceManager {
-	return guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
-}
-
 // settings are what newService builds the status use case from.
 type settings struct {
 	core Core
@@ -153,11 +132,11 @@ type option func(*settings)
 // the clock statusNow. opts change the core and the deps before the service
 // is built.
 func newService(opts ...option) *Service {
-	cmds := guidance.NewCommands("bot", "", config.DefaultPath("linux"), "linux", testManager())
+	cmds := guidance.NewCommands("bot", "", config.DefaultPath("linux"), "linux", osservice.Manager())
 	s := settings{
 		core: Core{
 			Name: "bot", Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
-			Commands: cmds, Errors: testErrors(), PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget,
+			Commands: cmds, Errors: pgerrors.Map(), PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget,
 		},
 		deps: Deps{
 			Passkeys: keys{n: 1}, Probe: &fakeProbe{st: currentGuard()},
@@ -173,7 +152,7 @@ func newService(opts ...option) *Service {
 // commandsAt are the commands of the agent bot on linux, with the engine
 // config at configPath ("" for the platform default).
 func commandsAt(configPath string) guidance.Commands {
-	return guidance.NewCommands("bot", configPath, config.DefaultPath("linux"), "linux", testManager())
+	return guidance.NewCommands("bot", configPath, config.DefaultPath("linux"), "linux", osservice.Manager())
 }
 
 const testEngineID = "AAAAAAAAAAAAAAAAAAAAAA"

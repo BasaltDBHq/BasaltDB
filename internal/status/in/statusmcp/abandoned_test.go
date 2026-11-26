@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
 // A request the engine took and never answered is answered with an error,
@@ -58,13 +59,13 @@ func TestAnswerAbandonedNeverRunsTheCallAgain(t *testing.T) {
 func TestLoadEngineDownFallsBackToAnAgentName(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "engine.json")
-	down, err := LoadEngineDown("not an agent!", path, testManager(), testEngineHost(), slog.New(slog.DiscardHandler))
+	down, err := LoadEngineDown("not an agent!", path, osservice.Manager(), testEngineHost(), slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 	require.Equal(t, "not an agent!", down.Name)
 	require.Equal(t, fallbackAgentName, down.Commands.AgentName())
 	require.Nil(t, down.Config)
 	require.Error(t, down.ConfigErr)
 
-	_, err = LoadEngineDown("bot", "relative/engine.json", testManager(), testEngineHost(), slog.New(slog.DiscardHandler))
+	_, err = LoadEngineDown("bot", "relative/engine.json", osservice.Manager(), testEngineHost(), slog.New(slog.DiscardHandler))
 	require.ErrorContains(t, err, "must be absolute")
 }

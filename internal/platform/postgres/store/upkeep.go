@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
@@ -105,11 +104,7 @@ func (u *Upkeep) RecordUncovered(ctx context.Context, detail map[string]any) err
 
 // UncoveredTables lists the agent-writable tables without the guard.
 func (u *Upkeep) UncoveredTables(ctx context.Context) ([]action.Uncovered, error) {
-	tables, err := guard.UncoveredTables(ctx, u.db)
-	if err != nil {
-		return nil, err
-	}
-	return mapSlice(tables, func(t guardmodel.Uncovered) action.Uncovered { return action.Uncovered(t) }), nil
+	return guard.UncoveredTables(ctx, u.db)
 }
 
 // RLSBlindTables lists the tables the agent can SELECT where row-level

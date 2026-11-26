@@ -20,10 +20,12 @@ func TestRevertReadsTheStatementTimeoutFromTheStore(t *testing.T) {
 	a.Data = postgresStore{}
 	require.Equal(t, 5*time.Second, storeStatementLimit(a).StatementTimeout())
 
-	// Revert names the limit the agent's store reports, read from one value.
+	// The agent's store set and revert both report the limit the deps set.
+	const limit = 7 * time.Second
 	s := &Service{}
-	s.deps.Agent = a
-	require.Equal(t, s.agentStoreSet().Data.Limits().StatementTimeout, storeStatementLimit(s.deps.Agent).StatementTimeout())
+	s.deps.Agent = agentDeps{Data: postgresStore{}, Limits: action.Limits{StatementTimeout: limit}}
+	require.Equal(t, limit, s.agentStoreSet().Data.Limits().StatementTimeout)
+	require.Equal(t, limit, storeStatementLimit(s.deps.Agent).StatementTimeout())
 }
 
 // TestDeliveryReadsTheColumnOrderOnlyWhenWired: the pages read the field

@@ -43,8 +43,8 @@ func AgentTools(svc *Service) []mcpserver.Tool {
 }
 
 // servedOrder is the order tools/list answers in, whichever domain serves
-// each tool.
-var servedOrder = []string{
+// each tool. An array, so nothing can change it.
+var servedOrder = [...]string{
 	"run_start", "query", "write", "run_history", "list_runs", "list_pending", "preview_revert", "revert_plan",
 	"apply_revert_batch", "request_revert", "request_plugin", "describe", "status", "confirm_database",
 }
@@ -53,7 +53,7 @@ var servedOrder = []string{
 // name is a build defect.
 func inServedOrder(tools []mcpserver.Tool) []mcpserver.Tool {
 	rank := func(t mcpserver.Tool) int {
-		i := slices.Index(servedOrder, t.Name)
+		i := slices.Index(servedOrder[:], t.Name)
 		if i < 0 {
 			panic("agent: no served place for tool " + t.Name)
 		}

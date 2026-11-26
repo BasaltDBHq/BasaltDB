@@ -1,7 +1,6 @@
 package plugin
 
 import (
-	"context"
 	"errors"
 	"time"
 
@@ -28,25 +27,6 @@ const (
 	ReasonPluginNoPortalLink    = "NO_PORTAL_LINK"
 	ReasonPluginAgentNotAllowed = "AGENT_NOT_ALLOWED"
 )
-
-// PluginRequests serve request_plugin with the engine's engine-kept plugin
-// entries (CONTRACT.md, Plugin approval in service mode). caller is the
-// agent that calls; every method applies its OS user's scope. Errors are
-// *PluginRefusedError, ErrPluginNotFound or *ArgumentError; anything else is
-// INTERNAL.
-type PluginRequests interface {
-	// OpenPlugin is PLUGIN_OPEN for caller: the uploaded copy, or the
-	// installed one when p.UploadID is nil.
-	OpenPlugin(ctx context.Context, caller string, p PluginOpen) (PluginOpened, error)
-	// RemovePlugin is PLUGIN_REMOVE for caller.
-	RemovePlugin(ctx context.Context, caller, name, instance string) error
-	// PluginApproval is the state of approval id, as PLUGIN_LIST shows the
-	// entry that holds it to caller, and what the engine serves of it.
-	PluginApproval(ctx context.Context, caller string, id uuid.UUID) (PluginApprovalState, error)
-	// DropUpload removes caller's upload id of a call refused before the
-	// engine took it, so no refusal holds one of its few open uploads.
-	DropUpload(caller string, id uuid.UUID)
-}
 
 // PluginOpen is one request to open a plugin approval.
 type PluginOpen struct {

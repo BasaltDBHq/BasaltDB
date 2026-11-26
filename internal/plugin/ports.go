@@ -5,12 +5,14 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
@@ -206,3 +208,107 @@ func NewRequests(uids map[string]uint32, admitted []uint32) *Requests {
 
 // SetKept gives the requests the engine's kept plugins once the agents serve.
 func (p *Requests) SetKept(k *KeptPlugins) { p.kept.Store(k) }
+
+// PluginApprovalStore is the guard's plugin approvals on the agent's own
+// credential (schema version Plugin.ApprovalsVersion).
+type PluginApprovalStore interface {
+	// ReadPluginApproval is one plugin approval the role may see, and false
+	// when there is none. Its texts are set only for the role that opened
+	// it.
+	ReadPluginApproval(ctx context.Context, id uuid.UUID) (guardmodel.PluginApprovalRecord, bool, error)
+	// SubmitPluginApproval relays the person's assertion; the guard
+	// verifies it and records the approval. A refusal is a
+	// *pluginmodel.ApprovalRefusalError.
+	SubmitPluginApproval(ctx context.Context, r guardmodel.PluginApprovalResponse) (time.Time, error)
+}
+
+// PathRules is the port for the path rule: who may write the directories and
+// files the host trusts (CONTRACT.md, Plugins, Where plugins live). The rule
+// reads the file system, so an outbound adapter (plugin/out/pluginpath)
+// implements it and the app installs it with UsePathRules.
+type PathRules interface {
+	// Owner is the uid the rule requires for mode.
+	Owner(mode pluginmodel.Mode) (uint32, error)
+	// CurrentUID is the engine's own uid.
+	CurrentUID() (uint32, error)
+	// NoFollowFlags are the flags to open a file without following a symlink.
+	NoFollowFlags() int
+	// RuleRefusal is a refusal for who can write path, with what was found.
+	RuleRefusal(path, why string, kind pluginmodel.PathFaultKind, fi fs.FileInfo, owners ...uint32) *pluginmodel.VerifyError
+	CheckAbove(base string, owner uint32) error
+	CheckStrict(p string, owner uint32) (fs.FileInfo, error)
+	CheckStrictInfo(p string, fi fs.FileInfo, owner uint32) error
+	CheckUnder(owner uint32, dirs ...string) error
+	CheckSocketBase(dir string) error
+	CheckSocketBaseInfo(dir string, fi fs.FileInfo) error
+}
+
+// PluginRequests serve request_plugin with the engine's engine-kept plugin
+// entries (CONTRACT.md, Plugin approval in service mode). caller is the
+// agent that calls; every method applies its OS user's scope. Errors are
+// *PluginRefusedError, ErrPluginNotFound or *ArgumentError; anything else is
+// INTERNAL.
+type PluginRequests interface {
+	// OpenPlugin is PLUGIN_OPEN for caller: the uploaded copy, or the
+	// installed one when p.UploadID is nil.
+	OpenPlugin(ctx context.Context, caller string, p PluginOpen) (PluginOpened, error)
+	// RemovePlugin is PLUGIN_REMOVE for caller.
+	RemovePlugin(ctx context.Context, caller, name, instance string) error
+	// PluginApproval is the state of approval id, as PLUGIN_LIST shows the
+	// entry that holds it to caller, and what the engine serves of it.
+	PluginApproval(ctx context.Context, caller string, id uuid.UUID) (PluginApprovalState, error)
+	// DropUpload removes caller's upload id of a call refused before the
+	// engine took it, so no refusal holds one of its few open uploads.
+	DropUpload(caller string, id uuid.UUID)
+}
+
+// Delivery is what the plugin use case asks of the delivery use case.
+type Delivery interface {
+	CredentialIDs(ctx context.Context) ([]passkey.Bytes, error)
+	IssuedLink(page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) (string, error)
+	RelayLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) string
+	RelayConnected() bool
+	PollInterval() time.Duration
+}
+
+// StatusView is what the plugin use case reads of the status use case.
+type StatusView interface {
+	// SameUser says the engine runs as the person's own OS user.
+	SameUser() bool
+	// DevLocalPages says engine.json has devLocalPages set.
+	DevLocalPages() bool
+	// VaultState is the engine's Vault state, status.VaultOff when there is
+	// no Vault reporter.
+	VaultState() string
+	// GuardStatus reads the guard's state on the agent's credential.
+	GuardStatus(ctx context.Context) (guardmodel.Status, error)
+}
+
+// Admitter admits a call: the engine is set up and its guard is current.
+type Admitter interface {
+	Admit(ctx context.Context) error
+}
+
+// Clock is the time the supervisor waits on: the health interval and the
+// restart backoff. Each call keeps its own deadline on the real clock.
+type Clock interface {
+	// After returns a channel that receives once d has passed.
+	After(d time.Duration) <-chan time.Time
+}
+
+// Exiter is a transport to a local process: Exited is closed once the
+// process has exited. The supervisor uses it to give a plugin that
+// answered shutdown the time to exit before its process group is killed.
+type Exiter interface {
+	Exited() <-chan struct{}
+}
+
+// PluginUploadChannel is the agent's side of a plugin upload: it reads the
+// plugin folder as the agent's OS user and sends it to the engine over the
+// agent's own socket (the shim implements it).
+type PluginUploadChannel interface {
+	// ReadSource reads the plugin folder dir for an upload.
+	ReadSource(dir string) (UploadSource, error)
+	// Upload sends files to the engine as one upload and returns its id.
+	Upload(ctx context.Context, files []UploadFile) (uploadID string, err error)
+}

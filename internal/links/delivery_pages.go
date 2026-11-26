@@ -22,14 +22,6 @@ import (
 // another agent's, or none.
 var ErrNotThisAgent = errors.New("not one of this agent's approvals or reverts")
 
-// ColumnOrder reads resources' fields in the order their store keeps them.
-type ColumnOrder interface {
-	// ColumnOrder maps each resource name, as the lines spell it, to its
-	// field names in the store's order; a resource it cannot find is left
-	// out.
-	ColumnOrder(ctx context.Context, resources []string) (map[string][]string, error)
-}
-
 // FieldsOf is the field order of the resources lines name, for the pages'
 // display only (CONTRACT.md, Local pages): never signed, and a failure
 // only costs the order, so it is logged and nil is returned.

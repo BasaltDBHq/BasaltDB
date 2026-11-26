@@ -14,15 +14,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 )
 
-// ReceiptSigner is the engine's signing key (*channel.EngineKeys), which
-// signs the receipt of every signature the engine relays (CONTRACT.md,
-// Vault channel, Receipts).
-type ReceiptSigner interface {
-	channel.Signer
-	EngineID() string
-	Fingerprint() string
-}
-
 // Why a signed item's answer carries no receipt (noReceipt).
 const (
 	NoReceiptKeyError = "KEY_ERROR"

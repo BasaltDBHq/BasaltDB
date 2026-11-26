@@ -35,7 +35,6 @@ var crossDomainInbound = []string{
 	// handoff reads setup's SQLSTATE constants and the status readiness types.
 	"internal/handoff/in/handoffcli -> internal/setup",
 	"internal/handoff/in/handoffmcp -> internal/status",
-	// local setup asks the PII service for column suggestions.
 	// the setup CLI installs the engine service, reads its crash loops and the
 	// handoff login refusal.
 	"internal/setup/in/setupcli -> internal/engine",

@@ -84,16 +84,34 @@ var allowed = map[string][]string{
 var pkgImportsAllowlist string
 
 // pkgExtra is pkgImportsAllowlist as a map from package to the imports it
-// may make on top of its layer's list.
-var pkgExtra = func() map[string][]string {
-	out := map[string][]string{}
-	for _, l := range strings.Split(pkgImportsAllowlist, "\n") {
-		if pkg, target, ok := strings.Cut(strings.TrimSpace(l), ": "); ok {
-			out[pkg] = append(out[pkg], target)
+// may make on top of its layer's list. pkgExtraProblems are the lines it
+// could not take; TestPkgImportsAllowlistOnlyShrinks fails on each.
+var pkgExtra, pkgExtraProblems = parsePkgImports(pkgImportsAllowlist)
+
+// parsePkgImports reads the allowlist's "<package>: <import>" lines. A blank
+// line is skipped. A line of another form, a package outside pkg/ or an
+// empty import is a problem, never skipped: the allowlist widens only what
+// a package under pkg/ may import.
+func parsePkgImports(text string) (allow map[string][]string, problems []string) {
+	allow = map[string][]string{}
+	for i, l := range strings.Split(text, "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" {
+			continue
+		}
+		pkg, target, ok := strings.Cut(l, ": ")
+		pkg, target = strings.TrimSpace(pkg), strings.TrimSpace(target)
+		switch {
+		case !ok || pkg == "" || target == "":
+			problems = append(problems, fmt.Sprintf("line %d: %q is not \"<package>: <import>\"", i+1, l))
+		case !strings.HasPrefix(pkg, "pkg/"):
+			problems = append(problems, fmt.Sprintf("line %d: %q names %s, which is not under pkg/", i+1, l, pkg))
+		default:
+			allow[pkg] = append(allow[pkg], target)
 		}
 	}
-	return out
-}()
+	return allow, problems
+}
 
 // storeSQLGuard is the one named exception to "only services call decisions":
 // the Postgres store runs the SQL policy right before it runs SQL.

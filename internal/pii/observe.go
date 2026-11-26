@@ -6,16 +6,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 )
-
-// Adder takes values into the dictionary's delta (corepii.FuseDictionary).
-type Adder interface {
-	Add(t corepii.EntityType, value, phoneRegion string) error
-}
 
 // Observer adds the values of IDENTIFIER columns the agent is about to get
 // (query rows, write RETURNING rows) to the dictionary, with the column's
@@ -64,7 +59,7 @@ func (e *DictionaryError) Error() string { return "pii dictionary: " + e.err.Err
 func (e *DictionaryError) Is(target error) bool { return errors.Is(e.err, target) }
 
 func (o *Observer) observe(ctx context.Context, c Classes, fields []piistore.ResultField, rows []map[string]any) error {
-	refs := make([]agentstore.FieldRef, len(fields))
+	refs := make([]action.FieldRef, len(fields))
 	for i, f := range fields {
 		refs[i] = f.Ref
 	}

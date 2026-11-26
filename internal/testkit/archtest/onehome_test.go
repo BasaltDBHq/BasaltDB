@@ -284,14 +284,9 @@ func statementTimeoutFindings(pkgs map[string]*goPkg) ([]string, int) {
 }
 
 // statementTimeoutAllowed are the files that set the timeout beside the
-// one that may. When they share one helper, this list is empty.
-var statementTimeoutAllowed = map[string]string{
-	"internal/platform/postgres/guard/revert.go":  "sets the revert transaction's timeout itself",
-	"internal/platform/postgres/store/revert.go":  "sets the revert transaction's timeout itself",
-	"internal/platform/postgres/store/reader.go":  "sets the read's timeout itself",
-	"internal/platform/postgres/pgpii/fields.go":  "sets the field scan's timeout itself",
-	"internal/platform/postgres/pgpii/sampler.go": "sets the sample's timeout itself",
-}
+// one that may. Every adapter calls sqlport.StatementTimeout, so it is
+// empty.
+var statementTimeoutAllowed = map[string]string{}
 
 // tallyCount is how many sites a tally entry stands for.
 var tallyTimes = regexp.MustCompile(` \(([0-9]+) times\)$`)

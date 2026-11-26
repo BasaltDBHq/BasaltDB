@@ -29,10 +29,11 @@ const (
 	rpcErrInvalidParams  = -32602
 )
 
-const (
-	scannerInitSize = 64 * 1024
-	scannerMaxSize  = 16 << 20
-)
+const scannerInitSize = 64 * 1024
+
+// MaxMessageBytes is the longest message the server reads; the shim's
+// stdio relay reads both sides to the same length.
+const MaxMessageBytes = 16 << 20
 
 // Tool is one MCP tool: its listing and its handler. InputSchema is the JSON
 // Schema of the arguments. Call returns a value rendered as JSON text, or an
@@ -161,7 +162,7 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 func (s *Server) ServeGated(ctx context.Context, in io.Reader, out io.Writer, gate Gate) error {
 	sess := &session{}
 	sc := bufio.NewScanner(in)
-	sc.Buffer(make([]byte, scannerInitSize), scannerMaxSize)
+	sc.Buffer(make([]byte, scannerInitSize), MaxMessageBytes)
 	shim := Hello{} // a shim that never says hello is version 0
 	for sc.Scan() {
 		if err := ctx.Err(); err != nil {

@@ -1,15 +1,10 @@
 package app
 
 import (
-	"context"
-	"encoding/json"
 	"net"
-	"net/http"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
-	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 )
 
 // restartOptions turn on the restart onto a new binary.
@@ -37,32 +32,3 @@ type restartOptions struct {
 // defaultStableAfter is how long an engine serves before an earlier
 // give-up of its supervisor is forgotten (last-stop.json is removed).
 const defaultStableAfter = 10 * time.Second
-
-// gatedDispatcher counts each page-session request (an approval or a revert
-// relayed through the Vault) in the gate, and answers UNAVAILABLE with
-// nothing run once the gate is closed.
-type gatedDispatcher struct {
-	gate engine.Gate
-	next vault.Dispatcher
-}
-
-func (d gatedDispatcher) Dispatch(ctx context.Context, link vault.SessionLink, req vault.Request) vault.Response {
-	if !d.gate.Begin() {
-		return restartingResponse()
-	}
-	defer d.gate.End()
-	return d.next.Dispatch(ctx, link, req)
-}
-
-// restartingResponse is the pages API's error for a request the engine did
-// not run because it is restarting.
-func restartingResponse() vault.Response {
-	body, err := json.Marshal(map[string]string{
-		"code":    guidance.CodeUnavailable,
-		"message": "the basalt engine is restarting onto the upgraded binary and did not run this request; nothing was run: try again in a few seconds",
-	})
-	if err != nil {
-		panic(err) // a map of strings
-	}
-	return vault.Response{Status: http.StatusServiceUnavailable, ContentType: "application/json", Body: body}
-}

@@ -3,6 +3,7 @@ package statusmcp
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"runtime"
 	"time"
@@ -143,6 +144,79 @@ func (d EngineDown) Abandoned(tool string) *toolresult.ToolError {
 		return te
 	}
 	return nil
+}
+
+// fallbackAgentName names the agent in commands when basalt mcp was given a
+// socket whose name is not an agent name.
+const fallbackAgentName = "agent"
+
+// LoadEngineDown is what basalt mcp answers with while the engine is down,
+// for agent name, with the config at configPath it could read as the
+// agent's own user (the shim never runs as root): commands for manager, and
+// host's reads of the engine's files.
+func LoadEngineDown(name, configPath string, manager guidance.ServiceManager, host status.EngineHost, log *slog.Logger) (EngineDown, error) {
+	var cfg *config.Config
+	c, cfgErr := config.Load(configPath)
+	if cfgErr == nil {
+		cfg = &c
+	}
+	cmdName := name
+	if !config.ValidAgentName(cmdName) {
+		cmdName = fallbackAgentName
+	}
+	cmds, err := config.AgentCommands(cmdName, configPath, runtime.GOOS, manager)
+	if err != nil {
+		return EngineDown{}, err
+	}
+	if cfg != nil && !cfg.Service() {
+		cmds = cmds.Foreground()
+	}
+	return EngineDown{Name: name, Commands: cmds, Config: cfg, ConfigErr: cfgErr, Log: log, Now: time.Now, ConfigPath: configPath, Host: host}, nil
+}
+
+// Server is what basalt mcp answers with itself while the engine is down:
+// the engine-down tools, and the answer to a request the engine took but
+// closed the connection without answering.
+type Server struct {
+	*mcpserver.Server
+	down EngineDown
+}
+
+// NewServer is the engine-down tools of down, served as an agent's MCP
+// server with instructions.
+func NewServer(down EngineDown, instructions string) Server {
+	info := mcpserver.Info{Name: "basalt", Version: buildinfo.Version, Instructions: instructions}
+	return Server{Server: mcpserver.NewServer(info, down.Tools()...), down: down}
+}
+
+// Abandoned answers a request the engine took and never answered
+// (AnswerAbandoned).
+func (s Server) Abandoned(_ context.Context, out io.Writer, line []byte) error {
+	return s.down.AnswerAbandoned(out, line)
+}
+
+// AnswerAbandoned answers on out a request line the engine took and never
+// answered (it closed the connection: it stopped, or it refused the peer),
+// always with an error and never by running the call again: a tools/call
+// gets UNAVAILABLE ENGINE_UNREACHABLE with its steps (Abandoned), any other
+// request a JSON-RPC error. A notification gets nothing.
+func (d EngineDown) AnswerAbandoned(out io.Writer, line []byte) error {
+	req, ok := mcpserver.RequestOf(line)
+	if !ok {
+		return nil
+	}
+	if req.Method != "tools/call" {
+		return mcpserver.WriteError(out, req.ID, mcpserver.ErrCodeServer, engine.AbandonedMessage)
+	}
+	var p struct {
+		Name string `json:"name"`
+	}
+	_ = json.Unmarshal(req.Params, &p) // a call without a name is still answered
+	te := d.Abandoned(p.Name)
+	if te == nil {
+		return mcpserver.WriteError(out, req.ID, mcpserver.ErrCodeServer, engine.AbandonedMessage)
+	}
+	return mcpserver.WriteToolError(out, req.ID, te)
 }
 
 // commands are d's commands for the operatedBy of the config the shim

@@ -171,7 +171,7 @@ func TestReadPagesByKey(t *testing.T) {
 		`SELECT "id", "t", "j", "jb" FROM "public"."people" WHERE ("id") > (CAST($1 AS bigint)) ORDER BY "id" LIMIT 2`,
 	}, pool.queries)
 	require.Equal(t, [][]any{{}, {"2"}}, pool.args, "the second page is bound after the first page's last key")
-	require.Equal(t, [][]any{{limits.StatementTimeoutSetting()}, {limits.StatementTimeoutSetting()}}, pool.execArgs)
+	require.Equal(t, [][]any{{"5000"}, {"5000"}}, pool.execArgs)
 }
 
 // A table without a readable key is paged by ctid; a view without one is

@@ -16,9 +16,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
-
-var psql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 
 // ErrInvalidParams is returned for list params the handler should have
 // rejected or clamped.
@@ -70,7 +69,7 @@ func changePage(p action.ChangeListParams) (string, []any, bool, error) {
 	if sort.Desc {
 		order += descending
 	}
-	b := psql.Select(changeColumns...).
+	b := sqlport.Builder.Select(changeColumns...).
 		From("basalt_meta.agent_changes").
 		OrderBy(order).
 		Limit(uint64(p.Limit) + 1)
@@ -125,7 +124,7 @@ func rowChangeSelect(changeIDs []uuid.UUID) sq.SelectBuilder {
 	for _, id := range changeIDs {
 		ids = append(ids, id.String())
 	}
-	return psql.Select(colChangeID, "seq", "coalesce(table_name, '') AS table_name", "coalesce(op, '') AS op",
+	return sqlport.Builder.Select(colChangeID, "seq", "coalesce(table_name, '') AS table_name", "coalesce(op, '') AS op",
 		"row_key", "old_row", "new_row", "coalesce((detail->>'cascaded')::boolean, false) AS cascaded", "redacted",
 		"values_pruned", "detail->'basedOn' AS based_on", "coalesce((detail->>'blindWrite')::boolean, false) AS blind_write").
 		From("basalt_meta.agent_ledger").

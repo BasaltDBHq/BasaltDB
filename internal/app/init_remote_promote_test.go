@@ -37,11 +37,11 @@ type recordedHost struct {
 	recorded bool
 }
 
-func (h recordedHost) GuardAgentVersion(context.Context, pgquerier.Querier) (int, error) {
+func (h recordedHost) GuardAgentVersion(context.Context, setup.Querier) (int, error) {
 	return h.GuardLatestVersion(), nil
 }
 
-func (h recordedHost) GuardSetupRecorded(context.Context, pgquerier.Querier, uuid.UUID) (bool, error) {
+func (h recordedHost) GuardSetupRecorded(context.Context, setup.Querier, uuid.UUID) (bool, error) {
 	return h.recorded, nil
 }
 

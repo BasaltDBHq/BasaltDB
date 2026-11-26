@@ -238,7 +238,7 @@ func runWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	gate := engine.NewCallGate()
 	if cfg.VaultEnabled() {
 		sessionPages = newPages(base, log.With("component", "vault-pages"))
-		dispatch = gatedDispatcher{gate: gate, next: sessionDispatcher{sessionPages}}
+		dispatch = vault.GatedDispatcher{Gate: gate, Next: sessionDispatcher{sessionPages}}
 	}
 	ev := openVault(cfg, env.stateDir, time.Now, log, relay, dispatch)
 	env.vault, env.receipts = ev, ev.Receipts()
@@ -280,7 +280,7 @@ func runWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		return errNoAgent
 	}
 	if site != nil {
-		site.pages.SetHome(newHomeSource(srv.homes, log.With("component", "home")))
+		site.pages.SetHome(newHomeSource(srv.homes))
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -476,7 +476,7 @@ func setupJobs(cfg config.Config, configPath, origin string, log *slog.Logger, r
 	if cfg.AgentOperated() || os.Geteuid() == 0 || origin != setup.PageOrigin {
 		return nil
 	}
-	jobs, err := newLocalSetup(localsetup.Options{ConfigPath: configPath, Origin: origin, Configured: true, CredentialChanged: rotated})
+	jobs, err := newLocalSetup(setup.LocalOptions{ConfigPath: configPath, Origin: origin, Configured: true, CredentialChanged: rotated})
 	if err != nil {
 		log.Warn("the setup page cannot update or remove agents", "err", err)
 		return nil
@@ -598,7 +598,7 @@ func (env agentEnv) checkLink(a config.Agent) string {
 	if env.setupOrigin == "" {
 		return ""
 	}
-	link, err := localsetup.Link(env.setupOrigin, localsetup.Job{Job: localsetup.JobUpdate, Agent: a.Name, OSUser: a.OSUser})
+	link, err := localsetup.Link(env.setupOrigin, localsetup.Job{Job: setup.JobUpdate, Agent: a.Name, OSUser: a.OSUser})
 	if err != nil {
 		return ""
 	}
@@ -750,7 +750,7 @@ const guardLogTimeout = 15 * time.Second
 
 // agentFilesFor is how the engine reaches agent a's files: by path, or,
 // started as root, through directories opened without
-// following a link, from the computed credential path only (rootFiles).
+// following a link, from the computed credential path only (handofffiles.RootFiles).
 func agentFilesFor(env agentEnv, a config.Agent) (handoff.AgentFiles, error) {
 	if !env.asRoot {
 		return handofffiles.PathFiles{ConfigPath: env.configPath, CredFile: a.Store.CredentialFile}, nil

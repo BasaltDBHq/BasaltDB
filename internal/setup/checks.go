@@ -2,7 +2,6 @@ package setup
 
 import (
 	"fmt"
-	"os/user"
 	"strconv"
 	"strings"
 )
@@ -24,12 +23,12 @@ func RefuseSecretInitArgs(args []string) error {
 
 // CheckServicePersons refuses a service install without a person uid, or
 // with root or the engine's own OS user among them (CONTRACT.md, CLI,
-// Recording the person).
-func CheckServicePersons(uids []uint32, engineUser string) error {
+// Recording the person). users looks the engine's user up.
+func CheckServicePersons(uids []uint32, engineUser string, users Users) error {
 	if err := CheckPersons(uids); err != nil {
 		return err
 	}
-	u, err := user.Lookup(engineUser)
+	u, err := users.Lookup(engineUser)
 	if err != nil {
 		return nil //nolint:nilerr // the engine's user does not exist yet: the install creates it, with a new uid
 	}

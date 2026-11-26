@@ -37,13 +37,7 @@ func ParsePluginRequest(fragment string) (approval.PluginRequest, approval.Plugi
 
 // NewPluginResponse wraps an assertion for approvalID.
 func NewPluginResponse(approvalID uuid.UUID, a passkey.Assertion) approval.PluginApprovalResponse {
-	return approval.PluginApprovalResponse{
-		ApprovalID:        approvalID,
-		CredentialID:      a.CredentialID,
-		AuthenticatorData: a.AuthenticatorData,
-		ClientDataJSON:    a.ClientDataJSON,
-		Signature:         a.Signature,
-	}
+	return approval.PluginApprovalResponse{ApprovalID: approvalID, SignedAssertion: passkeytest.Signed(a)}
 }
 
 // VerifyPlugin checks a response against the binding text it should sign

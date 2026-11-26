@@ -17,6 +17,19 @@ func New() string {
 	return id.String()
 }
 
+// NewUUID returns a new UUIDv7, or the error when the system cannot supply
+// random bytes.
+func NewUUID() (uuid.UUID, error) {
+	return uuid.NewV7()
+}
+
+// NewRandom returns a new UUIDv4: for an id that must not reveal when it was
+// made, such as a plugin upload's. It panics if the system cannot supply
+// random bytes.
+func NewRandom() uuid.UUID {
+	return uuid.New()
+}
+
 // Optional parses an optional uuid argument already validated by its tags: ""
 // is uuid.Nil.
 func Optional(s string) uuid.UUID {

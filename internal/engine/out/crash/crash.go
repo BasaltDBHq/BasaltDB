@@ -132,7 +132,12 @@ func clip(s string, n int) string {
 	return strings.ToValidUTF8(s, "") + "\n...trimmed..."
 }
 
+// ErrNotPruned is Save's error when the report was written but older
+// reports past Keep could not all be deleted: the report's id is good.
+var ErrNotPruned = servicespec.ErrCrashNotPruned
+
 // Save builds the report for in, writes it to Dir and keeps the newest Keep.
+// An error wrapping ErrNotPruned means the report was saved.
 func (r Recorder) Save(in servicespec.CrashInput) (Report, error) {
 	rep := r.Build(in)
 	dm, fm := os.FileMode(dirMode), os.FileMode(fileMode)
@@ -149,7 +154,10 @@ func (r Recorder) Save(in servicespec.CrashInput) (Report, error) {
 	if err := os.WriteFile(filepath.Join(r.Dir, rep.ID+".json"), append(raw, '\n'), fm); err != nil {
 		return rep, err
 	}
-	return rep, prune(r.Dir)
+	if err := prune(r.Dir); err != nil {
+		return rep, fmt.Errorf("%w: %w", ErrNotPruned, err)
+	}
+	return rep, nil
 }
 
 // SaveIn is Save with the report written to dir, readable by every user

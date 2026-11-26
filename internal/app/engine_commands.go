@@ -14,10 +14,8 @@ import (
 	"runtime"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
@@ -27,7 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
-	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/osusers"
 )
 
 // runEngine runs the engine service; the launchd or systemd unit starts it.
@@ -105,40 +103,6 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 func runMCP(ctx context.Context, args []string, io cli.Stdio) int {
 	return enginecli.RunMCPOn(ctx, args, io, osHost{}, engineCLIHost{})
 }
-
-// engineDown is what basalt mcp answers with while the engine is down, with
-// the config it could read, as the agent's own user (the shim never runs as
-// root).
-func engineDown(name, configPath string, log *slog.Logger) (statusmcp.EngineDown, error) {
-	var cfg *config.Config
-	c, cfgErr := config.Load(configPath)
-	if cfgErr == nil {
-		cfg = &c
-	}
-	cmds, err := shimCommands(name, configPath, cfg)
-	if err != nil {
-		return statusmcp.EngineDown{}, err
-	}
-	return statusmcp.EngineDown{Name: name, Commands: cmds, Config: cfg, ConfigErr: cfgErr, Log: log, Now: time.Now, ConfigPath: configPath, Host: agentEngineHost()}, nil
-}
-
-func shimCommands(name, configPath string, cfg *config.Config) (guidance.Commands, error) {
-	if !config.ValidAgentName(name) {
-		name = fallbackAgentName
-	}
-	cmds, err := newCommands(name, configPath, runtime.GOOS, AgentServiceManager())
-	if err != nil || cfg == nil {
-		return cmds, err
-	}
-	if !cfg.Service() {
-		cmds = cmds.Foreground()
-	}
-	return cmds, nil
-}
-
-// fallbackAgentName names the agent in commands when basalt mcp was given a
-// socket whose name is not an agent name.
-const fallbackAgentName = "agent"
 
 // runService is basalt service for the command table.
 func runService(ctx context.Context, args []string, io cli.Stdio) int {
@@ -304,7 +268,7 @@ func agentSpecFromStdin(in io.Reader, spec servicespec.Spec, a agentInstall, cre
 	if err := setupcli.CheckAgentOSUser(a.osUser, spec.User); err != nil {
 		return spec, err
 	}
-	if err := setup.CheckServicePersons(a.personUIDs, spec.User); err != nil {
+	if err := setup.CheckServicePersons(a.personUIDs, spec.User, osusers.Users{}); err != nil {
 		return spec, err
 	}
 	if a.keepCredential {

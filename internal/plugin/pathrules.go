@@ -9,27 +9,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
-// PathRules is the port for the path rule: who may write the directories and
-// files the host trusts (CONTRACT.md, Plugins, Where plugins live). The rule
-// reads the file system, so an outbound adapter (plugin/out/pluginpath)
-// implements it and the app installs it with UsePathRules.
-type PathRules interface {
-	// Owner is the uid the rule requires for mode.
-	Owner(mode pluginmodel.Mode) (uint32, error)
-	// CurrentUID is the engine's own uid.
-	CurrentUID() (uint32, error)
-	// NoFollowFlags are the flags to open a file without following a symlink.
-	NoFollowFlags() int
-	// RuleRefusal is a refusal for who can write path, with what was found.
-	RuleRefusal(path, why string, kind pluginmodel.PathFaultKind, fi fs.FileInfo, owners ...uint32) *pluginmodel.VerifyError
-	CheckAbove(base string, owner uint32) error
-	CheckStrict(p string, owner uint32) (fs.FileInfo, error)
-	CheckStrictInfo(p string, fi fs.FileInfo, owner uint32) error
-	CheckUnder(owner uint32, dirs ...string) error
-	CheckSocketBase(dir string) error
-	CheckSocketBaseInfo(dir string, fi fs.FileInfo) error
-}
-
 type rulesHolder struct{ r PathRules }
 
 var rulesInUse atomic.Pointer[rulesHolder]

@@ -144,7 +144,7 @@ func (s *Service) wire() {
 // approvalReads is what the delivery use case reads of the approval
 // records: the approval's store and its column order.
 func (s *Service) approvalReads() approvalReads {
-	return approvalReads{Records: s.approvalStoreSet().Records, columns: s.deps.Approval.Columns}
+	return approvalReads{records: s.approvalStoreSet().Records, columns: s.deps.Approval.Columns}
 }
 
 // storeStatementLimit is the agent's statement timeout, which a revert's
@@ -197,8 +197,7 @@ func (s *Service) approvalCore() approvalsvc.Core {
 type runChecker struct{ store agentStore }
 
 func (r runChecker) CheckRun(ctx context.Context, id uuid.UUID) error {
-	_, err := ledgersvc.FindRun(ctx, r.store, id)
-	return err
+	return ledgersvc.CheckRun(ctx, r.store, id)
 }
 
 // linksCore is the part of the shared settings the delivery use case reads.

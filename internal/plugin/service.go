@@ -1,14 +1,9 @@
 package plugin
 
 import (
-	"context"
 	"time"
 
-	"github.com/google/uuid"
-
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 )
 
 // Core is the part of the shared settings the plugin use case reads.
@@ -45,33 +40,6 @@ type Service struct {
 	delivery Delivery
 	status   StatusView
 	admit    Admitter
-}
-
-// Delivery is what the plugin use case asks of the delivery use case.
-type Delivery interface {
-	CredentialIDs(ctx context.Context) ([]passkey.Bytes, error)
-	IssuedLink(page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) (string, error)
-	RelayLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) string
-	RelayConnected() bool
-	PollInterval() time.Duration
-}
-
-// StatusView is what the plugin use case reads of the status use case.
-type StatusView interface {
-	// SameUser says the engine runs as the person's own OS user.
-	SameUser() bool
-	// DevLocalPages says engine.json has devLocalPages set.
-	DevLocalPages() bool
-	// VaultState is the engine's Vault state, status.VaultOff when there is
-	// no Vault reporter.
-	VaultState() string
-	// GuardStatus reads the guard's state on the agent's credential.
-	GuardStatus(ctx context.Context) (guardmodel.Status, error)
-}
-
-// Admitter admits a call: the engine is set up and its guard is current.
-type Admitter interface {
-	Admit(ctx context.Context) error
 }
 
 // New builds the plugin use case over core and deps.

@@ -43,9 +43,10 @@ func Open(path string, now func() time.Time, rand io.Reader) (*links.Secrets, er
 	return s, nil
 }
 
-// Save writes raw atomically (write, then rename).
+// Save writes raw atomically (write, then rename), and syncs the
+// directory: the links the engine gave out must still open after a crash.
 func (f File) Save(raw []byte) error {
-	if err := atomicfile.Write(f.Path, raw, atomicfile.Options{Mode: fileMode}); err != nil {
+	if err := atomicfile.Write(f.Path, raw, atomicfile.Options{Mode: fileMode, SyncDir: true}); err != nil {
 		return fmt.Errorf("link secrets: %w", err)
 	}
 	return nil

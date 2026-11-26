@@ -2,14 +2,11 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
 	"time"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
 	"github.com/basaltdbhq/basaltdb/internal/status"
-	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 
@@ -20,8 +17,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
-	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
-	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/agentcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
@@ -105,56 +100,12 @@ func agentUpdateMessage(n status.ReleaseNotice, exe string) string {
 	return updatecheck.Notice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}.AgentMessage(exe)
 }
 
-// EngineDownServer is what basalt mcp answers with itself while the engine
-// is down: the engine-down tools, and the answer to a request the engine
-// took but closed the connection without answering.
-type EngineDownServer struct {
-	*mcpserver.Server
-	down statusmcp.EngineDown
-}
-
-// NewEngineDownServer is the engine-down tools of down, served as an
-// agent's MCP server.
-func NewEngineDownServer(down statusmcp.EngineDown) EngineDownServer {
-	info := mcpserver.Info{Name: "basalt", Version: buildinfo.Version, Instructions: Instructions}
-	return EngineDownServer{Server: mcpserver.NewServer(info, down.Tools()...), down: down}
-}
-
-// Abandoned answers a request the engine took and never answered (it
-// closed the connection: it stopped, or it refused the peer), always with
-// an error and never by running the call again: a tools/call gets UNAVAILABLE
-// ENGINE_UNREACHABLE with its steps, any other request a JSON-RPC error. A
-// notification gets nothing.
-func (s EngineDownServer) Abandoned(_ context.Context, out io.Writer, line []byte) error {
-	req, ok := mcpserver.RequestOf(line)
-	if !ok {
-		return nil
-	}
-	if req.Method != "tools/call" {
-		return mcpserver.WriteError(out, req.ID, mcpserver.ErrCodeServer, engine.AbandonedMessage)
-	}
-	var p struct {
-		Name string `json:"name"`
-	}
-	_ = json.Unmarshal(req.Params, &p) // a call without a name is still answered
-	te := s.down.Abandoned(p.Name)
-	if te == nil {
-		return mcpserver.WriteError(out, req.ID, mcpserver.ErrCodeServer, engine.AbandonedMessage)
-	}
-	return mcpserver.WriteToolError(out, req.ID, te)
-}
-
 // agentProbe is the store's probe as the agent reads it: the reinstall
 // notice is the ledger's, rendered here.
 type agentProbe struct{ postgres.Probe }
 
 func (p agentProbe) ReinstallNotice(ctx context.Context, limit int) (string, bool, error) {
-	rs, err := p.Reinstalls(ctx)
-	if err != nil {
-		return "", false, err
-	}
-	msg, ok := ledger.ReinstallPersonMessage(rs, limit)
-	return msg, ok, nil
+	return ledger.ReadReinstallMessage(ctx, p.Probe, limit)
 }
 
 // agentAccess is pgcatalog.ListAccess as the agent reads it.

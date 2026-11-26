@@ -10,7 +10,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginpage"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
@@ -37,10 +37,10 @@ func (d sessionDispatcher) Dispatch(ctx context.Context, link vault.SessionLink,
 	return vault.Response{Status: out.Status, ContentType: out.ContentType, Body: out.Body}
 }
 
-var _ localsetup.Backend = setupbackend.Backend{}
+var _ setup.LocalBackend = setupbackend.Backend{}
 
 // newLocalSetup builds the setup page's jobs on the engine's adapters.
-func newLocalSetup(o localsetup.Options) (*localsetup.Service, error) {
+func newLocalSetup(o setup.LocalOptions) (*setup.LocalService, error) {
 	o.Backend = setupbackend.Backend{}
-	return localsetup.New(o)
+	return setup.NewLocal(o)
 }

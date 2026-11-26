@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // maxEngines bounds an engine list: a database records a handful.
@@ -30,7 +31,7 @@ func Engines(ctx context.Context, q Querier, admin bool) ([]guardmodel.RecordedE
 	if admin {
 		from = "basalt_meta.engines"
 	}
-	sql, args, err := psql.Select("engine_id", "public_key", "recorded_at", "revoked_at").
+	sql, args, err := sqlport.Builder.Select("engine_id", "public_key", "recorded_at", "revoked_at").
 		From(from).
 		OrderBy("recorded_at DESC", "engine_id").
 		Limit(maxEngines).
@@ -65,7 +66,7 @@ func RecordEngineStatement(publicKey []byte, guardVersion int) guardmodel.Statem
 // EngineRecord is engineID's row in basalt_meta.agent_engines, read with an
 // agent's connection: nil when the database does not record it.
 func EngineRecord(ctx context.Context, q Querier, engineID string) (*guardmodel.RecordedEngine, error) {
-	sql, args, err := psql.Select("engine_id", "public_key", "recorded_at", "revoked_at").
+	sql, args, err := sqlport.Builder.Select("engine_id", "public_key", "recorded_at", "revoked_at").
 		From("basalt_meta.agent_engines").
 		Where(sq.Eq{"engine_id": engineID}).
 		ToSql()

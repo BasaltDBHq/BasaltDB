@@ -139,24 +139,35 @@ func testManager() guidance.ServiceManager {
 	return guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
 }
 
+// settings are what newService builds the status use case from.
+type settings struct {
+	core Core
+	deps Deps
+}
+
+// option changes the settings before the service is built.
+type option func(*settings)
+
 // newService builds the status use case for the agent bot with the settings
 // every test shares, a probe that reports a current guard, one passkey and
-// the clock statusNow. edit changes the core and the deps before the service is
-// built.
-func newService(edit func(*Core, *Deps)) *Service {
+// the clock statusNow. opts change the core and the deps before the service
+// is built.
+func newService(opts ...option) *Service {
 	cmds := guidance.NewCommands("bot", "", config.DefaultPath("linux"), "linux", testManager())
-	core := Core{
-		Name: "bot", Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
-		Commands: cmds, Errors: testErrors(), PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget,
+	s := settings{
+		core: Core{
+			Name: "bot", Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
+			Commands: cmds, Errors: testErrors(), PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget,
+		},
+		deps: Deps{
+			Passkeys: keys{n: 1}, Probe: &fakeProbe{st: currentGuard()},
+			LatestGuardVersion: guard.LatestVersion,
+		},
 	}
-	deps := Deps{
-		Passkeys: keys{n: 1}, Probe: &fakeProbe{st: currentGuard()},
-		LatestGuardVersion: guard.LatestVersion,
+	for _, opt := range opts {
+		opt(&s)
 	}
-	if edit != nil {
-		edit(&core, &deps)
-	}
-	return New(core, &deps)
+	return New(s.core, &s.deps)
 }
 
 // commandsAt are the commands of the agent bot on linux, with the engine

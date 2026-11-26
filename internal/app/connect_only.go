@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"runtime"
 	"time"
 
@@ -48,41 +47,11 @@ func (o handoffOptions) now() func() time.Time {
 }
 
 // connectOnlyAgent says whether a's pending setup is a connect-only one the
-// engine serves with ConnectOnly: waiting for its address, or refused. An
-// agent whose credential file exists with awaitingAddress still set is one
-// whose confirmation stopped half way (the engine stopped after it wrote
-// the credential): only that YES writes it, so the engine finishes it and
-// serves the agent on its credential.
+// engine serves with ConnectOnly, finishing a confirmation it stopped in
+// (handoff.ServesConnectOnly).
 func connectOnlyAgent(env agentEnv, a config.Agent, log *slog.Logger) (bool, error) {
-	if a.Setup == nil || !a.Setup.ConnectOnly() {
-		return false, nil
-	}
-	if a.Setup.Refused || env.asRoot {
-		// As root the engine touches none of the agent's files here: a
-		// confirmation it stopped in is finished by an engine started as
-		// the agent's OS user.
-		return true, nil
-	}
 	files := handofffiles.SetupFiles{ConfigPath: env.configPath, Agent: a.Name, CredFile: a.Store.CredentialFile, Pins: trustPins{}}
-	if _, err := os.Lstat(a.Store.CredentialFile); err != nil {
-		if errNotExist(err) {
-			return true, nil
-		}
-		return false, err
-	}
-	unlock, err := files.Lock()
-	if err != nil {
-		return false, err
-	}
-	defer unlock()
-	if err := files.RemoveSecret(); err != nil {
-		return false, err
-	}
-	if err := files.ConfirmSetup(a.Setup.SetupID); err != nil {
-		return false, err
-	}
-	log.Info("finished a confirmed connect-only setup the engine stopped in", "setupId", a.Setup.SetupID)
-	return false, nil
+	return handoff.ServesConnectOnly(a.Setup, env.asRoot, files, log)
 }
 
 // newConnectOnlyRuntime serves agent a while its connect-only setup waits:

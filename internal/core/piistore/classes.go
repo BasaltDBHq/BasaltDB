@@ -3,15 +3,15 @@ package piistore
 import (
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 )
 
 // FieldClass is the class of one field, as the store keeps it.
 type FieldClass struct {
 	// Ref is the field. Postgres: "<oid>/<attnum>".
-	Ref agentstore.FieldRef
+	Ref action.FieldRef
 	// Resource holds the field. Postgres: "<oid>".
-	Resource agentstore.ResourceRef
+	Resource action.ResourceRef
 	// Namespace, ResourceName and Field are the printed names (never PII).
 	Namespace, ResourceName, Field string
 	Class                          string
@@ -53,6 +53,6 @@ type Unclassified struct {
 // it comes from and its key in each row. An empty Ref is a computed value
 // with no source field: it has no class.
 type ResultField struct {
-	Ref agentstore.FieldRef
+	Ref action.FieldRef
 	Key string
 }

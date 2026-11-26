@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"errors"
-	"strconv"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
@@ -17,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // previewRevertRaw is PreviewRevert before MapError.
@@ -89,9 +89,7 @@ func (s *Store) resetRevertRaw(ctx context.Context, id uuid.UUID, timeout time.D
 
 // setStatementTimeout sets statement_timeout for tx only.
 func setStatementTimeout(ctx context.Context, tx pgx.Tx, timeout time.Duration) error {
-	q, args, err := psql.Select().
-		Column(sq.Expr("pg_catalog.set_config('statement_timeout', ?, true)", strconv.FormatInt(timeout.Milliseconds(), 10))).
-		ToSql()
+	q, args, err := sqlport.StatementTimeoutSQL(timeout)
 	if err != nil {
 		return err
 	}
@@ -119,8 +117,8 @@ func (s *Store) hasTaskRunRaw(ctx context.Context, id uuid.UUID) (bool, error) {
 
 // exists reports whether the agent's view from has a row matching where.
 func (s *Store) exists(ctx context.Context, from string, where sq.Eq) (bool, error) {
-	q, args, err := psql.Select().
-		Column(sq.Expr("EXISTS (?)", psql.Select("1").From(from).Where(where))).
+	q, args, err := sqlport.Builder.Select().
+		Column(sq.Expr("EXISTS (?)", sqlport.Builder.Select("1").From(from).Where(where))).
 		ToSql()
 	if err != nil {
 		return false, err
@@ -139,7 +137,7 @@ func (s *Store) revertedByRaw(ctx context.Context, scope revertstore.Scope) (uui
 		return uuid.Nil, nil
 	}
 	// Raw join: squirrel cannot express a lateral unnest of the array column.
-	q, args, err := psql.Select("rb").
+	q, args, err := sqlport.Builder.Select("rb").
 		From("basalt_meta.agent_changes c").
 		CrossJoin("LATERAL unnest(c.reverted_by) rb").
 		Where(sq.Eq{column: scope.ID.String()}).

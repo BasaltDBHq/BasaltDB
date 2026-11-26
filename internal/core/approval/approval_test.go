@@ -113,13 +113,12 @@ func buildFixtures(t *testing.T) fixtures {
 	f.Request.RowsHash = approval.RowsHash(lines)
 	f.Request.Challenge = passkey.Bytes(passkeytest.Challenge(binding)).String()
 
-	resp := approval.Response{
-		ApprovalID:        approvalID,
+	resp := approval.Response{ApprovalID: approvalID, SignedAssertion: passkey.SignedAssertion{
 		CredentialID:      seq(16, 1),
 		AuthenticatorData: seq(37, 0x10),
 		ClientDataJSON:    []byte(`{"type":"webauthn.get","challenge":"` + f.Request.Challenge + `","origin":"https://basaltvault.app","crossOrigin":false}`),
 		Signature:         seq(70, 0x30),
-	}
+	}}
 	body, err := json.Marshal(resp)
 	require.NoError(t, err)
 	f.Response.ApprovalID = approvalID.String()
@@ -371,6 +370,9 @@ func TestDecodeResponseRefuses(t *testing.T) {
 		_, err := approval.DecodeResponse([]byte(body))
 		require.ErrorIs(t, err, approval.ErrInvalid, body)
 	}
+	// No approval id is a missing field, as the plugin approval's is.
+	_, err := approval.DecodeResponse([]byte(`{"credentialId":"AQ","authenticatorData":"AQ","clientDataJson":"AQ","signature":"AQ"}`))
+	require.EqualError(t, err, "approval code invalid: approval response is missing a field")
 }
 
 func TestChallengeHashesUTF8Bytes(t *testing.T) {

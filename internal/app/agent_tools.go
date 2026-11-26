@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"slices"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/agent/in/agentmcp"
@@ -21,24 +22,44 @@ import (
 // AgentTools are the tools of svc as the MCP server serves them: every
 // contract in api/mcp that is IMPLEMENTED, each listed with the contract's
 // description and input schema, and query and write only for a store of
-// the SQL family (CONTRACT.md, Stores). Each tool's call goes through
-// agentmcp.Wrap; the lists join in the served order.
+// the SQL family (CONTRACT.md, Stores). Each tool's call goes through the
+// gate once, and the domains' lists are placed in servedOrder.
 func AgentTools(svc *Service) []mcpserver.Tool {
 	if svc == nil {
 		panic("agent: service required")
 	}
 	mount := func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool {
-		return contractTool(name, agentmcp.Wrap(svc, name, call))
+		return contractTool(name, gate{svc: svc}.wrap(name, call))
 	}
-	agent := svc.agent
-	tools := agentmcp.RunStartTools(agent, mount)
+	var tools []mcpserver.Tool
 	for _, list := range [][]mcpserver.Tool{
-		agentmcp.WriteTools(agent, mount), ledgermcp.Tools(ledgerRuns{Reads: svc.ledger, agent: &svc.deps.Agent}, mount), agentmcp.RunTools(agent, mount),
+		agentmcp.Tools(svc.agent, mount), ledgermcp.Tools(ledgerRuns{Reads: svc.ledger, agent: &svc.deps.Agent}, mount),
 		approvalmcp.Tools(svc.approval, mount), revertmcp.Tools(svc.revert, mount), pluginmcp.Tools(pluginRequester{svc.plugin}, mount),
-		agentmcp.DescribeTools(agent, mount), statusmcp.Tools(svc.status, mount), handoffmcp.Tools(mount),
+		statusmcp.Tools(svc.status, mount), handoffmcp.Tools(mount),
 	} {
 		tools = append(tools, list...)
 	}
+	return inServedOrder(tools)
+}
+
+// servedOrder is the order tools/list answers in, whichever domain serves
+// each tool. An array, so nothing can change it.
+var servedOrder = [...]string{
+	"run_start", "query", "write", "run_history", "list_runs", "list_pending", "preview_revert", "revert_plan",
+	"apply_revert_batch", "request_revert", "request_plugin", "describe", "status", "confirm_database",
+}
+
+// inServedOrder sorts tools into servedOrder. A tool the order does not
+// name is a build defect.
+func inServedOrder(tools []mcpserver.Tool) []mcpserver.Tool {
+	rank := func(t mcpserver.Tool) int {
+		i := slices.Index(servedOrder[:], t.Name)
+		if i < 0 {
+			panic("agent: no served place for tool " + t.Name)
+		}
+		return i
+	}
+	slices.SortStableFunc(tools, func(a, b mcpserver.Tool) int { return rank(a) - rank(b) })
 	return tools
 }
 

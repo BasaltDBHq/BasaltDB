@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // piiUpsertBatch is the number of columns per INSERT: at most 13 parameters each,
@@ -46,7 +47,7 @@ func asGuard(ctx context.Context, tx pgx.Tx, n guardmodel.Names, fn func() error
 		return err
 	}
 	var role, searchPath string
-	saved := psql.Select().Column("current_setting('role')").Column("current_setting('search_path')")
+	saved := sqlport.Builder.Select().Column("current_setting('role')").Column("current_setting('search_path')")
 	if err := queryBuilt(ctx, tx, saved).Scan(&role, &searchPath); err != nil {
 		return err
 	}
@@ -58,7 +59,7 @@ func asGuard(ctx context.Context, tx pgx.Tx, n guardmodel.Names, fn func() error
 		return err
 	}
 	// The search_path first: setting role 'none' as the guard role is allowed.
-	restore := psql.Select().
+	restore := sqlport.Builder.Select().
 		Column(sq.Expr("set_config('search_path', ?, true)", searchPath)).
 		Column(sq.Expr("set_config('role', ?, true)", role))
 	return execBuilt(ctx, tx, restore)
@@ -77,10 +78,10 @@ func ReadClassification(ctx context.Context, tx pgx.Tx, n guardmodel.Names) (gua
 		if err := readStored(ctx, tx, st.Stored); err != nil {
 			return err
 		}
-		if err := queryBuilt(ctx, tx, psql.Select("basalt_meta.pii_fingerprint()")).Scan(&st.Fingerprint); err != nil {
+		if err := queryBuilt(ctx, tx, sqlport.Builder.Select("basalt_meta.pii_fingerprint()")).Scan(&st.Fingerprint); err != nil {
 			return fmt.Errorf("read the fingerprint: %w", err)
 		}
-		err = queryBuilt(ctx, tx, psql.Select("fingerprint").From("basalt_meta.pii_catalog")).Scan(&st.Previous)
+		err = queryBuilt(ctx, tx, sqlport.Builder.Select("fingerprint").From("basalt_meta.pii_catalog")).Scan(&st.Previous)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -90,7 +91,7 @@ func ReadClassification(ctx context.Context, tx pgx.Tx, n guardmodel.Names) (gua
 }
 
 func readableColumns(ctx context.Context, tx pgx.Tx) ([]guardmodel.ReadableColumn, error) {
-	sql, args, err := psql.Select("table_schema", "table_name", "column_name", "data_type").
+	sql, args, err := sqlport.Builder.Select("table_schema", "table_name", "column_name", "data_type").
 		From("basalt_meta.pii_readable_columns()").
 		OrderBy(`table_schema COLLATE "C"`, `table_name COLLATE "C"`, "attnum").ToSql()
 	if err != nil {
@@ -108,7 +109,7 @@ func readableColumns(ctx context.Context, tx pgx.Tx) ([]guardmodel.ReadableColum
 }
 
 func readStored(ctx context.Context, tx pgx.Tx, into map[guardmodel.ColumnKey]guardmodel.PIIColumn) error {
-	sql, args, err := psql.Select("table_schema", "table_name", "column_name", "data_type", "class",
+	sql, args, err := sqlport.Builder.Select("table_schema", "table_name", "column_name", "data_type", "class",
 		"coalesce(entity_type, '')", "coalesce(suggested_class, '')", "coalesce(suggested_entity_type, '')",
 		"coalesce(reason, '')", "needs_review", "coalesce(phone_region, '')").
 		From("basalt_meta.pii_columns").ToSql()
@@ -131,7 +132,7 @@ func readStored(ctx context.Context, tx pgx.Tx, into map[guardmodel.ColumnKey]gu
 }
 
 func upsertPIIColumns(ctx context.Context, tx pgx.Tx, cols []guardmodel.PIIColumn, at time.Time) error {
-	ins := psql.Insert("basalt_meta.pii_columns").Columns(
+	ins := sqlport.Builder.Insert("basalt_meta.pii_columns").Columns(
 		"table_schema", "table_name", "column_name", "data_type", "class", "entity_type",
 		"suggested_class", "suggested_entity_type", "reason", "needs_review", "phone_region",
 		"confirmed_at", "confirmed_by").
@@ -179,7 +180,7 @@ func (r errRow) Scan(...any) error { return r.err }
 
 // PIIUnclassified calls pii_unclassified() as the login role (version 15).
 func PIIUnclassified(ctx context.Context, q Querier) ([]guardmodel.UnclassifiedColumn, error) {
-	sql, args, err := psql.Select("table_schema", "table_name", "column_name", "data_type", "why").
+	sql, args, err := sqlport.Builder.Select("table_schema", "table_name", "column_name", "data_type", "why").
 		From("basalt_meta.pii_unclassified()").ToSql()
 	if err != nil {
 		return nil, err

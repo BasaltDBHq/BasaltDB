@@ -25,8 +25,7 @@ var inboundReachBaseline = []string{}
 var crossDomainInbound = []string{
 	// approval tools return the pending revert the revert tools describe.
 	"internal/approval/in/approvalmcp -> internal/revert/in/revertmcp",
-	// the agent tools and the three pages use the link types and errors.
-	"internal/agent/in/agentmcp -> internal/links",
+	// the three pages use the link types and errors.
 	"internal/approval/in/approvalpage -> internal/links",
 	"internal/plugin/in/pluginpage -> internal/links",
 	"internal/revert/in/revertpage -> internal/links",

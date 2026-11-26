@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // maxPasskeys bounds a passkey list; a database has a handful.
@@ -15,7 +16,7 @@ const maxPasskeys = 100
 // ActivePasskeys lists the active passkeys with the admin connection
 // (basalt passkey remove), oldest first.
 func ActivePasskeys(ctx context.Context, q Querier) ([]guardmodel.RegisteredPasskey, error) {
-	sql, args, err := psql.Select("credential_id", "label", "rp_id", "origin", "user_handle", "created_at", "last_used_at").
+	sql, args, err := sqlport.Builder.Select("credential_id", "label", "rp_id", "origin", "user_handle", "created_at", "last_used_at").
 		From("basalt_meta.passkeys").
 		Where(sq.Eq{"revoked_at": nil}).
 		OrderBy("created_at", "credential_id").
@@ -39,7 +40,7 @@ func ActivePasskeys(ctx context.Context, q Querier) ([]guardmodel.RegisteredPass
 // how many active passkeys remain. Postgres refuses the last one unless
 // force (NOT_ALLOWED) and records a PASSKEY_REVOKED ledger row.
 func RevokePasskey(ctx context.Context, q Querier, credentialID []byte, force bool) (int, error) {
-	sql, args, err := psql.Select().Column(sq.Expr("basalt_meta.revoke_passkey(?::bytea, ?)", credentialID, force)).ToSql()
+	sql, args, err := sqlport.Builder.Select().Column(sq.Expr("basalt_meta.revoke_passkey(?::bytea, ?)", credentialID, force)).ToSql()
 	if err != nil {
 		return 0, err
 	}

@@ -20,6 +20,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/lib/logredact"
 )
 
 // runGuarded runs the command line and turns a panic into a saved crash
@@ -31,54 +32,40 @@ func runGuarded(ctx context.Context, args []string, std cli.Stdio) int {
 // engineCLIHost is enginecli.Host for the command table, through app.
 type engineCLIHost struct{}
 
-func (engineCLIHost) CommandName(args []string) string { return commandName(args) }
+func (engineCLIHost) CommandName(args []string) string { return cli.CommandName(args, commands()) }
 
-func (engineCLIHost) Fail(w io.Writer, name string, err error) int { return fail(w, name, err) }
+func (engineCLIHost) Fail(w io.Writer, name string, err error) int { return cli.Fail(w, name, err) }
 
 func (engineCLIHost) ChildStarter(startedFrom, configPath, lockPath, stateDir string, io cli.Stdio, log *slog.Logger) func(context.Context, string) (func() error, error) {
-	return childStarter(startedFrom, configPath, lockPath, stateDir, io, log)
+	return engine.ChildStarter(engine.ChildDeps{Machine: engineos.OS{}, Terminal: engineTerminal{}, Start: engineos.StartChild}, startedFrom, configPath, lockPath, stateDir, io.Out, io.Err, log)
 }
 
 func (engineCLIHost) RunServiceAt(ctx context.Context, args []string, io cli.Stdio, configPath string) int {
 	return runServiceAt(ctx, args, io, configPath)
 }
 
-func (engineCLIHost) EngineLog(w io.Writer) *slog.Logger { return engineLog(w) }
-
-func (engineCLIHost) EngineDown(name, configPath string, log *slog.Logger) (statusmcp.EngineDown, error) {
-	return engineDown(name, configPath, log)
+func (engineCLIHost) EngineLog(w io.Writer) *slog.Logger {
+	return slog.New(logredact.NewTextHandler(w, nil))
 }
 
-func (engineCLIHost) EngineStarter(configPath, socket string, cfg *config.Config, euid int, exe string, log *slog.Logger) (func(context.Context) error, func() string) {
-	return engineStarter(engineHost{}, shim.DefaultStartWait, configPath, socket, cfg, euid, exe, log)
+func (engineCLIHost) EngineDown(name, configPath string, log *slog.Logger) (statusmcp.EngineDown, error) {
+	return statusmcp.LoadEngineDown(name, configPath, AgentServiceManager(), agentEngineHost(), log)
 }
 
 func (engineCLIHost) NewEngineDownServer(down statusmcp.EngineDown) shim.Fallback {
-	return NewEngineDownServer(down)
+	return statusmcp.NewServer(down, Instructions)
 }
 
 func (engineCLIHost) SocketAgents(dir string) []string {
 	return engine.SocketAgents(engineos.OS{}, dir)
 }
 
-// commandName is the command a command line runs, for the report: only a
-// name from the command list, never an argument.
-func commandName(args []string) string {
-	if len(args) == 0 {
-		return ""
-	}
-	for _, cmd := range commands() {
-		if cmd.Name == args[0] {
-			return cmd.Name
-		}
-	}
-	return ""
-}
-
 // engineHost is engine.Host through app and the machine.
 type engineHost struct{ osHost }
 
-func (engineHost) NewRecorder() engine.Recorder { return newRecorder() }
+func (engineHost) NewRecorder() engine.Recorder {
+	return crash.Recorder{Version: buildinfo.Version, Scrub: crash.OSScrubber(), Now: time.Now}
+}
 
 func (engineHost) LastStopHashEngineJSON(path string) string { return laststop.HashEngineJSON(path) }
 
@@ -107,9 +94,4 @@ func (engineTerminal) HeldAtEveryLook(held func() bool, sleep func(time.Duration
 
 func (engineTerminal) LoadEngineConfigAs(euid int, path string) (config.Config, error) {
 	return cli.LoadEngineConfigAs(shell{}, euid, path)
-}
-
-// newRecorder is the crash recorder for this process.
-func newRecorder() engine.Recorder {
-	return crash.Recorder{Version: buildinfo.Version, Scrub: crash.OSScrubber(), Now: time.Now}
 }

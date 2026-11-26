@@ -13,6 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
 )
 
 // statusThroughShim asks the engine-down server for status.
@@ -80,10 +81,10 @@ func TestShimAgentNamesTheSocket(t *testing.T) {
 }
 
 // engineDownServer is what basalt mcp answers while the engine is down.
-func engineDownServer(name, configPath string, log *slog.Logger) (EngineDownServer, error) {
-	down, err := engineDown(name, configPath, log)
+func engineDownServer(name, configPath string, log *slog.Logger) (statusmcp.Server, error) {
+	down, err := statusmcp.LoadEngineDown(name, configPath, AgentServiceManager(), agentEngineHost(), log)
 	if err != nil {
-		return EngineDownServer{}, err
+		return statusmcp.Server{}, err
 	}
-	return NewEngineDownServer(down), nil
+	return statusmcp.NewServer(down, Instructions), nil
 }

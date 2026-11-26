@@ -53,24 +53,12 @@ const pruneInterval = time.Minute
 type vaultLinks struct{ *linksvc.Registry }
 
 // Live lists every agent's live relay links.
-func (v vaultLinks) Live() []vault.Link {
-	live := v.Registry.Live()
-	out := make([]vault.Link, 0, len(live))
-	for _, l := range live {
-		out = append(out, vault.Link{Token: l.Token, Item: l.Item, ExpiresAt: l.ExpiresAt})
-	}
-	return out
-}
+func (v vaultLinks) Live() []vault.Link { return vault.LinksOf(v.Registry.Live()) }
 
 // Session is the live relay link of token, in whichever agent's store
 // holds it.
 func (v vaultLinks) Session(token channel.LinkToken) (vault.SessionLink, bool) {
-	agent, l, ok := v.Registry.Session(token)
-	defer l.Keys.PSK.Zero()
-	if !ok {
-		return vault.SessionLink{}, false
-	}
-	return vault.SessionLink{Token: l.Keys.Token, Agent: agent, Item: l.Item, PSK: l.Keys.PSK, ExpiresAt: l.ExpiresAt}, true
+	return vault.SessionOf(v.Registry.Session(token))
 }
 
 // loadEngineKeys reads <stateDir>/channel.json, creating the directory and
@@ -80,10 +68,4 @@ func loadEngineKeys(stateDir string, now func() time.Time) (*channel.EngineKeys,
 		return nil, err
 	}
 	return keyfile.LoadOrCreateKeys(filepath.Join(stateDir, channel.KeyFileName), now)
-}
-
-// loadOrCreateEngineKeys is keyfile.LoadOrCreateKeys, for the CLI, which
-// does not import the stores.
-func loadOrCreateEngineKeys(path string, now func() time.Time) (*channel.EngineKeys, error) {
-	return keyfile.LoadOrCreateKeys(path, now)
 }

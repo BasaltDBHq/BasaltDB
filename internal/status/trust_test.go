@@ -41,9 +41,9 @@ func caExpiring(t *testing.T, notAfter time.Time) *x509.Certificate {
 
 func trustLocal(t *testing.T, probe *fakeProbe, rep TrustReporter) guidance.StatusReport {
 	t.Helper()
-	r, err := newService(func(c *Core, d *Deps) {
-		c.Commands = commandsAt("").Foreground()
-		d.SameUser, d.Trust, d.Probe = true, rep, probe
+	r, err := newService(func(s *settings) {
+		s.core.Commands = commandsAt("").Foreground()
+		s.deps.SameUser, s.deps.Trust, s.deps.Probe = true, rep, probe
 	}).Status(context.Background())
 	require.NoError(t, err)
 	return r

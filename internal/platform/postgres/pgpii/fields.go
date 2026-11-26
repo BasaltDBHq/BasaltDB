@@ -18,6 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // pageWaitMargin is how long a page may wait for a connection, on top of
@@ -142,7 +143,7 @@ func (k keyColumn) sql() string {
 // keysetOf reads a table's relkind and its primary key columns with their
 // types; no key when any key column is not readable by the agent.
 func keysetOf(ctx context.Context, db Querier, oid uint32) ([]keyColumn, string, error) {
-	q, args, err := psql.Select("relkind::text").From("pg_catalog.pg_class").Where(sq.Eq{"oid": oid}).ToSql()
+	q, args, err := sqlport.Builder.Select("relkind::text").From("pg_catalog.pg_class").Where(sq.Eq{"oid": oid}).ToSql()
 	if err != nil {
 		return nil, "", err
 	}
@@ -224,7 +225,7 @@ func rowPager(t piistore.ScanTarget, keys []keyColumn, page int) pager {
 	return pager{
 		keyCols: len(keys),
 		query: func(cursor []string) (string, []any, error) {
-			b := psql.Select(sel...).From(from).OrderBy(order...).Limit(uint64(page))
+			b := sqlport.Builder.Select(sel...).From(from).OrderBy(order...).Limit(uint64(page))
 			if cursor != nil {
 				b = b.Where(sq.Expr(tuple, toArgs(cursor)...))
 			}
@@ -246,7 +247,7 @@ func onePassPager(t piistore.ScanTarget) pager {
 	return pager{
 		onePass: true,
 		query: func([]string) (string, []any, error) {
-			return psql.Select(sel...).From(from).ToSql()
+			return sqlport.Builder.Select(sel...).From(from).ToSql()
 		},
 	}
 }
@@ -296,7 +297,7 @@ func (f *FieldReader) page(ctx context.Context, p pager, cursor []string, value 
 	}
 	// Read-only: nothing to commit.
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	timeout, targs, err := psql.Select().Column(sq.Expr("pg_catalog.set_config('statement_timeout', ?, true)", f.limits.StatementTimeoutSetting())).ToSql()
+	timeout, targs, err := sqlport.StatementTimeoutSQL(f.limits.StatementTimeout)
 	if err != nil {
 		return nil, 0, err
 	}

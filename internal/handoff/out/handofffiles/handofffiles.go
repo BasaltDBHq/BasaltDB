@@ -4,10 +4,3 @@
 // entry in engine.json, the pins of trust.d, and the probe cache in the
 // engine's state directory.
 package handofffiles
-
-// The agent's files next to its credential file: the same names as
-// handoff.PendingSuffix and handoff.LockSuffix.
-const (
-	pendingSuffix = ".pending"
-	lockSuffix    = ".lock"
-)

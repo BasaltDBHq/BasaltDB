@@ -23,7 +23,7 @@ func (s Resolver) LookupNetIP(ctx context.Context, _, host string) ([]netip.Addr
 	v4, err4 := r.LookupNetIP(ctx, "ip4", host)
 	v6, err6 := r.LookupNetIP(ctx, "ip6", host)
 	if err4 != nil && err6 != nil {
-		return nil, fmt.Errorf("resolve the database's host: %w", errors.Join(err4, err6))
+		return nil, fmt.Errorf("resolve %s: %w", host, errors.Join(err4, err6))
 	}
 	out := make([]netip.Addr, 0, len(v4)+len(v6))
 	for _, a := range v4 {

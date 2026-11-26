@@ -65,8 +65,12 @@ type StarterDeps struct {
 // message finds it down, and the text of the last failure ("" when the last
 // try worked or there was none). start is nil when auto-start does not
 // apply: no config, a service-mode config, or a config file another user
-// owns. The engine then keeps today's engine-down answer.
+// owns. The engine then keeps today's engine-down answer. It panics on a
+// nil d.OS.
 func NewStarter(h StarterHost, d StarterDeps, configPath, socket string, cfg *config.Config, euid int, exe string, log *slog.Logger) (start func(context.Context) error, failure func() string) {
+	if d.OS == nil {
+		panic("engine: the starter needs the machine's files (StarterDeps.OS)")
+	}
 	// A root shim never starts an engine: root is not a same-user engine.
 	if cfg == nil || cfg.Service() || euid == 0 {
 		return nil, nil

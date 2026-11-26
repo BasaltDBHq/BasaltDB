@@ -111,7 +111,7 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 	// A root engine never collects, so it reads no probe cache either.
 	var cache handoff.ProbeCache
 	if !env.asRoot {
-		cache = handoff.FileCache{File: handofffiles.ProbeCacheFile{Dir: env.stateDir}}
+		cache = handoff.NewFileCache(handofffiles.ProbeCacheFile{Dir: env.stateDir})
 	}
 	pending, err := handoff.New(handoff.Options{
 		Agent: a.Name, Setup: *a.Setup, Collector: collector, Prober: env.handoff.Prober,

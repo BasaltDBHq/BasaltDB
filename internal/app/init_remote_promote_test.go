@@ -54,7 +54,7 @@ func pendingAgent(t *testing.T) (cfg, credFile string) {
 	installedAgent(t, noDB(t), cfg, agentDSN(t, "postgres://postgres@db.example.com:5432/app", guardmodel.DefaultPrefix, "bot", botPassword))
 	r := remote(t, cfg, "--agent", "bot")
 	require.NotNil(t, r.cfg.Agents[0].Setup)
-	require.FileExists(t, r.credFile+setup.PendingSuffix)
+	require.FileExists(t, r.credFile+config.PendingSuffix)
 	return cfg, r.credFile
 }
 
@@ -80,7 +80,7 @@ func TestInitRemotePromotesPendingOnlyOnceTheSetupIsRecorded(t *testing.T) {
 	cfg, credFile := pendingAgent(t)
 	cred, err := os.ReadFile(credFile)
 	require.NoError(t, err)
-	pending, err := os.ReadFile(credFile + setup.PendingSuffix)
+	pending, err := os.ReadFile(credFile + config.PendingSuffix)
 	require.NoError(t, err)
 	res, err := runRemote(t, recordedHost{recorded: false}, cfg, loggedIn)
 	require.NoError(t, err)
@@ -88,13 +88,13 @@ func TestInitRemotePromotesPendingOnlyOnceTheSetupIsRecorded(t *testing.T) {
 	got, err := os.ReadFile(credFile)
 	require.NoError(t, err)
 	require.Equal(t, string(cred), string(got), "the credential file is unchanged")
-	got, err = os.ReadFile(credFile + setup.PendingSuffix)
+	got, err = os.ReadFile(credFile + config.PendingSuffix)
 	require.NoError(t, err)
 	require.Equal(t, string(pending), string(got), ".pending stays")
 
 	_, err = runRemote(t, recordedHost{recorded: true}, cfg, loggedIn)
 	require.NoError(t, err)
-	require.NoFileExists(t, credFile+setup.PendingSuffix)
+	require.NoFileExists(t, credFile+config.PendingSuffix)
 	got, err = os.ReadFile(credFile)
 	require.NoError(t, err)
 	require.Equal(t, string(pending), string(got), "the recorded setup's .pending is the credential")
@@ -113,7 +113,7 @@ func TestInitRemoteIgnoresACredentialForAnotherRole(t *testing.T) {
 		return nil, handoff.ErrLoginRefused
 	})
 	require.NoError(t, err)
-	pending, err := os.ReadFile(credFile + setup.PendingSuffix)
+	pending, err := os.ReadFile(credFile + config.PendingSuffix)
 	require.NoError(t, err)
 	require.Equal(t, []string{string(bytes.TrimSpace(pending))}, dialed, "only .pending logs in")
 }
@@ -124,7 +124,7 @@ func TestInitRemoteLockedKeepsItsMessageAndErrLocked(t *testing.T) {
 	t.Parallel()
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
-	path := filepath.Join(dir, "bot.url"+setup.LockSuffix)
+	path := filepath.Join(dir, "bot.url"+config.LockSuffix)
 	unlock, err := config.LockFile(path)
 	require.NoError(t, err)
 	defer unlock()
@@ -150,7 +150,7 @@ func TestInitRemoteChangedCertificateOnThePendingLogin(t *testing.T) {
 	require.NoError(t, err)
 	credFile := c.Agents[0].Store.CredentialFile
 	pending := agentDSN(t, "postgres://postgres@"+pinnedHost+":5432/postgres?sslmode=verify-full", guardmodel.DefaultPrefix, "bot", "4567cdef")
-	require.NoError(t, config.WriteFile(credFile+setup.PendingSuffix, []byte(pending+"\n")))
+	require.NoError(t, config.WriteFile(credFile+config.PendingSuffix, []byte(pending+"\n")))
 
 	var stdout, stderr bytes.Buffer
 	io := noDB(t).io(&stdout, &stderr)
@@ -169,7 +169,7 @@ func TestInitRemoteChangedCertificateOnThePendingLogin(t *testing.T) {
 	c, err = config.Load(cfg)
 	require.NoError(t, err)
 	require.True(t, c.Agents[0].Setup.CertificateChanged)
-	got, err := os.ReadFile(credFile + setup.PendingSuffix)
+	got, err := os.ReadFile(credFile + config.PendingSuffix)
 	require.NoError(t, err)
 	require.Equal(t, pending+"\n", string(got), ".pending is left as it is")
 }

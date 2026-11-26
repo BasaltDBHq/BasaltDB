@@ -236,7 +236,7 @@ func newRemoteInit(c *cli.IO, h Host, f setup.RemoteFlags) (*remoteInit, error) 
 	if err := r.paths(); err != nil {
 		return nil, err
 	}
-	unlock, err := r.files.Lock(r.credFile + setup.LockSuffix)
+	unlock, err := r.files.Lock(r.credFile + config.LockSuffix)
 	if err != nil {
 		r.files.Close()
 		return nil, err
@@ -401,7 +401,7 @@ func (r *remoteInit) connection() error {
 	if err != nil {
 		return err
 	}
-	pending, err := setup.ReadCredentialIfAny(r.files, r.credFile+setup.PendingSuffix)
+	pending, err := setup.ReadCredentialIfAny(r.files, r.credFile+config.PendingSuffix)
 	if err != nil {
 		return err
 	}
@@ -502,7 +502,7 @@ func (r *remoteInit) login(pending, cred *setup.Credential) error {
 // credential file, once the .pending path still names the file read, a
 // regular file with one link.
 func (r *remoteInit) promote(pending *setup.Credential) error {
-	pendingFile := r.credFile + setup.PendingSuffix
+	pendingFile := r.credFile + config.PendingSuffix
 	now, err := r.files.Stat(pendingFile)
 	if err != nil {
 		return err
@@ -907,7 +907,7 @@ func (r *remoteInit) writeCredential(p setup.Plan) error {
 	fmt.Fprint(r.c.Stderr, applied.Line())
 	path := r.credFile
 	if r.credExists {
-		path += setup.PendingSuffix
+		path += config.PendingSuffix
 	}
 	return r.files.Write(path, []byte(dsn+"\n"))
 }

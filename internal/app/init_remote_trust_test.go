@@ -108,7 +108,7 @@ func TestInitRemoteChangedCertificate(t *testing.T) {
 	require.True(t, s.CertificateChanged)
 	require.False(t, s.ConnectOnly())
 	cred := c.Agents[0].Store.CredentialFile
-	require.NoFileExists(t, cred+setup.PendingSuffix, "no new password is written")
+	require.NoFileExists(t, cred+config.PendingSuffix, "no new password is written")
 	after, err := os.ReadFile(pinFile)
 	require.NoError(t, err)
 	require.Equal(t, before, after, "init pins nothing")
@@ -133,7 +133,7 @@ func TestInitRemoteSameCertificateFails(t *testing.T) {
 	c, lerr := config.Load(cfg)
 	require.NoError(t, lerr)
 	require.Nil(t, c.Agents[0].Setup)
-	require.NoFileExists(t, c.Agents[0].Store.CredentialFile+setup.PendingSuffix)
+	require.NoFileExists(t, c.Agents[0].Store.CredentialFile+config.PendingSuffix)
 }
 
 // Every code with a target of the AGENT or UPGRADE kind carries the

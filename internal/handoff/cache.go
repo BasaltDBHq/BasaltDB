@@ -38,12 +38,20 @@ type CacheFile interface {
 }
 
 // FileCache is a ProbeCache in one file.
-type FileCache struct{ File CacheFile }
+type FileCache struct{ file CacheFile }
+
+// NewFileCache is the ProbeCache in f. It panics on a nil f.
+func NewFileCache(f CacheFile) FileCache {
+	if f == nil {
+		panic("handoff: the probe cache needs its file")
+	}
+	return FileCache{file: f}
+}
 
 // Load is the cached probe of setupID; false for none, another setup, or a
 // file it cannot read.
 func (f FileCache) Load(setupID string) (Cached, bool) {
-	raw, err := f.File.Read()
+	raw, err := f.file.Read()
 	if err != nil {
 		return Cached{}, false
 	}
@@ -60,5 +68,5 @@ func (f FileCache) Save(c Cached) error {
 	if err != nil {
 		return err
 	}
-	return f.File.Write(raw)
+	return f.file.Write(raw)
 }

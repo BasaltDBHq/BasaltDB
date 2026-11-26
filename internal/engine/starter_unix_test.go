@@ -120,6 +120,17 @@ func (r *starterRig) deps(owner int, launchErr error) engine.StarterDeps {
 	}
 }
 
+// A starter without the machine's files is refused when it is built.
+func TestEngineStarterRefusesNoOS(t *testing.T) {
+	t.Parallel()
+	r := newStarterRig(t)
+	d := r.deps(testEuid, nil)
+	d.OS = nil
+	require.Panics(t, func() {
+		engine.NewStarter(holdOff{}, d, "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	})
+}
+
 func TestEngineStarterNilForServiceConfig(t *testing.T) {
 	t.Parallel()
 	r := newStarterRig(t)

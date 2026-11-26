@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
-	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 const rootOnlySecret = "user=ROOT-ONLY-SECRET"
@@ -91,7 +91,7 @@ func TestInitRemoteAsRootRefusesAnUntrustedConfig(t *testing.T) {
 			require.Equal(t, cli.ExitError, r.code, r.stdout)
 			_, err := os.Lstat(planted)
 			require.ErrorIs(t, err, os.ErrNotExist, "the credential file the config names is never written")
-			_, err = os.Lstat(planted + setup.PendingSuffix)
+			_, err = os.Lstat(planted + config.PendingSuffix)
 			require.ErrorIs(t, err, os.ErrNotExist)
 		})
 	}

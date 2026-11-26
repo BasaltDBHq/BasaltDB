@@ -271,6 +271,18 @@ func (s Setup) CollectsCertificate() bool { return s.CertificateChanged && !s.Co
 // setup until the person confirms its database: agents/<agent>.secret.
 const SecretSuffix = ".secret"
 
+// The files basalt init --remote keeps next to an agent's credential file
+// (CONTRACT.md, basalt init --remote).
+const (
+	// PendingSuffix names the new password's file while an AGENT code that
+	// rotates it waits: the old password keeps working until the person runs
+	// the code.
+	PendingSuffix = ".pending"
+	// LockSuffix names the lock file that keeps two runs of init --remote
+	// for one agent apart, and that the engine takes too.
+	LockSuffix = ".lock"
+)
+
 // SecretPath is agent's .secret, next to its credential file credFile
 // (CONTRACT.md, Connect-only setup codes): init writes it there and the
 // engine reads it there.

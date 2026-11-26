@@ -17,7 +17,7 @@ func (p PathFiles) ReadCredential() (string, error) { return config.ReadCredenti
 
 // ReadPending reads the agent's .pending credential, at most limit bytes.
 func (p PathFiles) ReadPending(limit int) (string, os.FileInfo, error) {
-	path := p.CredFile + pendingSuffix
+	path := p.CredFile + config.PendingSuffix
 	if _, err := os.Lstat(path); err != nil {
 		return "", nil, err
 	}
@@ -27,7 +27,7 @@ func (p PathFiles) ReadPending(limit int) (string, os.FileInfo, error) {
 // Promote renames .pending over the credential file, when it is still the
 // file ReadPending read.
 func (p PathFiles) Promote(pending os.FileInfo) error {
-	path := p.CredFile + pendingSuffix
+	path := p.CredFile + config.PendingSuffix
 	if err := config.SameCredentialFile(path, pending); err != nil {
 		return err
 	}
@@ -35,7 +35,7 @@ func (p PathFiles) Promote(pending os.FileInfo) error {
 }
 
 // Lock takes the agent's .lock.
-func (p PathFiles) Lock() (func(), error) { return config.LockFile(p.CredFile + lockSuffix) }
+func (p PathFiles) Lock() (func(), error) { return config.LockFile(p.CredFile + config.LockSuffix) }
 
 // ClearSetup clears setup id of agent from the engine config.
 func (p PathFiles) ClearSetup(agent, id string) (bool, error) {

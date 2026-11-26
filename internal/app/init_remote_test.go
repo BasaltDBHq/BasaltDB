@@ -501,7 +501,7 @@ func TestInitRemoteHardensTheCredentialThroughThePooler(t *testing.T) {
 	}
 	r := remoteWith(t, e, cfg, "--agent", "bot")
 	require.Equal(t, []string{"verify-full/require", "verify-full/"}, probed)
-	pending := r.credFile + setup.PendingSuffix
+	pending := r.credFile + config.PendingSuffix
 	raw, err := os.ReadFile(pending)
 	require.NoError(t, err)
 	u, err := url.Parse(strings.TrimSpace(string(raw)))
@@ -519,7 +519,7 @@ func TestInitRemoteHardensTheCredentialThroughThePooler(t *testing.T) {
 func TestInitRemoteExplainsACredentialWithTargetParams(t *testing.T) {
 	t.Parallel()
 	const stored = "postgres://basalt_agent_bot:enginepw@db.example.com:5432/crm?sslmode=require&host=10.0.0.9\n"
-	for _, suffix := range []string{"", setup.PendingSuffix} {
+	for _, suffix := range []string{"", config.PendingSuffix} {
 		cfg := tempConfig(t)
 		path := filepath.Join(filepath.Dir(cfg), "agents", "bot.url"+suffix)
 		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
@@ -552,7 +552,7 @@ func TestInitRemoteRejectedCredentialGetsANewPassword(t *testing.T) {
 	require.Equal(t, "AGENT", rotate.res.Kind)
 	require.False(t, rotate.res.Reused)
 	require.Equal(t, "0123abcd", credentialPassword(t, rotate.credFile))
-	pw := credentialPassword(t, rotate.credFile+setup.PendingSuffix)
+	pw := credentialPassword(t, rotate.credFile+config.PendingSuffix)
 	require.NotEqual(t, "0123abcd", pw)
 	requireVerifierOf(t, rotate.payload.Agent.Verifier, pw)
 	requireNoSecret(t, rotate, cfg, pw)
@@ -563,7 +563,7 @@ func TestInitRemoteRejectedCredentialGetsANewPassword(t *testing.T) {
 	require.Equal(t, rotate.res.SetupID, again.res.SetupID)
 	require.Equal(t, rotate.res.ExpiresAt, again.res.ExpiresAt)
 	require.Equal(t, rotate.res.Code, again.res.Code)
-	require.Equal(t, pw, credentialPassword(t, rotate.credFile+setup.PendingSuffix))
+	require.Equal(t, pw, credentialPassword(t, rotate.credFile+config.PendingSuffix))
 }
 
 // An expired code (SETUP_EXPIRED) is never printed again: the next run
@@ -604,13 +604,13 @@ func TestInitRemoteRefusesASymlinkedCredential(t *testing.T) {
 	// A .pending planted as a link is refused the same way.
 	require.NoError(t, os.Remove(first.credFile))
 	require.NoError(t, config.WriteFile(first.credFile, []byte(supabaseDSN(t)+"\n")))
-	require.NoError(t, os.Symlink(target, first.credFile+setup.PendingSuffix))
+	require.NoError(t, os.Symlink(target, first.credFile+config.PendingSuffix))
 	r = cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot")
 	require.Equal(t, cli.ExitError, r.code)
-	require.Contains(t, r.stderr, setup.PendingSuffix+" is not usable")
+	require.Contains(t, r.stderr, config.PendingSuffix+" is not usable")
 
 	// config.WriteFile, which writes every file init writes, refuses a link.
-	require.Error(t, config.WriteFile(first.credFile+setup.PendingSuffix, []byte("x")))
+	require.Error(t, config.WriteFile(first.credFile+config.PendingSuffix, []byte("x")))
 	raw, err = os.ReadFile(target)
 	require.NoError(t, err)
 	require.Equal(t, "postgres://x@h/db\n", string(raw))
@@ -715,7 +715,7 @@ func TestInitRemoteAgainstTheDatabase(t *testing.T) {
 	require.Equal(t, "AGENT", rotate.res.Kind)
 	require.True(t, rotate.payload.KeepsGrants(), "a rejected password asks for no tables")
 	require.Equal(t, "0123abcd", credentialPassword(t, install.credFile))
-	pw2 := credentialPassword(t, install.credFile+setup.PendingSuffix)
+	pw2 := credentialPassword(t, install.credFile+config.PendingSuffix)
 	require.NotEqual(t, "0123abcd", pw2)
 	requireVerifierOf(t, rotate.payload.Agent.Verifier, pw2)
 	requireNoSecret(t, rotate, cfg, pw2)
@@ -726,7 +726,7 @@ func TestInitRemoteAgainstTheDatabase(t *testing.T) {
 	after := remoteDBRun(t, cfg, "--agent", "bot")
 	require.False(t, after.res.Reused)
 	require.Equal(t, pw2, credentialPassword(t, install.credFile))
-	require.NoFileExists(t, install.credFile+setup.PendingSuffix)
+	require.NoFileExists(t, install.credFile+config.PendingSuffix)
 
 	// UPGRADE when the guard is older than the build: no agent part.
 	runCode(t, d, after.payload)
@@ -764,7 +764,7 @@ func TestInitRemoteSetupNotFoundGetsANewPassword(t *testing.T) {
 	require.Equal(t, "AGENT", r.res.Kind)
 	require.NotNil(t, r.payload.Target)
 	require.Equal(t, botPassword, credentialPassword(t, r.credFile))
-	pw := credentialPassword(t, r.credFile+setup.PendingSuffix)
+	pw := credentialPassword(t, r.credFile+config.PendingSuffix)
 	require.NotEqual(t, botPassword, pw)
 	requireVerifierOf(t, r.payload.Agent.Verifier, pw)
 }
@@ -863,7 +863,7 @@ func TestInitRemoteRunsOneAtATime(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)
 	first := seedCredential(t, noDB(t), cfg, "bot", supabaseDSN(t))
-	unlock, err := pathCredFiles{}.Lock(first.credFile + setup.LockSuffix)
+	unlock, err := pathCredFiles{}.Lock(first.credFile + config.LockSuffix)
 	require.NoError(t, err)
 	r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot")
 	require.Equal(t, cli.ExitError, r.code)
@@ -940,14 +940,14 @@ func TestInitRemoteAsRootNotesServiceModeOnlyAfterWriting(t *testing.T) {
 	cfg = withState(t, tempConfig(t))
 	agents := filepath.Join(filepath.Dir(cfg), "agents")
 	require.NoError(t, os.MkdirAll(agents, 0o700))
-	require.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "lock"), filepath.Join(agents, "bot.url"+setup.LockSuffix)))
+	require.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "lock"), filepath.Join(agents, "bot.url"+config.LockSuffix)))
 	r = e.cli(t, "--remote", "--config", cfg, "--agent", "bot")
 	require.Equal(t, cli.ExitError, r.code, r.stderr)
 	require.NotContains(t, r.stderr, "service one", "refused at the lock, after opening the directories: nothing written")
 	_, err := os.Stat(cfg)
 	require.ErrorIs(t, err, os.ErrNotExist)
 
-	require.NoError(t, os.Remove(filepath.Join(agents, "bot.url"+setup.LockSuffix)))
+	require.NoError(t, os.Remove(filepath.Join(agents, "bot.url"+config.LockSuffix)))
 	r = e.cli(t, "--remote", "--config", cfg, "--agent", "bot")
 	require.Equal(t, cli.ExitOK, r.code, r.stderr)
 	require.Equal(t, 1, strings.Count(r.stderr, "this config is a service one (mode SERVICE)"), "said once, after writing: %s", r.stderr)

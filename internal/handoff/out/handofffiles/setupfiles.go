@@ -36,7 +36,7 @@ type SetupFiles struct {
 func (f SetupFiles) secretPath() string { return config.SecretPath(f.CredFile, f.Agent) }
 
 // Lock takes the agent's .lock.
-func (f SetupFiles) Lock() (func(), error) { return config.LockFile(f.CredFile + lockSuffix) }
+func (f SetupFiles) Lock() (func(), error) { return config.LockFile(f.CredFile + config.LockSuffix) }
 
 // PendingSetup is the agent's pending setup in engine.json now; false when
 // none.

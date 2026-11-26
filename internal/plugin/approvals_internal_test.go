@@ -28,6 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/pluginsign"
 )
 
 // Hooks of the test plugin's manifest.
@@ -78,13 +79,13 @@ func (f *pluginFixture) installCopyOver(instance, hooks, transport string, signe
 `, hooks, transport, args, sha256.Sum256(exe))
 	require.NoError(t, os.WriteFile(filepath.Join(src, ManifestFile), []byte(manifest), 0o644))
 	if signed {
-		key, err := GenerateKey()
+		key, err := pluginsign.GenerateKey()
 		require.NoError(t, err)
 		pemBytes, err := MarshalPublicKey(&key.PublicKey)
 		require.NoError(t, err)
 		_, _, err = f.trust.Add(pemBytes)
 		require.NoError(t, err)
-		sig, err := SignManifest([]byte(manifest), key)
+		sig, err := pluginsign.SignManifest([]byte(manifest), key)
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(src, SignatureFile), sig, 0o644))
 	}
@@ -134,7 +135,7 @@ func (l pluginLedgers) open(t *testing.T, opener string, d guardmodel.PluginAppr
 // connection.
 func (l pluginLedgers) sign(t *testing.T, pk *passkeytest.Authenticator, relay string, a guardmodel.PluginApproval) {
 	t.Helper()
-	as, err := pk.Sign(approval.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := pk.Sign(passkeytest.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.SubmitPluginApproval(context.Background(), pgxOf(l.dbs[relay].db), guardmodel.PluginApprovalResponse{ApprovalID: a.ID, Assertion: as})
 	require.NoError(t, err)
@@ -273,7 +274,7 @@ func TestExpiredPendingIsReported(t *testing.T) {
 	l := newPluginLedgers(t, f)
 	a := l.open(t, "product_a", honestDetail(p, approval.AgentName("product_a")), p.ApprovalSettings())
 	pk := l.person(t)
-	as, err := pk.Sign(approval.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := pk.Sign(passkeytest.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	l.d.Exec(t, `UPDATE basalt_meta.plugin_approvals SET expires_at = now() - interval '1 second'`)
 

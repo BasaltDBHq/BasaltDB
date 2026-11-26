@@ -86,15 +86,6 @@ func (s Settings) changesOperatedBy(prev Config) bool {
 	return was != s.OperatedBy
 }
 
-// UpsertAgent adds agent a to the config at path, or replaces the agent of
-// the same name, creating the file from s when it does not exist. The file is
-// written atomically with FileMode. Only tests call it: basalt init uses
-// UpsertAgentVault, which also returns the vault it wrote.
-func UpsertAgent(path string, s Settings, a Agent) error {
-	_, err := UpsertAgentVault(path, s, a)
-	return err
-}
-
 // UpsertAgentVault is UpsertAgent, returning the vault it wrote. It holds
 // the config's lock (lockConfig) from the read to the write, so a setup the
 // engine clears meanwhile is not lost, nor this agent by the engine's write.

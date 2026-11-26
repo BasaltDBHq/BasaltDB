@@ -52,7 +52,7 @@ func refusingEngine(t *testing.T, socket string, refused int) {
 	}()
 }
 
-// relayLosingRace is the relay Serve runs, except that its first `late`
+// relayLosingRace is the relay ServeWith runs, except that its first `late`
 // dials return only once the engine has ended that session: the request
 // then reaches a session that can no longer take it, the order a loaded
 // machine produces when the engine's refusal and close win the race.

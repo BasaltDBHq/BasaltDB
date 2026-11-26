@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -87,7 +86,7 @@ func TestRequestRevertOfARunWithTheLocalPages(t *testing.T) {
 	require.Equal(t, "Undo yesterday's lead status merge.", b.Intent, "the agent's intent is in the binding the person signs")
 
 	// The person signs on the page and the page relays it.
-	as, err := env.person.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
+	as, err := env.person.Sign(passkeytest.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	signed, err := json.Marshal(reverttest.NewResponse(b.RevertID, as))
 	require.NoError(t, err)
@@ -123,7 +122,7 @@ func TestRequestRevertOfAChangeWithoutLocalPages(t *testing.T) {
 	frag := link[strings.Index(link, "#")+1:]
 	req, b, err := reverttest.ParseRequest(frag)
 	require.NoError(t, err)
-	as, err := env.person.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
+	as, err := env.person.Sign(passkeytest.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(context.Background(), env.a.Conn, b.RevertID, as)
 	require.NoError(t, err)
@@ -348,13 +347,13 @@ func TestRequestedRevertNeedsThePersonsSignature(t *testing.T) {
 	forger, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	forger.ID = env.person.ID
-	forged, err := forger.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
+	forged, err := forger.Sign(passkeytest.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, env.a.Conn, b.RevertID, forged)
 	requireRevertInvalid(t, err)
 	require.Equal(t, "won", leadStatus(t, env.d, 79), "a forged signature writes nothing")
 
-	as, err := env.person.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
+	as, err := env.person.Sign(passkeytest.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, env.a.Conn, b.RevertID, as)
 	require.NoError(t, err)

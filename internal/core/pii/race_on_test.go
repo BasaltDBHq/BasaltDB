@@ -1,6 +1,0 @@
-//go:build race
-
-package pii_test
-
-// raceEnabled reports whether the tests run under the race detector.
-const raceEnabled = true

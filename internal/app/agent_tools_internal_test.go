@@ -8,6 +8,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
 
 // postgresStore is a store of kind POSTGRES whose other methods these tests
@@ -35,7 +36,7 @@ func TestServedToolsMatchTheContracts(t *testing.T) {
 		require.Equal(t, c.InputSchema, tool.InputSchema, tool.Name)
 		require.Equal(t, c.Description, tool.Description, tool.Name)
 	}
-	require.NoError(t, mcpcontract.CheckServed(contracts, served))
+	require.NoError(t, stepcatalogtest.CheckServed(contracts, served))
 }
 
 // TestServedToolListOrder pins the order of the tool list: it is what an agent

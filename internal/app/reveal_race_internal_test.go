@@ -81,7 +81,7 @@ func (e raceEnv) hold(t *testing.T, lead int) heldDelete {
 // signature is the person's signature of a held write; sign relays it.
 func (e raceEnv) signature(t *testing.T, h heldDelete) passkey.Assertion {
 	t.Helper()
-	as, err := e.person.Sign(approval.Challenge(h.held.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := e.person.Sign(passkeytest.Challenge(h.held.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	return as
 }
@@ -292,7 +292,7 @@ func TestRevealRacesTheRevertSignature(t *testing.T) {
 	}
 	made := func(prep revertstore.PreparedRevert) signed {
 		as, key := e.proof(t, approval.KindRevert, prep.RevertID, "reverts", "revert_id")
-		sig, err := e.person.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+		sig, err := e.person.Sign(passkeytest.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 		require.NoError(t, err)
 		return signed{proof: as, key: key, sig: sig}
 	}

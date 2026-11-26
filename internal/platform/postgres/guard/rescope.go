@@ -98,38 +98,6 @@ func RescopeRevert(ctx context.Context, q Querier, req revertstore.RescopeReques
 	return decodeRescoped(raw)
 }
 
-// RescopeOwn changes the scope of the caller's own pending revert to s, the
-// caller's own work (agents = [session_user]), with no proof or token
-// (basalt_meta.rescope_revert): the person's CLI narrowing a revert, never
-// widening it. A select outside the caller's own work, or any rescope of a
-// widened revert, fails as REVERT_INVALID detail RevertWidenRefused. Run it
-// in its own transaction.
-func RescopeOwn(ctx context.Context, q Querier, revertID uuid.UUID, s revertstore.Scope) (revertstore.PreparedRevert, error) {
-	args, err := scopeArgs(s)
-	if err != nil {
-		return revertstore.PreparedRevert{}, err
-	}
-	var raw []byte
-	// Plain SQL: one function call over a built descriptor, returning jsonb.
-	err = q.QueryRow(ctx, `SELECT basalt_meta.rescope_revert($5::uuid, `+ownSelect+`, NULL, NULL, NULL)`,
-		append(args, revertID.String())...).Scan(&raw)
-	if err != nil {
-		return revertstore.PreparedRevert{}, err
-	}
-	out, err := decodeRescoped(raw)
-	if err != nil {
-		return revertstore.PreparedRevert{}, err
-	}
-	batched, err := bindingBatched(out.BindingText)
-	if err != nil {
-		return revertstore.PreparedRevert{}, err
-	}
-	return revertstore.PreparedRevert{
-		RevertID: out.RevertID, BindingText: out.BindingText, ExpiresAt: out.ExpiresAt, Lines: out.Lines,
-		Batched: batched,
-	}, nil
-}
-
 // ResetRevert puts the caller's own pending revert back to its proposal
 // (basalt_meta.reset_revert), for the agent's reissueLink on a widened
 // revert: the person's scope, ceiling and token are dropped and the reset

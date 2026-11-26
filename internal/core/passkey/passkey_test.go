@@ -124,7 +124,12 @@ func TestVerifyAssertion(t *testing.T) {
 
 func newRequest(t *testing.T) passkey.RegistrationRequest {
 	t.Helper()
-	req, err := passkey.NewRegistrationRequest(rand.Reader, "app", "BasaltDB · app")
+	challenge, userID := make([]byte, 32), make([]byte, 16)
+	_, err := rand.Read(challenge)
+	require.NoError(t, err)
+	_, err = rand.Read(userID)
+	require.NoError(t, err)
+	req, err := passkey.RegistrationRequestFor(challenge, userID, "app", "BasaltDB · app")
 	require.NoError(t, err)
 	return req
 }
@@ -194,7 +199,7 @@ func TestVerifyRegistration(t *testing.T) {
 func TestRegistrationCodes(t *testing.T) {
 	t.Parallel()
 	req := newRequest(t)
-	frag, err := req.Fragment()
+	frag, err := passkey.EncodeCode(passkey.RegistrationRequestPrefix, req)
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(frag, passkey.RegistrationRequestPrefix))
 	got, err := passkeytest.ParseRegistrationRequest("#" + frag)
@@ -232,29 +237,8 @@ func TestRegistrationCodes(t *testing.T) {
 
 	_, err = passkeytest.ParseRegistrationRequest(passkey.RegistrationRequestPrefix + passkey.Bytes(`{"challenge":"AA","userId":"AA","userName":"a","displayName":"a"}`).String())
 	requireRejected(t, err, "32-byte challenge")
-	_, err = passkey.NewRegistrationRequest(rand.Reader, "", "x")
+	_, err = passkey.RegistrationRequestFor(make([]byte, 32), make([]byte, 16), "", "x")
 	requireRejected(t, err, "labels")
-}
-
-// TestRegistrationHandBack: the request may carry the secret of basalt
-// init's hand-back route, 16 bytes base64url, and round-trips it.
-func TestRegistrationHandBack(t *testing.T) {
-	t.Parallel()
-	req := newRequest(t)
-	req.HandBack = passkey.Bytes(make([]byte, 16)).String()
-	frag, err := req.Fragment()
-	require.NoError(t, err)
-	got, err := passkeytest.ParseRegistrationRequest(frag)
-	require.NoError(t, err)
-	require.Equal(t, req, got)
-
-	for _, bad := range []string{"short", strings.Repeat("A", 23), strings.Repeat("+", 22)} {
-		req.HandBack = bad
-		frag, err := req.Fragment()
-		require.NoError(t, err)
-		_, err = passkeytest.ParseRegistrationRequest(frag)
-		requireRejected(t, err, "handBack")
-	}
 }
 
 func TestBytesJSON(t *testing.T) {

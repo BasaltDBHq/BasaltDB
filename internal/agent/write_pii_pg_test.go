@@ -58,7 +58,7 @@ func piiWriteService(t *testing.T, returned postgres.ReturnedFunc) (*agent.Servi
 	require.NoError(t, pgx.BeginFunc(context.Background(), d.Admin, func(tx pgx.Tx) error {
 		return guard.WriteClassification(context.Background(), tx, d.Names, guardmodel.Classification{Columns: cols, At: time.Now()})
 	}))
-	pool, err := postgres.NewPool(context.Background(), a.URL, 2)
+	pool, _, err := postgres.NewSwitchablePool(context.Background(), a.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	store := postgres.NewStore(resultsize.Pool(pool), sqlguard.DefaultLimits(), time.Now).WithReturned(returned)

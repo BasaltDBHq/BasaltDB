@@ -1102,9 +1102,7 @@ function checkLabel(label, what) {
 export function parseRegistrationRequest(fragment) {
   const payload = stripPrefix(String(fragment).replace(/^#/, ""), REGISTRATION_REQUEST_PREFIX, "registration request");
   const json = fromUtf8(b64urlDecode(payload));
-  const req = strictObject(parseJSON(json, "registration request"), "registration request", ["challenge", "userId", "userName", "displayName"], [
-    "handBack",
-  ]);
+  const req = strictObject(parseJSON(json, "registration request"), "registration request", ["challenge", "userId", "userName", "displayName"]);
   const challenge = b64urlDecode(requireString(req.challenge, "challenge"));
   const userId = b64urlDecode(requireString(req.userId, "userId"));
   if (challenge.length !== CHALLENGE_BYTES || userId.length !== USER_ID_BYTES) {
@@ -1115,18 +1113,7 @@ export function parseRegistrationRequest(fragment) {
     userId,
     userName: checkLabel(req.userName, "userName"),
     displayName: checkLabel(req.displayName, "displayName"),
-    handBack: handBackSecret(req.handBack),
   };
-}
-
-// handBackSecret is the secret of basalt init's hand-back route, or "" when
-// the request has none: 16 bytes, base64url.
-function handBackSecret(value) {
-  if (value === undefined) return "";
-  if (typeof value !== "string" || !/^[A-Za-z0-9_-]{22}$/.test(value)) {
-    throw new CodeError("registration handBack must be 16 bytes, base64url");
-  }
-  return value;
 }
 
 // encodeRegistrationResponse builds the code basalt init reads.
@@ -1134,8 +1121,7 @@ export function encodeRegistrationResponse(fields) {
   return REGISTRATION_RESPONSE_PREFIX + b64urlEncode(utf8(registrationResponseJson(fields)));
 }
 
-// registrationResponseJson is the JSON the registration code carries, which
-// the page posts to basalt init's hand-back route.
+// registrationResponseJson is the JSON the registration code carries.
 export function registrationResponseJson({ credentialId, clientDataJson, authenticatorData, publicKey, publicKeyAlgorithm, prfSupported = false }) {
   if (publicKeyAlgorithm !== ALG_ES256) throw new CodeError("the passkey must use ES256");
   return JSON.stringify({

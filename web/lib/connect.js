@@ -14,7 +14,6 @@
 // after RunSetup whatever its answer, and on every way back to the paste
 // step. The hand-off ticket is kept the same way and never shown.
 import { ALG_ES256, PORTAL, PROD_RP_ID, b64urlDecode, b64urlEncode, hex, sha256, utf8 } from "./codec.js";
-import { pairingCoordinates } from "./pairing.js";
 import { labelRow as sharedLabelRow } from "./pickviews.js";
 import { browserFetch } from "./transport.js";
 import { startTabs } from "./remove.js";
@@ -162,12 +161,19 @@ export function refusalText(err) {
 
 const CHECK_DOMAIN = "basalt-passkey-check.1\n";
 
+// publicKeyCoordinates is the P-256 point's x and y: the last 64 bytes of
+// the SubjectPublicKeyInfo, after the 0x04 of an uncompressed point.
+function publicKeyCoordinates(spki) {
+  if (spki.length < 65 || spki[spki.length - 65] !== 0x04) throw new Error("the passkey's public key is not an uncompressed P-256 point");
+  return { x: spki.slice(spki.length - 64, spki.length - 32), y: spki.slice(spki.length - 32) };
+}
+
 // passkeyCheckCode is the passkey check code (CONTRACT.md, Connect): the
 // first 10 bytes of sha256("basalt-passkey-check.1\n" || x || y), in
 // lowercase hex as five groups of four. spki is the public key the browser
 // returned, never one the service sent.
 export async function passkeyCheckCode(spki) {
-  const { x, y } = pairingCoordinates(spki);
+  const { x, y } = publicKeyCoordinates(spki);
   const domain = utf8(CHECK_DOMAIN);
   const all = new Uint8Array(domain.length + 64);
   all.set(domain, 0);

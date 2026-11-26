@@ -57,92 +57,42 @@ func TestNoTrustDirIsNothing(t *testing.T) {
 	require.Equal(t, "supabase", set.For("db.abcdefghijklmnopqrst.supabase.co").Name)
 }
 
-// Add writes a profile the engine loads, owned by this user, mode 0644, in
-// a 0700 trust.d; remove takes it and its roots file away.
-func TestAddLoadRemove(t *testing.T) {
+// addProfile writes an operator profile called name, its roots pem, for
+// the hosts match names, into a 0700 trust.d, as an operator would.
+func addProfile(t *testing.T, cfg, name string, match []string, pem []byte) {
+	t.Helper()
+	dir := trustdir.Path(cfg)
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	raw, err := json.Marshal(trustprofile.Spec{Name: name, Match: match, Roots: []trustprofile.RootSpec{{File: name + ".pem", SHA256: trustprofile.FileSHA256(pem)}}})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name+".pem"), pem, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, trustprofile.FileName(name)), raw, 0o644))
+}
+
+// An operator profile in trust.d loads, and applies only inside its match.
+func TestLoadOperatorProfile(t *testing.T) {
 	t.Parallel()
 	cfg := configPath(t)
 	ca, pem := testCA(t)
-	p, err := trustdir.Add(cfg, "internal", []string{"Internal.Example.com."}, pem)
-	require.NoError(t, err)
-	require.Equal(t, []string{"internal.example.com"}, p.Match)
-
-	fi, err := os.Stat(trustdir.Path(cfg))
-	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o700), fi.Mode().Perm())
-	for _, f := range []string{"internal.json", "internal.pem"} {
-		fi, err := os.Stat(filepath.Join(trustdir.Path(cfg), f))
-		require.NoError(t, err)
-		require.Equal(t, os.FileMode(0o644), fi.Mode().Perm(), f)
-	}
+	addProfile(t, cfg, "internal", []string{"Internal.Example.com."}, pem)
 
 	ops, refused := trustdir.Load(cfg)
 	require.Empty(t, refused)
 	require.Equal(t, []string{"internal"}, names(ops))
+	require.Equal(t, []string{"internal.example.com"}, ops[0].Match)
 	require.True(t, ops[0].Certificates()[0].Equal(ca))
 	set := trustdir.Set(cfg)
 	require.Equal(t, "internal", set.For("db.internal.example.com").Name)
 	require.Nil(t, set.For("db.example.com"), "never outside its match")
-
-	_, err = trustdir.Add(cfg, "internal", []string{"other.example.com"}, pem)
-	require.ErrorIs(t, err, trustdir.ErrExists)
-	require.NoError(t, os.WriteFile(filepath.Join(trustdir.Path(cfg), "taken.pem"), pem, 0o644))
-	_, err = trustdir.Add(cfg, "taken", []string{"other.example.com"}, pem)
-	require.ErrorIs(t, err, trustdir.ErrExists, "a roots file of that name is never overwritten")
-	require.NoError(t, os.Remove(filepath.Join(trustdir.Path(cfg), "taken.pem")))
-
-	require.NoError(t, trustdir.Remove(cfg, "internal"))
-	require.ErrorIs(t, trustdir.Remove(cfg, "internal"), trustdir.ErrNotFound)
-	entries, err := os.ReadDir(trustdir.Path(cfg))
-	require.NoError(t, err)
-	require.Empty(t, entries)
 }
 
-// Add refuses a certificate that is not a CA, a bare public suffix, an
-// empty match and a bad name, writing nothing.
-func TestAddRefuses(t *testing.T) {
+// An operator profile that disables a built-in turns it off.
+func TestLoadDisabledBuiltIn(t *testing.T) {
 	t.Parallel()
 	cfg := configPath(t)
-	_, pem := testCA(t)
-	_, leaf := trustprofiletest.Chain(t, "db.internal.example.com")
-	leafPEM := trustprofiletest.PEM(mustParse(t, leaf.Certificate[0]))
-	for why, c := range map[string]struct {
-		name  string
-		match []string
-		pem   []byte
-	}{
-		"not a CA":      {"internal", []string{"internal.example.com"}, leafPEM},
-		"public suffix": {"internal", []string{"com"}, pem},
-		"cloud apex":    {"internal", []string{"amazonaws.com"}, pem},
-		"private entry": {"internal", []string{"github.io"}, pem},
-		"empty match":   {"internal", nil, pem},
-		"bad name":      {"../x", []string{"internal.example.com"}, pem},
-		"not PEM":       {"internal", []string{"internal.example.com"}, []byte("hello")},
-	} {
-		_, err := trustdir.Add(cfg, c.name, c.match, c.pem)
-		require.Error(t, err, why)
-	}
-	_, err := os.Stat(trustdir.Path(cfg))
-	require.ErrorIs(t, err, os.ErrNotExist, "nothing was written")
-}
-
-func mustParse(t *testing.T, der []byte) *x509.Certificate {
-	t.Helper()
-	c, err := x509.ParseCertificate(der)
-	require.NoError(t, err)
-	return c
-}
-
-// Disable turns a built-in off; remove turns it back on.
-func TestDisableBuiltIn(t *testing.T) {
-	t.Parallel()
-	cfg := configPath(t)
-	require.NoError(t, trustdir.Disable(cfg, "aws-rds"))
-	require.ErrorIs(t, trustdir.Disable(cfg, "aws-rds"), trustdir.ErrExists)
-	set := trustdir.Set(cfg)
-	require.Nil(t, set.For("mydb.c9akciq32xyz.eu-central-1.rds.amazonaws.com"))
-	require.NoError(t, trustdir.Remove(cfg, "aws-rds"))
-	require.Equal(t, "aws-rds", trustdir.Set(cfg).For("mydb.c9akciq32xyz.eu-central-1.rds.amazonaws.com").Name)
+	require.NoError(t, os.MkdirAll(trustdir.Path(cfg), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(trustdir.Path(cfg), trustprofile.FileName("aws-rds")), []byte(`{"name":"aws-rds","disabled":true}`), 0o644))
+	require.Nil(t, trustdir.Set(cfg).For("mydb.c9akciq32xyz.eu-central-1.rds.amazonaws.com"))
 }
 
 // A file that breaks a rule is refused and named; the good ones load, and
@@ -151,8 +101,7 @@ func TestLoadRefuses(t *testing.T) {
 	t.Parallel()
 	cfg := configPath(t)
 	_, pem := testCA(t)
-	_, err := trustdir.Add(cfg, "good", []string{"good.example.com"}, pem)
-	require.NoError(t, err)
+	addProfile(t, cfg, "good", []string{"good.example.com"}, pem)
 	dir := trustdir.Path(cfg)
 	write := func(name string, b []byte, mode os.FileMode) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, name), b, mode))
@@ -198,8 +147,7 @@ func TestLoadRefusesAnOpenDirectory(t *testing.T) {
 	t.Parallel()
 	cfg := configPath(t)
 	_, pem := testCA(t)
-	_, err := trustdir.Add(cfg, "good", []string{"good.example.com"}, pem)
-	require.NoError(t, err)
+	addProfile(t, cfg, "good", []string{"good.example.com"}, pem)
 	require.NoError(t, os.Chmod(trustdir.Path(cfg), 0o777))
 	ops, refused := trustdir.Load(cfg)
 	require.Empty(t, ops)

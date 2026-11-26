@@ -6,7 +6,6 @@ package ledger
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -15,7 +14,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
@@ -29,17 +27,6 @@ var ErrInvalidParams = errors.New("invalid list params")
 var ChangeSortSpec = pagination.SortSpec{
 	Default: "-id",
 	Allowed: map[string]struct{}{"id": {}, "-id": {}},
-}
-
-// ListChanges returns one page of the calling agent's change records.
-func ListChanges(ctx context.Context, q guard.Querier, p action.ChangeListParams) (pagination.Page[action.Change], error) {
-	sql, args, _, err := changePage(p)
-	if err != nil {
-		return pagination.Page[action.Change]{}, err
-	}
-	return collectChanges(ctx, q, p, sql, args, func(row pgx.CollectableRow, c *action.Change) error {
-		return row.Scan(changeDest(c)...)
-	})
 }
 
 // Column names the change lists share.
@@ -130,42 +117,6 @@ func collectChanges(ctx context.Context, q guard.Querier, p action.ChangeListPar
 	return page, nil
 }
 
-// RowChanges returns the row-level ledger entries of the given changes in
-// ledger order, keyed by change id. An agent's change touches at most 50
-// rows (the row limit) and a revert at most 1000 (its line cap), so the
-// result is bounded by the page of changes.
-func RowChanges(ctx context.Context, q guard.Querier, changeIDs []uuid.UUID) (map[uuid.UUID][]action.RowChange, error) {
-	out := make(map[uuid.UUID][]action.RowChange, len(changeIDs))
-	if len(changeIDs) == 0 {
-		return out, nil
-	}
-	sql, args, err := rowChangeSelect(changeIDs).OrderBy("seq").ToSql()
-	if err != nil {
-		return nil, err
-	}
-	rows, err := q.Query(ctx, sql, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var id uuid.UUID
-		var r action.RowChange
-		var key, before, after json.RawMessage
-		if err := rows.Scan(&id, &r.Seq, &r.Table, &r.Op, &key, &before, &after,
-			&r.Cascaded, &r.Redacted, &r.Pruned, &r.BasedOn, &r.BlindWrite); err != nil {
-			return nil, err
-		}
-		// The images as Postgres printed them: decoded for the row, and
-		// measured byte for byte for the summaries of its large values.
-		if err := decodeImages(&r, key, before, after); err != nil {
-			return nil, err
-		}
-		out[id] = append(out[id], r)
-	}
-	return out, rows.Err()
-}
-
 // rowChangeSelect selects the ROW_CHANGE ledger rows of changeIDs, columns
 // named so a statement over them can select them again.
 func rowChangeSelect(changeIDs []uuid.UUID) sq.SelectBuilder {
@@ -178,27 +129,4 @@ func rowChangeSelect(changeIDs []uuid.UUID) sq.SelectBuilder {
 		"values_pruned", "detail->'basedOn' AS based_on", "coalesce((detail->>'blindWrite')::boolean, false) AS blind_write").
 		From("basalt_meta.agent_ledger").
 		Where(sq.Eq{"kind": "ROW_CHANGE", colChangeID: ids})
-}
-
-// decodeImages sets r's key, before and after maps from the images' JSON
-// text and the summaries of the values in them that cost over 1 MiB.
-func decodeImages(r *action.RowChange, key, before, after json.RawMessage) error {
-	for _, img := range []struct {
-		text  json.RawMessage
-		into  *map[string]any
-		marks *map[string]string
-	}{{key, &r.Key, &r.Marks.Key}, {before, &r.Before, &r.Marks.Before}, {after, &r.After, &r.Marks.After}} {
-		if len(img.text) == 0 {
-			continue
-		}
-		if err := json.Unmarshal(img.text, img.into); err != nil {
-			return err
-		}
-		marks, err := largevalue.ImageMarks(img.text)
-		if err != nil {
-			return err
-		}
-		*img.marks = marks
-	}
-	return nil
 }

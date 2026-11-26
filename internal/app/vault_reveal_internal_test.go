@@ -91,7 +91,7 @@ func newRevealEnv(t *testing.T) *revealEnv {
 	done := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Drop lead 5"}
 	require.NoError(t, guard.StartRun(ctx, bot.Conn, done))
 	e.hold(t, store, done, 5, func(id uuid.UUID, binding string) {
-		as, err := person.Sign(approval.Challenge(binding), passkeytest.FlagsUPUV, nil)
+		as, err := person.Sign(passkeytest.Challenge(binding), passkeytest.FlagsUPUV, nil)
 		require.NoError(t, err)
 		_, err = store.SubmitApproval(ctx, id, as)
 		require.NoError(t, err)
@@ -265,7 +265,7 @@ func TestRevealRoutes(t *testing.T) {
 
 	// The person signs the revert; a reveal after it gets the revert's
 	// normal answer, since the signature took the row first.
-	sig, err := e.person.Sign(approval.Challenge(rreq.Binding), passkeytest.FlagsUPUV, nil)
+	sig, err := e.person.Sign(passkeytest.Challenge(rreq.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, _, err = e.svc.RelayRevert(ctx, revert.Response{RevertID: e.revert.RevertID, SignedAssertion: passkeytest.Signed(sig)})
 	require.NoError(t, err)

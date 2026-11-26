@@ -165,23 +165,6 @@ func writeStatusFile(dir string, st pii.DictionaryStatus) error {
 	return atomicfile.Write(filepath.Join(dir, pii.StatusFileName), data, atomicfile.Options{Mode: statusFileMode, SyncDir: true})
 }
 
-// ReadStatus reads <stateDir>/pii/status.json, as basalt log does. It
-// reports false when the file is missing, cannot be read (permissions, an
-// unreadable stateDir) or does not parse. It holds counts and times only.
-func ReadStatus(stateDir string) (pii.DictionaryStatus, bool) {
-	var st pii.DictionaryStatus
-	f, err := ownerfile.OpenNoFollow(filepath.Join(stateDir, pii.DictionaryDirName, pii.StatusFileName))
-	if err != nil {
-		return st, false
-	}
-	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, maxStatusFileSize))
-	if err != nil || json.Unmarshal(data, &st) != nil {
-		return pii.DictionaryStatus{}, false
-	}
-	return st, true
-}
-
 // readStatusFile reads status.json back (the last scan survives a restart).
 // Any problem gives a zero status: it only carries counts.
 func readStatusFile(dir string) pii.DictionaryStatus {

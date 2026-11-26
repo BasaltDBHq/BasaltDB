@@ -2,8 +2,6 @@ package servedagent_test
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -11,8 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
@@ -44,11 +40,11 @@ func TestAHeldDeleteOfALargeValueIsApproved(t *testing.T) {
 		Old map[string]json.RawMessage `json:"old"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(held.Lines[0]), &line))
-	sum := sha256.Sum256([]byte(strings.Repeat("x", bigValue)))
-	require.Equal(t, "(1.9 MiB, sha256 "+hex.EncodeToString(sum[:])+")", largevalue.Summary(line.Old["body"], "body"),
-		"the line carries the value whole, so it is shown by its size and hash")
+	oldBody, err := textOf(line.Old["body"])
+	require.NoError(t, err)
+	require.Equal(t, strings.Repeat("x", bigValue), oldBody, "the line carries the value whole")
 
-	as, err := e.person.Sign(approval.Challenge(held.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := e.person.Sign(passkeytest.Challenge(held.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.SubmitApproval(ctx, e.a.Conn, id, as)
 	require.NoError(t, err)
@@ -96,4 +92,11 @@ func TestAnApprovalWaitReadsEachPollOnItsOwnBudget(t *testing.T) {
 	args["waitForApproval"] = 3
 	body, isError = e.h.call(t, "write", args)
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "WAIT_ENDED", "")
+}
+
+// textOf is a JSON string value's text.
+func textOf(raw json.RawMessage) (string, error) {
+	var s string
+	err := json.Unmarshal(raw, &s)
+	return s, err
 }

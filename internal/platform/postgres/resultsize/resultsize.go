@@ -7,7 +7,6 @@ package resultsize
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -217,9 +216,6 @@ func (t budgetTx) Begin(ctx context.Context) (pgx.Tx, error) {
 	}
 	return budgetTx{Tx: tx}, nil
 }
-
-// IsSizeLimit reports whether err is a read stopped by the budget.
-func IsSizeLimit(err error) bool { return errors.Is(err, budget.ErrSizeLimit) }
 
 // RowTooLargeError is one row of a result that costs more than the whole
 // budget on its own (CONTRACT.md, QUERY_TIMEOUT ROW_TOO_LARGE), or that

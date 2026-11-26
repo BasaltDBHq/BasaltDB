@@ -240,7 +240,7 @@ func TestRecordSetup(t *testing.T) {
 	pw := initFromVerifier(t, d)
 	s := installSetup(t, d, "bot")
 
-	seq, err := guard.RecordSetup(ctx, d.Admin, d.Names, s)
+	seq, err := guardtest.RecordSetup(ctx, d.Admin, d.Names, s)
 	require.NoError(t, err)
 	require.Positive(t, seq)
 
@@ -279,7 +279,7 @@ func TestRecordSetup(t *testing.T) {
 	// An UPGRADE is recorded under the admin's name.
 	now := dbNow(t, d)
 	up := guardmodel.Setup{ID: uuidAt(t, now), Kind: guardmodel.SetupUpgrade, GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(5 * time.Minute)}
-	seq, err = guard.RecordSetup(ctx, d.Admin, d.Names, up)
+	seq, err = guardtest.RecordSetup(ctx, d.Admin, d.Names, up)
 	require.NoError(t, err)
 	require.Equal(t, admin, scalarOf[string](t, d.Admin, `SELECT agent::text FROM basalt_meta.ledger WHERE seq = $1`, seq))
 	latest, ok, err = guard.LatestAgentSetup(ctx, bot)
@@ -295,7 +295,7 @@ func TestRecordSetupRefusals(t *testing.T) {
 	initFromVerifier(t, d)
 	d.NewAgent(t, "other", leads, leads)
 	record := func(s guardmodel.Setup) error {
-		_, err := guard.RecordSetup(ctx, d.Admin, d.Names, s)
+		_, err := guardtest.RecordSetup(ctx, d.Admin, d.Names, s)
 		return err
 	}
 
@@ -438,7 +438,7 @@ func TestRecordSetupRefusals(t *testing.T) {
 				return err
 			}
 			require.True(t, later.Before(s.ExpiresAt.Add(setupGrace)), "now() did not move")
-			_, err := guard.RecordSetup(ctx, tx, d.Names, s)
+			_, err := guardtest.RecordSetup(ctx, tx, d.Names, s)
 			return err
 		})
 		requireRefused(t, err, guard.SetupExpired)
@@ -471,22 +471,22 @@ func TestAgentCannotRecordOrWriteSetups(t *testing.T) {
 	bot := requireLogin(t, d, pw)
 
 	mine := installSetup(t, d, "bot")
-	_, err := guard.RecordSetup(ctx, d.Admin, d.Names, mine)
+	_, err := guardtest.RecordSetup(ctx, d.Admin, d.Names, mine)
 	require.NoError(t, err)
 	theirs := installSetup(t, d, "other")
 	theirs.Kind = guardmodel.SetupAgent
-	_, err = guard.RecordSetup(ctx, d.Admin, d.Names, theirs)
+	_, err = guardtest.RecordSetup(ctx, d.Admin, d.Names, theirs)
 	require.NoError(t, err)
 	now := dbNow(t, d)
 	up := guardmodel.Setup{ID: uuidAt(t, now), Kind: guardmodel.SetupUpgrade, GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(5 * time.Minute)}
-	_, err = guard.RecordSetup(ctx, d.Admin, d.Names, up)
+	_, err = guardtest.RecordSetup(ctx, d.Admin, d.Names, up)
 	require.NoError(t, err)
 
 	// record_setup is the admin's: an agent cannot call it, for itself or
 	// another agent.
 	next := installSetup(t, d, "bot")
 	next.ID = uuidAt(t, now.Add(time.Second))
-	_, err = guard.RecordSetup(ctx, bot, d.Names, next)
+	_, err = guardtest.RecordSetup(ctx, bot, d.Names, next)
 	require.Equal(t, "42501", guardtest.SQLState(err), "%v", err)
 	// Only the owner may execute it: no grant to PUBLIC or any other role.
 	require.Equal(t, 0, count(t, d.Admin, `SELECT count(1)::int FROM pg_proc p
@@ -521,12 +521,12 @@ func TestSetupsAreRemovable(t *testing.T) {
 	ctx := context.Background()
 	pw := initFromVerifier(t, d)
 	s := installSetup(t, d, "bot")
-	_, err := guard.RecordSetup(ctx, d.Admin, d.Names, s)
+	_, err := guardtest.RecordSetup(ctx, d.Admin, d.Names, s)
 	require.NoError(t, err)
 
 	bot := requireLogin(t, d, pw)
 	require.Equal(t, 1, count(t, bot, `SELECT count(setup_id)::int FROM basalt_meta.agent_setups`))
-	_, err = guard.RecordSetup(ctx, d.Admin, d.Names, s)
+	_, err = guardtest.RecordSetup(ctx, d.Admin, d.Names, s)
 	requireRefused(t, err, guard.SetupUsed)
 
 	require.NoError(t, bot.Close(ctx))

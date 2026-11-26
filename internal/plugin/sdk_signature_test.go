@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/testkit/pluginsign"
 )
 
 // vectorDir is a signed plugin the plugin SDK (basalt-plugin-go) holds
@@ -66,9 +68,9 @@ var valuePattern = regexp.MustCompile(`("(?:keyId|sig)": ")[A-Za-z0-9_-]+(")`)
 // the same fields in the same order, indent and final newline.
 func TestSDKSignatureFileHasTheLayoutTheEngineWrites(t *testing.T) {
 	t.Parallel()
-	key, err := GenerateKey()
+	key, err := pluginsign.GenerateKey()
 	require.NoError(t, err)
-	mine, err := SignManifest(vectorFile(t, "plugin", ManifestFile), key)
+	mine, err := pluginsign.SignManifest(vectorFile(t, "plugin", ManifestFile), key)
 	require.NoError(t, err)
 	shape := func(b []byte) string { return valuePattern.ReplaceAllString(string(b), "${1}x${2}") }
 	require.Equal(t, shape(mine), shape(vectorFile(t, "sdk.sig")))

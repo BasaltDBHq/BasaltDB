@@ -14,6 +14,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/contractdoc"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
 
 var (
@@ -797,13 +798,13 @@ func TestCheckServed(t *testing.T) {
 		{Name: "done", Status: mcpcontract.StatusImplemented},
 		{Name: "later", Status: mcpcontract.StatusPlanned},
 	}
-	require.NoError(t, mcpcontract.CheckServed(tools, []string{"done"}))
-	require.NoError(t, mcpcontract.CheckServed(tools, []string{"done", "later"}))
+	require.NoError(t, stepcatalogtest.CheckServed(tools, []string{"done"}))
+	require.NoError(t, stepcatalogtest.CheckServed(tools, []string{"done", "later"}))
 
-	err := mcpcontract.CheckServed(tools, nil)
+	err := stepcatalogtest.CheckServed(tools, nil)
 	require.ErrorContains(t, err, `"done" is IMPLEMENTED but not served`)
 
-	err = mcpcontract.CheckServed(tools, []string{"done", "rogue"})
+	err = stepcatalogtest.CheckServed(tools, []string{"done", "rogue"})
 	require.ErrorContains(t, err, `"rogue" is served but has no contract`)
 }
 
@@ -817,7 +818,7 @@ func TestCheckServedNoToolsYet(t *testing.T) {
 			served = append(served, tool.Name)
 		}
 	}
-	require.NoError(t, mcpcontract.CheckServed(tools, served))
+	require.NoError(t, stepcatalogtest.CheckServed(tools, served))
 }
 
 // requireClosedObject checks an input schema rejects unknown arguments and

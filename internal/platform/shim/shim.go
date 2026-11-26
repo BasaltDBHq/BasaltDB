@@ -47,31 +47,7 @@ type Fallback interface {
 	Abandoned(ctx context.Context, out io.Writer, line []byte) error
 }
 
-// Serve relays each message the client writes to in, one JSON-RPC message
-// per line, to the engine at socketPath, and every line the engine answers
-// to out. A message that finds no engine (the socket does not answer, or the
-// engine closed the connection) is answered by fallback, and the next one
-// tries the socket again, so an engine that starts later is used from then
-// on. A request the engine received but did not answer before it closed the
-// connection is answered by fallback.Abandoned, so the client never waits
-// forever. When in ends, the write side of the socket is closed so the
-// engine finishes its answers; Serve returns after them, or when ctx is
-// done. An engine connection that ends in an error other than a clean close
-// is reported when it is the last one, and so is the engine's refusal of
-// this OS user, even when that connection ended before a request reached it:
-// the requests it declined are answered with the refusal.
-//
-// An engine that was serving this session and goes away (an upgrade restarts
-// it) is waited for, up to DefaultReconnectWait, before the next message
-// falls back; a read-only request the engine dropped unanswered is sent once
-// more to the engine that returns, and so is any request the engine
-// answered as not run because it was restarting (mcpserver.ErrCodeRestarting).
-// Nothing else is ever sent twice.
-func Serve(ctx context.Context, socketPath string, fallback Fallback, in io.Reader, out io.Writer) error {
-	return ServeWith(ctx, socketPath, fallback, in, out, Options{})
-}
-
-// Options tune Serve.
+// Options tune ServeWith.
 type Options struct {
 	// ReconnectWait is how long a message waits for an engine that was
 	// serving this session and went away; zero means DefaultReconnectWait,
@@ -109,7 +85,26 @@ type Options struct {
 	UploadAllowed func(operatedBy, pagesOrigin string) bool
 }
 
-// ServeWith is Serve with options.
+// ServeWith relays each message the client writes to in, one JSON-RPC message
+// per line, to the engine at socketPath, and every line the engine answers
+// to out. A message that finds no engine (the socket does not answer, or the
+// engine closed the connection) is answered by fallback, and the next one
+// tries the socket again, so an engine that starts later is used from then
+// on. A request the engine received but did not answer before it closed the
+// connection is answered by fallback.Abandoned, so the client never waits
+// forever. When in ends, the write side of the socket is closed so the
+// engine finishes its answers; ServeWith returns after them, or when ctx is
+// done. An engine connection that ends in an error other than a clean close
+// is reported when it is the last one, and so is the engine's refusal of
+// this OS user, even when that connection ended before a request reached it:
+// the requests it declined are answered with the refusal.
+//
+// An engine that was serving this session and goes away (an upgrade restarts
+// it) is waited for, up to DefaultReconnectWait, before the next message
+// falls back; a read-only request the engine dropped unanswered is sent once
+// more to the engine that returns, and so is any request the engine
+// answered as not run because it was restarting (mcpserver.ErrCodeRestarting).
+// Nothing else is ever sent twice.
 func ServeWith(ctx context.Context, socketPath string, fallback Fallback, in io.Reader, out io.Writer, opts Options) error {
 	if fallback == nil {
 		panic("shim: fallback server required")
@@ -135,7 +130,7 @@ func ServeWith(ctx context.Context, socketPath string, fallback Fallback, in io.
 	return serve(ctx, r, in)
 }
 
-// serve is Serve on r.
+// serve is ServeWith on r.
 func serve(ctx context.Context, r *relay, in io.Reader) error {
 	defer r.drainRetries(ctx)
 	defer r.close()

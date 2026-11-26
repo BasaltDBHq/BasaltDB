@@ -2,10 +2,8 @@ package setup
 
 import (
 	"fmt"
-	"io"
 	"unicode/utf8"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 )
@@ -15,17 +13,6 @@ import (
 type PasskeyRequest struct {
 	req   passkey.RegistrationRequest
 	label string
-}
-
-// NewPasskeyRequest draws a registration request from random
-// (crypto/rand.Reader, or a source the caller can draw again) for a
-// passkey named label on database. The label is at most 64 bytes.
-func NewPasskeyRequest(random io.Reader, label, database string) (PasskeyRequest, error) {
-	req, err := setuprun.NewRegistrationRequest(random, label, database)
-	if err != nil {
-		return PasskeyRequest{}, err
-	}
-	return PasskeyRequest{req: req, label: label}, nil
 }
 
 // PasskeyChallenge is a registration request a caller made and showed the
@@ -57,16 +44,6 @@ func PasskeyRequestFor(c PasskeyChallenge, label string) (PasskeyRequest, error)
 		return PasskeyRequest{}, err
 	}
 	return PasskeyRequest{req: req, label: label}, nil
-}
-
-// Link is the portal's registration page for the request
-// (https://portal.basaltvault.app/passkeys/register#1.<request>).
-func (r PasskeyRequest) Link() (string, error) {
-	frag, err := r.req.Fragment()
-	if err != nil {
-		return "", err
-	}
-	return links.Register(passkey.Production.Origin) + "#" + frag, nil
 }
 
 // Verify checks the code the registration page shows

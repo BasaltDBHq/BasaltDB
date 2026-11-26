@@ -64,7 +64,6 @@ var kinds = []exampleKind{
 	{"person-result-upload-part", "approval/person.schema.json#/$defs/uploadPartResult", nil},
 	{"person-result-open", "approval/person.schema.json#/$defs/openResult", nil},
 	{"person-result-list", "approval/person.schema.json#/$defs/listResult", nil},
-	{"person-result-approve", "approval/person.schema.json#/$defs/approveResult", nil},
 	{"person-result-disable", "approval/person.schema.json#/$defs/disableResult", nil},
 	{"person-result-remove", "approval/person.schema.json#/$defs/removeResult", nil},
 	{"person-error", "approval/person.schema.json#/$defs/error", nil},

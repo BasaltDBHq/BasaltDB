@@ -1,9 +1,7 @@
 package status
 
 import (
-	"context"
 	"encoding/json"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,53 +13,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/core/links"
-	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgerrors"
 )
-
-// basalt status on an engine run in the foreground reads the record too:
-// the engine id from the running engine's key file, the record through the
-// agent's own database, with the same problems as the status tool.
-func TestLocalStatusEngineRecord(t *testing.T) {
-	t.Parallel()
-	local := func(key *string, read EngineRecordReader) guidance.StatusReport {
-		t.Helper()
-		cmds := commandsAt("")
-		r, err := localStatus{
-			Errors: pgerrors.Map(), LatestGuardVersion: guard.LatestVersion,
-			Name: "bot", Commands: cmds, EngineRunning: true, EngineKey: key, EngineRecord: read,
-			Probe: &fakeProbe{st: currentGuard()},
-			Passkeys: func(context.Context) ([]passkey.Credential, error) {
-				return []passkey.Credential{{Relying: passkey.Relying{Origin: links.DefaultLocal}}}, nil
-			},
-			Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
-		}.report(context.Background())
-		require.NoError(t, err)
-		return r
-	}
-	id := testEngineID
-	r := local(&id, recordOf(false))
-	require.Equal(t, "RECORDED", r.EngineRecord.State)
-	require.Empty(t, r.Problems)
-
-	r = local(&id, recordOf(true))
-	require.Equal(t, "REVOKED", r.EngineRecord.State)
-	findProblem(t, r, "ENGINE_REVOKED")
-
-	refused := ""
-	r = local(&refused, recordOf(true))
-	require.Equal(t, &guidance.EngineRecordStatus{State: "UNKNOWN"}, r.EngineRecord, "the key file is refused")
-	require.Empty(t, r.Problems)
-
-	require.Nil(t, local(nil, recordOf(true)).EngineRecord, "an engine that is down has none")
-}
 
 func TestStatusEnforcementAndOperator(t *testing.T) {
 	t.Parallel()

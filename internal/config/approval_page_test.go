@@ -66,7 +66,8 @@ func TestLoadIgnoresOldInitArgs(t *testing.T) {
 		{Name: "b", OSUser: "u", Store: config.PostgresStore("/c/b.url")},
 	}, c.Agents)
 
-	require.NoError(t, config.UpsertAgent(path, config.Settings{}, config.Agent{Name: "b", OSUser: "u", Store: config.PostgresStore("/c/b.url")}))
+	_, err = config.UpsertAgentVault(path, config.Settings{}, config.Agent{Name: "b", OSUser: "u", Store: config.PostgresStore("/c/b.url")})
+	require.NoError(t, err)
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.NotContains(t, string(raw), "initArgs", "the next write drops the old key")

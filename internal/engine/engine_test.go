@@ -131,7 +131,7 @@ func callThroughShim(t *testing.T, socket string) string {
 	var out strings.Builder
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	require.NoError(t, shim.Serve(ctx, socket, fallback, in, &out))
+	require.NoError(t, shim.ServeWith(ctx, socket, fallback, in, &out, shim.Options{}))
 	return out.String()
 }
 
@@ -179,7 +179,7 @@ func TestConnectionFromAnotherOSUserIsRefused(t *testing.T) {
 	var out strings.Builder
 	rctx, rcancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer rcancel()
-	err = shim.Serve(rctx, bot.SocketPath, fallback, strings.NewReader(shimRequests), &out)
+	err = shim.ServeWith(rctx, bot.SocketPath, fallback, strings.NewReader(shimRequests), &out, shim.Options{})
 	require.ErrorContains(t, err, `agent "bot"`)
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	require.Len(t, lines, 2, "one answer per request: %s", out.String())
@@ -209,7 +209,7 @@ func TestPeerCredentialFailureClosesTheConnection(t *testing.T) {
 	var out strings.Builder
 	rctx, rcancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer rcancel()
-	err := shim.Serve(rctx, bot.SocketPath, fallback, strings.NewReader(shimRequests), &out)
+	err := shim.ServeWith(rctx, bot.SocketPath, fallback, strings.NewReader(shimRequests), &out, shim.Options{})
 	if err != nil {
 		require.True(t, errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE), "unexpected error: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestStaleSocketIsReplacedButOtherFilesAreNot(t *testing.T) {
 func TestShimAnswersItselfWithoutAnEngine(t *testing.T) {
 	t.Parallel()
 	var out strings.Builder
-	err := shim.Serve(context.Background(), filepath.Join(shortDir(t), "nobody.sock"), fallback, strings.NewReader(shimRequests), &out)
+	err := shim.ServeWith(context.Background(), filepath.Join(shortDir(t), "nobody.sock"), fallback, strings.NewReader(shimRequests), &out, shim.Options{})
 	require.NoError(t, err)
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	require.Len(t, lines, 2)

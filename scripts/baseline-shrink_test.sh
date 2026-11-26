@@ -64,6 +64,20 @@ printf '# why these stay\na\nb\n' >"$work/r/$bl/internal_one.txt"
 check 0 "an added comment line passes"
 
 setup
+printf 'a  # why a stays\nb\n' >"$work/r/$bl/internal_one.txt"
+check 0 "a reason added to a listed line passes"
+
+setup
+printf 'a\nb\nc  # a reason\n' >"$work/r/$bl/internal_one.txt"
+check 1 "a new line with a reason fails"
+
+setup
+printf 'a  # one reason\nb\n' >"$work/r/$bl/internal_one.txt"
+git -C "$work/r" -c user.name=t -c user.email=t@t commit -qam reason
+printf 'a\t# another reason\nb\n' >"$work/r/$bl/internal_one.txt"
+check 0 "a changed reason passes"
+
+setup
 printf 'y\n' >"$work/r/$bl/internal_two.txt"
 check 1 "a new file in the archtest baseline directory fails"
 

@@ -150,13 +150,6 @@ func CheckBasaltFields(text string, integers ...string) error {
 	return nil
 }
 
-// Challenge is the WebAuthn challenge for a binding: sha256 of its UTF-8
-// bytes.
-func Challenge(bindingText string) []byte {
-	sum := sha256.Sum256([]byte(bindingText))
-	return sum[:]
-}
-
 // RowsHash is the lowercase hex sha256 of the preview lines joined by "\n",
 // the binding's rowsHash.
 func RowsHash(lines []string) string {

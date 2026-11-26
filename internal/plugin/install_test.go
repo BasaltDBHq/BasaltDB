@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/pluginsign"
 )
 
 // TestInstallSameUser: same-user mode installs under t.TempDir() without
@@ -22,7 +23,7 @@ func TestInstallSameUser(t *testing.T) {
 
 	require.Equal(t, filepath.Join(f.configDir, "plugins", "acme-ner", pluginmodel.DefaultInstance, v.ManifestSHA256), v.Dir)
 	require.Len(t, v.ManifestSHA256, 64)
-	signer, err := KeyID(&f.signer.PublicKey)
+	signer, err := pluginsign.KeyID(&f.signer.PublicKey)
 	require.NoError(t, err)
 	require.Equal(t, signer, v.SignerKeyID)
 	require.Equal(t, "acme-ner", v.Manifest.Name)
@@ -114,7 +115,7 @@ func TestChangedByteRefused(t *testing.T) {
 func TestUntrustedKeyRefused(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	other, err := GenerateKey()
+	other, err := pluginsign.GenerateKey()
 	require.NoError(t, err)
 	f.writeSigned(f.src, localManifest(), other)
 	_, err = installCopy(f.src, f.root, "", f.trust)
@@ -230,7 +231,7 @@ func TestPathRule(t *testing.T) {
 		"plugin root":    func(f *fixture, _ pluginmodel.Verified) string { return f.root },
 		"trust store":    func(f *fixture, _ pluginmodel.Verified) string { return f.trust.Dir() },
 		"trusted key": func(f *fixture, _ pluginmodel.Verified) string {
-			id, err := KeyID(&f.signer.PublicKey)
+			id, err := pluginsign.KeyID(&f.signer.PublicKey)
 			require.NoError(f.t, err)
 			return filepath.Join(f.trust.Dir(), id+trustFileExt)
 		},
@@ -366,7 +367,7 @@ func TestReaddWithAnotherSignerReplacesTheCopy(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	first := f.install("")
-	second, err := GenerateKey()
+	second, err := pluginsign.GenerateKey()
 	require.NoError(t, err)
 	f.trustKey(&second.PublicKey)
 	f.writeSigned(f.src, localManifest(), second)
@@ -515,7 +516,7 @@ func TestRemoteManifestSignatureOnly(t *testing.T) {
 	require.NoError(t, os.Remove(extra))
 
 	// The signature still covers every byte.
-	other, err := GenerateKey()
+	other, err := pluginsign.GenerateKey()
 	require.NoError(t, err)
 	f.writeSigned(src, []byte(remoteManifest), other)
 	_, err = installCopy(src, f.root, "second", f.trust)

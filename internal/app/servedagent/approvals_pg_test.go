@@ -233,7 +233,7 @@ func signLink(t *testing.T, link string, signer *passkeytest.Authenticator) appr
 	req, b, err := approvaltest.ParseRequest(frag)
 	require.NoError(t, err)
 	require.NotEmpty(t, req.CredentialIDs, "the link names the database's passkeys, for allowCredentials")
-	as, err := signer.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
+	as, err := signer.Sign(passkeytest.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	return approvaltest.NewResponse(b.ApprovalID, as)
 }

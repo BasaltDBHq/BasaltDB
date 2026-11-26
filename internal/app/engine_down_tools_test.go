@@ -33,14 +33,14 @@ func TestEngineDownToolsRefuseAnAdminURL(t *testing.T) {
 	for _, tool := range downTools {
 		served = append(served, tool.Name)
 	}
-	require.NoError(t, mcpcontract.CheckServed(mcpcontract.MustLoad(), served), "the shim lists exactly the IMPLEMENTED contracts")
+	require.NoError(t, stepcatalogtest.CheckServed(mcpcontract.MustLoad(), served), "the shim lists exactly the IMPLEMENTED contracts")
 	downSrv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, downTools...)
 	for _, tool := range downTools {
 		for _, args := range []map[string]any{{"sql": url}, {url: true}} {
 			body, isError := serveCall(t, downSrv, tool.Name, args)
 			require.True(t, isError, tool.Name)
 			require.Equal(t, guidance.ReasonAdminCredential, body["reason"], tool.Name)
-			require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool.Name)
+			require.Equal(t, stepcatalogtest.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool.Name)
 			raw, err := json.Marshal(body)
 			require.NoError(t, err)
 			require.NotContains(t, string(raw), secret, tool.Name)

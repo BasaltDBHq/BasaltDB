@@ -8,7 +8,6 @@
 package ledger
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -389,12 +388,4 @@ func (u *Upkeep) checkRLSBlind(ctx context.Context) error {
 			"agent", u.agent, "table", t)
 	}
 	return nil
-}
-
-// Head returns the head pinned on the last tick (tests).
-func (u *Upkeep) Head() (action.ChainHead, bool) {
-	if u.head == nil {
-		return action.ChainHead{}, false
-	}
-	return action.ChainHead{Seq: u.head.Seq, Hash: bytes.Clone(u.head.Hash)}, true
 }

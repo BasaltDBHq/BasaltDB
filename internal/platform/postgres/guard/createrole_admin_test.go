@@ -94,7 +94,7 @@ func TestInitByCreateRoleAdmin(t *testing.T) {
 	// Uninstall works for this admin too, and drops neither the admin nor
 	// its tables.
 	require.NoError(t, agent.Close(ctx))
-	require.NoError(t, pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error { return guard.Uninstall(ctx, tx, d.Names) }))
+	require.NoError(t, pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error { return guardtest.Uninstall(ctx, tx, d.Names) }))
 	var roles, leads int
 	require.NoError(t, conn.QueryRow(ctx, `SELECT count(1)::int FROM pg_roles WHERE rolname LIKE $1`, d.Names.Prefix+`\_%`).Scan(&roles))
 	require.Equal(t, 1, roles, "only the admin is left")

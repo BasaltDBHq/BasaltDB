@@ -22,7 +22,7 @@ import (
 // handle it returned, such as an *os.Root.
 var fileReads = map[string]map[string]bool{
 	"os":     {"ReadFile": true, "Open": true, "OpenFile": true},
-	"config": {"Load": true, "LoadOpen": true, "LoadOpenRaw": true, "LoadNoFollow": true},
+	"config": {"Load": true, "LoadOpenRaw": true, "LoadNoFollow": true},
 }
 
 // methodReads are the method names that open or read a file by path:

@@ -114,7 +114,7 @@ func fixtureDB(t *testing.T) *guardtest.DB {
 }
 
 // suggestAll runs the classify pipeline as basalt classify does.
-func suggestAll(t *testing.T, d *guardtest.DB, opts pii.Options, keep bool) []pii.Result {
+func suggestAll(t *testing.T, d *guardtest.DB, opts pii.Options) []pii.Result {
 	t.Helper()
 	ctx := context.Background()
 	var st guardmodel.ClassificationState
@@ -130,8 +130,7 @@ func suggestAll(t *testing.T, d *guardtest.DB, opts pii.Options, keep bool) []pi
 	cols, err := pgpii.Columns(ctx, pgquerier.Neutralize(d.Admin), listed)
 	require.NoError(t, err)
 	sampler := pgpii.Sampler{ReadOnly: pgquerier.ReadOnlyTx(d.Admin), Timeout: 5 * time.Second}
-	results, err := pii.SuggestAll(ctx, cols, sampler.Sample, opts,
-		func(pii.Column, pii.Suggestion) bool { return keep })
+	results, err := pii.SuggestAll(ctx, cols, sampler.Sample, opts)
 	require.NoError(t, err)
 	return results
 }
@@ -139,7 +138,7 @@ func suggestAll(t *testing.T, d *guardtest.DB, opts pii.Options, keep bool) []pi
 func TestFixtureSchemaSuggestions(t *testing.T) {
 	t.Parallel()
 	d := fixtureDB(t)
-	results := suggestAll(t, d, pii.Options{}, false)
+	results := suggestAll(t, d, pii.Options{})
 	got := map[string]want{}
 	for _, r := range results {
 		s := r.Suggestion
@@ -168,30 +167,10 @@ func reasonOf(results []pii.Result, name string) string {
 func TestFixtureSchemaFixedPhoneRegion(t *testing.T) {
 	t.Parallel()
 	d := fixtureDB(t)
-	for _, r := range suggestAll(t, d, pii.Options{PhoneRegion: "ID"}, false) {
+	for _, r := range suggestAll(t, d, pii.Options{PhoneRegion: "ID"}) {
 		if r.Suggestion.EntityType == guardmodel.EntityPhone {
 			require.Equal(t, "ID", r.Suggestion.PhoneRegion, r.Column.FullName())
 		}
-	}
-}
-
-func TestFixtureSchemaRoundTrip(t *testing.T) {
-	t.Parallel()
-	d := fixtureDB(t)
-	results := suggestAll(t, d, pii.Options{}, true)
-	checks, err := pii.Check(results, func(r pii.Result) (pii.CheckTarget, bool) {
-		s := r.Suggestion
-		return pii.CheckTarget{EntityType: s.EntityType, PhoneRegion: s.PhoneRegion}, s.Class == guardmodel.ClassIdentifier
-	})
-	require.NoError(t, err)
-	for name, w := range fixtureWant {
-		ck, ok := checks[name]
-		require.Equal(t, w.class == guardmodel.ClassIdentifier, ok, name)
-		if !ok || name == "public.customers.dob" || name == "public.bad_cast.n" {
-			continue
-		}
-		require.Positive(t, ck.Sampled, name)
-		require.Zero(t, ck.RoundTripFailures, name)
 	}
 }
 
@@ -201,7 +180,7 @@ func TestDomainsAreJudgedByTheirBaseType(t *testing.T) {
 	t.Parallel()
 	d := fixtureDB(t)
 	got := map[string]pii.Result{}
-	for _, r := range suggestAll(t, d, pii.Options{}, false) {
+	for _, r := range suggestAll(t, d, pii.Options{}) {
 		got[r.Column.FullName()] = r
 	}
 	require.Equal(t, "public.email_address", got["public.leads.primary_ref"].Column.DataType)

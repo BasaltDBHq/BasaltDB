@@ -55,7 +55,6 @@ var outImportBaseline = []string{
 // forward today, as "<package>: <function>".
 var pkgLogicBaseline = []string{
 	"pkg/setup: (Description).AcceptsTrustRoot",
-	"pkg/setup: (PasskeyRequest).Link",
 	"pkg/setup: (PasskeyRequest).Verify",
 	"pkg/setup: activePasskeys",
 	"pkg/setup: adminAt",
@@ -66,7 +65,6 @@ var pkgLogicBaseline = []string{
 	"pkg/setup: ConnDatabase",
 	"pkg/setup: ConnectedAs",
 	"pkg/setup: Describe",
-	"pkg/setup: NewPasskeyRequest",
 	"pkg/setup: PasskeyRequestFor",
 	"pkg/setup: printable",
 	"pkg/setup: revokedLines",
@@ -88,7 +86,6 @@ var pkgLogicBaseline = []string{
 	"pkg/trustprofile: (*Profile).matchLen",
 	"pkg/trustprofile: (*Profile).VerifiesCA",
 	"pkg/trustprofile: (*Set).For",
-	"pkg/trustprofile: (*Set).Named",
 	"pkg/trustprofile: (*Set).Replacing",
 	"pkg/trustprofile: allNumeric",
 	"pkg/trustprofile: BuiltIns",

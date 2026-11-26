@@ -61,7 +61,7 @@ func newFixture(t *testing.T) fixture {
 	d.Exec(t, fixtureSQL)
 	a := d.NewAgent(t, "bot", []string{"public.customers"},
 		[]string{"public.nokey", "public.orders", "public.emails_v", "public.plain"})
-	pool, err := postgres.NewPool(context.Background(), a.URL, 4)
+	pool, _, err := postgres.NewSwitchablePool(context.Background(), a.URL, 4)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	return fixture{db: d, agent: a, pool: pool}
@@ -188,18 +188,6 @@ func TestValuesReadAreInTheDictionaryAndTokenizedConsistently(t *testing.T) {
 	_, ok = dict.Lookup(keys.GenericHash("hi"))
 	require.False(t, ok, "a PUBLIC column is not added")
 	require.Equal(t, 7, dict.Status().DeltaValues, "two emails, one phone, two two-word names stored both ways; NULL and empty skipped")
-
-	// A value read is now found in free text, with the same token each time.
-	tz := corepii.NewTokenizer(keys, "", append(corepii.PatternDetectors(), corepii.NewDictionaryDetector(keys, dict, ""))...)
-	first, _, err := tz.Tokenize("Please call Ada Lovelace today.")
-	require.NoError(t, err)
-	require.NotContains(t, first, "Ada Lovelace")
-	second, _, err := tz.Tokenize("Please call Ada Lovelace today.")
-	require.NoError(t, err)
-	require.Equal(t, first, second)
-	tok, err := keys.MakeToken(corepii.EntityPersonName, "Ada Lovelace", "")
-	require.NoError(t, err)
-	require.Contains(t, first, tok.Surface())
 }
 
 // resultFields names a result's fields, as internal/app does for the

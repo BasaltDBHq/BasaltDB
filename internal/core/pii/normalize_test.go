@@ -65,3 +65,16 @@ func TestNormalizeIsIdempotent(t *testing.T) {
 func TestGenericFormMatchesNameNormalization(t *testing.T) {
 	require.Equal(t, pii.Normalize(pii.EntityPersonName, "Jose\u0301  PÉREZ", ""), pii.GenericForm("José Pérez"))
 }
+
+// A "00" number normalizes as its "+" form, in any region, and stays stable.
+func TestThe00PrefixNormalizesAsPlus(t *testing.T) {
+	for _, region := range []string{"", "GB", "US", "ID", "DE"} {
+		require.Equal(t, "+447700900123", pii.Normalize(pii.EntityPhone, "0044 7700 900123", region), region)
+		require.Equal(t, "+12025550143", pii.Normalize(pii.EntityPhone, "001 202 555 0143", region), region)
+	}
+	for _, v := range []string{"0-0-12", "00", "00abc", "0000123"} {
+		once := pii.Normalize(pii.EntityPhone, v, "")
+		require.Equal(t, once, pii.Normalize(pii.EntityPhone, once, ""), "%q", v)
+	}
+	require.Equal(t, "zed.q@other.com", pii.Normalize(pii.EntityEmail, "Zed.Q@Other。COM", ""))
+}

@@ -28,7 +28,7 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 	f.classify(t, time.Now())
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	pool, err := postgres.NewPool(ctx, f.agent.URL, 2)
+	pool, _, err := postgres.NewSwitchablePool(ctx, f.agent.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	dict, _ := newDict(t, corepii.DefaultDictionaryOptions(time.Now))

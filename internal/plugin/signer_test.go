@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/pluginsign"
 )
 
 // pluginhostApproval is the option of an entry that requires approval.
@@ -31,7 +32,7 @@ func (f *fixture) verifyWith(manifestSHA string, trust TrustStore, opts ...Optio
 // key, the seam TestEmbeddedKeys uses: no publisher key is built in yet.
 func (f *fixture) builtIn(publisher *ecdsa.PrivateKey) (TrustStore, string) {
 	f.t.Helper()
-	id, err := KeyID(&publisher.PublicKey)
+	id, err := pluginsign.KeyID(&publisher.PublicKey)
 	require.NoError(f.t, err)
 	trust := f.trust
 	trust.embedded = map[string]*ecdsa.PublicKey{id: &publisher.PublicKey}
@@ -84,7 +85,7 @@ func TestUnsignedStagesWhenApprovalRequired(t *testing.T) {
 // its schema. Without approval the trust store decides as before.
 func TestUnknownKeyIsUnknown(t *testing.T) {
 	t.Parallel()
-	stranger, err := GenerateKey()
+	stranger, err := pluginsign.GenerateKey()
 	require.NoError(t, err)
 
 	cases := map[string]func(f *fixture){
@@ -93,7 +94,7 @@ func TestUnknownKeyIsUnknown(t *testing.T) {
 		"key in the trust store, does not verify": func(f *fixture) {
 			other := localManifest()
 			other[len(other)-2] = ' '
-			sig, err := SignManifest(other, f.signer)
+			sig, err := pluginsign.SignManifest(other, f.signer)
 			require.NoError(t, err)
 			require.NoError(t, os.WriteFile(filepath.Join(f.src, SignatureFile), sig, 0o644))
 		},
@@ -123,7 +124,7 @@ func TestUnknownKeyIsUnknown(t *testing.T) {
 	// in, so it is not KNOWN.
 	f := newFixture(t)
 	v := f.install("")
-	id, err := KeyID(&f.signer.PublicKey)
+	id, err := pluginsign.KeyID(&f.signer.PublicKey)
 	require.NoError(t, err)
 	require.Equal(t, id, v.SignerKeyID)
 	require.Equal(t, pluginmodel.SignerUnknown, v.Signer)
@@ -137,7 +138,7 @@ func TestKnownSignerIsKnown(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			f := newFixture(t)
-			publisher, err := GenerateKey()
+			publisher, err := pluginsign.GenerateKey()
 			require.NoError(t, err)
 			trust, id := f.builtIn(publisher)
 			f.writeSigned(f.src, localManifest(), publisher)
@@ -163,12 +164,12 @@ func TestBadKnownSignatureRefused(t *testing.T) {
 		"signs another manifest": func(t *testing.T, publisher *ecdsa.PrivateKey, _ string) []byte {
 			other := localManifest()
 			other[len(other)-2] = ' '
-			sig, err := SignManifest(other, publisher)
+			sig, err := pluginsign.SignManifest(other, publisher)
 			require.NoError(t, err)
 			return sig
 		},
 		"fails its schema": func(t *testing.T, publisher *ecdsa.PrivateKey, _ string) []byte {
-			sig, err := SignManifest(localManifest(), publisher)
+			sig, err := pluginsign.SignManifest(localManifest(), publisher)
 			require.NoError(t, err)
 			var s signatureFile
 			require.NoError(t, json.Unmarshal(sig, &s))
@@ -189,7 +190,7 @@ func TestBadKnownSignatureRefused(t *testing.T) {
 		for optName, opts := range options {
 			t.Run(name+"/"+optName, func(t *testing.T) {
 				t.Parallel()
-				publisher, err := GenerateKey()
+				publisher, err := pluginsign.GenerateKey()
 				require.NoError(t, err)
 
 				// At Stage.
@@ -248,7 +249,7 @@ func TestUnsignedStillRefusedWithoutApproval(t *testing.T) {
 
 			// A copy signed by a key the trust store lacks is refused too.
 			g := newFixture(t)
-			stranger, err := GenerateKey()
+			stranger, err := pluginsign.GenerateKey()
 			require.NoError(t, err)
 			g.writeSigned(g.src, localManifest(), stranger)
 			_, err = installCopy(g.src, g.root, "", g.trust, opts...)
@@ -390,7 +391,7 @@ func TestApprovalKeepsEveryOtherCheck(t *testing.T) {
 func TestCommitKeepsOnlyTheSameSigner(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	publisher, err := GenerateKey()
+	publisher, err := pluginsign.GenerateKey()
 	require.NoError(t, err)
 	trust, id := f.builtIn(publisher)
 	f.writeSigned(f.src, localManifest(), publisher)
@@ -435,7 +436,7 @@ func TestCommitKeepsOnlyTheSameSignatureFile(t *testing.T) {
 	require.Equal(t, v.Dir, u.Dir)
 	require.NotContains(t, entries(t, u.Dir), SignatureFile, "the unsigned copy replaced the one with a .sig")
 
-	stranger, err := GenerateKey()
+	stranger, err := pluginsign.GenerateKey()
 	require.NoError(t, err)
 	f.writeSigned(f.src, localManifest(), stranger)
 	s, err := installCopy(f.src, f.root, "", f.trust, pluginhostApproval)

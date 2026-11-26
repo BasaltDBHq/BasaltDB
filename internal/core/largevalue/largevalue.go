@@ -10,10 +10,6 @@
 package largevalue
 
 import (
-	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 )
 
@@ -59,36 +55,6 @@ type Entry struct {
 	SHA256 string `json:"sha256"`
 }
 
-// Cost is what the value with this JSON text costs in column, measured as
-// the agent's marker measures it (the store computes the same number): the
-// text's bytes, EscapeCost for each byte JSON escapes, ValueOverhead and the
-// field's name. jsonText is the text as the store prints it, which a
-// json.RawMessage of the row's JSON keeps byte for byte.
-func Cost(jsonText []byte, column string) int64 {
-	var escapes int64
-	for _, b := range jsonText {
-		switch b {
-		case '"', '\\', '<', '>', '&':
-			escapes++
-		}
-	}
-	return int64(len(jsonText)) + EscapeCost*escapes + ValueOverhead + int64(len(column))
-}
-
-// Text is the value's text as the marker hashes it: a JSON string's
-// characters, anything else its JSON text.
-func Text(jsonText []byte) (string, error) {
-	t := bytes.TrimSpace(jsonText)
-	if len(t) > 0 && t[0] == '"' {
-		var s string
-		if err := json.Unmarshal(t, &s); err != nil {
-			return "", fmt.Errorf("largevalue: string value: %w", err)
-		}
-		return s, nil
-	}
-	return string(jsonText), nil
-}
-
 // SizeText is a size in KiB (under 1 MiB) or MiB, with one decimal, the way
 // the signing pages show it.
 func SizeText(n int64) string {
@@ -98,44 +64,4 @@ func SizeText(n int64) string {
 	}
 	tenths := (n*10 + unit/2) / unit
 	return fmt.Sprintf("%d.%d %s", tenths/10, tenths%10, suffix)
-}
-
-// Summary is "(<size>, sha256 <hash>)" for a value that costs over ValueCap
-// in column, so the person can match it to a marker an agent saw, and ""
-// for any other. The size and hash are over the value's text (Text).
-func Summary(jsonText []byte, column string) string {
-	if Cost(jsonText, column) <= ValueCap {
-		return ""
-	}
-	text, err := Text(jsonText)
-	if err != nil {
-		return ""
-	}
-	sum := sha256.Sum256([]byte(text))
-	return fmt.Sprintf("(%s, sha256 %s)", SizeText(int64(len(text))), hex.EncodeToString(sum[:]))
-}
-
-// ImageMarks is Summary for each column of a row image (a JSON object as
-// the store prints it): only the columns that cost over ValueCap are in it.
-func ImageMarks(image []byte) (map[string]string, error) {
-	var cols map[string]json.RawMessage
-	if err := json.Unmarshal(image, &cols); err != nil {
-		return nil, fmt.Errorf("largevalue: row image: %w", err)
-	}
-	var out map[string]string
-	for col, v := range cols {
-		if s := Summary(v, col); s != "" {
-			if out == nil {
-				out = map[string]string{}
-			}
-			out[col] = s
-		}
-	}
-	return out, nil
-}
-
-// Marks are the summaries of the large values in a row change's key,
-// before and after images, by column.
-type Marks struct {
-	Key, Before, After map[string]string
 }

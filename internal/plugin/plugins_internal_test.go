@@ -28,6 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginpath"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/pluginsign"
 )
 
 // testPluginFlag makes this test binary a JSON-RPC test plugin.
@@ -216,7 +217,7 @@ func newPluginFixture(t *testing.T) *pluginFixture {
 func (f *pluginFixture) install(instance, transport string, agents ...string) config.Plugin {
 	f.t.Helper()
 	t := f.t
-	key, err := GenerateKey()
+	key, err := pluginsign.GenerateKey()
 	require.NoError(t, err)
 	pemBytes, err := MarshalPublicKey(&key.PublicKey)
 	require.NoError(t, err)
@@ -240,7 +241,7 @@ func (f *pluginFixture) install(instance, transport string, agents ...string) co
 }
 `, transport, args, sha256.Sum256(exe))
 	require.NoError(t, os.WriteFile(filepath.Join(src, ManifestFile), []byte(manifest), 0o644))
-	sig, err := SignManifest([]byte(manifest), key)
+	sig, err := pluginsign.SignManifest([]byte(manifest), key)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(src, SignatureFile), sig, 0o644))
 	v, err := installCopy(src, f.root, instance, f.trust)
@@ -522,4 +523,13 @@ func TestLocalPluginRefusedInServiceModeAndAsRoot(t *testing.T) {
 	for _, ep := range []*Plugins{service, root, user} {
 		require.Empty(t, ep.localRefusal(p, remote))
 	}
+}
+
+// run supervises the started entries until ctx is done and every one has
+// stopped.
+func (ep *Plugins) run(ctx context.Context) {
+	if err := ep.start(ctx); err != nil {
+		return
+	}
+	ep.sup.Wait()
 }

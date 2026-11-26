@@ -147,7 +147,7 @@ func TestAgentPolicies(t *testing.T) {
 	require.Error(t, err, "no ledger row without the policy")
 
 	require.NoError(t, a.Conn.Close(ctx))
-	require.NoError(t, guard.Uninstall(ctx, d.Admin, d.Names))
+	require.NoError(t, guardtest.Uninstall(ctx, d.Admin, d.Names))
 	require.Empty(t, policiesOn(t, d))
 }
 

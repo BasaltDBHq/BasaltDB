@@ -160,7 +160,7 @@ func (f *keptFixture) add(instance string, agents ...string) (PluginOpenResult, 
 func (f *keptFixture) sign(a PluginOpenedApproval) {
 	f.t.Helper()
 	require.NotNil(f.t, a.ApprovalID, a.Refused)
-	as, err := f.pk.Sign(approval.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := f.pk.Sign(passkeytest.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(f.t, err)
 	ctx := context.Background()
 	for _, name := range slices.Sorted(maps.Keys(f.agents)) {

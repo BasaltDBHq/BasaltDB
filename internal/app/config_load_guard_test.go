@@ -21,8 +21,8 @@ const configImport = "github.com/basaltdbhq/basaltdb/internal/config"
 // config from a path: the loaders, and the writers that read it before they
 // change it. The *At variants, which take an opened directory, are not.
 var configLoaders = map[string]bool{
-	"Load": true, "LoadOpen": true, "LoadOpenRaw": true, "LoadNoFollow": true,
-	"UpsertAgent": true, "UpsertAgentVault": true, "UpsertedVault": true,
+	"Load": true, "LoadOpenRaw": true, "LoadNoFollow": true,
+	"UpsertAgentVault": true, "UpsertedVault": true,
 	"ClearSetup": true, "UpdateConfig": true, "RemoveAgents": true,
 }
 
@@ -228,11 +228,11 @@ func TestConfigLoadGuardSeesEveryLoader(t *testing.T) {
 		require.NoError(t, err)
 		return f
 	}
-	require.Equal(t, []string{"x.go:a:Load", "x.go:b:LoadOpen", "x.go:c:LoadNoFollow", "x.go:<package>:Load"},
+	require.Equal(t, []string{"x.go:a:Load", "x.go:b:LoadOpenRaw", "x.go:c:LoadNoFollow", "x.go:<package>:Load"},
 		configLoadsIn("x.go", parse(`package main
 import "`+configImport+`"
 func a() { config.Load("p") }
-func b() { config.LoadOpen("p", nil) }
+func b() { config.LoadOpenRaw("p", nil) }
 func c() { f := config.LoadNoFollow; f("p") }
 var g = config.Load
 `)))
@@ -240,17 +240,17 @@ var g = config.Load
 import cfg "`+configImport+`"
 func a() { cfg.LoadNoFollow("p"); cfg.LoadOpenRaw("p", nil) }
 `)))
-	require.Equal(t, []string{"x.go:a:LoadOpen", "x.go:b:Load"}, configLoadsIn("x.go", parse(`package main
+	require.Equal(t, []string{"x.go:a:LoadOpenRaw", "x.go:b:Load"}, configLoadsIn("x.go", parse(`package main
 import . "`+configImport+`"
-func a() { LoadOpen("p", nil) }
+func a() { LoadOpenRaw("p", nil) }
 func b() { var m sync.Map; m.Load("k"); Load("p") }
 `)))
-	require.Equal(t, []string{"x.go:a:Load", "x.go:a:LoadOpen"}, configLoadsIn("x.go", parse(`package main
+	require.Equal(t, []string{"x.go:a:Load", "x.go:a:LoadOpenRaw"}, configLoadsIn("x.go", parse(`package main
 import (
 	"`+configImport+`"
 	other "`+configImport+`"
 )
-func a() { config.Load("p"); other.LoadOpen("p", nil) }
+func a() { config.Load("p"); other.LoadOpenRaw("p", nil) }
 `)), "a package imported under two names is seen under both")
 	require.Empty(t, configLoadsIn("x.go", parse(`package main
 import "sync"

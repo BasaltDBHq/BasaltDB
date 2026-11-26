@@ -155,7 +155,7 @@ func TestMemoryStoreSuggestsByKind(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	cols := h.store.columns()
-	results, err := pii.SuggestAll(context.Background(), cols, h.store.sample, pii.Options{}, func(pii.Column, pii.Suggestion) bool { return false })
+	results, err := pii.SuggestAll(context.Background(), cols, h.store.sample, pii.Options{})
 	require.NoError(t, err)
 	byName := map[string]pii.Result{}
 	for _, r := range results {

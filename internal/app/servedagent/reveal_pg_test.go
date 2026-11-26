@@ -287,7 +287,7 @@ func TestAgentCannotRevealHiddenRows(t *testing.T) {
 			"a forged Origin":         {"http://localhost:9999", valid, http.StatusForbidden},
 			"no Origin":               {"", valid, http.StatusForbidden},
 			"a proof the agent made":  {pageOrigin, revealBody(t, agentMade, it.kind, it.id, nonce, hash), http.StatusConflict},
-			"the item's signature":    {pageOrigin, revealBody(t, signed(approval.Challenge(it.binding)), it.kind, it.id, nonce, hash), http.StatusConflict},
+			"the item's signature":    {pageOrigin, revealBody(t, signed(passkeytest.Challenge(it.binding)), it.kind, it.id, nonce, hash), http.StatusConflict},
 			"a widen proof":           {pageOrigin, revealBody(t, signed(reverttest.RescopeChallenge(it.id, nonce, widenKey, `{}`)), it.kind, it.id, nonce, hash), http.StatusConflict},
 			"a proof of another kind": {pageOrigin, revealBody(t, s.personSigns(t), otherKind, it.id, nonce, hash), http.StatusConflict},
 		} {

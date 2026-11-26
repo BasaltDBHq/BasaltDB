@@ -103,8 +103,6 @@ type FuseDictionary struct {
 	discarded error // why the file at open was not used, or nil
 }
 
-var _ Dictionary = (*FuseDictionary)(nil)
-
 // OpenDictionary opens the dictionary kept in files (pii/out/dictfile's
 // Open: <stateDir>/pii). A missing dictionary file, or one that is
 // truncated, corrupt, of another format or built with other keys, gives an

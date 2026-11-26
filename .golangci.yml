@@ -30,6 +30,7 @@ linters:
     - errname
     - errorlint
     - exhaustive
+    - forbidigo
     - gocheckcompilerdirectives
     - goconst
     - gocritic
@@ -74,6 +75,11 @@ linters:
           - revive
           - testifylint
           - errcheck
+          - forbidigo
+
+      - path: internal/lib/uniqueid/
+        linters:
+          - forbidigo
 
       - path: cmd/
         linters:
@@ -104,7 +110,6 @@ linters:
     - paralleltest
     - funlen
     - cyclop
-    - forbidigo
     - godox
     - nonamedreturns
     - testifylint
@@ -240,6 +245,13 @@ linters:
           deny:
             - pkg: github.com/basaltdbhq/basaltdb/internal/core/action
               desc: internal/core/action imports the codecs; they must not import it
+    # Every id BasaltDB generates is a UUIDv7 from internal/lib/uniqueid.
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^uuid\.(New|NewString|NewRandom|NewV7)$
+          pkg: ^github\.com/google/uuid$
+          msg: generate ids with internal/lib/uniqueid
     errcheck:
       check-type-assertions: true
       check-blank: false

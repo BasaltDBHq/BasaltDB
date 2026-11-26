@@ -527,9 +527,7 @@ var portGlue = map[string]string{
 // port and do more than forward, as Type.Method, with the reason each is
 // still here. The list only shrinks: an entry whose method is gone, has
 // become a forward or no longer implements a port fails the test.
-var portLogic = map[string]string{
-	"engineCLIHost.RunServiceAt": "forwards to app's runServiceAt, the whole basalt service install command",
-}
+var portLogic = map[string]string{}
 
 // declaresPorts reports whether the package at path, in module, is one whose
 // interfaces app may fill: any package under internal/ but app and testkit

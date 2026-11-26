@@ -19,8 +19,9 @@ import (
 // statusThroughShim asks the engine-down server for status.
 func statusThroughShim(t *testing.T, configPath string) map[string]any {
 	t.Helper()
-	srv, err := engineDownServer("bot", configPath, slog.New(slog.DiscardHandler))
+	down, err := engineCLIHost{}.EngineDown("bot", configPath, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
+	srv := engineCLIHost{}.NewEngineDownServer(down)
 	var out strings.Builder
 	require.NoError(t, srv.ServeLine(context.Background(), &out,
 		[]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"status","arguments":{}}}`)))

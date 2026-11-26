@@ -9,6 +9,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
 )
 
@@ -22,7 +24,7 @@ func TestPluginUnitEntries(t *testing.T) {
 			Resources: &pluginmodel.Resources{MemoryMB: 256},
 		},
 	}
-	e, ok := unitEntry(config.Plugin{Name: "acme-ner", Enabled: true}, local)
+	e, ok := plugin.EntryFor(config.Plugin{Name: "acme-ner", Enabled: true}, local)
 	require.True(t, ok)
 	require.Equal(t, servicespec.PluginEntry{
 		Name: "acme-ner", Instance: "default", Dir: local.Dir, Command: "bin/acme", Args: []string{"--serve"},
@@ -30,7 +32,7 @@ func TestPluginUnitEntries(t *testing.T) {
 	}, e)
 
 	remote := pluginmodel.Verified{Manifest: pluginmodel.Manifest{Endpoint: pluginmodel.Endpoint{Remote: &pluginmodel.RemoteEndpoint{Transport: "connectrpc", URL: "https://x.example"}}}}
-	_, ok = unitEntry(config.Plugin{Name: "acme-ner"}, remote)
+	_, ok = plugin.EntryFor(config.Plugin{Name: "acme-ner"}, remote)
 	require.False(t, ok, "a remote entry has no unit")
 
 	cfg := config.Config{
@@ -44,7 +46,7 @@ func TestPluginUnitEntries(t *testing.T) {
 			{Name: "acme-ner", Instance: "client_x"},
 		},
 	}
-	h := servicePluginHost(cfg, "linux", "/etc/basalt/engine.json", "basalt")
+	h := plugin.HostFor(cfg, "linux", "/etc/basalt/engine.json", "basalt")
 	require.Equal(t, servicespec.PluginHost{
 		GOOS: "linux", EngineUser: "basalt", ConfigDir: "/etc/basalt", StateDir: config.DefaultStateDir("linux"), SocketDir: "/run/basalt",
 		CredentialFiles: []string{"/etc/basalt/agents/product_a.url", "/srv/x.url"},
@@ -52,7 +54,7 @@ func TestPluginUnitEntries(t *testing.T) {
 
 	// Copies that are not installed are left out of install, with a line.
 	var warn strings.Builder
-	require.Empty(t, serviceUnitEntries(cfg, "linux", "/etc/basalt/engine.json", &warn))
+	require.Empty(t, plugin.ServiceUnits{Files: pluginPorts.Files, TerminalText: cli.TerminalText}.WithPluginUnits(servicespec.Spec{GOOS: "linux", ConfigPath: "/etc/basalt/engine.json", User: "basalt"}, cfg, &warn).Plugins)
 	require.Contains(t, warn.String(), "plugin acme-ner/default: its service unit is left as it is")
 }
 

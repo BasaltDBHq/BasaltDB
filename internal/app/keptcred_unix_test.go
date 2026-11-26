@@ -18,14 +18,14 @@ func TestKeptCredentialSpecRefusesASymlink(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)
 	spec := servicespec.Spec{GOOS: "linux", Binary: "/b", ConfigPath: cfg, User: me(t)}
-	a := agentInstall{name: "bot", osUser: "tester", keepCredential: true}
+	a := agentInstall{Name: "bot", OSUser: "tester", KeepCredential: true}
 	cred := filepath.Join(filepath.Dir(cfg), "agents", "bot.url")
 	target := filepath.Join(t.TempDir(), "id_rsa")
 	require.NoError(t, os.WriteFile(target, []byte("PRIVATE KEY\n"), 0o600))
 	require.NoError(t, os.MkdirAll(filepath.Dir(cred), 0o700))
 	require.NoError(t, os.Symlink(target, cred))
 
-	got, err := keptCredentialSpec(spec, a, false)
+	got, err := serviceInstaller().KeptCredentialSpec(spec, a, false)
 	require.Error(t, err)
 	for _, f := range got.Files {
 		require.NotContains(t, string(f.Content), "PRIVATE KEY", "nothing is copied")

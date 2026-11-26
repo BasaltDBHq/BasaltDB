@@ -76,6 +76,10 @@ func options(o *slog.HandlerOptions) *slog.HandlerOptions {
 	return &out
 }
 
+// NewTextLogger is the engine's and basalt mcp's log on w: a text handler
+// that scrubs link secrets from what it writes.
+func NewTextLogger(w io.Writer) *slog.Logger { return slog.New(NewTextHandler(w, nil)) }
+
 // NewTextHandler is slog.NewTextHandler with ReplaceAttr.
 func NewTextHandler(w io.Writer, o *slog.HandlerOptions) *slog.TextHandler {
 	return slog.NewTextHandler(w, options(o))

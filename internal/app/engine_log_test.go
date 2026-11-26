@@ -23,7 +23,7 @@ func TestEngineLogRedactsLinkSecrets(t *testing.T) {
 	}
 	short := links.WithSecret("http://localhost:7300/approvals/0193a4c2-7d1e-7c3a-9f00-0000000000d4", secret)
 	var out bytes.Buffer
-	log := engineLog(&out)
+	log := engineCLIHost{}.EngineLog(&out)
 	log.Info("link", "url", short)
 	log.Warn("failed", "err", fmt.Errorf("open %s: refused", short))
 	log.Warn("failed", "err", fmt.Errorf("register %v: refused", tok))

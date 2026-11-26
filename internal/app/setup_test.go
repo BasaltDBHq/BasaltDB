@@ -229,23 +229,23 @@ func TestServiceInstallAgentReadsTheCredentialFromStdin(t *testing.T) {
 	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "engine.json")
 	spec := servicespec.Spec{GOOS: "linux", Binary: fakeBin, ConfigPath: cfgPath, User: me(t)}
-	a := agentInstall{name: "bot", osUser: agentOSUser(t), personUIDs: []uint32{4242}}
+	a := agentInstall{Name: "bot", OSUser: agentOSUser(t), PersonUIDs: []uint32{4242}}
 
-	_, err := agentSpecFromStdin(strings.NewReader("postgres://x\n"), spec, a, false, false)
+	_, err := serviceInstaller().AgentSpec(strings.NewReader("postgres://x\n"), spec, a, false, false)
 	require.ErrorContains(t, err, "--credential-stdin")
-	_, err = agentSpecFromStdin(strings.NewReader(""), spec, a, true, false)
+	_, err = serviceInstaller().AgentSpec(strings.NewReader(""), spec, a, true, false)
 	require.ErrorContains(t, err, "no connection string on stdin")
-	_, err = agentSpecFromStdin(strings.NewReader("x\n"), spec, agentInstall{name: "bot", osUser: "no-such-user-basalt"}, true, false)
+	_, err = serviceInstaller().AgentSpec(strings.NewReader("x\n"), spec, agentInstall{Name: "bot", OSUser: "no-such-user-basalt"}, true, false)
 	require.ErrorContains(t, err, "no-such-user-basalt")
 
-	noPerson := agentInstall{name: "bot", osUser: agentOSUser(t)}
-	_, err = agentSpecFromStdin(strings.NewReader("x\n"), spec, noPerson, true, false)
+	noPerson := agentInstall{Name: "bot", OSUser: agentOSUser(t)}
+	_, err = serviceInstaller().AgentSpec(strings.NewReader("x\n"), spec, noPerson, true, false)
 	require.ErrorIs(t, err, setup.ErrNoPerson, "no person uid: no service")
-	noPerson.personUIDs = []uint32{0}
-	_, err = agentSpecFromStdin(strings.NewReader("x\n"), spec, noPerson, true, false)
+	noPerson.PersonUIDs = []uint32{0}
+	_, err = serviceInstaller().AgentSpec(strings.NewReader("x\n"), spec, noPerson, true, false)
 	require.ErrorContains(t, err, "is root", "root is never a person")
 
-	got, err := agentSpecFromStdin(strings.NewReader("postgres://agent:pw@h/db\n"), spec, a, true, false)
+	got, err := serviceInstaller().AgentSpec(strings.NewReader("postgres://agent:pw@h/db\n"), spec, a, true, false)
 	require.NoError(t, err)
 	require.Contains(t, string(got.Files[0].Content), `"mode": "SERVICE"`)
 	require.Contains(t, string(got.Files[0].Content), "\"personUids\": [\n    4242\n  ]")
@@ -258,8 +258,8 @@ func TestServiceInstallAgentReadsTheCredentialFromStdin(t *testing.T) {
 	require.NotContains(t, string(got.Files[0].Content), "pw@", "the config holds no credential")
 	require.NotContains(t, string(got.Files[0].Content), `"vault"`, "no --vault: the config's stays")
 
-	a.vault = config.VaultOn
-	got, err = agentSpecFromStdin(strings.NewReader("postgres://agent:pw@h/db\n"), spec, a, true, false)
+	a.Vault = config.VaultOn
+	got, err = serviceInstaller().AgentSpec(strings.NewReader("postgres://agent:pw@h/db\n"), spec, a, true, false)
 	require.NoError(t, err)
 	require.Contains(t, string(got.Files[0].Content), `"vault": "ON"`, "--vault writes the config's vault")
 }

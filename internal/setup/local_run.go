@@ -467,13 +467,6 @@ type Users interface {
 	Self() int
 }
 
-type osUsers struct{}
-
-func (osUsers) Lookup(name string) (*user.User, error)  { return user.Lookup(name) }
-func (osUsers) LookupID(uid string) (*user.User, error) { return user.LookupId(uid) }
-func (osUsers) GroupIDs(u *user.User) ([]string, error) { return u.GroupIds() }
-func (osUsers) Self() int                               { return os.Getuid() }
-
 // checkOSUser accepts the agent's OS user: one that exists, is not root,
 // not this engine's own user and not in its group.
 func checkOSUser(users Users, name string) (uint32, error) {

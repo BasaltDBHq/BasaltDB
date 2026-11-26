@@ -413,7 +413,7 @@ func (r *remoteInit) connection() error {
 	default:
 		// No address and no credential: a code for the connect page, which
 		// collects the address (CONTRACT.md, Connect-only setup codes).
-		if err := r.connectOnlyAllowed(); err != nil {
+		if err := setup.ConnectOnlyAllowed(r.settings, r.prev, r.existed); err != nil {
 			return err
 		}
 		r.connectOnly = true
@@ -539,129 +539,20 @@ func (r *remoteInit) inspect(conn cli.AgentConn) error {
 	return err
 }
 
-// reusable is the pending setup init prints again: unexpired and not yet
-// run.
-func (r *remoteInit) reusable() *config.Setup {
-	if r.entry == nil || r.entry.Setup == nil || r.recorded || r.password == "" || r.entry.Setup.CertificateChanged != r.certChanged {
-		return nil
+// facts is what this run found, as the setup service's decisions read it
+// (setup.RemoteRun).
+func (r *remoteInit) facts() setup.RemoteRun {
+	return setup.RemoteRun{
+		Agent: r.f.Agent, Prefix: r.f.Prefix, Timeout: r.f.Timeout, Entry: r.entry, Password: r.password,
+		LoggedIn: r.loggedIn, Recorded: r.recorded, Installed: r.installed, Latest: r.setup.GuardLatestVersion(),
+		CertChanged: r.certChanged, ConnectOnly: r.connectOnly, Target: r.target,
 	}
-	if r.entry.Setup.ConnectOnly() || setup.ConnectOnlyCode(r.entry.Setup.Code) {
-		// A connect-only code with a credential file is never handed out
-		// again on this path: the engine stopped between writing the
-		// credential and clearing awaitingAddress, or the person confirmed
-		// a database that does not record the setup (SETUP_NOT_FOUND). The
-		// credential's own code replaces it.
-		return nil
-	}
-	s := r.entry.Setup
-	expires, err := s.Expires()
-	if err != nil || !r.c.Now().Before(expires) {
-		return nil
-	}
-	return s
 }
 
-// decide picks the kind (CONTRACT.md, basalt init --remote, item 3; RI-6).
-// A role that does not log in while an INSTALL setup is pending: INSTALL
-// again with the password this machine holds, so any of its INSTALL codes
-// matches the credential. A role that does not log in otherwise: the
-// database refuses the credential (CREDENTIAL_REJECTED), so an AGENT code
-// with a new password (RI-17), with no flag. A role that logs in while a
-// connect-only setup the person confirmed is not recorded there
-// (SETUP_NOT_FOUND: it ran in another database of the same server): an
-// AGENT code with a new password for this one. Otherwise AGENT for an
-// agent the config does not have yet; else UPGRADE when its guard is older
-// than this build's; else an AGENT code with no change. Every AGENT code
-// names no tables: the role keeps its grants (payload).
-func (r *remoteInit) decide() (setup.Plan, error) {
-	latest := r.setup.GuardLatestVersion()
-	if r.certChanged {
-		return r.certificatePlan()
-	}
-	pendingInstall := r.entry != nil && r.entry.Setup != nil && r.entry.Setup.Kind == string(setupcode.KindInstall)
-	if !r.loggedIn {
-		switch {
-		case r.password != "" && pendingInstall:
-			return setup.Plan{Kind: setupcode.KindInstall, Password: r.password, Rotate: true}, nil
-		case r.password != "":
-			return r.withNewPassword(setup.Plan{Kind: setupcode.KindAgent})
-		}
-		return r.withNewPassword(setup.Plan{Kind: setupcode.KindInstall})
-	}
-	if r.installed > latest {
-		return setup.Plan{}, fmt.Errorf("the database's guard (version %d) is newer than this basalt (version %d): update basalt on this machine first", r.installed, latest)
-	}
-	p := setup.Plan{From: r.installed}
-	switch {
-	case r.confirmedNotFound():
-		p.Kind = setupcode.KindAgent
-		return r.withNewPassword(p)
-	case r.entry == nil:
-		p.Kind = setupcode.KindAgent
-	case r.installed < latest:
-		p.Kind = setupcode.KindUpgrade
-	default:
-		p.Kind = setupcode.KindAgent
-	}
-	return p, nil
-}
-
-// confirmedNotFound reports whether the pending setup is a connect-only
-// code whose database the person confirmed and that the database the agent
-// logs in to does not record (the engine's SETUP_NOT_FOUND).
-func (r *remoteInit) confirmedNotFound() bool {
-	s := r.entry
-	return s != nil && s.Setup != nil && !s.Setup.ConnectOnly() && setup.ConnectOnlyCode(s.Setup.Code) && !r.recorded
-}
-
-func (r *remoteInit) withNewPassword(p setup.Plan) (setup.Plan, error) {
-	pw, err := setupcode.NewPassword()
-	if err != nil {
-		return setup.Plan{}, err
-	}
-	p.Password, p.Rotate, p.NewPassword = pw, true, true
-	return p, nil
-}
-
-// payload builds the setup code's content.
+// payload builds the setup code's content (setup.RemoteRun.Payload), with
+// the engine's key and its pin for the host read here.
 func (r *remoteInit) payload(p setup.Plan) (setupcode.Payload, error) {
-	id, expires, err := setupcode.NewSetupID(r.c.Now(), r.c.Rand)
-	if err != nil {
-		return setupcode.Payload{}, err
-	}
-	out := setupcode.Payload{
-		Format: setupcode.Format, SetupID: id, Kind: p.Kind, Prefix: r.f.Prefix,
-		Guard: setupcode.Guard{From: p.From, To: r.setup.GuardLatestVersion()}, Build: setup.BuildVersion(), ExpiresAt: expires,
-	}
-	if !r.connectOnly {
-		target := r.target
-		out.Target, out.Engine = &target, r.engineKey()
-		if p.Kind != setupcode.KindInstall {
-			// The engine's pin for the host, a hint for the connect page.
-			out.TrustPin = r.pinnedSHA()
-		}
-	}
-	if r.certChanged && out.Engine == nil {
-		return setupcode.Payload{}, setup.ErrNoEngineForTrust
-	}
-	if p.Kind == setupcode.KindUpgrade {
-		return out, nil
-	}
-	// An INSTALL code asks for every table in public, which the person
-	// ticks on the connect page. An AGENT code names no tables: the role
-	// keeps the grants it holds (CONTRACT.md, The setup code, Kinds), and
-	// a role that is gone runs as an INSTALL, with ticks.
-	a := &setupcode.Agent{Name: r.f.Agent, StatementTimeoutMs: r.f.Timeout.Milliseconds()}
-	if p.Kind == setupcode.KindInstall {
-		a.AllTables = &setupcode.AllTables{Schemas: []string{"public"}}
-	}
-	if p.Rotate {
-		if a.Verifier, err = setupcode.NewVerifier(p.Password); err != nil {
-			return setupcode.Payload{}, err
-		}
-	}
-	out.Agent = a
-	return out, nil
+	return r.facts().Payload(p, r.c.Now(), r.c.Rand, r.engineKey, r.pinnedSHA)
 }
 
 // run makes (or reuses) the code, writes the credential and the config,
@@ -670,13 +561,13 @@ func (r *remoteInit) run() (setup.RemoteInitResult, error) {
 	if r.connectOnly {
 		return r.runConnectOnly()
 	}
-	if s := r.reusable(); s != nil {
+	if s := r.facts().Reusable(r.c.Now()); s != nil {
 		if err := r.writeConfig(s); err != nil {
 			return setup.RemoteInitResult{}, err
 		}
 		return r.result(*s, true)
 	}
-	p, err := r.decide()
+	p, err := r.facts().Decide()
 	if err != nil {
 		return setup.RemoteInitResult{}, err
 	}
@@ -702,30 +593,6 @@ func (r *remoteInit) run() (setup.RemoteInitResult, error) {
 		return setup.RemoteInitResult{}, err
 	}
 	return r.result(s, false)
-}
-
-// connectOnlyAllowed is nil when this run may make a connect-only code: the
-// engine it writes is agent-operated with the Vault on (init --remote
-// always writes the portal's pages). Otherwise the message names what the
-// connect page needs.
-func (r *remoteInit) connectOnlyAllowed() error {
-	if r.settings.OperatedBy != mcpcontract.OperatedByAgent {
-		return errors.New("this engine is person-operated, and basalt init --remote sets up only an agent-operated engine: " +
-			"the person runs basalt init on this machine instead")
-	}
-	if r.settings.VaultFor(r.prev, r.existed).Vault != config.VaultOn {
-		return errors.New("this engine has the Vault off, and the connect page that basalt init --remote hands the person needs it on")
-	}
-	return nil
-}
-
-// pendingConnectOnly is the agent's pending connect-only setup, nil when
-// none: waiting for its address, or refused by the person.
-func (r *remoteInit) pendingConnectOnly() *config.Setup {
-	if r.entry == nil || r.entry.Setup == nil || !r.entry.Setup.ConnectOnly() {
-		return nil
-	}
-	return r.entry.Setup
 }
 
 // settle settles what the run depends on: the role's names, the operator
@@ -798,7 +665,7 @@ func (r *remoteInit) removeSecret() error {
 // the connect page handed over, or when .secret is gone, the pending setup
 // is forgotten and the code is a recovery code: AGENT with a new password.
 func (r *remoteInit) runConnectOnly() (setup.RemoteInitResult, error) {
-	pending := r.pendingConnectOnly()
+	pending := r.facts().PendingConnectOnly()
 	if pending != nil && !pending.Refused && !pending.AddressInvalid {
 		reuse, err := r.reuseConnectOnly(pending)
 		if err != nil || reuse {
@@ -811,11 +678,7 @@ func (r *remoteInit) runConnectOnly() (setup.RemoteInitResult, error) {
 			return r.result(*pending, true)
 		}
 	}
-	kind := setupcode.KindInstall
-	if pending != nil {
-		kind = setupcode.KindAgent
-	}
-	p, err := r.withNewPassword(setup.Plan{Kind: kind})
+	p, err := r.facts().ConnectOnlyPlan()
 	if err != nil {
 		return setup.RemoteInitResult{}, err
 	}
@@ -949,33 +812,9 @@ func remoteVaultLine(w config.VaultWritten) string {
 }
 
 // result is the remote-init result: the code, and what the person does
-// with it.
+// with it (setup.RemoteRun.RemoteResult), with the basalt mcp command.
 func (r *remoteInit) result(s config.Setup, reused bool) (setup.RemoteInitResult, error) {
-	res := setup.RemoteInitResult{
-		Agent: r.f.Agent, SetupID: s.SetupID, Kind: s.Kind, Code: s.Code, Fingerprint: s.Fingerprint,
-		Reused: reused, ExpiresAt: s.ExpiresAt, PersonMessage: setupPersonMessage(r.f.Agent, s.Fingerprint),
-	}
-	if s.AwaitingAddress {
-		res = r.connectOnlyResult(res, s)
-	} else {
-		res = r.withSetupGuidance(res, s)
-	}
-	return r.withMCP(res), nil
-}
-
-// withSetupGuidance is the person message and connect link of a code that
-// is not connect-only.
-func (r *remoteInit) withSetupGuidance(res setup.RemoteInitResult, s config.Setup) setup.RemoteInitResult {
-	// An agent-operated engine with the Vault on hands the connect link
-	// when the whole link fits the budget (no network call: the link only
-	// holds the code); else the text says where to paste the code.
-	url := guidance.ConnectLink(s.Code, r.connectBudget)
-	if url != "" {
-		res.ConnectURL = url
-		res.PersonMessage, _ = guidance.ConnectMessage("Finish setting up Basalt for "+r.f.Agent+".", url, s.Fingerprint)
-	}
-	res.PasteAtPortal = url == ""
-	return res
+	return r.withMCP(r.facts().RemoteResult(s, reused, r.connectBudget)), nil
 }
 
 // withMCP adds the basalt mcp command the agent registers, and the OS user
@@ -985,34 +824,6 @@ func (r *remoteInit) withMCP(res setup.RemoteInitResult) setup.RemoteInitResult 
 	res.MCPCommand = setup.MCPArgs(r.f.Agent, setup.MCPBinary(r.c.Host))
 	fmt.Fprint(r.c.Stderr, setup.TemporaryBinaryWarning(res.MCPCommand[0], os.TempDir()))
 	return res
-}
-
-// connectOnlyResult is the result of a connect-only code: the connect link
-// and the fingerprint, no laptop command. A link over the budget is left
-// out: the text says to paste the code at the connect page.
-func (r *remoteInit) connectOnlyResult(res setup.RemoteInitResult, s config.Setup) setup.RemoteInitResult {
-	res.ConnectOnly = true
-	lead := "Connect your database to " + r.f.Agent + "."
-	if open := guidance.ConnectLink(s.Code, r.connectBudget); open != "" {
-		res.ConnectURL = open
-		res.PersonMessage, _ = guidance.ConnectOnlyMessage(lead, open, s.Fingerprint)
-		return res
-	}
-	res.PasteAtPortal = true
-	page := strings.TrimPrefix(links.Portal+links.ConnectPath, "https://")
-	res.PersonMessage = lead + " Open " + page + ", paste the setup code the agent shows you, check that it shows the setup fingerprint " + s.Fingerprint +
-		", and follow the page. The page asks for your database's connection string: paste it there only. The agent never needs it, so never paste it into this chat."
-	return res
-}
-
-// setupPersonMessage is what the agent shows the person verbatim, within
-// guidance.MaxPersonMessageLength for the longest agent name: it names the
-// agent once.
-func setupPersonMessage(name, fingerprint string) string {
-	return fmt.Sprintf("Finish setting up Basalt for %s: open %s, paste the setup code the agent shows you, "+
-		"check that it shows the setup fingerprint %s, and follow the page. "+
-		"The page asks for your database's connection string: paste it there only, never into this chat.",
-		name, strings.TrimPrefix(links.Portal+links.ConnectPath, "https://"), fingerprint)
 }
 
 // PrintRemoteResult prints the result: the connect link or the code in a

@@ -33,6 +33,8 @@ type LocalBackend interface {
 	// The engine's own files, and the PII classifier.
 	EngineFiles
 	Classifier
+	// OSUsers looks the computer's OS users up (setup/out/osusers).
+	OSUsers() Users
 	// FetchChain reads the chain host:port presents with the TLS handshake
 	// alone.
 	FetchChain(ctx context.Context, host string, port int) ([]*x509.Certificate, error)

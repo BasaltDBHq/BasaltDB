@@ -1,3 +1,5 @@
+// Package agentmcp serves the agent's tools over MCP: it decodes each
+// call, makes one call of the agent service and renders its answer.
 package agentmcp
 
 import (
@@ -33,12 +35,18 @@ type Agent interface {
 	DescribeError(err error) error
 }
 
-// RunStartTools are the tools that start a run. mount lists a tool under its
-// contract, around Wrap; the tool list's composer supplies it.
-// Handlers parse, validate, make one service call and render.
-func RunStartTools(svc Agent, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool) []mcpserver.Tool {
+// Tools are the agent's tools: run_start, query and write for a store of
+// the SQL family only (CONTRACT.md, Stores), list_runs and describe. mount
+// lists a tool under its contract, around the gate internal/app wraps every
+// tool in; app places them in the served order. Handlers parse, validate,
+// make one service call and render.
+func Tools(svc Agent, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool) []mcpserver.Tool {
 	h := handlers{svc: svc}
-	return []mcpserver.Tool{mount("run_start", h.runStart)}
+	tools := []mcpserver.Tool{mount("run_start", h.runStart)}
+	if svc.Family() == agentstore.FamilySQL {
+		tools = append(tools, mount("query", h.query), mount("write", h.write))
+	}
+	return append(tools, mount("list_runs", h.listRuns), mount(guidance.ToolDescribe, h.describe))
 }
 
 type handlers struct {

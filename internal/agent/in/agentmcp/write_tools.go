@@ -7,7 +7,6 @@ import (
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
 	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
-	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -92,17 +91,4 @@ func (a writeArgs) wait() time.Duration {
 		return 0
 	}
 	return guidance.DefaultApprovalWait
-}
-
-// WriteTools are the tools of a store of the SQL family: query and write;
-// none for a store of another family (CONTRACT.md, Stores).
-func WriteTools(svc Agent, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool) []mcpserver.Tool {
-	if svc.Family() != agentstore.FamilySQL {
-		return nil
-	}
-	h := handlers{svc: svc}
-	return []mcpserver.Tool{
-		mount("query", h.query),
-		mount("write", h.write),
-	}
 }

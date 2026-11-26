@@ -63,11 +63,11 @@ func (f *fakeFinisher) finished() []finishCall {
 // finishing is a service with a pending setup, the probe and finisher given
 // and n passkeys.
 func finishing(probe *fakeProbe, fin *fakeFinisher, setup *config.Setup, passkeys int) *Service {
-	return newService(func(c *Core, d *Deps) {
-		d.Probe = probe
-		d.Finisher = fin
-		d.Passkeys = keys{n: passkeys}
-		d.Setup = setup
+	return newService(func(s *settings) {
+		s.deps.Probe = probe
+		s.deps.Finisher = fin
+		s.deps.Passkeys = keys{n: passkeys}
+		s.deps.Setup = setup
 	})
 }
 
@@ -244,9 +244,9 @@ func TestHeldCallsTrustANotRecordedAnswerBriefly(t *testing.T) {
 	ctx := context.Background()
 	probe := &countingProbe{fakeProbe: &fakeProbe{err: errNoRole, recordedErr: errNoRole}}
 	now := statusNow
-	svc := newService(func(c *Core, d *Deps) {
-		d.Probe, d.Finisher, d.Setup = probe, &fakeFinisher{}, pendingInstall()
-		c.Now = func() time.Time { return now }
+	svc := newService(func(s *settings) {
+		s.deps.Probe, s.deps.Finisher, s.deps.Setup = probe, &fakeFinisher{}, pendingInstall()
+		s.core.Now = func() time.Time { return now }
 	})
 
 	for range 5 {
@@ -270,10 +270,10 @@ func TestUnusableLockFileIsAStatusProblem(t *testing.T) {
 	t.Parallel()
 	const lock = "/etc/basalt/engine.json.lock"
 	fin := &fakeFinisher{finishErr: &config.LockUnusableError{Path: lock, Err: os.ErrPermission}}
-	svc := newService(func(c *Core, d *Deps) {
-		d.Probe = &fakeProbe{st: currentGuard(), recorded: true}
-		d.Setup = pendingSetup(guardmodel.SetupAgent, statusNow.Add(time.Hour))
-		d.Finisher = fin
+	svc := newService(func(s *settings) {
+		s.deps.Probe = &fakeProbe{st: currentGuard(), recorded: true}
+		s.deps.Setup = pendingSetup(guardmodel.SetupAgent, statusNow.Add(time.Hour))
+		s.deps.Finisher = fin
 	})
 
 	r, err := svc.Status(context.Background())

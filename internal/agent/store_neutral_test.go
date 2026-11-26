@@ -482,6 +482,11 @@ func TestDocumentStoreRunsTheAgentThroughThePorts(t *testing.T) {
 	svc, store, approvals := newDocService(t)
 	require.Equal(t, docFamily, svc.Family())
 
+	// The statement limit the agent is told is the store's own.
+	overview, err := svc.DescribeOverview(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(5000), overview.Limits.StatementTimeoutMs)
+
 	run, err := svc.StartRun(ctx, "move trial customers to pro", uuid.Nil)
 	require.NoError(t, err)
 

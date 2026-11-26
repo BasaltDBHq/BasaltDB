@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -111,7 +110,7 @@ func (e *HoldRefusalError) Unwrap() error { return e.Err }
 // and the preview's bound fields and lines. The request is passed on
 // unread. A refusal the agent records comes as a *HoldRefusalError; any other
 // error, the agent answers without recording it.
-func (ac *Service) Hold(ctx context.Context, in action.Intent, req agentstore.Request, op action.Op) (HeldWrite, error) {
+func (ac *Service) Hold(ctx context.Context, in action.Intent, req action.Request, op action.Op) (HeldWrite, error) {
 	p, err := ac.store.Holds.Preview(ctx, in, req)
 	var notRepeatable *action.RefusalError
 	var previewFailed *approvalstore.PreviewFailedError

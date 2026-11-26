@@ -6,7 +6,5 @@ internal/plugin problem.go: CheckAgentUsers: os/user.LookupGroup
 internal/plugin problem.go: systemGroups: os/user.Lookup
 internal/setup binary.go: TemporaryBinaryWarning: path/filepath.EvalSymlinks
 internal/setup checks.go: CheckServicePersons: os/user.Lookup
-internal/setup local_run.go: (osUsers).Lookup: os/user.Lookup
-internal/setup local_run.go: (osUsers).LookupID: os/user.LookupId
 internal/setup rotations.go: ConfigGone: os.Lstat
 internal/status portalcheck.go: save: internal/lib/atomicfile.Write

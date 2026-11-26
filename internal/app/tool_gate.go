@@ -1,7 +1,4 @@
-// Package agentmcp serves the agent's tools over MCP, and wraps every tool
-// served to an agent: the admin-credential refusal, admission and the
-// mapping of every error to the contract's error body.
-package agentmcp
+package app
 
 import (
 	"context"
@@ -14,23 +11,20 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
-// Gate is the served agent as wrap calls it: its error presenter, its
+// toolGate is the served agent as gate calls it: its error presenter, its
 // admission (see Admit), and whether every personMessage carries the
 // DEV_LOCAL_PAGES warning.
-type Gate interface {
+type toolGate interface {
 	Failure(tool string, args map[string]any, err error) *toolresult.ToolError
 	Admit(ctx context.Context) error
 	DevLocalPages() bool
 }
 
+// gate wraps every tool served to an agent, of every domain, once: the
+// admin-credential refusal, admission and the mapping of every error to the
+// contract's error body. AgentTools mounts each tool through it.
 type gate struct {
-	svc Gate
-}
-
-// Wrap is wrap for the tool list's composer: every served tool's call goes
-// through it.
-func Wrap(svc Gate, tool string, call func(context.Context, json.RawMessage) (any, error)) func(context.Context, json.RawMessage) (any, error) {
-	return gate{svc: svc}.wrap(tool, call)
+	svc toolGate
 }
 
 // wrap admits the call (every tool but status, see Service.Admit) and maps

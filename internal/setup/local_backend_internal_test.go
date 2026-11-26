@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"errors"
+	"os/user"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
@@ -32,6 +33,18 @@ func (testBackend) AgentConnString(adminURL, role, password string) (string, err
 }
 
 func (testBackend) Trust() *trustprofile.Set { return pgdial.Trust() }
+
+func (testBackend) OSUsers() Users { return noUsers{} }
+
+// noUsers is a computer with no OS user but this engine's own.
+type noUsers struct{}
+
+var errNoUser = errors.New("this test looks no OS user up")
+
+func (noUsers) Lookup(string) (*user.User, error)     { return nil, errNoUser }
+func (noUsers) LookupID(string) (*user.User, error)   { return nil, errNoUser }
+func (noUsers) GroupIDs(*user.User) ([]string, error) { return nil, errNoUser }
+func (noUsers) Self() int                             { return 4000 }
 
 func (testBackend) Connect(context.Context, string) (Conn, error) { return nil, errNoConnection }
 

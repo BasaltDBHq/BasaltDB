@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -44,7 +43,7 @@ type Holds interface {
 	// way with an *action.RefusalError (NOT_REPEATABLE), and marks an error
 	// of the preview run as *approvalstore.PreviewFailedError; any other error (the
 	// store's catalog read failing) comes unmarked.
-	Preview(ctx context.Context, in action.Intent, req agentstore.Request) (approvalstore.HeldPreview, error)
+	Preview(ctx context.Context, in action.Intent, req action.Request) (approvalstore.HeldPreview, error)
 	// Hold stores a held write for the person's approval.
 	Hold(ctx context.Context, in action.Intent, r approvalstore.HoldRequest) (approvalstore.Held, error)
 }

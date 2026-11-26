@@ -208,10 +208,10 @@ type LocalService struct {
 // New returns the setup of an engine with no config.
 func NewLocal(o LocalOptions) (*LocalService, error) {
 	if o.ConfigPath == "" || o.Origin == "" {
-		return nil, errors.New("localsetup: config path and origin required")
+		return nil, errors.New("setup: config path and origin required")
 	}
 	if o.Backend == nil {
-		return nil, errors.New("localsetup: backend required")
+		return nil, errors.New("setup: backend required")
 	}
 	rp, err := LocalRelying(o.Origin)
 	if err != nil {
@@ -224,7 +224,7 @@ func NewLocal(o LocalOptions) (*LocalService, error) {
 		o.Dial = o.Backend.Connect
 	}
 	if o.Users == nil {
-		o.Users = osUsers{}
+		o.Users = o.Backend.OSUsers()
 	}
 	if o.Prefix == "" {
 		o.Prefix = guardmodel.DefaultPrefix

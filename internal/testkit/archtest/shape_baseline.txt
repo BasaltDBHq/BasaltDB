@@ -1,8 +1,3 @@
-internal/agent/in/agentmcp: describe_tools.go: DescribeTools returns []mcpserver.Tool (export one func Tools(port, mount) []mcpserver.Tool)
-internal/agent/in/agentmcp: runs_tools.go: RunTools returns []mcpserver.Tool (export one func Tools(port, mount) []mcpserver.Tool)
-internal/agent/in/agentmcp: tools.go: RunStartTools returns []mcpserver.Tool (export one func Tools(port, mount) []mcpserver.Tool)
-internal/agent/in/agentmcp: wrap.go: gate.wrap uses mcpserver.HoldsAdminCredential (internal/app wraps every tool once)
-internal/agent/in/agentmcp: write_tools.go: WriteTools returns []mcpserver.Tool (export one func Tools(port, mount) []mcpserver.Tool)
 internal/agent: query_service.go: newID: uuid.NewV7 silences the uniqueid lint (generate ids with internal/lib/uniqueid)
 internal/handoff/in/handoffmcp: connect_only.go: ConnectOnly.Tools returns []mcpserver.Tool (export one func Tools(port, mount) []mcpserver.Tool)
 internal/handoff/in/handoffmcp: connect_only.go: ConnectOnly.Tools uses mcpserver.RefuseAdminCredential (internal/app wraps every tool once)

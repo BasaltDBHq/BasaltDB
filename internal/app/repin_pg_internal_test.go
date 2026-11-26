@@ -35,6 +35,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/handoff/out/handofffiles"
 	"github.com/basaltdbhq/basaltdb/internal/handoff/out/handoffnet"
+	"github.com/basaltdbhq/basaltdb/internal/lib/certroots"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
@@ -160,6 +161,7 @@ func (f rotationFixture) engineRepin(t *testing.T) *handoff.Repin {
 			Resolver:  staticResolver{netip.MustParseAddr("8.8.8.8")},
 			Dial:      f.newDial,
 			ReadChain: handoffnet.ReadChain,
+			PinRoots:  certroots.Store{},
 			Profiles:  trustdir.Set(f.cfg), Login: pgdial.Login,
 		},
 		Files: memoryPending{RepinSetupFiles: handofffiles.RepinSetupFiles{SetupFiles: handofffiles.SetupFiles{ConfigPath: f.cfg, Agent: "bot", Pins: trustPins{}}}, setup: f.setup},

@@ -14,6 +14,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
+	coretrust "github.com/basaltdbhq/basaltdb/internal/core/trustprofile"
+	"github.com/basaltdbhq/basaltdb/internal/lib/certroots"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/demo"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
@@ -187,6 +189,9 @@ func (Backend) OSUsers() setup.Users { return osusers.Users{} }
 func (Backend) FetchChain(ctx context.Context, host string, port int) ([]*x509.Certificate, error) {
 	return trustpin.Fetch(ctx, nil, host, port)
 }
+
+// PinRoots are the system's and the public roots the pin check reads.
+func (Backend) PinRoots() coretrust.Roots { return certroots.Store{} }
 
 // SuggestColumns runs the PII classifier over cols with its default
 // options, keeping no value.

@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - A refused action with a very long statement, intent, reason or parameters is now in the ledger. The guard used to refuse to record it, so the refusal was only in the engine's log; now it keeps the text cut to its limit (2000 bytes for an intent or reason, 64 KiB for a statement) and ending in `...`, and parameters over 64 KiB as `{"cut": true, "bytes": <size>}`. This is guard schema version 13 (breaking): it also refuses a revert or an approval the agent does not have, or one that does not exist, with the code `NO_SUCH_REVERT` or `NO_SUCH_APPROVAL`, which the engine reads in place of the words "no such revert" and "no such approval". The engine needs this version: run `basalt init` again and update the guard on the page it opens.
+- The setup page creates the passkey on the first try for an agent with a long name; before, it refused every passkey it made with "This passkey was made for another setup page". A long agent or database name in the name your password manager shows for the passkey is shortened to fit and ends with "…".
 
 ## [0.1.0-alpha] - 2026-11-24
 

@@ -87,13 +87,16 @@ func (a *adds) Add(t corepii.EntityType, value, _ string) error {
 	return nil
 }
 
-// returnedPII reads the classes on the write's own transaction and adds the
-// RETURNING values of IDENTIFIER columns; a computed column has no class.
+// A write's returned rows reach the agent's PII port with the classes read
+// on the write's own transaction (not the pool the port holds for reads),
+// and the port adds the RETURNING values of IDENTIFIER columns; a computed
+// column has no class.
 func TestReturnedPIIReadsOnTheWritesTransaction(t *testing.T) {
 	var added adds
 	obs := pii.NewObserver(pii.NewMap(slog.New(slog.DiscardHandler)), &added)
+	returned := txReturned(NewAgentPII(obs, poolClasses{}).ObserveReturned)
 	tx := &classTx{}
-	err := returnedPII(obs)(context.Background(), pgquerier.Neutralize(tx),
+	err := returned(context.Background(), pgquerier.Neutralize(tx),
 		[]action.Column{{Name: "email", Ref: "16384/3"}, {Name: "lower"}},
 		[]map[string]any{{"email": "ada@corp.ee", "lower": "eve@corp.ee"}})
 	require.NoError(t, err)
@@ -101,10 +104,14 @@ func TestReturnedPIIReadsOnTheWritesTransaction(t *testing.T) {
 	require.NotEmpty(t, tx.ran, "the classes are read on the write's transaction")
 
 	failing := &failingTx{err: errors.New("tx aborted")}
-	err = returnedPII(obs)(context.Background(), pgquerier.Neutralize(failing),
+	err = returned(context.Background(), pgquerier.Neutralize(failing),
 		[]action.Column{{Name: "email", Ref: "16385/3"}}, []map[string]any{{"email": "bob@corp.ee"}})
 	require.ErrorIs(t, err, failing.err, "a reload on the transaction fails the write")
 }
+
+// poolClasses is the port's class store for reads; a write's returned rows
+// never read it.
+type poolClasses struct{ pii.Classes }
 
 // failingTx fails every read.
 type failingTx struct {

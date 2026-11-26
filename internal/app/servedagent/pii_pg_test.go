@@ -32,8 +32,9 @@ import (
 )
 
 // piiService is the engine's agent service with the PII observer wired as
-// the engine wires it for query rows. (The write's RETURNING rows are
-// internal/agent's TestWriteRollsBackWhenItsReturnedValuesCannotBeAdded.)
+// the engine wires it, for query rows and a write's RETURNING rows. (A
+// write whose returned values cannot be added is internal/agent's
+// TestWriteRollsBackWhenItsReturnedValuesCannotBeAdded.)
 func piiService(t *testing.T, obs agentsvc.PIIObserver) (*app.Service, *guardtest.DB, *corepii.FuseDictionary, *corepii.Keys) {
 	t.Helper()
 	d := guardtest.New(t)
@@ -88,10 +89,30 @@ func TestQueryAddsIdentifierValuesBeforeItReturns(t *testing.T) {
 	require.False(t, ok, "a PUBLIC column is not added")
 }
 
+// A write's RETURNING values go in the dictionary through the agent's PII
+// port, as the engine wires it, before the write returns.
+func TestWriteAddsReturnedIdentifierValuesBeforeItReturns(t *testing.T) {
+	t.Parallel()
+	svc, _, dict, keys := piiService(t, nil)
+	body, isError := servedHarness(svc).call(t, "write", map[string]any{
+		"sql": `UPDATE people SET city = 'Pärnu' WHERE id = 1 RETURNING email, city`, "intent": "Move Ann",
+	})
+	require.False(t, isError, "%v", body)
+	require.Len(t, body["returning"], 1)
+	require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "ann@corp.ee", "")))
+	require.False(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "ben@corp.ee", "")), "a row not returned is not added")
+	_, ok := dict.Lookup(keys.GenericHash("Pärnu"))
+	require.False(t, ok, "a PUBLIC column is not added")
+}
+
 // failingObserver cannot add any value.
 type failingObserver struct{}
 
 func (failingObserver) Observe(context.Context, []action.Column, []map[string]any) error {
+	return errors.New("pii: dictionary delta is full")
+}
+
+func (failingObserver) ObserveReturned(context.Context, pii.Classes, []action.Column, []map[string]any) error {
 	return errors.New("pii: dictionary delta is full")
 }
 

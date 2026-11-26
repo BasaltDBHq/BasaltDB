@@ -9,7 +9,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
+	"github.com/basaltdbhq/basaltdb/internal/core/trustpin"
 )
 
 // The Update check (CONTRACT.md, The Update check): doctor reads, with the
@@ -194,7 +194,7 @@ func (s *LocalService) certificateChanged(ctx context.Context, a config.Agent, o
 	if err != nil || len(chain) == 0 {
 		return false
 	}
-	seen := trustpin.Check(chain, h.host, s.opts.Now())
+	seen := trustpin.Check(chain, h.host, s.opts.Now(), s.opts.PinRoots)
 	if pinHolds(h.pin, seen.SHA256) {
 		return false
 	}

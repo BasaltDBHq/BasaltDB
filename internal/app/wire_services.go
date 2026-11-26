@@ -2,6 +2,7 @@ package app
 
 import (
 	"github.com/basaltdbhq/basaltdb/internal/handoff/out/handoffnet"
+	"github.com/basaltdbhq/basaltdb/internal/lib/certroots"
 	"github.com/basaltdbhq/basaltdb/internal/lib/sysdns"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 )
@@ -26,6 +27,9 @@ func wireHandoff(o handoffOptions) handoffOptions {
 	}
 	if o.Prober.Errors == nil {
 		o.Prober.Errors = pgErrors{}
+	}
+	if o.Prober.PinRoots == nil {
+		o.Prober.PinRoots = certroots.Store{}
 	}
 	return o
 }

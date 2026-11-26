@@ -488,10 +488,10 @@ func TestObserverAddsValuesThroughThePool(t *testing.T) {
 	dict, err := dictfile.Open(dir, keys, corepii.DefaultDictionaryOptions(time.Now))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dict.Close() })
-	obs := pii.NewObserver(pii.NewMap(slog.New(slog.DiscardHandler)), dict).On(Classes(f.pool))
+	obs := pii.NewObserver(pii.NewMap(slog.New(slog.DiscardHandler)), dict)
 	fields := []piistore.ResultField{{Ref: f.ref(t, "public.customers", "email"), Key: "email"}, {Key: "computed"}}
 	rows := []map[string]any{{"email": "ada@corp.ee", "computed": "eve@corp.ee"}}
-	require.NoError(t, obs.Observe(ctx, fields, rows))
+	require.NoError(t, obs.Observe(ctx, Classes(f.pool), fields, rows))
 	require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "ada@corp.ee", "")))
 	require.False(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "eve@corp.ee", "")), "a computed value has no class")
 }

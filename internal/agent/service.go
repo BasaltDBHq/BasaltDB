@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/pii"
 )
 
 // StoreSet is the agent's store as the agent use cases read it, built by
@@ -47,13 +48,19 @@ type noPII struct{}
 
 func (noPII) Observe(context.Context, []action.Column, []map[string]any) error { return nil }
 
+func (noPII) ObserveReturned(context.Context, pii.Classes, []action.Column, []map[string]any) error {
+	return nil
+}
+
 // Service runs one agent's describe, run, query and write calls. It holds a
 // copy of the core settings and the agent's store set; what it needs
 // from the other use cases it names as small ports of its own.
 type Service struct {
 	core  Core
 	store StoreSet
-	// pii sees every read's rows before they are returned.
+	// pii sees every read's rows before they are returned, and every
+	// write's returned rows inside the write's transaction, before it
+	// commits.
 	pii PIIObserver
 	// update is the newer release the engine knows of, as describe's overview
 	// reports it; the status use case owns it and hands it in.
@@ -106,11 +113,11 @@ func (noData) Read(context.Context, agentstore.Request, action.Statement) (actio
 	return action.ReadResult{}, errNoData
 }
 
-func (noData) Write(context.Context, action.Intent, agentstore.Request, action.Statement) (action.WriteResult, error) {
+func (noData) Write(context.Context, action.Intent, agentstore.Request, action.Statement, Returned) (action.WriteResult, error) {
 	return action.WriteResult{}, errNoData
 }
 
-func (noData) WriteApproved(context.Context, action.Intent, uuid.UUID, agentstore.Request, action.Statement) (action.WriteResult, error) {
+func (noData) WriteApproved(context.Context, action.Intent, uuid.UUID, agentstore.Request, action.Statement, Returned) (action.WriteResult, error) {
 	return action.WriteResult{}, errNoData
 }
 

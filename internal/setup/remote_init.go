@@ -19,8 +19,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
-	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
-	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
+	"github.com/basaltdbhq/basaltdb/internal/core/trustpin"
+	"github.com/basaltdbhq/basaltdb/internal/core/trustprofile"
 )
 
 // The run of basalt init --remote (CONTRACT.md, basalt init --remote): it
@@ -778,7 +778,7 @@ func (r *remoteInit) noteUnknownAuthority() {
 	if err != nil {
 		return
 	}
-	if seen := trustpin.Check(chain, host, r.env.Now()); seen.Pinnable() {
+	if seen := trustpin.Check(chain, host, r.env.Now(), r.host.PinRoots()); seen.Pinnable() {
 		fmt.Fprintf(r.env.Stderr(), "basalt: %s presents a certificate authority no authority on this machine verifies: %s\n",
 			r.env.TerminalText(host), ConnectPageTrust)
 	}

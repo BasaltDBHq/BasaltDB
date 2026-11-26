@@ -14,6 +14,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/pii"
 )
 
 // maxReasonBytes is the limit of the guard's validating ledger functions
@@ -62,7 +63,8 @@ func (wc *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, erro
 	if err != nil {
 		return WriteOutcome{}, wc.refused(ctx, in, stmt, p.Request, start, err)
 	}
-	res, err := wc.store.Data.Write(ctx, in, p.Request, stmt)
+	seen := wc.returnedPII()
+	res, err := wc.store.Data.Write(ctx, in, p.Request, stmt, seen.observe)
 	if errors.Is(err, action.ErrApprovalRequired) {
 		id, expires, err := wc.hold(ctx, in, p, stmt, start)
 		if id == uuid.Nil {
@@ -90,7 +92,39 @@ func (wc *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, erro
 	if err != nil {
 		return WriteOutcome{}, wc.refused(ctx, in, stmt, p.Request, start, err)
 	}
+	if err := seen.check(res); err != nil {
+		return WriteOutcome{}, err
+	}
 	return WriteOutcome{WriteResult: res, RunID: run.ID, Op: op, Warnings: wc.rlsWarnings(ctx, stmt.Tables, res.Rows)}, nil
+}
+
+// returnedRows hands a write's returned rows to the PII port, as the store
+// calls it inside the write's transaction, and records that it did.
+type returnedRows struct {
+	wc   *Service
+	seen bool
+}
+
+// returnedPII is the PII port's check of one write's returned rows.
+func (wc *Service) returnedPII() *returnedRows { return &returnedRows{wc: wc} }
+
+// observe is the Returned the write hands the store: the rows go to the
+// PII port with the classes of the write's own transaction. Its error is
+// the port's, unchanged; the store rolls the write back on it.
+func (r *returnedRows) observe(ctx context.Context, classes pii.Classes, cols []action.Column, rows []map[string]any) error {
+	r.seen = true
+	return r.wc.pii.ObserveReturned(ctx, classes, cols, rows)
+}
+
+// check fails closed when the store returned rows it never handed to the
+// PII port: the agent does not get them. The write is applied; the error
+// is an engine defect (INTERNAL) and logged.
+func (r *returnedRows) check(res action.WriteResult) error {
+	if r.seen || len(res.Returning) == 0 {
+		return nil
+	}
+	r.wc.core.Log.Error("pii: the store returned a write's rows without handing them to the PII port; they are withheld", "change", res.ChangeID)
+	return &toolresult.ToolError{Code: guidance.CodeInternal, Message: "internal engine error"}
 }
 
 // writeRun finds the named run, or starts a one-write run.

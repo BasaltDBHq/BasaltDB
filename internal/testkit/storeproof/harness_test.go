@@ -106,12 +106,20 @@ func (linkErrors) ApprovalLinkError(te *toolresult.ToolError, _ linksvc.HeldAnsw
 	return te
 }
 
-// agentPII is the observer as the agent's query rows reach it: each
-// column's field ref, and its key in the rows.
-type agentPII struct{ o pii.BoundObserver }
+// agentPII is the observer as the agent's PII port, as internal/app wires
+// it: each column's field ref, and its key in the rows; a read's classes
+// through the store, a write's through the classes the write hands it.
+type agentPII struct {
+	o       *pii.Observer
+	classes pii.Classes
+}
 
 func (a agentPII) Observe(ctx context.Context, cols []action.Column, rows []map[string]any) error {
-	return a.o.Observe(ctx, resultFields(cols), rows)
+	return a.o.Observe(ctx, a.classes, resultFields(cols), rows)
+}
+
+func (a agentPII) ObserveReturned(ctx context.Context, classes pii.Classes, cols []action.Column, rows []map[string]any) error {
+	return a.o.Observe(ctx, classes, resultFields(cols), rows)
 }
 
 func resultFields(cols []action.Column) []piistore.ResultField {
@@ -155,9 +163,6 @@ func newHarness(t *testing.T, opts ...func(*memStore)) *harness {
 	dict, dictKeys := newDictionary(t)
 	classes := pii.NewMap(logger)
 	observer := pii.NewObserver(classes, dict)
-	store.returned = func(ctx context.Context, c pii.Classes, cols []action.Column, rows []map[string]any) error {
-		return observer.Observe(ctx, c, resultFields(cols), rows)
-	}
 
 	// Wired as the app wires them: delivery reads the approval records from
 	// the store, revert reads the statement timeout from the store's limits,
@@ -196,7 +201,7 @@ func newHarness(t *testing.T, opts ...func(*memStore)) *harness {
 			Data: store, Catalog: store, Ledger: store,
 			Classes: pii.StoreClasses{BoundMap: classes.On(store), Store: store},
 		},
-		agentPII{observer.On(store)}, func() *guidance.UpdateInfo { return nil },
+		agentPII{o: observer, classes: store}, func() *guidance.UpdateInfo { return nil },
 		delivery, approval, noUpgrade{}, linkErrors{}, noSteps{},
 	)
 

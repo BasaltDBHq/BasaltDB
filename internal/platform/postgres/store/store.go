@@ -26,19 +26,27 @@ type DB interface {
 // Store runs one agent's writes through the guard and reads its runs and
 // change records, always on the agent's own credential.
 type Store struct {
-	db       DB
-	reader   *Reader
-	limits   sqlguard.Limits
-	now      func() time.Time
-	returned ReturnedFunc
+	db     DB
+	reader *Reader
+	limits sqlguard.Limits
+	now    func() time.Time
 }
 
-// ReturnedFunc sees the rows a write returns (RETURNING) inside the write's
-// transaction, before COMMIT: the engine adds their PII values to the
-// dictionary there. An error rolls the write back, so no value it could not
-// handle is applied or returned (fail closed). tx is the write's
-// transaction, driver-free.
-type ReturnedFunc func(ctx context.Context, tx sqlport.Port, cols []action.Column, rows []map[string]any) error
+// Returned sees the rows a write returns (RETURNING) inside the write's
+// transaction, before COMMIT: the caller adds their PII values to the
+// dictionary there, reading the classes on tx. An error rolls the write
+// back, so no value it could not handle is applied or returned (fail
+// closed). tx is the write's transaction, driver-free. It is an alias of a
+// plain func type, so the wiring's SQL store port declares the same shape
+// itself and stays a port, not a reference to this adapter.
+//
+// A write that returns rows with a nil Returned is refused before COMMIT
+// (errNoReturned); a write that returns none never calls it.
+type Returned = func(ctx context.Context, tx sqlport.Port, cols []action.Column, rows []map[string]any) error
+
+// errNoReturned refuses a write that returned rows with no Returned to hand
+// them to: an engine defect, rolled back so nothing unseen is applied.
+var errNoReturned = errors.New("postgres: a write returned rows with no Returned to hand them to")
 
 // NewStore returns a store on db. Every transaction it begins is pinned
 // (guard.PinSession), so the row images the guard stores, the lines a
@@ -48,24 +56,12 @@ func NewStore(db DB, limits sqlguard.Limits, now func() time.Time) *Store {
 	if db == nil || now == nil {
 		panic("postgres: db and clock required")
 	}
-	return &Store{db: guard.Pinned(db), reader: NewReader(db, limits, now), limits: limits, now: now, returned: noReturned}
+	return &Store{db: guard.Pinned(db), reader: NewReader(db, limits, now), limits: limits, now: now}
 }
 
 // readRaw is Read before MapError.
 func (s *Store) readRaw(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error) {
 	return s.reader.Read(ctx, sql, params, stmt)
-}
-
-func noReturned(context.Context, sqlport.Port, []action.Column, []map[string]any) error { return nil }
-
-// WithReturned has every write hand its returned rows to f before COMMIT.
-// It panics on a nil f.
-func (s *Store) WithReturned(f ReturnedFunc) *Store {
-	if f == nil {
-		panic("postgres: nil returned-rows hook")
-	}
-	s.returned = f
-	return s
 }
 
 // findRunRaw is FindRun before MapError.
@@ -93,20 +89,20 @@ func (s *Store) startRunRaw(ctx context.Context, in action.Intent) error {
 }
 
 // writeRaw is Write before MapError.
-func (s *Store) writeRaw(ctx context.Context, in action.Intent, op action.Op, sql string, params []any) (action.WriteResult, error) {
-	return s.write(ctx, op, sql, params, func(tx pgx.Tx) error {
+func (s *Store) writeRaw(ctx context.Context, in action.Intent, op action.Op, sql string, params []any, returned Returned) (action.WriteResult, error) {
+	return s.write(ctx, op, sql, params, returned, func(tx pgx.Tx) error {
 		return guard.BeginGuarded(ctx, tx, guardIntent(in), s.limits.StatementTimeout)
 	})
 }
 
 // writeApprovedRaw is WriteApproved before MapError.
-func (s *Store) writeApprovedRaw(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any) (action.WriteResult, error) {
-	return s.write(ctx, op, sql, params, func(tx pgx.Tx) error {
+func (s *Store) writeApprovedRaw(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any, returned Returned) (action.WriteResult, error) {
+	return s.write(ctx, op, sql, params, returned, func(tx pgx.Tx) error {
 		return guard.BeginApproved(ctx, tx, guardIntent(in), s.limits.StatementTimeout, approvalID)
 	})
 }
 
-func (s *Store) write(ctx context.Context, op action.Op, sql string, params []any, begin func(pgx.Tx) error) (action.WriteResult, error) {
+func (s *Store) write(ctx context.Context, op action.Op, sql string, params []any, returned Returned, begin func(pgx.Tx) error) (action.WriteResult, error) {
 	start := s.now()
 	var res action.WriteResult
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
@@ -118,7 +114,11 @@ func (s *Store) write(ctx context.Context, op action.Op, sql string, params []an
 			return err
 		}
 		if len(rows) > 0 {
-			if err := s.returned(ctx, pgquerier.Neutralize(tx), cols, rows); err != nil {
+			// Rows no one sees are never returned: the write rolls back.
+			if returned == nil {
+				return errNoReturned
+			}
+			if err := returned(ctx, pgquerier.Neutralize(tx), cols, rows); err != nil {
 				return err
 			}
 		}

@@ -44,7 +44,7 @@ type nopStore struct{}
 
 func (nopStore) FindRun(context.Context, uuid.UUID) (action.Run, error) { return action.Run{}, nil }
 func (nopStore) StartRun(context.Context, action.Intent) error          { return nil }
-func (nopStore) Write(context.Context, action.Intent, action.Op, string, []any) (action.WriteResult, error) {
+func (nopStore) Write(context.Context, action.Intent, action.Op, string, []any, store.Returned) (action.WriteResult, error) {
 	return action.WriteResult{}, nil
 }
 func (nopStore) RecordRefusal(context.Context, action.Refusal) error { return nil }

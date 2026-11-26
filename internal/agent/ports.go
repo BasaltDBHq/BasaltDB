@@ -112,10 +112,13 @@ type Data interface {
 	// Read runs one read, with the versions of the items of the
 	// statement's sources it can identify.
 	Read(ctx context.Context, req agentstore.Request, stmt action.Statement) (action.ReadResult, error)
-	// Write runs one write through the guard.
-	Write(ctx context.Context, in action.Intent, req agentstore.Request, stmt action.Statement) (action.WriteResult, error)
+	// Write runs one write through the guard. It hands the rows the write
+	// returns to returned inside the write's transaction, before it
+	// commits; an error from returned rolls the write back and is returned
+	// as is.
+	Write(ctx context.Context, in action.Intent, req agentstore.Request, stmt action.Statement, returned Returned) (action.WriteResult, error)
 	// WriteApproved is Write under the person's signed approval.
-	WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, req agentstore.Request, stmt action.Statement) (action.WriteResult, error)
+	WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, req agentstore.Request, stmt action.Statement, returned Returned) (action.WriteResult, error)
 	// Limits are the read limits the agent's requests run within.
 	Limits() action.Limits
 }
@@ -131,8 +134,19 @@ type Visibility interface {
 // engine's dictionary. An error means a value could not be added: the rows
 // are not returned (fail closed). It never logs a value.
 type PIIObserver interface {
+	// Observe sees a read's rows, reading the classes on its own.
 	Observe(ctx context.Context, cols []action.Column, rows []map[string]any) error
+	// ObserveReturned sees a write's returned rows before the write
+	// commits, reading the classes through classes: the write's own
+	// transaction, so the classes are the ones in force in it.
+	ObserveReturned(ctx context.Context, classes pii.Classes, cols []action.Column, rows []map[string]any) error
 }
+
+// Returned is how a store hands the rows a write returns to the agent's
+// PII port: inside the write's transaction, before it commits, with
+// classes reading the PII classes in that same transaction. The store
+// calls it only when the write returned rows.
+type Returned func(ctx context.Context, classes pii.Classes, cols []action.Column, rows []map[string]any) error
 
 // Delivery is what the write use case asks of the delivery use case.
 type Delivery interface {

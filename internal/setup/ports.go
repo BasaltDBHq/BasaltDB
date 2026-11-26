@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	coretrust "github.com/basaltdbhq/basaltdb/internal/core/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -167,6 +168,9 @@ type LocalBackend interface {
 	// FetchChain reads the chain host:port presents with the TLS handshake
 	// alone.
 	FetchChain(ctx context.Context, host string, port int) ([]*x509.Certificate, error)
+	// PinRoots are the system's and the public roots the pin check reads
+	// (certroots.Store outside tests).
+	PinRoots() coretrust.Roots
 	// Connections and their trust.
 	Connect(ctx context.Context, dsn string) (Conn, error)
 	// ConnectPinned opens dsn trusting only p's certificate for its host.
@@ -322,6 +326,9 @@ type RemoteHost interface {
 	// TrustProfileFor is the profile in the trust.d next to the config at
 	// configPath that names host, or nil.
 	TrustProfileFor(configPath, host string) *trustprofile.Profile
+	// PinRoots are the system's and the public roots the check of an
+	// unknown authority reads (certroots.Store outside tests).
+	PinRoots() coretrust.Roots
 	// ConnTarget is the host and port a connection string names, and whether
 	// its TLS check uses the system's roots (TLS on, no root certificate
 	// given); the error is the driver's own.

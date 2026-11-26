@@ -92,6 +92,7 @@ func useTrustprofile() {
 	_ = trustprofile.CertificateNotVerified(nil)
 	_, _ = trustprofile.NewPin("", c, false)
 	_, _ = trustprofile.SystemRoots()
+	trustprofile.SetSystemRootsForTest(nil)()
 	_ = trustprofile.IsPublic(c, nil)
 	_ = trustprofile.PublicRoots()
 	_ = trustprofile.BuiltInSet()

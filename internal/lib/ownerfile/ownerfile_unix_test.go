@@ -67,7 +67,6 @@ func TestReadRefusesASymlink(t *testing.T) {
 	require.NoError(t, os.Symlink(target, link))
 	_, _, err := Read(link, Rules{})
 	requireRefused(t, err, Symlink)
-	require.ErrorIs(t, err, syscall.ELOOP)
 
 	dangling := filepath.Join(t.TempDir(), "dangling")
 	require.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "gone"), dangling))
@@ -161,6 +160,29 @@ func TestReadRefusesADirectoryAndAFIFOWithoutBlocking(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("reading a FIFO blocked")
 	}
+}
+
+// A device node is refused on what Lstat says, before any open: opening
+// one can have side effects.
+func TestOpenRefusesADeviceWithoutOpeningIt(t *testing.T) {
+	t.Parallel()
+	_, _, err := Open("/dev/null", Rules{})
+	requireRefused(t, err, NotRegular)
+	fi, err := os.Lstat("/dev/null")
+	require.NoError(t, err)
+	require.NotZero(t, fi.Mode()&os.ModeDevice)
+}
+
+// The symlink refusal at the open (ELOOP) still holds when the path is
+// swapped for a link after the Lstat.
+func TestOpenNoFollowRefusesASymlinkAtTheOpen(t *testing.T) {
+	t.Parallel()
+	target := writeSecret(t, 0o600)
+	link := filepath.Join(t.TempDir(), "link")
+	require.NoError(t, os.Symlink(target, link))
+	_, err := OpenNoFollow(link)
+	require.ErrorIs(t, err, syscall.ELOOP)
+	require.True(t, isSymlinkErr(err))
 }
 
 func TestReadMissingIsNotExist(t *testing.T) {

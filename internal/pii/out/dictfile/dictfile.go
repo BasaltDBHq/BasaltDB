@@ -131,6 +131,14 @@ func createDictionaryDir(stateDir, dir string) error {
 // engine's files). A missing file wraps os.ErrNotExist; a file of an
 // unusable size wraps pii's invalid-dictionary error
 // (pii.CheckDictionarySize) and is rebuilt. pii parses the content.
+//
+// A read never overlaps a rebuild's rename of this file: pii maps the file
+// only when the dictionary is opened (before any build can start) and right
+// after a build's WriteBase, in that build, and one build runs at a time
+// (pii.FuseDictionary.StartBuild); one engine holds a state directory (the
+// engine lock). A mapping made before a rename keeps the old file, which
+// keeps its one link until it is unmapped, so a hard error here is never a
+// race with the rebuild.
 func openBaseFile(path string) ([]byte, func() error, error) {
 	f, fi, err := ownerfile.Open(path, ownerfile.Rules{})
 	if err != nil {

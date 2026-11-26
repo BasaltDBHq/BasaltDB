@@ -134,10 +134,24 @@ const FileMode os.FileMode = 0o600
 // permMask is the bits a file must not have: any access for group or others.
 const permMask os.FileMode = 0o077
 
-// Open opens path without following a symbolic link (Symlink) and without
-// blocking on a FIFO, then checks the open file (Check). A missing file is
-// the open's error, which wraps fs.ErrNotExist.
+// Open looks at path first (Lstat) and refuses a symbolic link (Symlink) or
+// anything but a regular file (NotRegular) before it opens it, since opening
+// a device node can have side effects. It then opens path without following
+// a symbolic link and without blocking on a FIFO, refuses a file that is not
+// the one it looked at (Changed: swapped in between), and checks the open
+// file (Check). A missing file is the Lstat's error, which wraps
+// fs.ErrNotExist.
 func Open(path string, r Rules) (*os.File, os.FileInfo, error) {
+	link, err := os.Lstat(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	if link.Mode()&os.ModeSymlink != 0 {
+		return nil, nil, &RefusedError{Rule: Symlink}
+	}
+	if !link.Mode().IsRegular() {
+		return nil, nil, &RefusedError{Rule: NotRegular}
+	}
 	f, err := OpenNoFollow(path)
 	if err != nil {
 		if isSymlinkErr(err) {
@@ -146,6 +160,9 @@ func Open(path string, r Rules) (*os.File, os.FileInfo, error) {
 		return nil, nil, err
 	}
 	fi, err := Check(f, r)
+	if err == nil && !os.SameFile(link, fi) {
+		err = &RefusedError{Rule: Changed}
+	}
 	if err != nil {
 		_ = f.Close()
 		return nil, nil, err

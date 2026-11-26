@@ -78,11 +78,11 @@ func domainOf(rel string) string {
 
 // inboundRoots returns the inbound packages of the graph: domain in/ packages
 // and the platform inbound packages. Test helpers are left out.
-func inboundRoots(graph map[string][]string) []string {
+func inboundRoots(fsys fs.FS, graph map[string][]string) []string {
 	var out []string
 	for p := range graph {
 		rel, ok := strings.CutPrefix(p, modulePath+"/")
-		if !ok || layerOf(rel) != lInbound || slices.Contains(testHelpers, rel) {
+		if !ok || layerOf(rel) != lInbound || isTestHelperFS(fsys, rel) {
 			continue
 		}
 		out = append(out, rel)
@@ -166,7 +166,7 @@ func TestInboundChecksCatchAProbe(t *testing.T) {
 		m + "internal/platform/httpserver":     {m + "internal/lib/x"},
 		m + "internal/testkit/connecttest":     {m + "internal/platform/postgres/guard"},
 	}
-	roots := inboundRoots(graph)
+	roots := inboundRoots(fstest.MapFS{}, graph)
 	if want := []string{"internal/agent/in/agentmcp", "internal/platform/httpserver"}; !slices.Equal(roots, want) {
 		t.Fatalf("roots = %q, want %q", roots, want)
 	}
@@ -189,7 +189,7 @@ func TestInboundOnlyTranslates(t *testing.T) {
 	var reach, edges []string
 	for _, goos := range []string{"linux", "darwin"} {
 		graph := listGraph(t, root, goos, "...")
-		roots := inboundRoots(graph)
+		roots := inboundRoots(os.DirFS(root), graph)
 		if len(roots) < len(domains) {
 			t.Fatalf("found %d inbound packages (GOOS=%s), want at least %d", len(roots), goos, len(domains))
 		}
@@ -268,7 +268,7 @@ func inboundDriverFiles(t *testing.T, fsys fs.FS) (files []string, scanned int) 
 			return nil
 		}
 		dir := path.Dir(p)
-		if layerOf(dir) != lInbound || slices.Contains(testHelpers, dir) {
+		if layerOf(dir) != lInbound || isTestHelperFS(fsys, dir) {
 			return nil
 		}
 		scanned++

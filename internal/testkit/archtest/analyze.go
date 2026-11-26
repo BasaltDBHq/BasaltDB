@@ -39,13 +39,12 @@ const (
 	lApi      = "api"
 	lWeb      = "web"
 	lScripts  = "scripts"
+	lE2E      = "e2e"
 )
 
-// layerOrder lists the path prefixes of the layers; the first match wins.
+// layerOrder lists the path prefixes of the layers outside the domain tree
+// (newTree); the first match wins.
 var layerOrder = []struct{ prefix, name string }{
-	{"internal/adapter/inbound", lInbound},
-	{"internal/adapter/outbound", lOutbound},
-	{"internal/service", lService},
 	{"internal/core", lCore},
 	{"internal/lib", lLib},
 	{"internal/config", lConfig},
@@ -56,10 +55,11 @@ var layerOrder = []struct{ prefix, name string }{
 	{lApi, lApi},
 	{lWeb, lWeb},
 	{lScripts, lScripts},
+	{lE2E, lE2E},
 }
 
 // allowed lists, per importing layer, the layers it may import. A layer that
-// is not listed (app, testkit, scripts) may import anything.
+// is not listed (app, testkit, scripts, e2e) may import anything.
 var allowed = map[string][]string{
 	lLib:      {lLib},
 	lCore:     {lCore, lLib, lApi},
@@ -90,16 +90,16 @@ const (
 // storePkgs is the Postgres store.
 var storePkgs = []string{"internal/platform/postgres/store"}
 
-// domains are the domain folders of the new tree (DESIGN-RESULTS, option B).
+// domains are the domain folders under internal/.
 var domains = []string{"agent", "approval", "engine", "handoff", "ledger", "links", "pii", "plugin", "revert", "setup", "status"}
 
 // platformInbound are the platform packages that serve a transport; the rest
 // of internal/platform are shared outbound adapters.
 var platformInbound = []string{"httpserver", "mcpserver", "pageserver", "shim", "cli"}
 
-// newTree lists the layer prefixes of the new tree. They are tried before
+// newTree lists the layer prefixes of the domain tree. They are tried before
 // layerOrder, and in/ and out/ come before the domain root: the first match
-// wins. The old prefixes stay in layerOrder while packages move.
+// wins.
 var newTree = func() []struct{ prefix, name string } {
 	type pl = struct{ prefix, name string }
 	l := make([]pl, 0, len(platformInbound)+1+3*len(domains))
@@ -130,36 +130,121 @@ func layerOf(rel string) string {
 	return "other"
 }
 
-// testHelpers lists the packages that only tests import: fakes and fixtures.
-// They are exempt from the layer rules, core purity and the decision rule.
-var testHelpers = []string{
-	"internal/testkit/archtest",
-	"internal/testkit/connecttest",
-	"internal/testkit/stepcatalogtest",
-	"internal/core/passkey/passkeytest",
-	"pkg/trustprofile/trustprofiletest",
-	// the core test oracles (D-CORE-DEAD): signing and parsing clients
-	// other packages' tests use
-	"internal/core/approval/approvaltest",
-	"internal/core/channel/channeltest",
-	"internal/core/linkcodec/linkcodectest",
-	"internal/core/links/linkstest",
-	"internal/core/revert/reverttest",
-	// the same helpers in the new tree
-	"internal/platform/mcpserver/mcptest",
-	"internal/plugin/out/plugintransport/adaptertest",
-	"internal/platform/vault/vaulttest",
-	"internal/platform/vault/pagetest",
-	"internal/platform/postgres/guard/guardtest",
+// testHelperRoots are the test helper trees that are not named for the
+// package they fake: the shared test kit, and the notifier plugin the plugin
+// transport's tests run.
+var testHelperRoots = []string{
+	"internal/testkit",
+	"internal/plugin/out/plugintransport/testnotifier",
 }
 
-func isTestHelper(rel string) bool {
-	for _, h := range testHelpers {
+// testHelperBesides are the <x>test helpers that sit in a package other than
+// <x>: the MCP server's test client, the Vault's page fake and the plugin
+// adapters' test kit.
+var testHelperBesides = []string{
+	"internal/platform/mcpserver/mcptest",
+	"internal/platform/vault/pagetest",
+	"internal/plugin/out/plugintransport/adaptertest",
+}
+
+// isTestHelper reports whether the package at rel, among pkgs, is a test
+// helper: a package only tests import (fakes, fixtures, the core test
+// oracles). A helper sits under a testHelperRoots entry, or is named <x>test
+// and sits in package <x> (x/xtest), or is a testHelperBesides entry; a
+// package below a helper is one too. A program (package main, or anything
+// under cmd/) is never a helper by its name. Helpers are exempt from the
+// layer rules, core purity and the decision rule, and no other non-test file
+// may import one.
+func isTestHelper(pkgs map[string]*goPkg, rel string) bool {
+	return testHelper(rel, func(p string) (bool, bool) {
+		pk := pkgs[p]
+		return pk != nil, pk != nil && isMain(pk)
+	})
+}
+
+// isTestHelperFS is isTestHelper for the module tree in fsys, for checks
+// that read a package graph rather than load the tree.
+func isTestHelperFS(fsys fs.FS, rel string) bool {
+	return testHelper(rel, func(p string) (bool, bool) {
+		entries, err := fs.ReadDir(fsys, p)
+		if err != nil {
+			return false, false
+		}
+		for _, e := range entries {
+			n := e.Name()
+			if e.IsDir() || !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
+				continue
+			}
+			src, err := fs.ReadFile(fsys, path.Join(p, n))
+			if err != nil {
+				return false, false
+			}
+			f, err := parser.ParseFile(token.NewFileSet(), n, src, parser.PackageClauseOnly)
+			if err != nil {
+				return false, false
+			}
+			return true, f.Name.Name == "main"
+		}
+		return false, false
+	})
+}
+
+// testHelper is isTestHelper over pkg, which reports whether a path is a
+// package of the tree and whether it is a program.
+func testHelper(rel string, pkg func(string) (exists, main bool)) bool {
+	for _, h := range testHelperRoots {
 		if rel == h || strings.HasPrefix(rel, h+"/") {
 			return true
 		}
 	}
+	if rel == lCmd || strings.HasPrefix(rel, lCmd+"/") {
+		return false
+	}
+	for p := rel; p != "." && p != "/" && p != ""; p = path.Dir(p) {
+		if namedHelper(p, pkg) {
+			return true
+		}
+	}
 	return false
+}
+
+// namedHelper reports whether the package at p is a helper by its name.
+func namedHelper(p string, pkg func(string) (exists, main bool)) bool {
+	exists, isProgram := pkg(p)
+	if !exists || isProgram {
+		return false
+	}
+	if in(testHelperBesides, p) {
+		return true
+	}
+	base, parent := path.Base(p), path.Dir(p)
+	x, ok := strings.CutSuffix(base, "test")
+	parentExists, _ := pkg(parent)
+	return ok && x != "" && path.Base(parent) == x && parentExists
+}
+
+// isMain reports whether pk is a program.
+func isMain(pk *goPkg) bool {
+	return len(pk.files) > 0 && pk.files[0].ast.Name.Name == "main"
+}
+
+// checkTestHelpers fails a testHelperRoots or testHelperBesides entry that
+// is no package of the tree.
+func checkTestHelpers(pkgs map[string]*goPkg) []string {
+	var problems []string
+	for _, h := range slices.Concat(testHelperRoots, testHelperBesides) {
+		found := false
+		for rel := range pkgs {
+			if rel == h || strings.HasPrefix(rel, h+"/") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			problems = append(problems, h+" is listed as a test helper but holds no package; remove it")
+		}
+	}
+	return problems
 }
 
 // register is the parsed core register of ARCHITECTURE.md.
@@ -339,7 +424,7 @@ func analyze(root string, reg *register) (violations, error) {
 	for rel, pk := range pkgs {
 		layer := layerOf(rel)
 		for _, f := range pk.files {
-			if isTestHelper(rel) || strings.Contains(rel, "/testdata") {
+			if isTestHelper(pkgs, rel) || strings.Contains(rel, "/testdata") {
 				continue
 			}
 			if layer == lCore {
@@ -351,6 +436,12 @@ func analyze(root string, reg *register) (violations, error) {
 					continue
 				}
 				target := strings.TrimPrefix(ip, modulePath+"/")
+				if isTestHelper(pkgs, target) {
+					if layer != lScripts {
+						v.add(rel, "imports "+target+" (a test helper: only test files import it)")
+					}
+					continue
+				}
 				checkLayer(v, rel, layer, target)
 			}
 			if layer == lService {
@@ -417,13 +508,13 @@ func localNames(f *ast.File) map[string]string {
 	return m
 }
 
-// pluginhostPkgs is the plugin host, whose path rule only the app installs.
-var pluginhostPkgs = []string{modulePath + "/internal/plugin"}
+// pluginPkgs is the plugin domain, whose path rule only the app installs.
+var pluginPkgs = []string{modulePath + "/internal/plugin"}
 
 // appPkg is the package that wires everything.
 const appPkg = "internal/app"
 
-// checkPathRulesInstall flags a call to pluginhost.UsePathRules outside the
+// checkPathRulesInstall flags a call to plugin.UsePathRules outside the
 // app: the path rule is installed once, by the wiring. Test files are not
 // loaded, so they may install it.
 func checkPathRulesInstall(v violations, rel string, f *goFile) {
@@ -433,8 +524,8 @@ func checkPathRulesInstall(v violations, rel string, f *goFile) {
 		if !ok || sel.Sel.Name != "UsePathRules" {
 			return true
 		}
-		if id, ok := sel.X.(*ast.Ident); ok && in(pluginhostPkgs, names[id.Name]) {
-			v.add(rel, fmt.Sprintf("%s calls pluginhost.UsePathRules (only internal/app installs the path rule)", f.name))
+		if id, ok := sel.X.(*ast.Ident); ok && in(pluginPkgs, names[id.Name]) {
+			v.add(rel, fmt.Sprintf("%s calls plugin.UsePathRules (only internal/app installs the path rule)", f.name))
 		}
 		return true
 	})

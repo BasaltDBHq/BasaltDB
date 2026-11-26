@@ -21,7 +21,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/santhosh-tekuri/jsonschema/v6"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
@@ -369,9 +368,11 @@ func (e *feedEnv) installID() uuid.UUID {
 // waitSeqs waits until p received exactly want for agent, in order.
 func waitSeqs(t *testing.T, p *feedPlugin, agent string, want ...int64) {
 	t.Helper()
-	if !assert.Eventually(t, func() bool { return slices.Equal(p.seqsFor(agent), want) }, 10*time.Second, 10*time.Millisecond) {
-		require.Equal(t, want, p.seqsFor(agent), "for %s", agent)
+	got := p.seqsFor(agent)
+	for deadline := time.Now().Add(10 * time.Second); !slices.Equal(got, want) && time.Now().Before(deadline); got = p.seqsFor(agent) {
+		time.Sleep(10 * time.Millisecond)
 	}
+	require.Equal(t, want, got, "for %s", agent)
 }
 
 func (g gotEvent) afterSeq() (int64, bool) {
@@ -402,16 +403,14 @@ func (p *feedPlugin) skippedAfter(agent string, after int64) (gotCall, gotEvent,
 // the given cursor, and returns the call that carried it and the marker.
 func waitSkipped(t *testing.T, p *feedPlugin, agent string, after int64) (gotCall, gotEvent) {
 	t.Helper()
-	var call gotCall
-	var ev gotEvent
-	if !assert.Eventually(t, func() bool {
-		var ok bool
-		call, ev, ok = p.skippedAfter(agent, after)
-		return ok
-	}, 10*time.Second, 10*time.Millisecond) {
-		require.Failf(t, "no skipped marker", "after %d for %s (seqs %v)", after, agent, p.seqsFor(agent))
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if call, ev, ok := p.skippedAfter(agent, after); ok {
+			return call, ev
+		}
+		if time.Now().After(deadline) {
+			require.Failf(t, "no skipped marker", "after %d for %s (seqs %v)", after, agent, p.seqsFor(agent))
+		}
 	}
-	return call, ev
 }
 
 // assertNoLaterSeqBefore asserts that no event delivered to agent before

@@ -57,12 +57,22 @@ func storeBound(p string) bool {
 	return slices.ContainsFunc(storeBoundImports, func(b string) bool { return p == b || strings.HasPrefix(p, b+"/") })
 }
 
-// agentStoreRule holds internal/agent to its store's ports.
+// agentStoreRule holds internal/agent to its store's ports, as its
+// siblings are held: it decides on the store's typed answers, never on a
+// store's catalog numbers, statements, SQLSTATEs, or the guard's codes and
+// details.
 var agentStoreRule = storeRule{
-	dir:         filepath.Join("internal", "agent"),
-	imports:     storeBoundImports,
-	ident:       regexp.MustCompile(`OID|Oid|Attnum|attnum|pg_`),
-	text:        regexp.MustCompile(`\$[0-9]|pg_`),
+	dir:     filepath.Join("internal", "agent"),
+	imports: storeBoundImports,
+	ident:   regexp.MustCompile(`SQLState|OID|Oid|Attnum|attnum|pg_`),
+	// A SQLSTATE is five digits or capitals starting with a digit, such as
+	// 42P01.
+	text: regexp.MustCompile(`\$[0-9]|pg_|\b[0-9][0-9A-Z]{4}\b`),
+	selectors: map[string]*regexp.Regexp{
+		modulePath + "/internal/core/guidance":   regexp.MustCompile(`^(LedgerCode|StoreDetail|StoreError|TimedOut)$`),
+		modulePath + "/internal/core/guardmodel": regexp.MustCompile(`^(Code.*|Detail.*|UnpickedGrantsDetail)$`),
+		modulePath + "/internal/core/action":     regexp.MustCompile(`^StoreError$`),
+	},
 	allowed:     map[string]string{},
 	allowedDeps: map[string]string{},
 }
@@ -121,10 +131,6 @@ var approvalStoreRule = storeRule{
 	allowedDeps: map[string]string{},
 }
 
-// approvalMCPStoreRule is approvalStoreRule on the approval tools: the
-// held request's family comes from the held write, never a constant.
-var approvalMCPStoreRule = approvalStoreRule.in(filepath.Join("internal", "approval", "in", "approvalmcp"))
-
 // in is rule r on the package in dir, with no allowlists of its own.
 func (r storeRule) in(dir string) storeRule {
 	r.dir, r.allowed, r.allowedDeps = dir, map[string]string{}, map[string]string{}
@@ -170,8 +176,57 @@ var pluginStoreRule = storeRule{
 	throughTrustprofile: true,
 }
 
-// storeRules are the store-neutral domains.
-var storeRules = []storeRule{agentStoreRule, revertStoreRule, piiStoreRule, approvalStoreRule, approvalMCPStoreRule, actionStoreRule, pluginStoreRule}
+// domainStoreRules are the store-neutral domains' roots. Each rule also
+// holds every inbound adapter of its domain (inboundStoreRules).
+var domainStoreRules = []storeRule{agentStoreRule, revertStoreRule, piiStoreRule, approvalStoreRule, pluginStoreRule}
+
+// storeRules are the store-neutral packages: the domain roots and the
+// shared action types. inboundStoreRules adds the domains' in/ packages.
+var storeRules = []storeRule{agentStoreRule, revertStoreRule, piiStoreRule, approvalStoreRule, actionStoreRule, pluginStoreRule}
+
+// inboundAllowed are the findings an inbound adapter may keep, by its
+// directory, each with its reason.
+var inboundAllowed = map[string]map[string]string{
+	"internal/agent/in/agentmcp": {
+		"tools.go: text `json:\"sql\" validate:\"required,max=16384\"`":       "the query tool's statement length limit, not a SQLSTATE",
+		"write_tools.go: text `json:\"sql\" validate:\"required,max=16384\"`": "the write tool's statement length limit, not a SQLSTATE",
+	},
+}
+
+// inboundStoreRules is each store-neutral domain's rule on each of its
+// inbound adapters (internal/<domain>/in/*), read from the tree, so a new
+// adapter is held without a list to keep.
+func inboundStoreRules(t *testing.T) []storeRule {
+	t.Helper()
+	root := moduleRoot(t)
+	var out []storeRule
+	defer func() {
+		for dir := range inboundAllowed {
+			if !slices.ContainsFunc(out, func(r storeRule) bool { return filepath.ToSlash(r.dir) == dir }) {
+				t.Errorf("inboundAllowed names %s, which is no inbound adapter of a store-neutral domain; remove it", dir)
+			}
+		}
+	}()
+	for _, r := range domainStoreRules {
+		entries, err := os.ReadDir(filepath.Join(root, r.dir, "in"))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				rule := r.in(filepath.Join(r.dir, "in", e.Name()))
+				if allowed, ok := inboundAllowed[filepath.ToSlash(rule.dir)]; ok {
+					rule.allowed = allowed
+				}
+				out = append(out, rule)
+			}
+		}
+	}
+	return out
+}
 
 // importName is the name a file refers to the import s by.
 func importName(s *ast.ImportSpec) string {
@@ -347,7 +402,7 @@ func requireNoStoreDeps(t *testing.T, rule storeRule) {
 // The store-neutral domains reach no store package, directly or through
 // another package.
 func TestStoreNeutralDomainsLinkNoStorePackage(t *testing.T) {
-	for _, rule := range slices.Concat(storeRules, storeDepRules) {
+	for _, rule := range slices.Concat(storeRules, inboundStoreRules(t), storeDepRules) {
 		t.Run(filepath.Base(rule.dir), func(t *testing.T) { requireNoStoreDeps(t, rule) })
 	}
 }
@@ -437,7 +492,23 @@ func TestApprovalDomainIsStoreNeutral(t *testing.T) {
 	const hint = "the approval domain reaches its store only through Records, Holds and Proofs, decides on action.ApprovalRefusalError " +
 		"and passes the held request on unread; map the store's answers in its adapter (for Postgres, internal/platform/postgres/store/approvals.go)"
 	requireStoreNeutral(t, approvalStoreRule, hint)
-	requireStoreNeutral(t, approvalMCPStoreRule, hint)
+}
+
+// A store-neutral domain's inbound adapters are held to its rule: the
+// approval tools pass the held request's family on from the held write,
+// and no tool or page names a store's codes.
+func TestStoreNeutralInboundAdapters(t *testing.T) {
+	rules := inboundStoreRules(t)
+	for _, want := range []string{"agentmcp", "approvalmcp", "approvalpage", "revertmcp", "revertpage", "pluginmcp", "pluginpage"} {
+		if !slices.ContainsFunc(rules, func(r storeRule) bool { return filepath.Base(r.dir) == want }) {
+			t.Errorf("no store rule holds %s: the inbound rules are read from internal/<domain>/in", want)
+		}
+	}
+	for _, rule := range rules {
+		t.Run(filepath.Base(rule.dir), func(t *testing.T) {
+			requireStoreNeutral(t, rule, "an inbound adapter of a store-neutral domain translates the domain's typed answers; it names no store's codes, texts or packages")
+		})
+	}
 }
 
 func TestStoreNeutralRuleCatchesViolations(t *testing.T) {
@@ -773,7 +844,11 @@ func RevealHeld() {}
 	if !slices.Equal(findings, want) {
 		t.Errorf("findings:\n%s\nwant:\n%s", strings.Join(findings, "\n"), strings.Join(want, "\n"))
 	}
-	if mcp := approvalMCPStoreRule; mcp.dir == approvalStoreRule.dir || mcp.text != approvalStoreRule.text || len(mcp.selectors) != len(approvalStoreRule.selectors) {
+	i := slices.IndexFunc(inboundStoreRules(t), func(r storeRule) bool { return filepath.Base(r.dir) == "approvalmcp" })
+	if i < 0 {
+		t.Fatal("no inbound rule for approvalmcp")
+	}
+	if mcp := inboundStoreRules(t)[i]; mcp.dir == approvalStoreRule.dir || mcp.text != approvalStoreRule.text || len(mcp.selectors) != len(approvalStoreRule.selectors) {
 		t.Errorf("the approval tools' rule is not the approval rule on approvalmcp: %+v", mcp)
 	}
 }

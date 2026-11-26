@@ -5,5 +5,5 @@
 // Known violations live in baseline/, one file per importing package. A new
 // violation fails the test; so does a baseline entry that is no longer
 // violated (remove it). Run `go test ./internal/testkit/archtest -update` to
-// regenerate the baseline after a change that removes violations.
+// remove the lines a change fixed; it never adds a line.
 package archtest

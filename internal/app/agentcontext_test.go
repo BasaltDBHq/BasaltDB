@@ -145,15 +145,68 @@ func TestAgentFacingTextIsAgentLed(t *testing.T) {
 		return nil
 	}))
 	require.Positive(t, jsonFiles)
-	for _, dir := range []string{"internal/app", "internal/agent", "internal/approval/in/approvalmcp", "internal/revert/in/revertmcp", "internal/config", "internal/handoff", "internal/plugin", "internal/pii", "internal/status", "internal/ledger", "internal/platform/pageserver", "internal/platform/osservice", "internal/lib/peercred", "internal/platform/mcpserver", "internal/platform/shim", "internal/platform/postgres/agentcatalog", "internal/approval/in/approvalpage", "internal/revert/in/revertpage", "internal/plugin/in/pluginpage", "internal/setup/in/setuppage"} {
-		requireGoStringsAgentLed(t, filepath.Join(root, filepath.FromSlash(dir)))
+	requireInternalStringsAgentLed(t, root)
+}
+
+// agentTextExcluded are the directories directly under internal/ whose
+// strings never reach an agent, each with its reason. Every other non-test Go file under
+// internal/ is scanned, so a new package is held without a list to keep.
+// An exclusion whose strings would pass the check is stale and fails.
+var agentTextExcluded = map[string]string{
+	"internal/testkit": "test helpers: the step catalog's checks name the removed and manual flags they refuse",
+}
+
+// requireInternalStringsAgentLed checks the string literals of every
+// non-test Go file under root's internal/ except agentTextExcluded.
+func requireInternalStringsAgentLed(t *testing.T, root string) {
+	t.Helper()
+	internal := filepath.Join(root, "internal")
+	entries, err := os.ReadDir(internal)
+	require.NoError(t, err)
+	scanned := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if _, skip := agentTextExcluded["internal/"+e.Name()]; skip {
+			continue
+		}
+		requireGoStringsAgentLed(t, filepath.Join(internal, e.Name()))
+		scanned++
 	}
+	require.Positive(t, scanned)
+	for dir, reason := range agentTextExcluded {
+		require.NotEmpty(t, strings.TrimSpace(reason), "agentTextExcluded[%s] needs a reason", dir)
+		require.Positive(t, manualInitsInGoStrings(t, filepath.Join(root, filepath.FromSlash(dir))),
+			"agentTextExcluded[%s] holds no string the check would refuse; remove the exclusion", dir)
+	}
+}
+
+// manualInitsInGoStrings counts the string literals in the non-test Go files
+// under dir that name a manual init.
+func manualInitsInGoStrings(t *testing.T, dir string) int {
+	t.Helper()
+	n := 0
+	walkGoStrings(t, dir, func(_, s string) {
+		if len(manualInits(s)) > 0 {
+			n++
+		}
+	})
+	return n
 }
 
 // requireGoStringsAgentLed checks every string literal in the non-test Go
 // files under dir: the engine's errors, next steps and refusals reach the
 // agent.
 func requireGoStringsAgentLed(t *testing.T, dir string) {
+	t.Helper()
+	files := walkGoStrings(t, dir, func(p, s string) { requireAgentLed(t, p, s) })
+	require.Positive(t, files, dir)
+}
+
+// walkGoStrings calls fn with each string literal in the non-test Go files
+// under dir, and returns how many files it read.
+func walkGoStrings(t *testing.T, dir string, fn func(path, s string)) int {
 	t.Helper()
 	files := 0
 	require.NoError(t, filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
@@ -174,10 +227,10 @@ func requireGoStringsAgentLed(t *testing.T, dir string) {
 			if err != nil {
 				return true // not a Go string after all; nothing to check
 			}
-			requireAgentLed(t, p, s)
+			fn(p, s)
 			return true
 		})
 		return nil
 	}))
-	require.Positive(t, files, dir)
+	return files
 }

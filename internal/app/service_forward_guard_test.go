@@ -531,10 +531,6 @@ var portGlue = map[string]string{
 var portLogic = map[string]string{
 	"pgErrors.ServerMessage":           "the setup domain's DBErrors on pgx: unwraps a Postgres server error",
 	"rootConfigDir.Upsert":             "the setup domain's config writer as root: checks the directory's owner before it writes",
-	"rootFiles.ReadCredential":         "the setup domain's credential files as root: reads through the checked read",
-	"rootFiles.Promote":                "the setup domain's credential files as root: checks the pending file before it renames it",
-	"rootFiles.ClearSetup":             "the setup domain's credential files as root: picks the owner before it clears the setup",
-	"rootFiles.Close":                  "the setup domain's credential files as root: closes both directories",
 	"setupHost.ConnTarget":             "the setup host: parses the connection string's target",
 	"setupHost.OSInstallScript":        "the setup host: reads the binary's source, then builds the install script",
 	"setupHost.OSRestartScript":        "the setup host: reads the binary's source, then builds the restart script",
@@ -542,7 +538,6 @@ var portLogic = map[string]string{
 	"setupHost.OpenRootConfigDir":      "the setup host: returns a nil interface on an error",
 	"setupHost.RootEngineKey":          "the setup host: unwraps the config directory before it reads the key",
 	"engineCLIHost.RunServiceAt":       "forwards to app's runServiceAt, the whole basalt service install command",
-	"rootFiles.ReadPending":            "forwards to rootFiles.read, the checked credential read",
 	"setupHost.LoadOrCreateEngineKeys": "forwards to app's loadOrCreateEngineKeys, which reads or creates the channel keys",
 	"setupHost.OpenRootCredFiles":      "forwards to app's openRootCredFiles, which opens the credential files as root",
 	"setupHost.RootTrustedOwner":       "forwards to app's rootTrustedOwner, which checks the config directory's owner",

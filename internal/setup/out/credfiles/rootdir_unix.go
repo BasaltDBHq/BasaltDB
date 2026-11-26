@@ -1,52 +1,59 @@
 //go:build unix
 
-package app
+package credfiles
 
 import (
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"syscall"
 	"time"
-
-	"github.com/basaltdbhq/basaltdb/internal/engine"
-	"github.com/basaltdbhq/basaltdb/internal/lib/ownerfile"
-	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
-	"github.com/basaltdbhq/basaltdb/internal/setup"
-	"github.com/basaltdbhq/basaltdb/internal/setup/out/credfiles"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/ownerfile"
 )
 
-// openRootCredFiles opens dir, the agents directory, as root
-// (credfiles.OpenRootCredFiles), making it (and the config directory) when
-// missing, through h. trusted is rootTrustedOwner's.
-func openRootCredFiles(h setupFilesHost, dir string, trusted int) (setup.CredFiles, error) {
-	files, err := credfiles.OpenRootCredFiles(h, dir, trusted)
-	if err != nil {
-		return nil, err
-	}
-	return files, nil
-}
+// The config directory and the engine's key as root, for basalt init
+// --remote: opened from / without following a link anyone but root or the
+// config directory's owner controls.
 
 // rootConfigDir is the config directory init --remote opened as root
-// (service.OpenTrustedDir, the trusted owner as openRootCredFiles): it
+// (service.OpenTrustedDir, the trusted owner as OpenRootCredFiles): it
 // locks, reads and writes engine.json relative to it.
 type rootConfigDir struct {
-	dir     trustedDir
+	dir     TrustedDir
 	trusted int
 }
 
-// rootTrustedOwner is the owner root trusts on the way to the config
+// RootTrustedOwner is the owner root trusts on the way to the config
 // directory dir: dir's, or, when it does not exist yet, that of the
-// nearest directory above it that does. Read once, before either
-// directory is made.
-func rootTrustedOwner(dir string) (int, error) { return cli.ExistingOwner(dir) }
+// nearest directory above it that does, not following a link. Read once,
+// before either directory is made.
+func RootTrustedOwner(dir string) (int, error) {
+	path := dir
+	for {
+		fi, err := os.Lstat(path)
+		if errors.Is(err, fs.ErrNotExist) && filepath.Dir(path) != path {
+			path = filepath.Dir(path)
+			continue
+		}
+		if err != nil {
+			return 0, err
+		}
+		st, ok := fi.Sys().(*syscall.Stat_t)
+		if !ok {
+			return 0, errors.New("cannot read the directory's owner")
+		}
+		return int(st.Uid), nil
+	}
+}
 
-// openRootConfigDir opens dir, the config directory, as root, making it
-// when missing, through h.
-func openRootConfigDir(h setupFilesHost, dir string, trusted int) (*rootConfigDir, error) {
+// OpenRootConfigDir opens dir, the config directory, as root, making it
+// when missing, through h. trusted is RootTrustedOwner's.
+func OpenRootConfigDir(h FilesHost, dir string, trusted int) (ConfigDir, error) {
 	d, err := h.OSOpenTrustedDir(dir, trusted, true)
 	if err != nil {
 		return nil, fmt.Errorf("the config directory %s is refused: %w", dir, err)
@@ -65,12 +72,12 @@ func (d *rootConfigDir) Upsert(name string, s config.Settings, a config.Agent) (
 	// engine.json goes to the config directory's owner (the engine's user
 	// in service mode), as the files in agents/ do, so the engine can read
 	// it; never to root.
-	return config.UpsertAgentVaultAt(d.dir, name, func(f *os.File) error { return cli.CheckConfigFile(f, d.trusted) }, credentialOwner(dirUID), s, a)
+	return config.UpsertAgentVaultAt(d.dir, name, func(f *os.File) error { return config.CheckTrustedConfig(f, d.trusted) }, CredentialOwner(dirUID), s, a)
 }
 
 func (d *rootConfigDir) Close() { _ = d.dir.Close() }
 
-// rootEngineKey is the engine's public key for a root init --remote: the
+// RootEngineKey is the engine's public key for a root init --remote: the
 // key file in the engine's state directory, read or (when there is none)
 // created relative to that directory, opened from / without following a
 // link anyone but root controls. stateDir comes from engine.json, which
@@ -82,8 +89,11 @@ func (d *rootConfigDir) Close() { _ = d.dir.Close() }
 // link, owned by that owner, mode 0600 or narrower, and pass the engine's
 // own checks (channel.ParseKeyFile). A new one is given to that owner
 // before it appears under its name, so the engine loads it as its own; one
-// made meanwhile by the engine is kept. The directory is opened through h.
-func rootEngineKey(h setupFilesHost, stateDir, goos string, cfg *rootConfigDir, now func() time.Time) ([]byte, error) {
+// made meanwhile by the engine is kept. The directory is opened through h;
+// cfg is the one OpenRootConfigDir opened, and stateDirMode is the
+// engine's mode for its state directory, which a missing one's hint names.
+func RootEngineKey(h FilesHost, stateDir, goos string, opened ConfigDir, now func() time.Time, stateDirMode os.FileMode) ([]byte, error) {
+	cfg, _ := opened.(*rootConfigDir)
 	if cfg == nil {
 		return nil, errors.New("the config directory is not open")
 	}
@@ -93,7 +103,7 @@ func rootEngineKey(h setupFilesHost, stateDir, goos string, cfg *rootConfigDir, 
 	}
 	d, err := h.OSOpenTrustedDir(stateDir, cfg.trusted, false)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, missingStateDir(stateDir, goos, want)
+		return nil, missingStateDir(stateDir, goos, want, stateDirMode)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("the state directory %s is refused: %w", stateDir, err)
@@ -118,7 +128,7 @@ func rootEngineKey(h setupFilesHost, stateDir, goos string, cfg *rootConfigDir, 
 		if err != nil {
 			return nil, err
 		}
-		err = d.CreateFile(channel.KeyFileName, raw, channel.KeyFileMode, credentialOwner(dirUID))
+		err = d.CreateFile(channel.KeyFileName, raw, channel.KeyFileMode, CredentialOwner(dirUID))
 		clear(raw)
 		if err == nil {
 			return keys.PublicKeySPKI(), nil
@@ -134,17 +144,17 @@ func rootEngineKey(h setupFilesHost, stateDir, goos string, cfg *rootConfigDir, 
 // manager makes only the default one (systemd's StateDirectory, the launchd
 // install's directories); a config elsewhere (--config) keeps its state
 // next to it, which nothing makes for the engine's user (owner).
-func missingStateDir(stateDir, goos string, owner int) error {
+func missingStateDir(stateDir, goos string, owner int, stateDirMode os.FileMode) error {
 	if stateDir == config.DefaultStateDir(goos) {
 		return fmt.Errorf("the state directory %s does not exist yet; start the engine's service once (it makes it), then run basalt init --remote again", stateDir)
 	}
 	return fmt.Errorf("the state directory %s does not exist yet; make it for the engine's user (sudo install -d -m %04o -o %d %s), then run basalt init --remote again",
-		stateDir, engine.StateDirMode, owner, stateDir)
+		stateDir, stateDirMode, owner, stateDir)
 }
 
 // readRootKeyFile reads the key file in the state directory d, owned by
 // dirUID: an error wrapping fs.ErrNotExist when there is none.
-func readRootKeyFile(d trustedDir, dirUID int) (*channel.EngineKeys, error) {
+func readRootKeyFile(d TrustedDir, dirUID int) (*channel.EngineKeys, error) {
 	f, err := config.OpenPlainAt(d, channel.KeyFileName, nil)
 	if err != nil {
 		return nil, err

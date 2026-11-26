@@ -2,8 +2,8 @@
 # make deadcode). This list only shrinks: never add a line. When a function
 # here is deleted or gets a real caller, delete its line in the same change.
 # A line may end with "# reason" for a function that stays on purpose.
-api/mcp.CheckServed  # exported contract package; its consumers and the contract tests call it
-api/mcp.Resolve  # exported contract package; its consumers and the contract tests call it
+api/mcp.CheckServed
+api/mcp.Resolve
 internal/app.NewAgentProbe
 internal/config.UpsertAgent
 internal/core/channel.Initiator.ReadWelcome
@@ -30,6 +30,6 @@ internal/platform/postgres/guard.WriteClassification
 internal/platform/postgres/ledger.ReinstallNotice
 internal/platform/postgres/ledger.ReinstallNotices
 internal/plugin/out/plugintransport/dial.SocketDirIs
-internal/status.ValidateURL
-internal/status.isLoopback
-pkg/trustprofile.SetSystemRootsForTest
+internal/status.ValidateURL  # scripts/portal-verify (make portal-verify) calls it; deadcode does not read scripts/
+internal/status.isLoopback  # ValidateURL's check, for scripts/portal-verify
+pkg/trustprofile.SetSystemRootsForTest  # public pkg/ API: basalt-connect's tests call it

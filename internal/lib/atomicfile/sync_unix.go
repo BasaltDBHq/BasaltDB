@@ -4,7 +4,8 @@ package atomicfile
 
 import "os"
 
-func syncDir(dir string) error {
+// SyncDir flushes a change to dir's entries (a new name, a rename) to disk.
+func SyncDir(dir string) error {
 	d, err := os.Open(dir)
 	if err != nil {
 		return err

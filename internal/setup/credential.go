@@ -24,11 +24,6 @@ type DBErrors interface {
 const ConnectPageTrust = "the person checks its certificate authority and trusts it on the connect page; " +
 	"the bot's engine pins it only after its own reading of the chain matches"
 
-// sqlstateInvalidPassword is a SCRAM exchange the server refused: with
-// channel_binding=require the client only gets this far when the server
-// offered SCRAM-SHA-256-PLUS over a TLS connection the client accepted.
-const sqlstateInvalidPassword = "28P01"
-
 // The connection string parameters init --remote hardens.
 const (
 	paramSSLMode        = "sslmode"
@@ -120,7 +115,7 @@ func HardenedCredential(ctx context.Context, dial func(context.Context, string) 
 		v.RawQuery = strings.ReplaceAll(cq.Encode(), "+", "%20")
 		candidate := v.String()
 		err := dial(ctx, candidate)
-		if proves(e, c, err) {
+		if LoginProves(e, c.mode, c.binding, err) {
 			p.mode, p.binding = c.mode, c.binding || p.binding
 			p.changed = candidate != dsn
 			return candidate, p
@@ -142,24 +137,6 @@ func tlsCandidates(mode string) []tlsCandidate {
 		return []tlsCandidate{{sslVerifyFull, true}, {sslVerifyFull, false}, {sslVerifyCA, true}}
 	}
 	return []tlsCandidate{{sslVerifyFull, true}, {sslVerifyFull, false}, {sslRequire, true}}
-}
-
-// proves reports whether a probe's error confirms candidate c (see
-// HardenedCredential). The assumption: a server answers 28P01 only after a
-// SCRAM exchange (Postgres, PgBouncer); a proxy that sent it before any SASL
-// message would pass a channel binding probe and leave a credential that
-// cannot log in.
-func proves(e DBErrors, c tlsCandidate, err error) bool {
-	code := SQLStateOf(err)
-	if code == "" {
-		return false
-	}
-	if c.binding {
-		return code == sqlstateInvalidPassword
-	}
-	message, _ := e.ServerMessage(err)
-	return c.mode == sslVerifyFull && (strings.HasPrefix(code, SQLStateClassAuth) ||
-		(code == SQLStateInternal && strings.Contains(message, SupavisorNoTenant)))
 }
 
 // unreachable is a probe that reached no server: every address pgx tried

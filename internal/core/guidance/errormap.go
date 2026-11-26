@@ -3,11 +3,11 @@ package guidance
 import (
 	"context"
 	"errors"
-	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -49,8 +49,10 @@ func (m ErrorMap) ToolError(err error) *toolresult.ToolError {
 		return &toolresult.ToolError{Code: CodeUnavailable, Reason: ReasonDatabaseNotConfirmed, Message: dn.Error()}
 	case errors.As(err, &ae):
 		return &toolresult.ToolError{Code: CodeInvalidArgument, Reason: ae.Reason, Message: ae.Message}
+	case errors.Is(err, pagination.ErrStaleCursor):
+		return &toolresult.ToolError{Code: CodeInvalidArgument, Reason: ReasonStaleCursor, Message: err.Error()}
 	case sentinel(err, m.InvalidParams), sentinel(err, m.InvalidIntent):
-		return &toolresult.ToolError{Code: CodeInvalidArgument, Reason: argumentReason(err), Message: err.Error()}
+		return &toolresult.ToolError{Code: CodeInvalidArgument, Message: err.Error()}
 	case errors.As(err, &pe):
 		return &toolresult.ToolError{Code: pe.Code, Reason: pe.Reason, Message: pe.Message, StoreCode: pe.StoreCode}
 	case errors.Is(err, action.ErrUnavailable), errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
@@ -75,15 +77,6 @@ func (m ErrorMap) rowTooLargeMessage(err error) string {
 	}
 	msg, _ := m.RowTooLarge(err)
 	return msg
-}
-
-// argumentReason is STALE_CURSOR for a list cursor the engine cannot read
-// (kept from an earlier page or another list), else no reason.
-func argumentReason(err error) string {
-	if strings.Contains(err.Error(), "invalid cursor") {
-		return ReasonStaleCursor
-	}
-	return ""
 }
 
 // ErrorMap holds the error values of the adapters the agent tells apart to

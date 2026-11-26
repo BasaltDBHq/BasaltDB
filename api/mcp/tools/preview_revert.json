@@ -164,7 +164,7 @@
             },
             "redacted": {
               "type": "boolean",
-              "description": "True when this agent cannot SELECT the table; key and values are hidden."
+              "description": "True when this agent cannot read the row (in Postgres, cannot SELECT its table); key and values are hidden."
             },
             "rowHash": {
               "type": "string",

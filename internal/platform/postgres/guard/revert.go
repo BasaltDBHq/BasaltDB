@@ -32,7 +32,7 @@ func scopeArgs(s action.Scope) ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	resources, err := json.Marshal(s.Tables)
+	resources, err := json.Marshal(s.Resources)
 	if err != nil {
 		return nil, err
 	}

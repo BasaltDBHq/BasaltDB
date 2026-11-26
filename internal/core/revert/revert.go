@@ -279,10 +279,10 @@ type Request struct {
 	// long link.
 	RevealNonce   passkey.Bytes   `json:"revealNonce,omitempty"`
 	CredentialIDs []passkey.Bytes `json:"credentialIds,omitempty"`
-	// Columns orders each resource's fields as its store does, for the
+	// Fields orders each resource's fields as its store does, for the
 	// page's display only (CONTRACT.md, Local pages): served only by the
 	// engine, never signed, never carried in a link.
-	Columns approval.ColumnOrder `json:"columns,omitempty"`
+	Fields approval.FieldOrder `json:"fields,omitempty"`
 }
 
 // Check parses the binding and checks the request against it: same revert,

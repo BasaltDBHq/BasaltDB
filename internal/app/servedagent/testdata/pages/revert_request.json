@@ -1,7 +1,10 @@
 {
   "body": {
     "binding": "{\"kind\": \"REVERT\", \"rows\": 3, \"store\": {\"kind\": \"POSTGRES\", \"name\": \"<database>\"}, \"intent\": \"Undo the lead merge\", \"select\": {\"runs\": null, \"scope\": \"RUN\", \"agents\": [\"agent:bot\"], \"scopeId\": \"<id-5>\", \"resources\": null}, \"skipped\": 0, \"widened\": false, \"revertId\": \"<id-4>\", \"rowsHash\": \"<hash>\", \"expiresAt\": \"<time>\", \"requestedBy\": \"agent:bot\"}",
-    "columns": {
+    "credentialIds": [
+      "<credentialIds>"
+    ],
+    "fields": {
       "public.leads": [
         "id",
         "name",
@@ -9,9 +12,6 @@
         "score"
       ]
     },
-    "credentialIds": [
-      "<credentialIds>"
-    ],
     "lines": [
       "{\"op\": \"UPDATE\", \"key\": {\"id\": 71}, \"now\": {\"id\": 71, \"name\": \"lead 71\", \"score\": 1, \"status\": \"won\"}, \"set\": {\"id\": 71, \"name\": \"lead 71\", \"score\": 1, \"status\": \"open\"}, \"shape\": \"RECORD\", \"store\": {\"code\": null, \"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"action\": \"RESTORE\", \"cascaded\": false, \"conflict\": null, \"resource\": \"public.leads\", \"changeIds\": [\"<id-6>\"]}",
       "{\"op\": \"UPDATE\", \"key\": {\"id\": 72}, \"now\": {\"id\": 72, \"name\": \"lead 72\", \"score\": 2, \"status\": \"won\"}, \"set\": {\"id\": 72, \"name\": \"lead 72\", \"score\": 2, \"status\": \"open\"}, \"shape\": \"RECORD\", \"store\": {\"code\": null, \"kind\": \"POSTGRES\", \"verb\": \"UPDATE\"}, \"action\": \"RESTORE\", \"cascaded\": false, \"conflict\": null, \"resource\": \"public.leads\", \"changeIds\": [\"<id-6>\"]}",

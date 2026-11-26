@@ -7,8 +7,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
 
 const callBoom = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"boom","arguments":{}}}`
@@ -47,7 +49,7 @@ func TestToolPanicEndsTheCallNotTheEngine(t *testing.T) {
 	require.Contains(t, te.PersonMessage, "report-id-1")
 	require.Contains(t, te.PersonMessage, "status tool")
 	require.NotContains(t, te.PersonMessage, "basalt crash")
-	require.NotEmpty(t, te.NextSteps)
+	requireInternalFromCatalog(t, &te)
 }
 
 func TestToolPanicWithoutAReportStillAnswersInternal(t *testing.T) {
@@ -58,7 +60,25 @@ func TestToolPanicWithoutAReportStillAnswersInternal(t *testing.T) {
 	var te toolresult.ToolError
 	require.NoError(t, json.Unmarshal([]byte(text), &te))
 	require.Equal(t, "INTERNAL", te.Code)
-	require.Empty(t, te.PersonMessage)
+	require.Contains(t, te.PersonMessage, "could not save a crash report")
+	requireInternalFromCatalog(t, &te)
+}
+
+// requireInternalFromCatalog holds a panicking tool's answer to the catalog's
+// INTERNAL entry, like every other tool error: its steps, a person's message
+// exactly when the entry asks for one, and the step and message rules.
+func requireInternalFromCatalog(t *testing.T, te *toolresult.ToolError) {
+	t.Helper()
+	entry, ok := guidance.Catalog().ErrorEntry("INTERNAL", "", "boom")
+	require.True(t, ok)
+	require.Equal(t, entry.Steps, stepcatalogtest.CatalogKinds(te.NextSteps))
+	require.Equal(t, entry.PersonMessage, te.PersonMessage != "")
+	require.NoError(t, guidance.CheckPersonMessage(te.PersonMessage))
+	stepcatalogtest.RequirePersonMessage(t, te.PersonMessage, te.Links)
+	kase := stepcatalogtest.Case{Tool: "boom"}
+	for _, st := range te.NextSteps {
+		stepcatalogtest.RequireStepObeysRules(t, st, kase, "INTERNAL")
+	}
 }
 
 // TestToolPanicIsNotRecoveredWithoutOnPanic: no hook, no change in behavior.

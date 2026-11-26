@@ -123,7 +123,7 @@ var slowRun = uuid.MustParse("0193a4c2-7d1e-7c3a-9f00-0000000000a3")
 // resources. The store checks the names: their form, and that the agent
 // wrote each one in the scope.
 func (s *memStore) selectChanges(scope action.Scope) ([]change, error) {
-	for _, name := range scope.Tables {
+	for _, name := range scope.Resources {
 		if !memResourceName.MatchString(name) {
 			return nil, s.refuseRevert(action.RevertFilterName, memFilterNameDetail, "")
 		}
@@ -138,19 +138,19 @@ func (s *memStore) selectChanges(scope action.Scope) ([]change, error) {
 	if len(own) == 0 {
 		return nil, s.refuseRevert(action.RevertNotOwnRun, fmt.Sprintf("run %s has no change of %s", scope.ID, memAgent), "")
 	}
-	if scope.Tables == nil {
+	if scope.Resources == nil {
 		return own, nil
 	}
 	written := map[string]bool{}
 	for _, c := range own {
 		written[c.resource] = true
 	}
-	for _, name := range scope.Tables {
+	for _, name := range scope.Resources {
 		if !written[name] {
 			return nil, s.refuseRevert(action.RevertFilter, name+" has no change of yours in this run", "")
 		}
 	}
-	return slices.DeleteFunc(own, func(c change) bool { return !slices.Contains(scope.Tables, c.resource) }), nil
+	return slices.DeleteFunc(own, func(c change) bool { return !slices.Contains(scope.Resources, c.resource) }), nil
 }
 
 // planLines are the lines that put back what changes changed, one per
@@ -327,7 +327,7 @@ func (s *memStore) PrepareRevert(_ context.Context, scope action.Scope, intent s
 	id := s.nextID()
 	b := revert.Binding{
 		Kind: revert.KindRevert, RevertID: id, Store: approval.BindingStore{Kind: string(memKind), Name: memDatabase},
-		Select: revert.Select{Scope: scope.Kind, ScopeID: scope.ID, Agents: []string{approval.AgentName(memAgent)}, Runs: scope.Runs, Resources: scope.Tables},
+		Select: revert.Select{Scope: scope.Kind, ScopeID: scope.ID, Agents: []string{approval.AgentName(memAgent)}, Runs: scope.Runs, Resources: scope.Resources},
 		Intent: intent, Rows: restore, Skipped: len(lines) - restore, RowsHash: approval.RowsHash(texts),
 		ExpiresAt: expiresAt(), RequestedBy: approval.AgentName(memAgent),
 	}

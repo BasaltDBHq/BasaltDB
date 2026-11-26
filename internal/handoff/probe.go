@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -29,20 +30,6 @@ const (
 	paramChannelBinding = "channel_binding"
 	sslVerifyFull       = "verify-full"
 	bindingRequire      = "require"
-)
-
-// SQLSTATEs a login bound to fail answers with.
-const (
-	// sqlstateInvalidPassword is a refused SCRAM exchange: with
-	// channel_binding=require the client only gets this far over a TLS
-	// connection whose certificate verified and a server that offered
-	// SCRAM-SHA-256-PLUS.
-	sqlstateInvalidPassword = "28P01"
-	sqlstateClassAuth       = "28"
-	// sqlstateInternal with supavisorNoTenant is Supabase's pooler not
-	// knowing the user.
-	sqlstateInternal  = "XX000"
-	supavisorNoTenant = "Tenant or user not found"
 )
 
 // probeTimeout bounds one probe login.
@@ -161,6 +148,10 @@ type Prober struct {
 	Login func(ctx context.Context, dsn string, set *trustprofile.Set, ip string, dial func(ctx context.Context, network, addr string) (net.Conn, error), roots *x509.CertPool) error
 	// Now is the clock certificates are checked at; nil is time.Now.
 	Now func() time.Time
+	// Errors reads the server's message of a refused login (Supabase's
+	// pooler not knowing the user); internal/app gives the Postgres
+	// adapter's. It is read only for an internal_error answer.
+	Errors setup.DBErrors
 }
 
 // Pin is a certificate authority the person trusted on the connect page
@@ -288,7 +279,7 @@ func (p Prober) Resolve(ctx context.Context, a setupcode.Address) (netip.Addr, e
 	if err := a.Check(); err != nil {
 		return netip.Addr{}, err
 	}
-	ip, err := pick(ctx, p.resolver(), a.Host)
+	ip, err := Pick(ctx, p.resolver(), a.Host)
 	switch {
 	case errors.Is(err, setupcode.ErrAddressInvalid):
 		return netip.Addr{}, &ReachError{Reason: ReasonAddressRefused}
@@ -308,7 +299,7 @@ func (p Prober) ProbeAt(ctx context.Context, a setupcode.Address, ip netip.Addr,
 	var last error
 	for _, binding := range []bool{true, false} {
 		err := p.login(ctx, a, ip, user, binding, pin)
-		if proves(binding, err) {
+		if setup.LoginProves(p.Errors, sslVerifyFull, binding, err) {
 			return Probed{IP: ip, ChannelBinding: binding}, nil
 		}
 		last = err
@@ -389,31 +380,6 @@ func ConnString(a setupcode.Address, user, password string, binding bool) string
 		RawQuery: q.Encode(),
 	}
 	return u.String()
-}
-
-// LoginRefused reports whether err is the database refusing a login: any
-// class 28 error, or Supabase's pooler not knowing the user. The setup
-// finisher counts it as a setup not run yet, as basalt init --remote does.
-func LoginRefused(err error) bool { return proves(false, err) }
-
-// proves reports whether a probe login's error proves the candidate: with
-// channel binding only a refused password (28P01) does; without, any
-// refusal of the login (class 28, or Supabase's pooler not knowing the
-// user), since pgx sends the startup message only after a TLS handshake
-// whose certificate verified for the host name.
-func proves(binding bool, err error) bool {
-	var pg interface {
-		error
-		SQLState() string
-	}
-	if !errors.As(err, &pg) {
-		return false
-	}
-	code := pg.SQLState()
-	if binding {
-		return code == sqlstateInvalidPassword
-	}
-	return strings.HasPrefix(code, sqlstateClassAuth) || (code == sqlstateInternal && strings.Contains(pg.Error(), supavisorNoTenant))
 }
 
 // unreachable is a login that reached no server: the dial failed or timed

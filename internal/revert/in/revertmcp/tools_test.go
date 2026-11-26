@@ -50,7 +50,7 @@ func TestResourceNamesPassThroughToTheStore(t *testing.T) {
 	for _, kind := range []revert.Scope{revert.ScopeChange, revert.ScopeRun, revert.ScopeTask} {
 		scope, err := scopeIDs{Resources: names}.filtered(action.Scope{Kind: kind, ID: uuid.Must(uuid.NewV7())})
 		require.NoError(t, err, kind)
-		require.Equal(t, names, scope.Tables, kind)
+		require.Equal(t, names, scope.Resources, kind)
 	}
 	for _, name := range []string{"preview_revert", "request_revert"} {
 		c, ok := mcpcontract.Find(mcpcontract.MustLoad(), name)

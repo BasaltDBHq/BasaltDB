@@ -122,8 +122,8 @@ type Match struct {
 	Resource
 	// Rank orders the matches, lowest first.
 	Rank int
-	// Matched says what matched: "table", "schema", "column <name>" or
-	// "comment".
+	// Matched says what matched: "resource", "namespace", "field <name>"
+	// or "comment", in these words whatever the store calls them.
 	Matched string
 }
 

@@ -1,3 +1,11 @@
-# Package moves the baselines follow: "old/pkg<TAB>new/pkg", one per line.
-# scripts/baseline-shrink.sh rewrites the base baselines through them;
-# empty once the moves are on master.
+# Baseline renames scripts/baseline-shrink.sh follows, one per line:
+#   old/pkg<TAB>new/pkg              a package move: the base baselines'
+#                                    paths, file names and lines are
+#                                    rewritten through it; empty once the
+#                                    moves are on master.
+#   old/path.txt<TAB>new/path.txt    a baseline file renamed (several old
+#                                    files may name one new file): the new
+#                                    file's lines must come from the old
+#                                    ones; skipped once the base has it.
+internal/testkit/archtest/serviceio_baseline.txt	internal/testkit/archtest/serviceio_calls_baseline.txt
+internal/testkit/archtest/serviceio_lookups_baseline.txt	internal/testkit/archtest/serviceio_calls_baseline.txt

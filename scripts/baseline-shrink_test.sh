@@ -83,7 +83,15 @@ check 1 "unlisting a baseline does not let it grow"
 
 setup
 rm -r "$work/r/$bl"
-check 0 "a removed baseline passes"
+check 1 "a removed baseline fails"
+
+setup
+rm "$work/r/allow.txt"
+check 1 "an unlisted removal of a baseline file fails"
+
+setup
+: >"$work/r/allow.txt"
+check 0 "an emptied baseline passes"
 
 setup
 printf 'b\n' >"$work/r/$bl/internal_one.txt"
@@ -156,5 +164,102 @@ move_status
 renames "internal/status${tab}internal/health"
 printf 'own\nmore\n' >"$work/r/internal/health/allow.txt"
 check 1 "a moved package's own baseline still only shrinks"
+
+# counted_base gives the base two name-keyed baseline files, one of them
+# counted, registered beside the others.
+counted_base() {
+	printf 'p f.go: os.Lstat\np g.go: os/user.Lookup\n' >"$work/r/calls.txt"
+	printf 'p h.go: H: os/user.Current (2 times)\n' >"$work/r/lookups.txt"
+	printf 'calls.txt\nlookups.txt\n' >>"$work/r/scripts/shrink-only.txt"
+	git -C "$work/r" add -A
+	git -C "$work/r" -c user.name=t -c user.email=t@t commit -qm counted
+}
+
+# rename_calls replaces both files with one file, registered, holding $@.
+rename_calls() {
+	git -C "$work/r" rm -q calls.txt lookups.txt
+	sed -e '/^calls.txt$/d' -e '/^lookups.txt$/d' "$work/r/scripts/shrink-only.txt" >"$work/r/scripts/s.tmp"
+	printf 'all.txt\n' >>"$work/r/scripts/s.tmp"
+	mv "$work/r/scripts/s.tmp" "$work/r/scripts/shrink-only.txt"
+	printf '%s\n' "$@" >"$work/r/all.txt"
+}
+
+setup
+counted_base
+rename_calls 'p f.go: Rot: os.Lstat' 'p g.go: Check: os/user.Lookup' 'p h.go: H: os/user.Current (2 times)'
+renames "calls.txt${tab}all.txt" "lookups.txt${tab}all.txt"
+check 0 "a listed rename into counted, declaration-keyed lines passes"
+
+setup
+counted_base
+rename_calls 'p f.go: Rot: os.Lstat' 'p g.go: Check: os/user.Lookup' 'p h.go: H: os/user.Current (2 times)'
+check 1 "an unlisted rename fails"
+
+setup
+counted_base
+rename_calls 'p f.go: Rot: os.Lstat' 'p g.go: Check: os/user.Lookup' 'p h.go: H: os/user.Current (2 times)' 'p k.go: K: os.Remove'
+renames "calls.txt${tab}all.txt" "lookups.txt${tab}all.txt"
+check 1 "a listed rename with an added line fails"
+
+setup
+counted_base
+rename_calls 'p f.go: Rot: os.Remove' 'p g.go: Check: os/user.Lookup' 'p h.go: H: os/user.Current (2 times)'
+renames "calls.txt${tab}all.txt" "lookups.txt${tab}all.txt"
+check 1 "a listed rename with a swapped line fails"
+
+setup
+counted_base
+rename_calls 'p f.go: Rot: os.Lstat' 'p g.go: Check: os/user.Lookup (2 times)' 'p h.go: H: os/user.Current (2 times)'
+renames "calls.txt${tab}all.txt" "lookups.txt${tab}all.txt"
+check 1 "a listed rename whose count grows fails"
+
+setup
+counted_base
+rename_calls 'p f.go: Rot: os.Lstat' 'p g.go: Check: os/user.Lookup' 'p h.go: H: os/user.Current (3 times)'
+renames "calls.txt${tab}all.txt" "lookups.txt${tab}all.txt"
+check 1 "a listed rename that raises a count fails"
+
+setup
+counted_base
+rename_calls 'p f.go: Rot: os.Lstat' 'p g.go: Check: os/user.Lookup' 'p g.go: Other: os/user.Lookup' 'p h.go: H: os/user.Current (2 times)'
+renames "calls.txt${tab}all.txt" "lookups.txt${tab}all.txt"
+check 1 "a listed rename that splits one line over two declarations fails"
+
+setup
+counted_base
+rename_calls 'p f.go: Rot: os.Lstat'
+renames "calls.txt${tab}all.txt" "lookups.txt${tab}all.txt"
+check 0 "a listed rename that drops lines passes"
+
+setup
+counted_base
+rename_calls 'p f.go: Rot: os.Lstat'
+sed -e '/^all.txt$/d' "$work/r/scripts/shrink-only.txt" >"$work/r/scripts/s.tmp"
+mv "$work/r/scripts/s.tmp" "$work/r/scripts/shrink-only.txt"
+renames "calls.txt${tab}all.txt" "lookups.txt${tab}all.txt"
+check 1 "a rename onto an unregistered file fails"
+
+setup
+counted_base
+rename_calls 'p f.go: Rot: os.Lstat'
+printf 'p f.go: os.Lstat\n' >"$work/r/calls.txt"
+renames "calls.txt${tab}all.txt" "lookups.txt${tab}all.txt"
+check 1 "a rename whose old file is still here fails"
+
+setup
+counted_base
+rename_calls 'p f.go: Rot: os.Lstat'
+renames "calls.txt${tab}allow.txt" "lookups.txt${tab}all.txt"
+check 1 "a rename onto a file the base has fails"
+
+setup
+counted_base
+rename_calls 'p f.go: Rot: os.Lstat'
+renames "calls.txt${tab}all.txt" "lookups.txt${tab}all.txt"
+git -C "$work/r" add -A
+git -C "$work/r" -c user.name=t -c user.email=t@t commit -qm renamed
+check 0 "a file pair the base already has applied is skipped"
+printf 'p f.go: Rot: os.Lstat\np z.go: Z: os.Remove\n' >"$work/r/all.txt"
+check 1 "the renamed file only shrinks after its pair merges"
 
 exit "$fail"

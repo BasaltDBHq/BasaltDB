@@ -17,6 +17,20 @@
 # and a directory here; so the file is emptied once its moves are on the
 # base.
 #
+# A baseline the base registers must still be here (after the package
+# moves): a baseline that only shrinks may be emptied, never deleted. A
+# change that renames or merges baseline files lists each file in
+# scripts/baseline-renames.txt as "old/path.txt<TAB>new/path.txt"; several
+# old files may name one new file. A file pair is refused unless old is a
+# file the base registers and is gone here, and new is registered here, is
+# absent at the base and is a file here. The new file's lines must come from
+# its old files: each line, with a "(N times)" count taken off as weight N
+# (1 without one) and its next-to-last ": " segment (a declaration) taken
+# off when it has one, must match an old line stripped the same way, and no
+# stripped line may weigh more in the new file than in the old ones. A pair
+# the base has already applied (old gone at the base, new a file there) is
+# skipped, so the pairs need not be removed after they merge.
+#
 # usage: sh scripts/baseline-shrink.sh <base-commit>
 set -eu
 
@@ -44,9 +58,15 @@ tagged() {
 	sed -e 's/[[:space:]]*$//' -e '/^#/d' | grep -v '^$' | sed "s|^|$1	|" || true
 }
 
+# base_listed reports whether the base's shrink-only.txt registers $1.
+base_listed() {
+	git show "$base:scripts/shrink-only.txt" 2>/dev/null | entries | grep -qxF -- "$1"
+}
+
 renames=scripts/baseline-renames.txt
 fail=0
 : >"$tmp/moves"
+: >"$tmp/filepairs"
 if [ -f "$renames" ]; then
 	entries <"$renames" >"$tmp/pairs"
 	while IFS= read -r pair; do
@@ -55,6 +75,21 @@ if [ -f "$renames" ]; then
 		if [ "$old" = "$pair" ] || [ -z "$old" ] || [ -z "$new" ] || [ "$new" != "${new%%"	"*}" ]; then
 			echo "$renames: not \"old/pkg<TAB>new/pkg\": $pair" >&2
 			fail=1
+			continue
+		fi
+		if ! git cat-file -e "$base:$old" 2>/dev/null && [ ! -e "$old" ] && [ "$(git cat-file -t "$base:$new" 2>/dev/null)" = blob ]; then
+			continue # a file pair the base already has applied
+		fi
+		if [ "$(git cat-file -t "$base:$old" 2>/dev/null)" = blob ]; then
+			if ! base_listed "$old" || [ -e "$old" ]; then
+				echo "$renames: $old must be a baseline file the base registers, gone here" >&2
+				fail=1
+			elif ! entries <scripts/shrink-only.txt | grep -qxF -- "$new" || git cat-file -e "$base:$new" 2>/dev/null || [ ! -f "$new" ]; then
+				echo "$renames: $new must be a baseline file registered here, absent at the base and a file here" >&2
+				fail=1
+			else
+				printf '%s\t%s\n' "$old" "$new" >>"$tmp/filepairs"
+			fi
 			continue
 		fi
 		if [ "$(git cat-file -t "$base:$old" 2>/dev/null)" != tree ] || [ -e "$old" ]; then
@@ -128,6 +163,54 @@ LC_ALL=C sort -u "$tmp/heads" | while IFS= read -r p; do
 		tagged "$f" <"$f"
 	done
 done >>"$tmp/new"
+
+# A baseline the base registers is still here, under its moved path, unless
+# a file pair renames it.
+git show "$base:scripts/shrink-only.txt" 2>/dev/null | entries | LC_ALL=C sort -u | while IFS= read -r p; do
+	git cat-file -e "$base:$p" 2>/dev/null || continue
+	m=$(echo "$p" | LC_ALL=C awk -v moves="$tmp/moves" "$(cat "$tmp/map.awk")"' { print mp($0, "/") }')
+	[ -e "$m" ] && continue
+	cut -f1 "$tmp/filepairs" | grep -qxF -- "$p" && continue
+	echo "$p: a registered baseline is gone; empty it instead, or list its rename in $renames" >&2
+	echo x
+done >"$tmp/gone"
+[ -s "$tmp/gone" ] && fail=1
+
+# Each renamed file's lines come from its old files.
+cut -f2 "$tmp/filepairs" | LC_ALL=C sort -u | while IFS= read -r n; do
+	: >"$tmp/pold"
+	awk -F '\t' -v n="$n" '$2 == n { print $1 }' "$tmp/filepairs" | while IFS= read -r o; do
+		git show "$base:$o" | tagged x
+	done >"$tmp/pold"
+	tagged x <"$n" >"$tmp/pnew"
+	LC_ALL=C awk -v moves="$tmp/moves" -v file="$n" "$(cat "$tmp/map.awk")"'
+function strip(s,    w, k, a, i, out) {
+	w = 1
+	if (match(s, / \([0-9]+ times\)$/)) {
+		w = substr(s, RSTART + 2, RLENGTH - 9) + 0
+		s = substr(s, 1, RSTART - 1)
+	}
+	k = split(s, a, ": ")
+	if (k >= 3) {
+		out = a[1]
+		for (i = 2; i <= k - 2; i++) out = out ": " a[i]
+		s = out ": " a[k]
+	}
+	weight = w
+	return s
+}
+FILENAME == ARGV[1] { sub(/^[^\t]*\t/, ""); k = strip(mp($0, "/")); old[k] += weight; next }
+{ sub(/^[^\t]*\t/, ""); line[NR] = $0; k = strip($0); new[k] += weight; key[NR] = k }
+END {
+	fail = 0
+	for (i in line) if (new[key[i]] > old[key[i]]) {
+		printf "%s: renamed baseline line not in its old files, or counted more often:\n\t%s\n", file, line[i] > "/dev/stderr"
+		fail = 1
+	}
+	exit fail
+}' "$tmp/pold" "$tmp/pnew" || echo x
+done >"$tmp/pairfail"
+[ -s "$tmp/pairfail" ] && fail=1
 
 # Base lines rewritten through the moves, then: no file holds a line more
 # often than the rewritten base does.

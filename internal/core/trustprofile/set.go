@@ -5,7 +5,6 @@ import (
 	"embed"
 	"io/fs"
 	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -57,7 +56,7 @@ func NewSet(builtin, operator []*Profile, refused []Refused) *Set {
 	s := &Set{refused: slices.Clone(refused)}
 	off := map[string]bool{}
 	for _, r := range refused {
-		off[strings.TrimSuffix(filepath.Base(r.File), jsonExt)] = true
+		off[strings.TrimSuffix(path.Base(r.File), jsonExt)] = true
 	}
 	ops := map[string]*Profile{}
 	for _, p := range uniqueByName(operator) {
@@ -136,6 +135,11 @@ func longest(group []*Profile, host string, exact bool) *Profile {
 
 // Refused are the operator files that were not loaded.
 func (s *Set) Refused() []Refused { return slices.Clone(s.refused) }
+
+// Profiles are every profile of s, operator ones first, each with its
+// state. Package pkg/trustprofile's tests read it; it is not a method so
+// that the public Set gains none.
+func Profiles(s *Set) []Listed { return slices.Clone(s.listed) }
 
 //go:embed profiles
 var builtinFS embed.FS
@@ -222,7 +226,7 @@ func (e *FileError) Unwrap() error { return e.Err }
 // left out.
 func (s *Set) Replacing(name string, add *Profile) *Set {
 	var ops, builtin []*Profile
-	for _, l := range s.listed {
+	for _, l := range Profiles(s) {
 		switch {
 		case l.Origin == Operator && l.Name == name:
 		case l.Origin == Operator:

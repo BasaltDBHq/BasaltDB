@@ -303,9 +303,10 @@ func TestRulesCatchViolations(t *testing.T) {
 		"e2e/release":                         {"imports internal/platform/vault/vaulttest (a test helper: only test files import it)"},
 		"web":                                 {"imports internal/agent", "w.go calls sqlguard.Check"},
 		"cmd/tool":                            {"c.go calls sqlguard.Check"},
-		"pkg/facade":                          {"imports internal/core/sqlguard", "p.go calls sqlguard.Check"},
-		"pkg/lib2":                            {"imports api/x"},
-		"pkg/other":                           {"imports internal/platform/db"},
+		// pkg may import core (forwards to it), but never call a decision.
+		"pkg/facade": {"p.go calls sqlguard.Check"},
+		"pkg/lib2":   {"imports api/x"},
+		"pkg/other":  {"imports internal/platform/db"},
 		// pkg/setup imports only its allowlist beyond its layer: the setup
 		// service and adapter pass, another outbound package does not.
 		"pkg/setup": {"imports internal/platform/db"},

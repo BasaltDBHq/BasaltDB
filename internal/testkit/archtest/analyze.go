@@ -69,7 +69,7 @@ var allowed = map[string][]string{
 	lOutbound: {lOutbound, lConfig, lCore, lLib, lPkg, lApi, lWeb},
 	lInbound:  {lInbound, lService, lConfig, lCore, lLib, lPkg, lApi, lWeb},
 	lCmd:      {lCmd, lApp, lService, lInbound, lConfig, lCore, lLib, lPkg, lApi, lWeb},
-	lPkg:      {lPkg, lLib},
+	lPkg:      {lPkg, lCore, lLib},
 	lApi:      {lApi},
 	lWeb:      {lCore, lLib},
 }
@@ -650,29 +650,44 @@ func checkPurity(v violations, reg *register, rel string, f *goFile) {
 		if ip == "time" && in([]string{"Now", "Since", "Until"}, sel.Sel.Name) {
 			v.add(rel, f.name+" calls time."+sel.Sel.Name+" (core must stay pure)")
 		}
-		if only, limited := extraOnly[ip]; limited && in(extras, ip) && !in(only, sel.Sel.Name) {
+		if only, limited := extraOnly[area][ip]; limited && in(extras, ip) && !in(only, sel.Sel.Name) {
 			v.add(rel, fmt.Sprintf("%s uses %s.%s (the register grants %s for %s only)", f.name, ip, sel.Sel.Name, ip, strings.Join(only, ", ")))
 		}
 		return true
 	})
 }
 
-// extraOnly limits an extra import to the names listed: setupcode may
-// import net for net.JoinHostPort and nothing else of it.
-var extraOnly = map[string][]string{netPkg: {"JoinHostPort"}}
+// extraOnly limits an extra import of a core package to the names listed:
+// setupcode may import net for net.JoinHostPort and trustprofile for
+// net.ParseIP, and nothing else of it.
+var extraOnly = map[string]map[string][]string{
+	coreSetupcode:    {netPkg: {"JoinHostPort"}},
+	coreTrustprofile: {netPkg: {"ParseIP"}},
+}
+
+// The core packages granted an extra import.
+const (
+	coreSetupcode    = "setupcode"
+	coreTrustprofile = "trustprofile"
+)
 
 // netPkg is the standard library's net package.
 const netPkg = "net"
 
 // extraAllowed reports whether the register may grant core package name the
 // extra import e: crypto/rand for key and salt generation in channel and
-// setupcode, net for setupcode's database address (net.JoinHostPort).
+// setupcode, net for setupcode's database address (net.JoinHostPort) and
+// trustprofile's exact-address match entries (net.ParseIP), and io/fs for
+// trustprofile's LoadFS, which reads the profiles of the fs.FS its caller
+// gives.
 func extraAllowed(name, e string) bool {
 	switch e {
 	case "crypto/rand":
-		return name == "channel" || name == "setupcode"
+		return name == "channel" || name == coreSetupcode
 	case netPkg:
-		return name == "setupcode"
+		return name == coreSetupcode || name == coreTrustprofile
+	case "io/fs":
+		return name == coreTrustprofile
 	}
 	return false
 }
@@ -703,7 +718,7 @@ func checkRegister(pkgs map[string]*goPkg, reg *register) []string {
 		}
 		for _, e := range row.extras {
 			if !extraAllowed(name, e) {
-				problems = append(problems, fmt.Sprintf("register row %s: extra import %q is not allowed (only crypto/rand, only for channel and setupcode; net, only for setupcode)", name, e))
+				problems = append(problems, fmt.Sprintf("register row %s: extra import %q is not allowed (only crypto/rand, only for channel and setupcode; net, only for setupcode and trustprofile; io/fs, only for trustprofile)", name, e))
 			}
 		}
 		if len(row.codecs) > 0 && row.kind != kindDecision {

@@ -64,7 +64,8 @@ var serviceIOBanned = map[string][]string{
 	// opening a browser runs a process; Command only names the opener
 	modulePath + "/internal/lib/browser": {"Open"},
 	// fetching a server's certificates dials it and runs a TLS handshake
-	modulePath + "/pkg/trustpin": {"Fetch"},
+	modulePath + "/pkg/trustpin":       {"Fetch"},
+	modulePath + "/internal/lib/pgtls": {"Fetch"},
 	// the pid file lock and its reader
 	modulePath + "/internal/lib/pidlock":   {"AcquireLock", "Running"},
 	modulePath + "/internal/lib/sysdns":    {"Resolver"},

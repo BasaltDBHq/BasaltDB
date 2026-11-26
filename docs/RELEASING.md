@@ -29,7 +29,7 @@ A release is two pushes on the same commit: a release candidate, which is built 
 
 On a machine with push access, after `master` is the commit you want:
 
-1. Run `make check-provider-roots`. It downloads each built-in trust profile's `source` (Supabase's and Amazon RDS's published roots) and compares each with the file the binary embeds. It needs the network and is not part of CI. When it fails, check that the provider only added roots, replace the file under `pkg/trustprofile/profiles/`, update its `sha256` in the profile and its pin in `pkg/trustprofile/builtin_test.go`, and merge that first.
+1. Run `make check-provider-roots`. It downloads each built-in trust profile's `source` (Supabase's and Amazon RDS's published roots) and compares each with the file the binary embeds. It needs the network and is not part of CI. When it fails, check that the provider only added roots, replace the file under `internal/core/trustprofile/profiles/`, update its `sha256` in the profile and its pin in `internal/core/trustprofile/builtin_test.go`, and merge that first.
 2. Make sure `CHANGELOG.md` on that commit has a `## [<version>] - <date>` section for the release (the tag without its `v`, for example `## [0.1.0-alpha] - 2026-11-24`). Its body becomes the release notes; the candidate fails at once without it.
 3. Push the release candidate:
 

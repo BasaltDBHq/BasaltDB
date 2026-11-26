@@ -71,7 +71,7 @@ test-systemd: ## A plugin under its systemd unit, isolation checked live (throwa
 
 .PHONY: check-provider-roots
 check-provider-roots: ## Download each built-in trust profile's source (one per roots file) and compare with the file's pinned SHA-256 (needs the network; not in CI)
-	@go test -tags providerroots -run '^TestProviderRootsCurrent$$' -count=1 -v ./pkg/trustprofile/
+	@go test -tags providerroots -run '^TestProviderRootsCurrent$$' -count=1 -v ./internal/core/trustprofile/
 
 .PHONY: test-cover
 test-cover: bin/gotestsum ## Tests with coverage.out

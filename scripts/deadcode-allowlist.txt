@@ -24,4 +24,3 @@ internal/platform/postgres/ledger.ReinstallNotices  # test oracle shared by ledg
 internal/plugin/out/plugintransport/dial.SocketDirIs  # shared by dial's and osservice's Linux tests; needs dial's unexported checkSocketDir
 internal/status.ValidateURL  # scripts/portal-verify (make portal-verify) calls it; deadcode does not read scripts/
 internal/status.isLoopback  # ValidateURL's check, for scripts/portal-verify
-pkg/trustprofile.SetSystemRootsForTest  # basalt-connect's internal/dbconn/trust_test.go calls it on main

@@ -1,24 +1,17 @@
-package trustprofile
+// Package certroots is the root certificates a TLS client checks against:
+// the system's trust store, which tests can replace, and the publicly
+// trusted roots the binary carries.
+package certroots
 
 import (
 	"crypto/x509"
-	"errors"
-	"fmt"
 	"sync"
 	"sync/atomic"
 
 	"golang.org/x/crypto/x509roots/fallback/bundle"
 )
 
-// A pin trusts one certificate for one host. A certificate of a publicly
-// trusted authority, or one that chains to it, can never be pinned: with
-// verify: ca it would accept every certificate that authority issues, for
-// any name, as the host (CONTRACT.md, Pinning on first use, Public
-// authorities). A host whose certificate a public authority signed needs
-// no pin; when it fails, it failed on the name, and the fix is the host
-// name its certificate names.
-
-// systemRoots is the system's trust store as IsPublic reads it; tests
+// systemRoots is the system's trust store as SystemRoots reads it; tests
 // replace it (SetSystemRootsForTest).
 var systemRoots atomic.Pointer[func() (*x509.CertPool, error)]
 
@@ -27,9 +20,8 @@ func init() {
 	systemRoots.Store(&f)
 }
 
-// SetSystemRootsForTest makes pool the system's trust store for IsPublic
-// with a nil pool, Parse and package trustpin, until restore is called.
-// Only tests call it.
+// SetSystemRootsForTest makes pool the system's trust store for SystemRoots
+// and IsPublic with a nil pool, until restore is called. Only tests call it.
 func SetSystemRootsForTest(pool *x509.CertPool) (restore func()) {
 	old := systemRoots.Load()
 	f := func() (*x509.CertPool, error) { return pool, nil } //nolint:unparam // the same type as x509.SystemCertPool
@@ -39,10 +31,6 @@ func SetSystemRootsForTest(pool *x509.CertPool) (restore func()) {
 
 // SystemRoots is the system's trust store.
 func SystemRoots() (*x509.CertPool, error) { return (*systemRoots.Load())() }
-
-// ErrPublic is a pin, or a verify: ca root, of a publicly trusted
-// certificate authority.
-var ErrPublic = errors.New("the certificate is, or chains to, an authority in the system's trust store")
 
 // PublicRoots are the publicly trusted roots this binary carries: the
 // Mozilla (NSS) root store, whatever the system's store holds. They are
@@ -80,18 +68,16 @@ func IsPublic(c *x509.Certificate, system *x509.CertPool) bool {
 	return err == nil
 }
 
-// checkNotPublic refuses an operator verify: ca profile with a public root.
-// Built-in profiles are vetted in the source tree and never use verify: ca.
-func checkNotPublic(s Spec, origin Origin, files []RootFile) error {
-	if origin != Operator || s.Verify != VerifyCA {
-		return nil
+// WithSystem is the system's authorities and cas. Without a system pool (an
+// error loading it) it is cas alone. It reads x509.SystemCertPool itself,
+// not SystemRoots. The pool is never changed after.
+func WithSystem(cas []*x509.Certificate) *x509.CertPool {
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		pool = x509.NewCertPool()
 	}
-	for _, f := range files {
-		for _, c := range f.Certs {
-			if IsPublic(c, nil) {
-				return fmt.Errorf("%s: %w; with verify %q it would accept any certificate that authority issues as this host, so it is refused (use the host name the certificate names instead)", f.Name, ErrPublic, VerifyCA)
-			}
-		}
+	for _, ca := range cas {
+		pool.AddCert(ca)
 	}
-	return nil
+	return pool
 }

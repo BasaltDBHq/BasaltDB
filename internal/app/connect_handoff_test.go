@@ -43,6 +43,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/handoff/out/connectrpc"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/connecttest"
@@ -442,15 +443,15 @@ func TestConnectOnlyHostileHandoffs(t *testing.T) {
 		f.runOnPage(pastedFor(t, f.d, dbHost))
 		other, err := channel.GenerateEngineKeys(time.Now)
 		require.NoError(t, err)
-		c := handoff.NewClient(nil, f.page.base, other, time.Now)
+		c := handoff.NewClient(connectrpc.New(nil, f.page.base), other, time.Now)
 		_, err = c.Collect(context.Background(), f.install.res.SetupID, f.install.res.Fingerprint)
 		require.ErrorIs(t, err, handoff.ErrNotHeld)
 		// The real key, with the other's signature: the same answer.
 		key := engineKeysOf(t, f.cfg)
-		_, err = handoff.NewClient(nil, f.page.base, keyWithSigner{Signer: other, spki: key.PublicKeySPKI()}, time.Now).
+		_, err = handoff.NewClient(connectrpc.New(nil, f.page.base), keyWithSigner{Signer: other, spki: key.PublicKeySPKI()}, time.Now).
 			Collect(context.Background(), f.install.res.SetupID, f.install.res.Fingerprint)
 		require.ErrorIs(t, err, handoff.ErrNotHeld)
-		addr, err := handoff.NewClient(nil, f.page.base, key, time.Now).Collect(context.Background(), f.install.res.SetupID, f.install.res.Fingerprint)
+		addr, err := handoff.NewClient(connectrpc.New(nil, f.page.base), key, time.Now).Collect(context.Background(), f.install.res.SetupID, f.install.res.Fingerprint)
 		require.NoError(t, err)
 		require.Equal(t, dbHost, addr.Address.Host)
 	})
@@ -461,7 +462,7 @@ func TestConnectOnlyHostileHandoffs(t *testing.T) {
 		f.runOnPage(pastedFor(t, f.d, dbHost))
 		key := engineKeysOf(t, f.cfg)
 		at := time.Now()
-		c := handoff.NewClient(nil, f.page.base, key, func() time.Time { return at })
+		c := handoff.NewClient(connectrpc.New(nil, f.page.base), key, func() time.Time { return at })
 		first, err := c.Collect(context.Background(), f.install.res.SetupID, f.install.res.Fingerprint)
 		require.NoError(t, err)
 		again, err := c.Collect(context.Background(), f.install.res.SetupID, f.install.res.Fingerprint)
@@ -692,13 +693,13 @@ func TestConnectOnlyHostileReachCheck(t *testing.T) {
 		addr := setupcode.Address{Host: dbHost, Port: 5432, Database: f.d.Admin.Config().Database}
 		other, err := channel.GenerateEngineKeys(time.Now)
 		require.NoError(t, err)
-		err = handoff.NewClient(nil, f.page.base, other, time.Now).Report(ctx, f.install.res.SetupID, f.install.res.Fingerprint, addr, handoff.Reach{})
+		err = handoff.NewClient(connectrpc.New(nil, f.page.base), other, time.Now).Report(ctx, f.install.res.SetupID, f.install.res.Fingerprint, addr, handoff.Reach{})
 		require.ErrorIs(t, err, handoff.ErrNotHeld)
 		key := engineKeysOf(t, f.cfg)
-		err = handoff.NewClient(nil, f.page.base, keyWithSigner{Signer: other, spki: key.PublicKeySPKI()}, time.Now).
+		err = handoff.NewClient(connectrpc.New(nil, f.page.base), keyWithSigner{Signer: other, spki: key.PublicKeySPKI()}, time.Now).
 			Report(ctx, f.install.res.SetupID, f.install.res.Fingerprint, addr, handoff.Reach{})
 		require.ErrorIs(t, err, handoff.ErrNotHeld)
-		c := handoff.NewClient(nil, f.page.base, key, time.Now)
+		c := handoff.NewClient(connectrpc.New(nil, f.page.base), key, time.Now)
 		require.ErrorIs(t, c.Report(ctx, f.install.res.SetupID, f.install.res.Fingerprint, addr, handoff.Reach{Reason: "BECAUSE"}), handoff.ErrNotHeld)
 		_, ok := f.srv.Reached(f.install.res.SetupID)
 		require.False(t, ok, "nothing refused is kept")

@@ -2,6 +2,7 @@ package status
 
 import (
 	"context"
+	"net/textproto"
 
 	"github.com/google/uuid"
 
@@ -80,4 +81,15 @@ type Terminal interface {
 // service's Probe.
 type UpgradeChecker interface {
 	UpgradeAvailable(ctx context.Context) (bool, error)
+}
+
+// PageFetcher fetches one path of the portal the check compares (Verify):
+// a GET of urlPath under the portal's origin, with its status code, its
+// response header and at most limit bytes of its body. An error says why
+// the path could not be fetched, in the words the report shows
+// (File.Detail). Base is that origin, without a trailing slash: the portal
+// the report names. out/portalfetch implements it over HTTPS.
+type PageFetcher interface {
+	Base() string
+	Get(ctx context.Context, urlPath string, limit int64) (code int, header textproto.MIMEHeader, body []byte, err error)
 }

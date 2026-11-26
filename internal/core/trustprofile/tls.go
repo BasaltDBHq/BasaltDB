@@ -6,24 +6,14 @@ import (
 	"errors"
 )
 
-// Trust makes host's TLS config t, and each fallback's (of gives a
-// fallback's host and config), trust set's profiles as package
-// pkg/trustprofile's Trust says for a *pgconn.Config: every config that
-// verifies the host name (sslmode=verify-full) for a host one of set's
-// profiles matches trusts that profile's roots as well as the system's
-// authorities. Each host is matched on its own. A config that already has
-// roots keeps them; verify-ca, require and weaker modes are left as they
-// are. It takes the fields, not the driver's config, so this package
-// imports no driver.
-func Trust[F any](set *Set, host string, t *tls.Config, fallbacks []F, of func(F) (string, *tls.Config)) {
-	trustOne(set, host, t)
-	for _, fb := range fallbacks {
-		h, ft := of(fb)
-		trustOne(set, h, ft)
-	}
-}
-
-func trustOne(set *Set, host string, t *tls.Config) {
+// Trust makes host's TLS config t, when it verifies the host name
+// (sslmode=verify-full) and one of set's profiles matches host, trust that
+// profile's roots as well as the system's authorities. A config that
+// already has roots keeps them; verify-ca, require and weaker modes are
+// left as they are. It takes the host and its TLS config, not a driver's
+// config, so this package imports no driver: a connection with several
+// hosts calls it once for each host.
+func Trust(host string, t *tls.Config, set *Set) {
 	if !verifiesHost(t) || t.RootCAs != nil {
 		return
 	}

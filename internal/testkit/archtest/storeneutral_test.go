@@ -34,10 +34,6 @@ type storeRule struct {
 	// allowedDeps are store packages the domain may still reach through
 	// another package, by import path, each with its reason.
 	allowedDeps map[string]string
-	// throughTrustprofile skips the one named edge of the driver-free rule
-	// (pkg/trustprofile's pgconn, drivers_test.go) for a domain that reaches
-	// pkg/trustprofile; every other import of it is followed.
-	throughTrustprofile bool
 }
 
 // storeBoundImports are a store's packages: the SQL guard, the Postgres
@@ -181,8 +177,6 @@ var pluginStoreRule = storeRule{
 		`feed_events.go: text "2006-01-02T15:04:05.999999Z"`:                             "Go's time layout for the feed's RFC 3339 times, not a store code",
 	},
 	allowedDeps: map[string]string{},
-	// The plugin host reaches pkg/trustprofile through internal/status.
-	throughTrustprofile: true,
 }
 
 // domainStoreRules are the store-neutral domains' roots. Each rule also
@@ -348,10 +342,8 @@ func requireStoreNeutral(t *testing.T, rule storeRule, hint string) {
 
 // storeChains walks graph (package to its imports) from root and returns
 // each store package it reaches, with the shortest import chain to it. It
-// does not walk past a store package. With throughTrustprofile it skips
-// the one named edge of the driver-free rule (pkg/trustprofile's pgconn,
-// drivers_test.go); every other import of pkg/trustprofile is followed.
-func storeChains(graph map[string][]string, root string, throughTrustprofile bool) map[string]string {
+// does not walk past a store package.
+func storeChains(graph map[string][]string, root string) map[string]string {
 	out := map[string]string{}
 	parent := map[string]string{root: ""}
 	queue := []string{root}
@@ -359,9 +351,6 @@ func storeChains(graph map[string][]string, root string, throughTrustprofile boo
 		p := queue[0]
 		queue = queue[1:]
 		for _, q := range graph[p] {
-			if throughTrustprofile && p == trustprofilePkg && q == pgconnPkg {
-				continue
-			}
 			if _, seen := parent[q]; seen {
 				continue
 			}
@@ -394,7 +383,7 @@ func requireNoStoreDeps(t *testing.T, rule storeRule) {
 		if _, ok := graph[pkg]; !ok {
 			t.Fatalf("go list -deps ./internal/%s (GOOS=%s) did not list the package itself: the check reads nothing", rel, goos)
 		}
-		chains := storeChains(graph, pkg, rule.throughTrustprofile)
+		chains := storeChains(graph, pkg)
 		found := make([]string, 0, len(chains))
 		for p := range chains {
 			found = append(found, p)
@@ -435,14 +424,14 @@ func TestStoreChainsFollowTheRule(t *testing.T) {
 		m + "internal/platform/postgres/pgpii": {m + "internal/platform/postgres/sqlport"},
 		m + "internal/c":                       {"fmt", m + "internal/core/piistore"},
 		m + "internal/d":                       {m + "pkg/trustprofile"},
-		m + "pkg/trustprofile":                 {pgconnPkg, m + "internal/lib/z"},
+		m + "pkg/trustprofile":                 {"github.com/jackc/pgx/v5/pgconn", m + "internal/lib/z"},
 	}
-	got := storeChains(graph, m+"internal/a", false)
+	got := storeChains(graph, m+"internal/a")
 	want := map[string]string{sq: "internal/a -> internal/lib/y -> " + sq}
 	if !maps.Equal(got, want) {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	got = storeChains(graph, m+"internal/b", false)
+	got = storeChains(graph, m+"internal/b")
 	want = map[string]string{
 		m + "internal/platform/postgres/pgpii": "internal/b -> internal/lib/w -> internal/platform/postgres/pgpii",
 		"github.com/jackc/pgx/v5/pgconn":       "internal/b -> internal/lib/w -> github.com/jackc/pgx/v5/pgconn",
@@ -450,21 +439,16 @@ func TestStoreChainsFollowTheRule(t *testing.T) {
 	if !maps.Equal(got, want) {
 		t.Errorf("got %q, want %q (the walk stops at a store package)", got, want)
 	}
-	if got := storeChains(graph, m+"internal/c", false); len(got) != 0 {
+	if got := storeChains(graph, m+"internal/c"); len(got) != 0 {
 		t.Errorf("a clean graph must pass; got %q", got)
 	}
-	got = storeChains(graph, m+"internal/d", true)
-	want = map[string]string{sq: "internal/d -> pkg/trustprofile -> internal/lib/z -> " + sq}
-	if !maps.Equal(got, want) {
-		t.Errorf("got %q, want %q (only trustprofile's pgconn edge is skipped)", got, want)
-	}
-	got = storeChains(graph, m+"internal/d", false)
+	got = storeChains(graph, m+"internal/d")
 	want = map[string]string{
-		pgconnPkg: "internal/d -> pkg/trustprofile -> " + pgconnPkg,
-		sq:        "internal/d -> pkg/trustprofile -> internal/lib/z -> " + sq,
+		"github.com/jackc/pgx/v5/pgconn": "internal/d -> pkg/trustprofile -> github.com/jackc/pgx/v5/pgconn",
+		sq:                               "internal/d -> pkg/trustprofile -> internal/lib/z -> " + sq,
 	}
 	if !maps.Equal(got, want) {
-		t.Errorf("got %q, want %q (a rule without the exception follows the edge)", got, want)
+		t.Errorf("got %q, want %q (every edge is followed, pkg/trustprofile's too)", got, want)
 	}
 }
 

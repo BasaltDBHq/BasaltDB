@@ -14,23 +14,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fileReads are the calls that open or read a file by path: the plugin
-// package reads engine.json only through Ports.ReadConfig (as root, the
-// engine's hardened read), so every other one must be listed here. A
+// fileReads are the calls that open or read a file, or list a directory,
+// by path (os.OpenRoot and os.OpenInRoot open one inside a root): the
+// plugin package reads engine.json only through Ports.ReadConfig (as root,
+// the engine's hardened read), so every other one must be listed here. A
 // method call reads too when its name is in methodReads, whatever value it
 // is called on: the Files port (named "files", whatever holds it) or a
 // handle it returned, such as an *os.Root.
 var fileReads = map[string]map[string]bool{
-	"os":     {"ReadFile": true, "Open": true, "OpenFile": true},
+	"os":     {"ReadFile": true, "Open": true, "OpenFile": true, "ReadDir": true, "OpenRoot": true, "OpenInRoot": true},
 	"config": {"Load": true, "LoadOpenRaw": true, "LoadNoFollow": true},
 }
 
-// methodReads are the method names that open or read a file by path:
-// ReadOpen, HashOpen and CopyOut are the Files port's and its roots' reads,
-// WriteNew and WriteOpen its by-path opens to write (listed so every open
-// stays named), readCursor is the feed's Ports.ReadFeedCursor. A plugin method named Open
-// is caught too and listed with why it reads no file.
-var methodReads = map[string]bool{"ReadFile": true, "Open": true, "OpenFile": true, "OpenRoot": true, "ReadOpen": true, "HashOpen": true, "CopyOut": true, "WriteNew": true, "WriteOpen": true, "readCursor": true}
+// methodReads are the method names that open or read a file or a directory
+// by path: ReadFile, Open, OpenFile, OpenRoot and ReadDir as the os package
+// and an *os.Root name them; ReadOpen, HashOpen and CopyOut are the Files
+// port's and its roots' reads, WriteNew and WriteOpen its by-path opens to
+// write (listed so every open stays named), readCursor is the feed's
+// Ports.ReadFeedCursor. A plugin method named Open is caught too and listed
+// with why it reads no file.
+var methodReads = map[string]bool{
+	"ReadFile": true, "Open": true, "OpenFile": true, "OpenRoot": true, "ReadDir": true,
+	"ReadOpen": true, "HashOpen": true, "CopyOut": true, "WriteNew": true, "WriteOpen": true, "readCursor": true,
+}
 
 // receiverName names the value a read method is called on: "files" for the
 // Files port (an identifier or a field named files or Files), else the
@@ -52,9 +58,9 @@ func receiverName(x ast.Expr) string {
 }
 
 // pluginFileReads are the only places in the plugin package's own sources
-// (not its tests, not its in/ and out/ adapters) that open or read a file
-// by path, as file:function:package.call(path argument), with why none is
-// engine.json.
+// (not its tests, not its in/ and out/ adapters) that open or read a file,
+// or list a directory, by path, as file:function:package.call(path
+// argument), with why none is engine.json.
 var pluginFileReads = map[string]string{
 	"install.go:Stage:files.OpenRoot(src)":                                                  "the plugin source directory the person named, opened as a root",
 	"install.go:copyFile:srcRoot.CopyOut(filepath.FromSlash(rel))":                          "a listed file of the source, inside its root, no link followed, copied into the plugin root (O_EXCL)",
@@ -63,6 +69,12 @@ var pluginFileReads = map[string]string{
 	"kept_entries.go:Manifest:files.OpenRoot(t.Dir)":                                        "an upload's directory in the state directory, opened as a root",
 	"kept_entries.go:Manifest:root.ReadOpen(ManifestFile)":                                  "an upload's manifest, inside the upload's root, no link followed",
 	"kept_entries.go:readEntries:files.ReadOpen(p)":                                         "the engine-kept entries file in the state directory, no link followed",
+	"kept_entries.go:Sweep:files.ReadDir(s.Root())":                                         "lists the plugin root's name directories to sweep, names only, no file read",
+	"kept_entries.go:Sweep:files.ReadDir(filepath.Join(s.Root(), n.Name()))":                "lists one name directory's copies to sweep, names only, no file read",
+	"sweep.go:Sweep:files.ReadDir(instDir)":                                                 "lists a removed copy's directory to delete what it holds, names only, no file read",
+	"trust.go:check:files.ReadDir(t.dir)":                                                   "lists the trust store's keys to check each one's owner and mode, names only",
+	"trust.go:key:files.ReadDir(t.dir)":                                                     "lists the trust store's keys to find the one a signature names, names only",
+	"trust_list.go:AddedKeys:files.ReadDir(t.dir)":                                          "lists the trust store's keys the person added, names only",
 	"kept_upload.go:MarkExecutables:files.OpenRoot(t.Dir)":                                  "an upload's directory in the state directory, opened as a root",
 	"kept_upload.go:writePart:root.WriteOpen(filepath.FromSlash(p))":                        "writes a part of an upload, inside the upload's root, no link followed, no read",
 	"kept_upload.go:writePart:files.OpenRoot(filepath.Join(s.uploadsDir(), u.id.String()))": "an upload's directory in the state directory, opened as a root",
@@ -214,6 +226,15 @@ func a() { stdos.ReadFile("p"); cfg.LoadOpenRaw("p", nil) }
 import "os"
 func a() { os.Stat("p"); os.WriteFile("p", nil, 0) }
 `)))
+	require.Equal(t, []string{"x.go:a:os.OpenRoot(dir).ReadFile(\"engine.json\")", "x.go:b:os.ReadDir(dir)", "x.go:c:os.OpenInRoot(dir)", "x.go:d:files.ReadDir(dir)", "x.go:e:root.ReadDir(\".\")"},
+		fileReadsIn("x.go", parse(`package p
+import "os"
+func a() { os.OpenRoot(dir).ReadFile("engine.json") }
+func b() { os.ReadDir(dir) }
+func c() { os.OpenInRoot(dir, "engine.json") }
+func d() { t.files.ReadDir(dir) }
+func e() { root.ReadDir(".") }
+`)), "a root's read, a root opened by the os package and a directory listing are seen")
 	require.Equal(t, []string{"x.go:a:files.ReadFile(\"p\")", "x.go:b:files.OpenFile(path)", "x.go:c:files.OpenRoot(dir)", "x.go:d:root.OpenFile(name)", "x.go:e:fsys.ReadFile(p)", "x.go:f:r.f.readCursor(dir)"},
 		fileReadsIn("x.go", parse(`package p
 func a(files Files) { files.ReadFile("p"); files.Lstat("p") }

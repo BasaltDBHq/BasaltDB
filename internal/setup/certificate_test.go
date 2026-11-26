@@ -17,6 +17,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
+// The confirm step's certificate: no TLS is NONE whatever the dial said,
+// NOT_VERIFIED names no issuer, and PROVIDER names the built-in profile.
 func TestCertificateOfTheConfirmStep(t *testing.T) {
 	t.Parallel()
 	shown, issuer := setup.CertificateOf(nil, "PUBLIC", "")

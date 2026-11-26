@@ -81,7 +81,4 @@ func usage(w io.Writer) {
 }
 
 // fail prints err for command name and returns the error exit code.
-func fail(w io.Writer, name string, err error) int {
-	fmt.Fprintf(w, "basalt %s: %v\n", name, err)
-	return cli.ExitError
-}
+func fail(w io.Writer, name string, err error) int { return cli.Fail(w, name, err) }

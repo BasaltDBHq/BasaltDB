@@ -33,10 +33,12 @@ type FeedRow struct {
 	Op       *string
 	// Verb is the store's own word for the request's operation (CONTRACT.md,
 	// Stores, Operations), nil on a row that has none.
-	Verb         *string
-	RunID        *string
-	TaskID       *string
-	Table        *string
+	Verb   *string
+	RunID  *string
+	TaskID *string
+	// Resource is the store's name of what a write changed (the ledger
+	// detail's resource), nil on a row that has none.
+	Resource     *string
 	Rows         *string
 	CascadedRows *string
 	ApprovalID   *string

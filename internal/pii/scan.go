@@ -217,7 +217,7 @@ func (r *scanRun) source(ctx context.Context, src ScanSource) error {
 		if why := skipReason(err); why != "" {
 			r.res.Skipped++
 			r.s.log.Warn("pii: skipped a relation in this scan: "+why, "agent", src.Agent,
-				"table", t.target.Namespace+"."+t.target.Name, "columns", len(t.cols))
+				"resource", t.target.Namespace+"."+t.target.Name, "columns", len(t.cols))
 			continue
 		}
 		if err != nil {

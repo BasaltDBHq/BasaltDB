@@ -17,6 +17,58 @@ prefix=$(go list -m)/
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
+# pkgroot may import only pkg/ packages from this module: an import of any
+# other module package would make internal code look live.
+bad=$(go list -f '{{join .Imports "\n"}}' ./internal/testkit/pkgroot |
+	awk -v prefix="$prefix" 'index($0, prefix) == 1 && index($0, prefix "pkg/") != 1')
+if [ -n "$bad" ]; then
+	echo "internal/testkit/pkgroot imports module packages outside pkg/:" >&2
+	printf '%s\n' "$bad" | sed "s|^$prefix|  |" >&2
+	exit 1
+fi
+
+# deadcode reports only packages a root reaches, so a package no root reaches
+# would hide all its code. Every module package must be reached on linux or
+# darwin, except:
+#   - test helpers: internal/testkit/..., scripts/..., a path element that
+#     ends in "test", the end-to-end test's helper and the test plugin;
+#   - packages with no non-test Go function (nofunc): they cannot hold dead
+#     code, and the check fails when one gains a function;
+#   - api/plugin, the exported plugin contract package: its consumers and the
+#     contract tests call its helpers.
+helpers="e2e/release/installscript
+internal/plugin/out/plugintransport/testnotifier
+internal/plugin/out/plugintransport/testnotifier/cmd/basalt-test-notifier"
+nofunc="api/connect
+api/mcp/vault
+internal/app/servedagent"
+contract="api/plugin"
+for os in linux darwin; do
+	# shellcheck disable=SC2086
+	GOOS=$os GOARCH=amd64 CGO_ENABLED=0 go list -deps $roots
+done | LC_ALL=C sort -u >"$tmp/reached"
+go list ./... | LC_ALL=C sort >"$tmp/all"
+unreached=$(LC_ALL=C comm -23 "$tmp/all" "$tmp/reached" | sed "s|^$prefix||" |
+	grep -Ev '^(internal/testkit|scripts)(/|$)|(^|/)[^/]*test(/|$)' |
+	grep -vxF "$helpers
+$nofunc
+$contract" || true)
+if [ -n "$unreached" ]; then
+	echo "No root (cmd/basalt, internal/testkit/pkgroot) reaches these packages, so deadcode cannot see them:" >&2
+	printf '%s\n' "$unreached" | sed 's/^/  /' >&2
+	echo "Use them from the binary, call their pkg/ API from pkgroot, or delete them." >&2
+	exit 1
+fi
+for p in $nofunc; do
+	# shellcheck disable=SC2016
+	files=$(go list -f '{{$d := .Dir}}{{range .GoFiles}}{{$d}}/{{.}} {{end}}' "./$p")
+	# shellcheck disable=SC2086
+	if [ -n "$files" ] && grep -q '^func ' $files; then
+		echo "$p is listed in scripts/deadcode.sh as having no functions, but now has one; reach it from a root instead" >&2
+		exit 1
+	fi
+done
+
 for os in linux darwin; do
 	# No pipe: a load error must stop the check, not yield an empty report.
 	# shellcheck disable=SC2016,SC2086

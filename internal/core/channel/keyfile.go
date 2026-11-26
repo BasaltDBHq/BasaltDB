@@ -1,7 +1,6 @@
 package channel
 
 import (
-	"bytes"
 	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -13,6 +12,8 @@ import (
 	"regexp"
 	"time"
 	"unicode/utf8"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 )
 
 // KeyFileName is the engine key file in the engine's stateDir.
@@ -132,15 +133,12 @@ func decodeKeyFile(raw []byte) (*keyFile, error) {
 		return nil, errors.New("not UTF-8")
 	}
 	var f keyFile
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&f); err != nil {
-		f.clear()
-		return nil, errors.New("not the key file's JSON shape")
-	}
-	if dec.More() {
+	if err := strictjson.Decode(raw, &f); errors.Is(err, strictjson.ErrTrailingData) {
 		f.clear()
 		return nil, errors.New("trailing data after the JSON")
+	} else if err != nil {
+		f.clear()
+		return nil, errors.New("not the key file's JSON shape")
 	}
 	return &f, nil
 }

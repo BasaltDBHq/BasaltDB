@@ -249,6 +249,7 @@ func TestDecodeRefusesPayloads(t *testing.T) {
 		"database with an isolate":  {replace(`"database":"postgres"`, `"database":"post\u2066gres"`), setupcode.RefusalInvalid},
 		"database with zero width":  {replace(`"database":"postgres"`, `"database":"post\u200bgres"`), setupcode.RefusalInvalid},
 		"trailing data":             {append(append([]byte{}, good...), []byte(" {}")...), setupcode.RefusalInvalid},
+		"trailing brace":            {append(append([]byte{}, good...), '}'), setupcode.RefusalInvalid},
 		// The last of duplicate keys would win in Go's decoder: a reader
 		// that kept the first would see another code.
 		"duplicate key":        {replace(`"kind":"INSTALL"`, `"kind":"UPGRADE","kind":"INSTALL"`), setupcode.RefusalInvalid},

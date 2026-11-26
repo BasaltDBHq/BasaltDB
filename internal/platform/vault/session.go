@@ -1,7 +1,6 @@
 package vault
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 )
 
 // Link sessions (CONTRACT.md, Vault channel, Handshake and Frames): a page
@@ -292,9 +292,7 @@ func parseFrameIn(content []byte) (frameIn, bool) {
 	if !utf8.Valid(content) {
 		return f, false
 	}
-	dec := json.NewDecoder(bytes.NewReader(content))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&f); err != nil || dec.More() {
+	if err := strictjson.Decode(content, &f); err != nil {
 		return f, false
 	}
 	ok := f.Type != nil && f.ID != nil && *f.ID >= 1 && f.Body != nil && f.More != nil

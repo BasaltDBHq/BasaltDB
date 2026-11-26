@@ -29,6 +29,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 )
 
 // Code layout (CONTRACT.md, The setup code).
@@ -305,9 +307,7 @@ func decodePayload(raw []byte) (Payload, error) {
 		return Payload{}, refuse(RefusalUnsupportedFormat, "")
 	}
 	var p Payload
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&p); err != nil {
+	if err := strictjson.Decode(raw, &p); err != nil {
 		return Payload{}, refuse(RefusalInvalid, "payload does not match the schema")
 	}
 	again, err := json.Marshal(p)

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
@@ -342,9 +343,7 @@ func (s *Server) Reveal(w http.ResponseWriter, r *http.Request, name string,
 // field and the secret present.
 func revealBody(body []byte) (linksvc.RevealRequest, bool) {
 	var in linksvc.RevealRequest
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&in); err != nil || dec.More() {
+	if err := strictjson.Decode(body, &in); err != nil {
 		return linksvc.RevealRequest{}, false
 	}
 	p := in.Proof

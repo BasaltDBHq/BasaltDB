@@ -1,7 +1,6 @@
 package channel
 
 import (
-	"bytes"
 	"crypto/ecdh"
 	"crypto/rand"
 	"crypto/subtle"
@@ -9,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"unicode/utf8"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 )
 
 // prologueLine starts the prologue (CONTRACT.md, Vault channel, Handshake).
@@ -337,13 +338,10 @@ func strictJSON(raw []byte, p *welcomePayload) error {
 	if !utf8.Valid(raw) {
 		return errors.New("not UTF-8")
 	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(p); err != nil {
-		return fmt.Errorf("json: %w", err)
-	}
-	if dec.More() {
+	if err := strictjson.Decode(raw, p); errors.Is(err, strictjson.ErrTrailingData) {
 		return errors.New("trailing data")
+	} else if err != nil {
+		return fmt.Errorf("json: %w", err)
 	}
 	if p.EngineKey == "" || p.Sig == "" {
 		return errors.New("a required field is missing")

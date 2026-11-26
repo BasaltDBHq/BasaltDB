@@ -3,7 +3,6 @@
 package plugin
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 )
 
 // EntriesPath is the entries file.
@@ -35,10 +35,8 @@ func (s *Store) Entries(cfg config.Config) ([]config.Plugin, error) {
 		return refused(ReasonUnsafePath, "%s %s, so the engine keeps no plugin entry until it is moved aside "+
 			"(sudo mv %s %s.bad) and the engine restarted", s.EntriesPath(), why, s.EntriesPath(), s.EntriesPath())
 	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
 	var entries []config.Plugin
-	if err := dec.Decode(&entries); err != nil || dec.More() {
+	if err := strictjson.Decode(raw, &entries); err != nil {
 		return nil, bad("is not a JSON array of plugin entries")
 	}
 	if entries == nil {

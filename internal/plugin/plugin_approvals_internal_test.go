@@ -28,6 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/pluginsign"
 )
 
 // Hooks of the test plugin's manifest.
@@ -78,13 +79,13 @@ func (f *pluginFixture) installCopyOver(instance, hooks, transport string, signe
 `, hooks, transport, args, sha256.Sum256(exe))
 	require.NoError(t, os.WriteFile(filepath.Join(src, ManifestFile), []byte(manifest), 0o644))
 	if signed {
-		key, err := GenerateKey()
+		key, err := pluginsign.GenerateKey()
 		require.NoError(t, err)
 		pemBytes, err := MarshalPublicKey(&key.PublicKey)
 		require.NoError(t, err)
 		_, _, err = f.trust.Add(pemBytes)
 		require.NoError(t, err)
-		sig, err := SignManifest([]byte(manifest), key)
+		sig, err := pluginsign.SignManifest([]byte(manifest), key)
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(src, SignatureFile), sig, 0o644))
 	}

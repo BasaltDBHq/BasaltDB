@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/pluginsign"
 )
 
 // TestAddedKeys: the keys the person added are listed by id, in order; a
@@ -22,13 +23,13 @@ func TestAddedKeys(t *testing.T) {
 	require.Empty(t, none, "a store that does not exist holds no key")
 
 	f := newFixture(t)
-	signerID, err := KeyID(&f.signer.PublicKey)
+	signerID, err := pluginsign.KeyID(&f.signer.PublicKey)
 	require.NoError(t, err)
-	other, err := GenerateKey()
+	other, err := pluginsign.GenerateKey()
 	require.NoError(t, err)
 	otherID := f.trustKey(&other.PublicKey)
 
-	impostor, err := GenerateKey()
+	impostor, err := pluginsign.GenerateKey()
 	require.NoError(t, err)
 	impostorPEM, err := MarshalPublicKey(&impostor.PublicKey)
 	require.NoError(t, err)

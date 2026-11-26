@@ -51,12 +51,7 @@ internal/platform/postgres/resultsize.IsSizeLimit
 internal/platform/postgres/store.NewPool
 internal/platform/shim.Serve
 internal/platform/vault.conn.pendingLen
-internal/plugin.GenerateKey
-internal/plugin.KeyID
-internal/plugin.MarshalPrivateKey
-internal/plugin.ParsePrivateKey
 internal/plugin.Plugins.run
-internal/plugin.SignManifest
 internal/plugin/out/plugintransport/dial.SocketDirIs
 internal/status.ValidateURL
 internal/status.isLoopback

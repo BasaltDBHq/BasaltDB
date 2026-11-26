@@ -1,4 +1,4 @@
-package localsetup
+package setup
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -22,9 +21,7 @@ const (
 	// database presents.
 	CodeTrustRootMismatch = "TRUST_ROOT_MISMATCH"
 
-	defaultPort   = 5432
-	paramSSLMode  = "sslmode"
-	sslVerifyFull = "verify-full"
+	defaultPort = 5432
 )
 
 // pin is a certificate authority the person trusted that this engine's own
@@ -41,7 +38,7 @@ type pin struct {
 // loginRefused: the database refused the login (SQLSTATE class 28,
 // invalid authorization).
 func loginRefused(err error) bool {
-	code := setup.SQLStateOf(err)
+	code := SQLStateOf(err)
 	return len(code) >= 2 && code[:2] == "28"
 }
 
@@ -50,7 +47,7 @@ func notVerified() *RefusalError {
 }
 
 // connectError is the fixed refusal of a failed connection.
-func (s *Service) connectError(ctx context.Context, err error) *RefusalError {
+func (s *LocalService) connectError(ctx context.Context, err error) *RefusalError {
 	switch {
 	case s.be.CertificateNotVerified(err):
 		return notVerified()
@@ -68,7 +65,7 @@ func (s *Service) connectError(ctx context.Context, err error) *RefusalError {
 // trust profile covers); with the person's trustRoot, the engine reads the
 // chain itself and logs in only against that one certificate. The pin is nil
 // when the certificate verified without one.
-func (s *Service) connectAdmin(ctx context.Context, req Request) (Conn, *pin, error) {
+func (s *LocalService) connectAdmin(ctx context.Context, req Request) (Conn, *pin, error) {
 	conn, err := s.opts.Dial(ctx, req.DatabaseURL)
 	if err == nil {
 		return conn, s.keptPin(req), nil
@@ -89,7 +86,7 @@ func (s *Service) connectAdmin(ctx context.Context, req Request) (Conn, *pin, er
 
 // readPin reads the chain of the admin string's one host and makes the pin
 // the person's trustRoot names, or the refusal that offers it.
-func (s *Service) readPin(ctx context.Context, req Request) (*pin, error) {
+func (s *LocalService) readPin(ctx context.Context, req Request) (*pin, error) {
 	host, port, ok := hostPort(req.DatabaseURL)
 	if !ok {
 		return nil, notVerified()
@@ -124,7 +121,7 @@ func (s *Service) readPin(ctx context.Context, req Request) (*pin, error) {
 // write records the pin in the ledger, in the run's transaction, and writes
 // it to trust.d next to engine.json. A profile that covers the host by now
 // refuses, unless it is this pin.
-func (s *Service) writePin(ctx context.Context, p *pin, tx Tx) error {
+func (s *LocalService) writePin(ctx context.Context, p *pin, tx Tx) error {
 	if err := s.be.RecordTrustPin(ctx, tx.Port(), p.host, p.port, p.sha256); err != nil {
 		return s.setupFailed("record the trust pin", err)
 	}
@@ -139,7 +136,7 @@ func (s *Service) writePin(ctx context.Context, p *pin, tx Tx) error {
 // that follows a failed commit, which rolled the ledger record back but left
 // the pin. nil when there is no trustRoot or no such pin. The run records it
 // again; writing it finds it there already.
-func (s *Service) keptPin(req Request) *pin {
+func (s *LocalService) keptPin(req Request) *pin {
 	if req.TrustRoot == "" {
 		return nil
 	}

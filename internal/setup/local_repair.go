@@ -1,4 +1,4 @@
-package localsetup
+package setup
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"net/url"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -20,12 +19,12 @@ import (
 // credential that logs in as the agent's role is NOTHING_TO_FIX, and one
 // the engine cannot try (the database unreachable, its certificate not
 // verified) is that refusal. A login the database refuses is repairable.
-func (s *Service) repairable(ctx context.Context, j agentJob) (string, error) {
+func (s *LocalService) repairable(ctx context.Context, j agentJob) (string, error) {
 	if j.missing {
 		return "", nil // no credential to try: the fix writes a new one
 	}
 	dsn, err := s.be.ReadCredential(j.agent.Store.CredentialFile)
-	if errors.Is(err, setup.ErrForeignCredential) {
+	if errors.Is(err, ErrForeignCredential) {
 		return "", refuse(CodeSetupFailed, "The agent's credential on this computer is not one this engine wrote. Nothing changed.")
 	}
 	if err != nil {
@@ -49,7 +48,7 @@ func (s *Service) repairable(ctx context.Context, j agentJob) (string, error) {
 }
 
 // repairPlan is the REPAIR script for a new password, with its words.
-func (s *Service) repairPlan(j agentJob, password string) (guardmodel.Script, []string, error) {
+func (s *LocalService) repairPlan(j agentJob, password string) (guardmodel.Script, []string, error) {
 	script, err := s.be.RepairScript(j.names, j.req.Agent, password, statementTimeout.Milliseconds())
 	if err != nil {
 		return guardmodel.Script{}, nil, s.setupFailed("plan the repair", err)
@@ -61,7 +60,7 @@ func (s *Service) repairPlan(j agentJob, password string) (guardmodel.Script, []
 	return script, lines, nil
 }
 
-func (s *Service) checkRepair(ctx context.Context, j agentJob) (CheckAnswer, error) {
+func (s *LocalService) checkRepair(ctx context.Context, j agentJob) (CheckAnswer, error) {
 	if _, err := s.repairable(ctx, j); err != nil {
 		return CheckAnswer{}, err
 	}
@@ -91,7 +90,7 @@ func (s *Service) checkRepair(ctx context.Context, j agentJob) (CheckAnswer, err
 // credential before the commit, as the install does: a known failure puts
 // the old credential back, and a commit whose answer was lost keeps the new
 // one, which may be the role's only password now.
-func (s *Service) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) {
+func (s *LocalService) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) {
 	dsn, err := s.repairable(ctx, j)
 	if err != nil {
 		return RunAnswer{}, err
@@ -123,7 +122,7 @@ func (s *Service) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) 
 		if err != nil {
 			return err
 		}
-		if err := setup.ApplyInitTx(ctx, s.be, tx.Port(), script); err != nil {
+		if err := ApplyInitTx(ctx, s.be, tx.Port(), script); err != nil {
 			return refuse(CodeSetupFailed, fmt.Sprintf("The role %s is not a plain agent role this admin can repair (elevated attributes, other memberships, owned objects or settings it cannot reset). Nothing changed.", j.role))
 		}
 		wrote = true
@@ -158,7 +157,7 @@ func (s *Service) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) 
 // role.<ref>). With the file gone it is made from the admin string, as the
 // install makes it. On a host this engine pins the credential uses
 // sslmode=verify-full with no sslrootcert, so the pin applies.
-func (s *Service) newCredential(j agentJob, dsn, password string) (string, error) {
+func (s *LocalService) newCredential(j agentJob, dsn, password string) (string, error) {
 	var out string
 	if j.missing {
 		made, err := s.be.AgentConnString(j.req.DatabaseURL, j.role, password)

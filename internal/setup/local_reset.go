@@ -1,4 +1,4 @@
-package localsetup
+package setup
 
 import (
 	"context"
@@ -50,7 +50,7 @@ type resetMark struct {
 // Engine answers what the engine is set up with. It names no agent: the
 // setup it asks about may have been made under an agent name and OS user
 // the person's link does not carry.
-func (s *Service) Engine(_ context.Context) (EngineAnswer, error) {
+func (s *LocalService) Engine(_ context.Context) (EngineAnswer, error) {
 	cfg, err := s.engineConfig()
 	if err != nil {
 		return EngineAnswer{}, err
@@ -71,7 +71,7 @@ func (s *Service) Engine(_ context.Context) (EngineAnswer, error) {
 
 // NotMine marks the person's "No, this isn't mine" for basalt init. It
 // changes no file and no database.
-func (s *Service) NotMine(_ context.Context) error {
+func (s *LocalService) NotMine(_ context.Context) error {
 	if _, err := s.engineConfig(); err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func (s *Service) NotMine(_ context.Context) error {
 
 // resetAsked reads the mark once: true when the person answered "No"
 // within resetAskedFor.
-func (s *Service) resetAsked() bool {
+func (s *LocalService) resetAsked() bool {
 	s.mark.mu.Lock()
 	defer s.mark.mu.Unlock()
 	at := s.mark.at
@@ -93,7 +93,7 @@ func (s *Service) resetAsked() bool {
 
 // engineConfig is the config of a person-operated engine that serves the
 // setup page's jobs, or the refusal every such request gets.
-func (s *Service) engineConfig() (config.Config, error) {
+func (s *LocalService) engineConfig() (config.Config, error) {
 	if !s.opts.Configured {
 		return config.Config{}, refuse(CodeJobUnavailable, "This engine has no config yet. Ask the agent for a new link.")
 	}

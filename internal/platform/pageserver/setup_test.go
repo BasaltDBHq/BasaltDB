@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
@@ -30,16 +30,16 @@ var adminString = "postgres://admin" + ":" + adminSecret + "@db.example:5432/app
 // fakeJobs records what reached the setup and answers with refusal, when
 // set.
 type fakeJobs struct {
-	got     []localsetup.Request
-	doctors []localsetup.DoctorRequest
+	got     []setup.Request
+	doctors []setup.DoctorRequest
 	engines int
 	notMine int
 	refusal error
 }
 
-func (f *fakeJobs) Engine(context.Context) (localsetup.EngineAnswer, error) {
+func (f *fakeJobs) Engine(context.Context) (setup.EngineAnswer, error) {
 	f.engines++
-	return localsetup.EngineAnswer{Agents: []string{"demo_bot"}, Databases: []localsetup.EngineDatabase{{Database: "app", Host: "db.example", Port: 5432}}}, f.refusal
+	return setup.EngineAnswer{Agents: []string{"demo_bot"}, Databases: []setup.EngineDatabase{{Database: "app", Host: "db.example", Port: 5432}}}, f.refusal
 }
 
 func (f *fakeJobs) NotMine(context.Context) error {
@@ -47,19 +47,19 @@ func (f *fakeJobs) NotMine(context.Context) error {
 	return f.refusal
 }
 
-func (f *fakeJobs) Doctor(_ context.Context, req localsetup.DoctorRequest) (localsetup.DoctorAnswer, error) {
+func (f *fakeJobs) Doctor(_ context.Context, req setup.DoctorRequest) (setup.DoctorAnswer, error) {
 	f.doctors = append(f.doctors, req)
-	return localsetup.DoctorAnswer{Database: "app"}, f.refusal
+	return setup.DoctorAnswer{Database: "app"}, f.refusal
 }
 
-func (f *fakeJobs) Check(_ context.Context, req localsetup.Request) (localsetup.CheckAnswer, error) {
+func (f *fakeJobs) Check(_ context.Context, req setup.Request) (setup.CheckAnswer, error) {
 	f.got = append(f.got, req)
-	return localsetup.CheckAnswer{Database: "app"}, f.refusal
+	return setup.CheckAnswer{Database: "app"}, f.refusal
 }
 
-func (f *fakeJobs) Run(_ context.Context, req localsetup.Request) (localsetup.RunAnswer, error) {
+func (f *fakeJobs) Run(_ context.Context, req setup.Request) (setup.RunAnswer, error) {
 	f.got = append(f.got, req)
-	return localsetup.RunAnswer{Agent: req.Agent}, f.refusal
+	return setup.RunAnswer{Agent: req.Agent}, f.refusal
 }
 
 type setupCall struct {
@@ -125,24 +125,24 @@ func TestSetupRoutesTakeTheAdminStringFromThePageOnly(t *testing.T) {
 	require.Equal(t, http.StatusOK, big.Code, big.Body.String())
 	require.Len(t, jobs.got, 3)
 
-	jobs.refusal = &localsetup.RefusalError{Code: localsetup.CodeLoginFailed, Message: "The database refused the login."}
+	jobs.refusal = &setup.RefusalError{Code: setup.CodeLoginFailed, Message: "The database refused the login."}
 	w := setupCall{path: pageserver.SetupCheckPath, origin: setupOrigin, body: setupBody("")}.do(h)
 	require.Equal(t, http.StatusConflict, w.Code)
 	var body map[string]string
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	require.Equal(t, localsetup.CodeLoginFailed, body["code"])
+	require.Equal(t, setup.CodeLoginFailed, body["code"])
 	// A certificate the person may trust travels in the refusal's body.
-	jobs.refusal = &localsetup.RefusalError{
-		Code: localsetup.CodeCertificateNotVerified, Message: "not verified",
-		TrustRoot: &localsetup.TrustRoot{Subject: "CN=Root", SHA256: strings.Repeat("a", 64), ExpiresAt: "2030-01-01T00:00:00Z"},
+	jobs.refusal = &setup.RefusalError{
+		Code: setup.CodeCertificateNotVerified, Message: "not verified",
+		TrustRoot: &setup.TrustRoot{Subject: "CN=Root", SHA256: strings.Repeat("a", 64), ExpiresAt: "2030-01-01T00:00:00Z"},
 	}
 	w = setupCall{path: pageserver.SetupCheckPath, origin: setupOrigin, body: setupBody("")}.do(h)
 	var withRoot struct {
 		Code      string
-		TrustRoot localsetup.TrustRoot
+		TrustRoot setup.TrustRoot
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &withRoot))
-	require.Equal(t, localsetup.CodeCertificateNotVerified, withRoot.Code)
+	require.Equal(t, setup.CodeCertificateNotVerified, withRoot.Code)
 	require.Equal(t, "CN=Root", withRoot.TrustRoot.Subject)
 	require.Equal(t, strings.Repeat("a", 64), withRoot.TrustRoot.SHA256)
 	require.NotContains(t, logs.String(), adminSecret, "the body is never logged")
@@ -152,17 +152,17 @@ func TestSetupRoutesTakeTheAdminStringFromThePageOnly(t *testing.T) {
 func TestSetupRefusalStatuses(t *testing.T) {
 	t.Parallel()
 	for code, status := range map[string]int{
-		localsetup.CodeInvalidArgument:         http.StatusBadRequest,
-		localsetup.CodeConnectionStringRefused: http.StatusBadRequest,
-		localsetup.CodeChallengeExpired:        http.StatusBadRequest,
-		localsetup.CodeJobUnavailable:          http.StatusConflict,
-		localsetup.CodeBusy:                    http.StatusConflict,
-		localsetup.CodeRoleExists:              http.StatusConflict,
-		localsetup.CodePasskeyRequired:         http.StatusConflict,
-		localsetup.CodeDatabaseUnreachable:     http.StatusServiceUnavailable,
-		localsetup.CodeTimeLimit:               http.StatusGatewayTimeout,
+		setup.CodeInvalidArgument:         http.StatusBadRequest,
+		setup.CodeConnectionStringRefused: http.StatusBadRequest,
+		setup.CodeChallengeExpired:        http.StatusBadRequest,
+		setup.CodeJobUnavailable:          http.StatusConflict,
+		setup.CodeBusy:                    http.StatusConflict,
+		setup.CodeRoleExists:              http.StatusConflict,
+		setup.CodePasskeyRequired:         http.StatusConflict,
+		setup.CodeDatabaseUnreachable:     http.StatusServiceUnavailable,
+		setup.CodeTimeLimit:               http.StatusGatewayTimeout,
 	} {
-		jobs := &fakeJobs{refusal: &localsetup.RefusalError{Code: code, Message: "m"}}
+		jobs := &fakeJobs{refusal: &setup.RefusalError{Code: code, Message: "m"}}
 		h := setuppage.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))
 		w := setupCall{path: pageserver.SetupRunPath, origin: setupOrigin, body: setupBody("")}.do(h)
 		require.Equal(t, status, w.Code, code)
@@ -201,7 +201,7 @@ func TestConfiguredPagesTakeNoAdminString(t *testing.T) {
 	h := newMounted(setupOrigin, slog.New(slog.DiscardHandler)).Handler()
 	w := setupCall{path: pageserver.SetupRunPath, origin: setupOrigin, body: setupBody("")}.do(h)
 	require.Equal(t, http.StatusConflict, w.Code)
-	require.Contains(t, w.Body.String(), localsetup.CodeJobUnavailable)
+	require.Contains(t, w.Body.String(), setup.CodeJobUnavailable)
 
 	for _, path := range []string{
 		"/api/v1/approvals/" + uuid.NewString() + "/approve",
@@ -276,12 +276,12 @@ func TestDoctorRouteTakesNoAdminString(t *testing.T) {
 		require.Equal(t, http.StatusForbidden, w.Code)
 	}
 	require.Len(t, jobs.doctors, 2)
-	require.Equal(t, localsetup.DoctorRequest{Agent: "demo_bot", OSUser: "alice"}, jobs.doctors[0])
+	require.Equal(t, setup.DoctorRequest{Agent: "demo_bot", OSUser: "alice"}, jobs.doctors[0])
 
 	h := newMounted(setupOrigin, slog.New(slog.DiscardHandler)).Handler()
 	w := setupCall{path: pageserver.SetupDoctorPath, origin: setupOrigin, body: `{"agent":"demo_bot","osUser":"alice"}`}.do(h)
 	require.Equal(t, http.StatusConflict, w.Code)
-	require.Contains(t, w.Body.String(), localsetup.CodeJobUnavailable)
+	require.Contains(t, w.Body.String(), setup.CodeJobUnavailable)
 }
 
 // The engine check and the "No" take an empty object, never the admin
@@ -319,16 +319,16 @@ func TestNotYourDatabaseRoutesTakeNothing(t *testing.T) {
 	for _, path := range []string{pageserver.SetupEnginePath, pageserver.SetupNotMinePath} {
 		w := setupCall{path: path, origin: setupOrigin, body: `{}`}.do(h)
 		require.Equal(t, http.StatusConflict, w.Code)
-		require.Contains(t, w.Body.String(), localsetup.CodeJobUnavailable)
+		require.Contains(t, w.Body.String(), setup.CodeJobUnavailable)
 	}
 }
 
 // A TRUST check's refusal of a changed certificate carries the pin.
 func TestSetupRefusalCarriesThePinnedCertificate(t *testing.T) {
 	t.Parallel()
-	jobs := &fakeJobs{refusal: &localsetup.RefusalError{
-		Code: localsetup.CodeCertificateNotVerified, Message: "m", Pinned: strings.Repeat("b", 64),
-		TrustRoot: &localsetup.TrustRoot{Subject: "CN=x", SHA256: strings.Repeat("a", 64), ExpiresAt: "2030-01-01T00:00:00Z"},
+	jobs := &fakeJobs{refusal: &setup.RefusalError{
+		Code: setup.CodeCertificateNotVerified, Message: "m", Pinned: strings.Repeat("b", 64),
+		TrustRoot: &setup.TrustRoot{Subject: "CN=x", SHA256: strings.Repeat("a", 64), ExpiresAt: "2030-01-01T00:00:00Z"},
 	}}
 	h := setuppage.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))
 	w := setupCall{path: pageserver.SetupCheckPath, origin: setupOrigin, body: setupBody("")}.do(h)
@@ -343,9 +343,9 @@ func TestSetupRefusalCarriesThePinnedCertificate(t *testing.T) {
 func TestSetupFailedLogsItsCause(t *testing.T) {
 	t.Parallel()
 	var logs bytes.Buffer
-	jobs := &fakeJobs{refusal: &localsetup.RefusalError{
-		Code: localsetup.CodeSetupFailed, Message: "Reading the database or running the setup failed (Postgres error 42P01, install script, statement 3); nothing changed.",
-		Cause: &localsetup.Cause{Step: "install script, statement 3", SQLState: "42P01", Message: `relation "basalt_meta.installs" does not exist`},
+	jobs := &fakeJobs{refusal: &setup.RefusalError{
+		Code: setup.CodeSetupFailed, Message: "Reading the database or running the setup failed (Postgres error 42P01, install script, statement 3); nothing changed.",
+		Cause: &setup.Cause{Step: "install script, statement 3", SQLState: "42P01", Message: `relation "basalt_meta.installs" does not exist`},
 	}}
 	h := setuppage.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.NewTextHandler(&logs, nil)))
 	w := setupCall{path: pageserver.SetupRunPath, origin: setupOrigin, body: setupBody("")}.do(h)

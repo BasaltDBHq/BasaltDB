@@ -75,21 +75,21 @@ var plainConfigLoads = map[string]string{
 	"internal/handoff/out/handofffiles/setupfiles.go:PendingSetup:LoadNoFollow": "the engine's hand-off, as the engine's user",
 	// The setup page's agent jobs (update, remove, repair) refuse an
 	// engine that runs as root before they read the config.
-	"internal/setup/in/localsetup/agentjobs.go:configuredAgent:Load": "the setup page's agent jobs, after refusing an engine that runs as root",
+	"internal/setup/local_agentjobs.go:configuredAgent:Load": "the setup page's agent jobs, after refusing an engine that runs as root",
 	// Reached only after configuredAgent, which refuses an engine that
 	// runs as root.
-	"internal/setup/in/localsetup/agentjobs.go:validateAgentJob:Load": "after configuredAgent refused an engine that runs as root",
+	"internal/setup/local_agentjobs.go:validateAgentJob:Load": "after configuredAgent refused an engine that runs as root",
 	// runAgentJob's removal, after validateAgentJob (configuredAgent)
 	// refused an engine that runs as root.
-	"internal/setup/in/localsetup/agentjobs.go:forget:Load": "a removal, after configuredAgent refused an engine that runs as root",
+	"internal/setup/local_agentjobs.go:forget:Load": "a removal, after configuredAgent refused an engine that runs as root",
 	// The setup page's reset refuses an engine that runs as root before it
 	// reads the config.
-	"internal/setup/in/localsetup/reset.go:engineConfig:Load":              "the setup page's reset, after refusing an engine that runs as root",
+	"internal/setup/local_reset.go:engineConfig:Load":                      "the setup page's reset, after refusing an engine that runs as root",
 	"internal/app/setup.go:agentServiceSpec:UpsertedVault":                 "the hardened read: root opens the existing config through openEngineFile",
 	"internal/handoff/out/handofffiles/pathfiles.go:ClearSetup:ClearSetup": "the engine's hand-off, as the engine's user",
 	"internal/handoff/out/handofffiles/setupfiles.go:change:UpdateConfig":  "never as root: a root engine never collects an address (ErrEngineAsRoot), so the confirm step that writes the config is never reached",
-	"internal/setup/in/localsetup/agentjobs.go:forget:RemoveAgents":        "a removal, after configuredAgent refused an engine that runs as root",
-	"internal/setup/in/localsetup/run.go:writeConfig:UpsertAgentVault":     "an engine with no config writes its first engine.json; WaitsForConfig never waits as root",
+	"internal/setup/local_agentjobs.go:forget:RemoveAgents":                "a removal, after configuredAgent refused an engine that runs as root",
+	"internal/setup/local_run.go:writeConfig:UpsertAgentVault":             "an engine with no config writes its first engine.json; WaitsForConfig never waits as root",
 	// The setup page's engine files forward each loader for the callers
 	// listed above (setup.EngineFiles), which reach them by port.
 	"internal/setup/out/enginefiles/enginefiles.go:LoadConfig:Load":                   "a one-line forward; its callers are listed above",

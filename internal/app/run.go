@@ -476,7 +476,7 @@ func setupJobs(cfg config.Config, configPath, origin string, log *slog.Logger, r
 	if cfg.AgentOperated() || os.Geteuid() == 0 || origin != setup.PageOrigin {
 		return nil
 	}
-	jobs, err := newLocalSetup(localsetup.Options{ConfigPath: configPath, Origin: origin, Configured: true, CredentialChanged: rotated})
+	jobs, err := newLocalSetup(setup.LocalOptions{ConfigPath: configPath, Origin: origin, Configured: true, CredentialChanged: rotated})
 	if err != nil {
 		log.Warn("the setup page cannot update or remove agents", "err", err)
 		return nil
@@ -598,7 +598,7 @@ func (env agentEnv) checkLink(a config.Agent) string {
 	if env.setupOrigin == "" {
 		return ""
 	}
-	link, err := localsetup.Link(env.setupOrigin, localsetup.Job{Job: localsetup.JobUpdate, Agent: a.Name, OSUser: a.OSUser})
+	link, err := localsetup.Link(env.setupOrigin, localsetup.Job{Job: setup.JobUpdate, Agent: a.Name, OSUser: a.OSUser})
 	if err != nil {
 		return ""
 	}

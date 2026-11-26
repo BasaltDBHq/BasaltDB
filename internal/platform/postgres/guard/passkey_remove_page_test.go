@@ -16,12 +16,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // pageEngine is a person-operated engine whose engine.json serves agent
 // a on d, and its setup page's jobs.
-func pageEngine(t *testing.T, d *guardtest.DB, name string, a *guardtest.Agent) *localsetup.Service {
+func pageEngine(t *testing.T, d *guardtest.DB, name string, a *guardtest.Agent) *setup.LocalService {
 	t.Helper()
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "engine.json")
@@ -32,7 +32,7 @@ func pageEngine(t *testing.T, d *guardtest.DB, name string, a *guardtest.Agent) 
 		OperatedBy: "PERSON", PersonUIDs: []uint32{4242}, VaultDefault: config.VaultOff,
 	}, config.Agent{Name: name, OSUser: "alice", Store: config.PostgresStore(cred)})
 	require.NoError(t, err)
-	svc, err := localsetup.New(localsetup.Options{
+	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: cfgPath, Origin: "http://localhost:8787", Prefix: d.Names.Prefix, Configured: true,
 		Euid: func() int { return 4000 },
@@ -55,8 +55,8 @@ func TestPasskeyRemoveOnTheSetupPageRevokesTheLastPasskey(t *testing.T) {
 	in := newRun(t, a, "remove the spam lead")
 	held, _ := previewAndHold(t, a.Conn, in, `DELETE FROM public.leads WHERE id = $1`, []any{3}, []string{})
 
-	req := localsetup.Request{
-		Job: localsetup.JobPasskeyRemove, Agent: "bot", OSUser: "alice", DatabaseURL: d.URL,
+	req := setup.Request{
+		Job: setup.JobPasskeyRemove, Agent: "bot", OSUser: "alice", DatabaseURL: d.URL,
 		CredentialID: base64.RawURLEncoding.EncodeToString(p.ID),
 	}
 	checked, err := svc.Check(ctx, req)
@@ -86,14 +86,14 @@ func TestPasskeyRemoveOnTheSetupPageRevokesTheLastPasskey(t *testing.T) {
 
 	// Removing it again: it is not active any more.
 	_, err = svc.Run(ctx, req)
-	var r *localsetup.RefusalError
+	var r *setup.RefusalError
 	require.ErrorAs(t, err, &r)
-	require.Equal(t, localsetup.CodeAnswersInvalid, r.Code)
+	require.Equal(t, setup.CodeAnswersInvalid, r.Code)
 	require.Equal(t, "This passkey is not active any more. Nothing changed.", r.Message)
 	for _, bad := range []string{"not base64!", "", strings.Repeat("A", 2000)} {
 		req.CredentialID = bad
 		_, err = svc.Check(ctx, req)
 		require.ErrorAs(t, err, &r)
-		require.Equal(t, localsetup.CodeAnswersInvalid, r.Code, bad)
+		require.Equal(t, setup.CodeAnswersInvalid, r.Code, bad)
 	}
 }

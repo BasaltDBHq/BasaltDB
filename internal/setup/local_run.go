@@ -1,4 +1,4 @@
-package localsetup
+package setup
 
 import (
 	"context"
@@ -8,7 +8,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -22,7 +21,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // Refusal codes and their statuses (CONTRACT.md, The local setup page,
@@ -54,16 +52,18 @@ const (
 	CodeGrantsNotRevoked = "GRANTS_NOT_REVOKED"
 	// CodeGuardUnusable: the database has a basalt_meta this build cannot
 	// install over or update (an older install, or a partial one).
-	CodeGuardUnusable = setup.SetuprunCodeGuardUnusable
+	CodeGuardUnusable = SetuprunCodeGuardUnusable
 	CodeTimeLimit     = "TIME_LIMIT"
 )
 
-// Refusal is a refused setup call: a code and its fixed message. Status,
-// when set, is its HTTP status in place of the code's.
+// Refusal is a refused setup call: a code and its fixed message. Internal
+// marks a failure of this engine itself after the database changed (its
+// config or files could not be written), which the page answers as an
+// internal error in place of the code's status.
 type RefusalError struct {
-	Code    string
-	Message string
-	Status  int
+	Code     string
+	Message  string
+	Internal bool
 	// TrustRoot is set on a CERTIFICATE_NOT_VERIFIED the person can answer
 	// by trusting the chain's top for the host.
 	TrustRoot *TrustRoot
@@ -97,8 +97,8 @@ func (r *RefusalError) Error() string { return r.Message }
 func refuse(code, message string) *RefusalError { return &RefusalError{Code: code, Message: message} }
 
 // AsRefusal is err as a refusal; anything else is SETUP_FAILED, its text
-// only in the redacted Cause. The Service's calls return only refusals
-// (Service.refused), so this reads no database error itself.
+// only in the redacted Cause. The LocalService's calls return only refusals
+// (LocalService.refused), so this reads no database error itself.
 func AsRefusal(err error) *RefusalError {
 	var r *RefusalError
 	if errors.As(err, &r) {
@@ -108,7 +108,7 @@ func AsRefusal(err error) *RefusalError {
 }
 
 // asRefusal is AsRefusal with the database error's message in the Cause.
-func (s *Service) asRefusal(err error) *RefusalError {
+func (s *LocalService) asRefusal(err error) *RefusalError {
 	var r *RefusalError
 	if errors.As(err, &r) {
 		return r
@@ -161,7 +161,7 @@ type bound struct {
 }
 
 // challenge makes a fresh challenge for req's job on b.
-func (s *Service) challenge(req Request, b bound) (Challenge, error) {
+func (s *LocalService) challenge(req Request, b bound) (Challenge, error) {
 	c := Challenge{
 		Challenge: make([]byte, challengeLen), UserID: make([]byte, userIDLen),
 		UserName: "BasaltDB · " + req.Agent, DisplayName: "BasaltDB · " + b.database,
@@ -182,7 +182,7 @@ func (s *Service) challenge(req Request, b bound) (Challenge, error) {
 
 // mac is the keyed hash over the challenge's fields and the job's, each
 // length-prefixed so no two inputs share an encoding.
-func (s *Service) mac(req Request, b bound, c Challenge) []byte {
+func (s *LocalService) mac(req Request, b bound, c Challenge) []byte {
 	h := hmac.New(sha256.New, s.key)
 	h.Write([]byte(macDomain))
 	demoFlag := "0"
@@ -204,7 +204,7 @@ func (s *Service) mac(req Request, b bound, c Challenge) []byte {
 // verifyPasskey checks the challenge's expiry and the registration, before
 // anything connects; checkBinding checks its MAC once the server named the
 // database. Only called with a passkey in the request.
-func (s *Service) verifyPasskey(req Request) (*passkey.Credential, error) {
+func (s *LocalService) verifyPasskey(req Request) (*passkey.Credential, error) {
 	c := req.Challenge
 	if c == nil {
 		return nil, refuse(CodeChallengeInvalid, "This passkey was made for another setup page. Reload the page and start again.")
@@ -212,11 +212,11 @@ func (s *Service) verifyPasskey(req Request) (*passkey.Credential, error) {
 	if !s.opts.Now().Before(c.ExpiresAt) {
 		return nil, refuse(CodeChallengeExpired, "This page waited more than 15 minutes. Check again, then create the passkey.")
 	}
-	rr, err := setup.RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
+	rr, err := RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
 	if err != nil {
 		return nil, refuse(CodeChallengeInvalid, "This passkey was made for another setup page. Reload the page and start again.")
 	}
-	cred, err := setup.VerifyRegistration(rr, req.Passkey.RegistrationResponse, s.rp)
+	cred, err := VerifyRegistration(rr, req.Passkey.RegistrationResponse, s.rp)
 	if err != nil {
 		return nil, refuse(CodePasskeyInvalid, "The passkey could not be checked. Create it again on this page.")
 	}
@@ -258,7 +258,7 @@ func defaultPasskeyLabel(hostname func() (string, error)) string {
 }
 
 // checkBinding refuses a challenge made for another job, database or host.
-func (s *Service) checkBinding(req Request, b bound) error {
+func (s *LocalService) checkBinding(req Request, b bound) error {
 	if req.Challenge == nil || !hmac.Equal(req.Challenge.MAC, s.mac(req, b, *req.Challenge)) {
 		return refuse(CodeChallengeInvalid, "This passkey was made for another setup page or database. Reload the page and start again.")
 	}
@@ -268,14 +268,14 @@ func (s *Service) checkBinding(req Request, b bound) error {
 // Run runs the install once: the guard, the sample data, the agent and the
 // passkey in one transaction, then the agent's credential and engine.json,
 // written as this engine's own user. One run at a time.
-func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
+func (s *LocalService) Run(ctx context.Context, req Request) (RunAnswer, error) {
 	given := req.DatabaseURL
 	req.DatabaseURL = s.verifyByDefault(given)
 	a, err := s.run(ctx, req)
 	return a, scrub(scrub(s.refused(err), given), req.DatabaseURL)
 }
 
-func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
+func (s *LocalService) run(ctx context.Context, req Request) (RunAnswer, error) {
 	if !s.busy.TryLock() {
 		return RunAnswer{}, refuse(CodeBusy, "Another setup is running. Wait for it to finish.")
 	}
@@ -349,7 +349,7 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 		if needed && cred == nil {
 			return refuse(CodePasskeyRequired, "The database has no passkey for this computer yet: create one on this page first. Nothing changed.")
 		}
-		if err := setup.ApplyInitTx(ctx, s.be, tx.Port(), script); err != nil {
+		if err := ApplyInitTx(ctx, s.be, tx.Port(), script); err != nil {
 			if r := s.grantsNotRevoked(err, j.role); r != nil {
 				return r
 			}
@@ -413,7 +413,7 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 	// its role finishes with it (ownRole).
 	if err := files.writeConfig(req, j.uid); err != nil {
 		r := refuse(CodeSetupFailed, "The database is set up, but this engine could not write its config. Check that the engine's own folder can be written, then run the setup again on this page: it finishes with the agent this engine already holds.")
-		r.Status = http.StatusInternalServerError
+		r.Internal = true
 		return RunAnswer{}, r
 	}
 	answer := RunAnswer{Agent: req.Agent, Lines: lines, Warnings: append([]string{}, warnings...), Passkeys: []RegisteredPasskey{}, MCPCommand: "basalt mcp --agent " + req.Agent}
@@ -427,11 +427,11 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 // engineFiles are the agent's credential and engine.json, next to each
 // other in the engine's own folder.
 type engineFiles struct {
-	fs                 setup.EngineFiles
+	fs                 EngineFiles
 	config, credential string
 }
 
-func (s *Service) files(agent string) engineFiles {
+func (s *LocalService) files(agent string) engineFiles {
 	return engineFiles{
 		fs:         s.be,
 		config:     s.opts.ConfigPath,
@@ -537,7 +537,7 @@ func (u *unknownOutcomeError) Unwrap() error { return u.err }
 // commit that fails without the server's answer is an unknownOutcomeError; one the
 // server answered (an error of its own, or a commit that became a rollback)
 // is a known failure, and so is fn's.
-func (s *Service) inTx(ctx context.Context, conn Conn, fn func(Tx) error) error {
+func (s *LocalService) inTx(ctx context.Context, conn Conn, fn func(Tx) error) error {
 	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return err
@@ -586,9 +586,9 @@ const maxLeftTables = 300
 // a setup grant on a table or sequence not picked now that this admin
 // cannot revoke (guardmodel.UnpickedGrantsDetail, then the relations). nil for any other
 // error.
-func (s *Service) grantsNotRevoked(err error, role string) *RefusalError {
+func (s *LocalService) grantsNotRevoked(err error, role string) *RefusalError {
 	_, detail, ok := s.be.DatabaseError(err)
-	if !ok || setup.SQLStateOf(err) != sqlstateLedgerInputInvalid {
+	if !ok || SQLStateOf(err) != sqlstateLedgerInputInvalid {
 		return nil
 	}
 	_, tables, ok := strings.Cut(detail, guardmodel.UnpickedGrantsDetail)

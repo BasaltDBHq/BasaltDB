@@ -1,4 +1,4 @@
-package localsetup
+package setup
 
 import (
 	"context"
@@ -12,7 +12,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
-	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // The column labels of an install of a real database (CONTRACT.md, The
@@ -105,7 +104,7 @@ func checkClasses(req Request, picks []TablePick) error {
 			return bad("a column of a table the agent does not get")
 		case seen[key]:
 			return bad("a column given twice")
-		case !setup.PlainColumn(c.Column) || !guardmodel.ValidLabel(c.label()) || !guardmodel.ValidWas(c.Was.guard()):
+		case !PlainColumn(c.Column) || !guardmodel.ValidLabel(c.label()) || !guardmodel.ValidWas(c.Was.guard()):
 			return bad("a class, entity type or phone region the page does not set")
 		}
 		seen[key] = true
@@ -147,7 +146,7 @@ func labelsSQL(req Request) string {
 // grants (pkg/setup's writeLabels takes those): the person labels only the
 // columns this page showed, and a role finished after an interrupted run
 // can hold grants beyond the picks, whose columns restPublic must not mark.
-func (s *Service) writeLabels(ctx context.Context, tx Tx, names guardmodel.Names, picks []TablePick, req Request, now time.Time) (int, error) {
+func (s *LocalService) writeLabels(ctx context.Context, tx Tx, names guardmodel.Names, picks []TablePick, req Request, now time.Time) (int, error) {
 	if len(req.ColumnClasses) == 0 && !req.RestPublic {
 		return 0, nil
 	}
@@ -174,7 +173,7 @@ func (s *Service) writeLabels(ctx context.Context, tx Tx, names guardmodel.Names
 // the classifier's suggestion. A failed listing fails the check (the person
 // must see the columns a label or restPublic covers); a failed sample or key
 // read only leaves a column without a suggestion.
-func (s *Service) columns(ctx context.Context, conn Conn, j job) ([]ColumnInfo, bool, error) {
+func (s *LocalService) columns(ctx context.Context, conn Conn, j job) ([]ColumnInfo, bool, error) {
 	tables := make([]string, len(j.picks))
 	for i, p := range j.picks {
 		tables[i] = p.Table
@@ -220,7 +219,7 @@ func (s *Service) columns(ctx context.Context, conn Conn, j job) ([]ColumnInfo, 
 // stops after sampleBudget, and a column whose sample fails or runs out of
 // time gets no suggestion. The values stay in memory and are dropped as
 // each column is scored.
-func (s *Service) suggest(ctx context.Context, conn Conn, listed []piistore.Column, out []ColumnInfo) {
+func (s *LocalService) suggest(ctx context.Context, conn Conn, listed []piistore.Column, out []ColumnInfo) {
 	// A failed catalog read leaves the columns' keys unknown; each still
 	// carries its kind, so the check goes on.
 	cc, _ := s.be.PIIColumns(ctx, conn.Port(), listed)

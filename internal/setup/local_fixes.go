@@ -1,4 +1,4 @@
-package localsetup
+package setup
 
 import (
 	"bytes"
@@ -11,7 +11,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
-	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // The fixes of the Update check (CONTRACT.md, The Update check): LABELS,
@@ -39,7 +38,7 @@ func nothingToFix() *RefusalError { return refuse(CodeNothingToFix, "There is no
 // anything, after the agent and the admin string's target (validateAgentJob):
 // a guard of this engine's prefix and the agent's role. It returns the
 // database the server names.
-func (s *Service) fixDatabase(ctx context.Context, tx Tx, j agentJob) (string, error) {
+func (s *LocalService) fixDatabase(ctx context.Context, tx Tx, j agentJob) (string, error) {
 	database, err := s.currentDatabase(ctx, tx)
 	if err != nil {
 		return "", err
@@ -54,7 +53,7 @@ func (s *Service) fixDatabase(ctx context.Context, tx Tx, j agentJob) (string, e
 }
 
 // checkFix is a fix's check: it reads and changes nothing.
-func (s *Service) checkFix(ctx context.Context, j agentJob) (CheckAnswer, error) {
+func (s *LocalService) checkFix(ctx context.Context, j agentJob) (CheckAnswer, error) {
 	switch j.req.Job {
 	case JobTrust:
 		return s.checkTrust(ctx, j)
@@ -97,7 +96,7 @@ func fixAnswer(database string, lines []string, sql string) CheckAnswer {
 
 // runFix is a fix's run: its check again, then its change, in one
 // transaction.
-func (s *Service) runFix(ctx context.Context, j agentJob) (RunAnswer, error) {
+func (s *LocalService) runFix(ctx context.Context, j agentJob) (RunAnswer, error) {
 	switch j.req.Job {
 	case JobTrust:
 		return s.runTrust(ctx, j)
@@ -147,7 +146,7 @@ func (s *Service) runFix(ctx context.Context, j agentJob) (RunAnswer, error) {
 // checkLabels lists the columns the agent's role may read whose class is
 // UNCLASSIFIED, at most 500, with the classifier's suggestion for each,
 // sampled with the admin connection under the install's limits.
-func (s *Service) checkLabels(ctx context.Context, conn Conn, tx Tx, j agentJob, database string) (CheckAnswer, error) {
+func (s *LocalService) checkLabels(ctx context.Context, conn Conn, tx Tx, j agentJob, database string) (CheckAnswer, error) {
 	cols, err := s.be.AgentUnlabeled(ctx, tx.Port(), j.names, j.role)
 	if err != nil {
 		return CheckAnswer{}, s.setupFailed("read the unlabeled columns", err)
@@ -175,7 +174,7 @@ func (s *Service) checkLabels(ctx context.Context, conn Conn, tx Tx, j agentJob,
 
 // runLabels writes the person's labels as the install writes them, for the
 // columns the agent's role may read that have no class.
-func (s *Service) runLabels(ctx context.Context, tx Tx, j agentJob, database string, answer *RunAnswer) error {
+func (s *LocalService) runLabels(ctx context.Context, tx Tx, j agentJob, database string, answer *RunAnswer) error {
 	if err := checkFixClasses(j.req.ColumnClasses); err != nil {
 		return err
 	}
@@ -212,7 +211,7 @@ func checkFixClasses(classes []ColumnClass) error {
 		switch {
 		case seen[key]:
 			return bad("a column given twice")
-		case !plainTable.MatchString(c.Table) || !setup.PlainColumn(c.Column) || !guardmodel.ValidLabel(c.label()):
+		case !plainTable.MatchString(c.Table) || !PlainColumn(c.Column) || !guardmodel.ValidLabel(c.label()):
 			return bad("a class, entity type or phone region the page does not set")
 		case c.Was.guard() != (guardmodel.Label{Class: guardmodel.ClassUnclassified}):
 			return bad("a column the check does not list")
@@ -224,7 +223,7 @@ func checkFixClasses(classes []ColumnClass) error {
 
 // ---- PASSKEY_ADD: a passkey on this device ----
 
-func (s *Service) checkPasskeyAdd(ctx context.Context, tx Tx, j agentJob, database string) (CheckAnswer, error) {
+func (s *LocalService) checkPasskeyAdd(ctx context.Context, tx Tx, j agentJob, database string) (CheckAnswer, error) {
 	if err := s.passkeyRoom(ctx, tx); err != nil {
 		return CheckAnswer{}, err
 	}
@@ -241,7 +240,7 @@ func (s *Service) checkPasskeyAdd(ctx context.Context, tx Tx, j agentJob, databa
 
 // passkeyRoom refuses a database that holds as many active passkeys as
 // the list shows.
-func (s *Service) passkeyRoom(ctx context.Context, tx Tx) error {
+func (s *LocalService) passkeyRoom(ctx context.Context, tx Tx) error {
 	keys, err := s.be.ActivePasskeys(ctx, tx.Port())
 	if err != nil {
 		return s.setupFailed("read the passkeys", err)
@@ -252,7 +251,7 @@ func (s *Service) passkeyRoom(ctx context.Context, tx Tx) error {
 	return nil
 }
 
-func (s *Service) runPasskeyAdd(ctx context.Context, tx Tx, j agentJob, database string, cred passkey.Credential, answer *RunAnswer) error {
+func (s *LocalService) runPasskeyAdd(ctx context.Context, tx Tx, j agentJob, database string, cred passkey.Credential, answer *RunAnswer) error {
 	// The challenge was made for this job, agent, database and host.
 	if err := s.checkBinding(j.req, bound{database: database, host: j.host}); err != nil {
 		return err
@@ -278,7 +277,7 @@ func notActive() *RefusalError {
 
 // removedPasskey is the active passkey the request names, with the
 // passkeys of this page's origin that stay.
-func (s *Service) removedPasskey(ctx context.Context, tx Tx, j agentJob) (guardmodel.RegisteredPasskey, int, error) {
+func (s *LocalService) removedPasskey(ctx context.Context, tx Tx, j agentJob) (guardmodel.RegisteredPasskey, int, error) {
 	id, err := base64.RawURLEncoding.DecodeString(j.req.CredentialID)
 	if err != nil || len(id) == 0 || len(id) > maxCredentialIDBytes {
 		return guardmodel.RegisteredPasskey{}, 0, notActive()
@@ -303,7 +302,7 @@ func (s *Service) removedPasskey(ctx context.Context, tx Tx, j agentJob) (guardm
 	return *found, others, nil
 }
 
-func (s *Service) checkPasskeyRemove(ctx context.Context, tx Tx, j agentJob, database string) (CheckAnswer, error) {
+func (s *LocalService) checkPasskeyRemove(ctx context.Context, tx Tx, j agentJob, database string) (CheckAnswer, error) {
 	k, others, err := s.removedPasskey(ctx, tx, j)
 	if err != nil {
 		return CheckAnswer{}, err
@@ -317,13 +316,13 @@ func (s *Service) checkPasskeyRemove(ctx context.Context, tx Tx, j agentJob, dat
 
 // runPasskeyRemove revokes the passkey, always forced: the admin string is
 // what allows it, so the last passkey can go.
-func (s *Service) runPasskeyRemove(ctx context.Context, tx Tx, j agentJob, answer *RunAnswer) error {
+func (s *LocalService) runPasskeyRemove(ctx context.Context, tx Tx, j agentJob, answer *RunAnswer) error {
 	k, others, err := s.removedPasskey(ctx, tx, j)
 	if err != nil {
 		return err
 	}
 	if _, err := s.be.RevokePasskey(ctx, tx.Port(), k.ID, true); err != nil {
-		if setup.SQLStateOf(err) == sqlstateLedgerInputInvalid {
+		if SQLStateOf(err) == sqlstateLedgerInputInvalid {
 			return notActive()
 		}
 		return s.setupFailed("revoke the passkey", err)

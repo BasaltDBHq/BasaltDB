@@ -1,4 +1,4 @@
-package localsetup_test
+package setup_test
 
 import (
 	"context"
@@ -21,19 +21,19 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
 )
 
-func (f *fixture) doctor() localsetup.DoctorRequest {
-	return localsetup.DoctorRequest{Agent: "demo_bot", OSUser: "alice"}
+func (f *fixture) doctor() setup.DoctorRequest {
+	return setup.DoctorRequest{Agent: "demo_bot", OSUser: "alice"}
 }
 
-func (f *fixture) fix(job string) localsetup.Request {
-	return localsetup.Request{Job: job, Agent: "demo_bot", OSUser: "alice", DatabaseURL: f.db.URL}
+func (f *fixture) fix(job string) setup.Request {
+	return setup.Request{Job: job, Agent: "demo_bot", OSUser: "alice", DatabaseURL: f.db.URL}
 }
 
 func (f *fixture) credentialFile() string {
@@ -57,12 +57,12 @@ func TestDoctorReportsAnInstalledAgent(t *testing.T) {
 	require.NoError(t, f.db.Admin.QueryRow(ctx, `SELECT pg_catalog.current_database()::text`).Scan(&db))
 	require.Equal(t, db, got.Database)
 	require.Nil(t, got.Login)
-	require.Equal(t, localsetup.StateCurrent, got.Guard.State)
-	require.Equal(t, localsetup.StateOK, got.Certificate.State)
-	require.Equal(t, localsetup.StateUnlabeled, got.Labels.State, "the demo install labels nothing")
+	require.Equal(t, setup.StateCurrent, got.Guard.State)
+	require.Equal(t, setup.StateOK, got.Certificate.State)
+	require.Equal(t, setup.StateUnlabeled, got.Labels.State, "the demo install labels nothing")
 	require.Positive(t, got.Labels.Count)
 	require.Contains(t, got.Labels.Columns, "basalt_demo.leads.email")
-	require.Equal(t, localsetup.StateOK, got.Passkeys.State)
+	require.Equal(t, setup.StateOK, got.Passkeys.State)
 	require.Len(t, got.Passkeys.Items, 1)
 	k := got.Passkeys.Items[0]
 	require.Equal(t, "laptop", k.Label)
@@ -77,13 +77,13 @@ func TestDoctorRefusesWhatIsNotTheEnginesAgent(t *testing.T) {
 	f, svc := installed(t)
 	ctx := context.Background()
 	for name, tc := range map[string]struct {
-		req  localsetup.DoctorRequest
+		req  setup.DoctorRequest
 		code string
 	}{
-		"another agent":   {localsetup.DoctorRequest{Agent: "sales_bot", OSUser: "alice"}, localsetup.CodeInvalidArgument},
-		"another OS user": {localsetup.DoctorRequest{Agent: "demo_bot", OSUser: "carol"}, localsetup.CodeInvalidArgument},
-		"no OS user":      {localsetup.DoctorRequest{Agent: "demo_bot"}, localsetup.CodeInvalidArgument},
-		"a bad name":      {localsetup.DoctorRequest{Agent: "Bad-Name", OSUser: "alice"}, localsetup.CodeInvalidArgument},
+		"another agent":   {setup.DoctorRequest{Agent: "sales_bot", OSUser: "alice"}, setup.CodeInvalidArgument},
+		"another OS user": {setup.DoctorRequest{Agent: "demo_bot", OSUser: "carol"}, setup.CodeInvalidArgument},
+		"no OS user":      {setup.DoctorRequest{Agent: "demo_bot"}, setup.CodeInvalidArgument},
+		"a bad name":      {setup.DoctorRequest{Agent: "Bad-Name", OSUser: "alice"}, setup.CodeInvalidArgument},
 	} {
 		_, err := svc.Doctor(ctx, tc.req)
 		require.Error(t, err, name)
@@ -91,11 +91,11 @@ func TestDoctorRefusesWhatIsNotTheEnginesAgent(t *testing.T) {
 	}
 	// An engine with no config, and one running as root, check nothing.
 	_, err := f.svc.Doctor(ctx, f.doctor())
-	refusal(t, err, localsetup.CodeJobUnavailable)
-	root, err := localsetup.New(localsetup.Options{Backend: setupbackend.Backend{}, ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix, Configured: true, Euid: func() int { return 0 }})
+	refusal(t, err, setup.CodeJobUnavailable)
+	root, err := setup.NewLocal(setup.LocalOptions{Backend: setupbackend.Backend{}, ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix, Configured: true, Euid: func() int { return 0 }})
 	require.NoError(t, err)
 	_, err = root.Doctor(ctx, f.doctor())
-	refusal(t, err, localsetup.CodeJobUnavailable)
+	refusal(t, err, setup.CodeJobUnavailable)
 }
 
 // While the agent cannot log in, doctor reads nothing from the database.
@@ -109,9 +109,9 @@ func TestDoctorReadsNothingWhenTheAgentCannotLogIn(t *testing.T) {
 	require.NotNil(t, got.Login)
 	require.Equal(t, "CREDENTIAL_REJECTED", got.Login.Code)
 	require.Empty(t, got.Database)
-	require.Equal(t, localsetup.StateUnknown, got.Labels.State)
-	require.Equal(t, localsetup.StateUnknown, got.Passkeys.State)
-	require.Equal(t, localsetup.StateUnknown, got.Guard.State)
+	require.Equal(t, setup.StateUnknown, got.Labels.State)
+	require.Equal(t, setup.StateUnknown, got.Passkeys.State)
+	require.Equal(t, setup.StateUnknown, got.Guard.State)
 
 	require.NoError(t, os.Remove(f.credentialFile()))
 	got, err = svc.Doctor(ctx, f.doctor())
@@ -125,18 +125,18 @@ func TestFixJobsTakeOnlyTheirOwnFields(t *testing.T) {
 	ctx := context.Background()
 	for name, tc := range map[string]struct {
 		job  string
-		edit func(*localsetup.Request)
+		edit func(*setup.Request)
 		run  bool
 	}{
-		"labels on a LABELS check":         {localsetup.JobLabels, func(r *localsetup.Request) { r.RestPublic = true }, false},
-		"a trustRoot on LABELS":            {localsetup.JobLabels, func(r *localsetup.Request) { r.TrustRoot = strings.Repeat("a", 64) }, true},
-		"a credential id on TRUST":         {localsetup.JobTrust, func(r *localsetup.Request) { r.CredentialID = "AAAA" }, false},
-		"labels on REPAIR":                 {localsetup.JobRepair, func(r *localsetup.Request) { r.RestPublic = true }, true},
-		"a passkey on a PASSKEY_ADD check": {localsetup.JobPasskeyAdd, func(r *localsetup.Request) { r.Passkey = &localsetup.Passkey{} }, false},
-		"a challenge on PASSKEY_REMOVE":    {localsetup.JobPasskeyRemove, func(r *localsetup.Request) { r.Challenge = &localsetup.Challenge{} }, false},
-		"a credential id on UPDATE":        {localsetup.JobUpdate, func(r *localsetup.Request) { r.CredentialID = "AAAA" }, false},
-		"tables on a fix":                  {localsetup.JobLabels, func(r *localsetup.Request) { r.Tables = []localsetup.TablePick{} }, true},
-		"a database name on a fix":         {localsetup.JobRepair, func(r *localsetup.Request) { r.ConfirmName = "app" }, true},
+		"labels on a LABELS check":         {setup.JobLabels, func(r *setup.Request) { r.RestPublic = true }, false},
+		"a trustRoot on LABELS":            {setup.JobLabels, func(r *setup.Request) { r.TrustRoot = strings.Repeat("a", 64) }, true},
+		"a credential id on TRUST":         {setup.JobTrust, func(r *setup.Request) { r.CredentialID = "AAAA" }, false},
+		"labels on REPAIR":                 {setup.JobRepair, func(r *setup.Request) { r.RestPublic = true }, true},
+		"a passkey on a PASSKEY_ADD check": {setup.JobPasskeyAdd, func(r *setup.Request) { r.Passkey = &setup.Passkey{} }, false},
+		"a challenge on PASSKEY_REMOVE":    {setup.JobPasskeyRemove, func(r *setup.Request) { r.Challenge = &setup.Challenge{} }, false},
+		"a credential id on UPDATE":        {setup.JobUpdate, func(r *setup.Request) { r.CredentialID = "AAAA" }, false},
+		"tables on a fix":                  {setup.JobLabels, func(r *setup.Request) { r.Tables = []setup.TablePick{} }, true},
+		"a database name on a fix":         {setup.JobRepair, func(r *setup.Request) { r.ConfirmName = "app" }, true},
 	} {
 		req := f.fix(tc.job)
 		tc.edit(&req)
@@ -146,14 +146,14 @@ func TestFixJobsTakeOnlyTheirOwnFields(t *testing.T) {
 		} else {
 			_, err = svc.Check(ctx, req)
 		}
-		refusal(t, err, localsetup.CodeAnswersInvalid)
+		refusal(t, err, setup.CodeAnswersInvalid)
 		require.NotContains(t, err.Error(), "admin"+":", name)
 	}
 	// Each fix checks the admin string's database before anything else.
-	req := f.fix(localsetup.JobLabels)
+	req := f.fix(setup.JobLabels)
 	req.DatabaseURL = unusedAdminURL
 	_, err := svc.Check(ctx, req)
-	refusal(t, err, localsetup.CodeTargetMismatch)
+	refusal(t, err, setup.CodeTargetMismatch)
 }
 
 // TestLabelsCheckSuggestsForADottedSchema: a schema whose name holds a dot
@@ -171,9 +171,9 @@ func TestLabelsCheckSuggestsForADottedSchema(t *testing.T) {
 		GRANT USAGE ON SCHEMA "app.v2" TO `+role+`;
 		GRANT SELECT ON "app.v2"."People" TO `+role)
 
-	checked, err := svc.Check(ctx, f.fix(localsetup.JobLabels))
+	checked, err := svc.Check(ctx, f.fix(setup.JobLabels))
 	require.NoError(t, err)
-	var email *localsetup.ColumnInfo
+	var email *setup.ColumnInfo
 	for i, c := range checked.Columns {
 		if c.Table == "app.v2.People" && c.Column == "email" {
 			email = &checked.Columns[i]
@@ -195,13 +195,13 @@ func TestLabelsFixLabelsAColumnAddedAfterTheInstall(t *testing.T) {
 
 	got, err := svc.Doctor(ctx, f.doctor())
 	require.NoError(t, err)
-	require.Equal(t, localsetup.StateUnlabeled, got.Labels.State)
+	require.Equal(t, setup.StateUnlabeled, got.Labels.State)
 	require.Contains(t, got.Labels.Columns, "basalt_demo.leads.mobile")
 	before := got.Labels.Count
 
-	checked, err := svc.Check(ctx, f.fix(localsetup.JobLabels))
+	checked, err := svc.Check(ctx, f.fix(setup.JobLabels))
 	require.NoError(t, err)
-	var mobile *localsetup.ColumnInfo
+	var mobile *setup.ColumnInfo
 	for i, c := range checked.Columns {
 		require.NotEqual(t, "public.hidden", c.Table, "only columns the agent may read")
 		if c.Table == "basalt_demo.leads" && c.Column == "mobile" {
@@ -212,9 +212,9 @@ func TestLabelsFixLabelsAColumnAddedAfterTheInstall(t *testing.T) {
 	require.Equal(t, guardmodel.ClassUnclassified, mobile.Class)
 	require.Len(t, checked.Columns, before)
 
-	run := f.fix(localsetup.JobLabels)
-	label := localsetup.ColumnClass{Table: "basalt_demo.leads", Column: "mobile", Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityPhone, PhoneRegion: "US", Was: localsetup.Label{Class: guardmodel.ClassUnclassified}}
-	run.ColumnClasses = []localsetup.ColumnClass{label}
+	run := f.fix(setup.JobLabels)
+	label := setup.ColumnClass{Table: "basalt_demo.leads", Column: "mobile", Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityPhone, PhoneRegion: "US", Was: setup.Label{Class: guardmodel.ClassUnclassified}}
+	run.ColumnClasses = []setup.ColumnClass{label}
 	done, err := svc.Run(ctx, run)
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(done.Lines, " "), "1 columns labeled")
@@ -225,16 +225,16 @@ func TestLabelsFixLabelsAColumnAddedAfterTheInstall(t *testing.T) {
 
 	// The same label again: the column's class is no longer the one shown.
 	_, err = svc.Run(ctx, run)
-	refusal(t, err, localsetup.CodeClassesChanged)
+	refusal(t, err, setup.CodeClassesChanged)
 	// A column the agent cannot read, and a column with a class, are not listed.
 	hidden := run
-	hidden.ColumnClasses = []localsetup.ColumnClass{{Table: "public.hidden", Column: "secret", Class: guardmodel.ClassSecret, Was: localsetup.Label{Class: guardmodel.ClassUnclassified}}}
+	hidden.ColumnClasses = []setup.ColumnClass{{Table: "public.hidden", Column: "secret", Class: guardmodel.ClassSecret, Was: setup.Label{Class: guardmodel.ClassUnclassified}}}
 	_, err = svc.Run(ctx, hidden)
-	refusal(t, err, localsetup.CodeAnswersInvalid)
+	refusal(t, err, setup.CodeAnswersInvalid)
 	labeled := run
-	labeled.ColumnClasses = []localsetup.ColumnClass{{Table: "basalt_demo.leads", Column: "mobile", Class: guardmodel.ClassSecret, Was: localsetup.Label{Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityPhone, PhoneRegion: "US"}}}
+	labeled.ColumnClasses = []setup.ColumnClass{{Table: "basalt_demo.leads", Column: "mobile", Class: guardmodel.ClassSecret, Was: setup.Label{Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityPhone, PhoneRegion: "US"}}}
 	_, err = svc.Run(ctx, labeled)
-	refusal(t, err, localsetup.CodeAnswersInvalid)
+	refusal(t, err, setup.CodeAnswersInvalid)
 
 	got, err = svc.Doctor(ctx, f.doctor())
 	require.NoError(t, err)
@@ -242,13 +242,13 @@ func TestLabelsFixLabelsAColumnAddedAfterTheInstall(t *testing.T) {
 	require.NotContains(t, got.Labels.Columns, "basalt_demo.leads.mobile")
 
 	// The rest as not personal: every column the agent reads with no class.
-	rest := f.fix(localsetup.JobLabels)
+	rest := f.fix(setup.JobLabels)
 	rest.RestPublic = true
 	_, err = svc.Run(ctx, rest)
 	require.NoError(t, err)
 	got, err = svc.Doctor(ctx, f.doctor())
 	require.NoError(t, err)
-	require.Equal(t, localsetup.StateOK, got.Labels.State)
+	require.Equal(t, setup.StateOK, got.Labels.State)
 	require.Zero(t, got.Labels.Count)
 	var hiddenRows int
 	require.NoError(t, f.db.Admin.QueryRow(ctx, `SELECT count(table_name)::int FROM basalt_meta.pii_columns WHERE table_name = 'hidden'`).Scan(&hiddenRows))
@@ -259,14 +259,14 @@ func TestPasskeyAddRegistersAnotherPasskey(t *testing.T) {
 	t.Parallel()
 	f, svc := installed(t)
 	ctx := context.Background()
-	checked, err := svc.Check(ctx, f.fix(localsetup.JobPasskeyAdd))
+	checked, err := svc.Check(ctx, f.fix(setup.JobPasskeyAdd))
 	require.NoError(t, err)
 	require.True(t, checked.PasskeyNeeded)
 	require.NotNil(t, checked.Challenge)
 
-	run := f.fix(localsetup.JobPasskeyAdd)
+	run := f.fix(setup.JobPasskeyAdd)
 	_, err = svc.Run(ctx, run)
-	refusal(t, err, localsetup.CodePasskeyRequired)
+	refusal(t, err, setup.CodePasskeyRequired)
 
 	run.Challenge, run.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	tampered := run
@@ -275,7 +275,7 @@ func TestPasskeyAddRegistersAnotherPasskey(t *testing.T) {
 	ch.MAC[0] ^= 1
 	tampered.Challenge = &ch
 	_, err = svc.Run(ctx, tampered)
-	refusal(t, err, localsetup.CodeChallengeInvalid)
+	refusal(t, err, setup.CodeChallengeInvalid)
 
 	done, err := svc.Run(ctx, run)
 	require.NoError(t, err)
@@ -287,14 +287,14 @@ func TestPasskeyAddRegistersAnotherPasskey(t *testing.T) {
 
 	f.now = f.now.Add(time.Hour)
 	_, err = svc.Run(ctx, run)
-	refusal(t, err, localsetup.CodeChallengeExpired)
+	refusal(t, err, setup.CodeChallengeExpired)
 }
 
 func TestRepairSetsANewPasswordForAnAgentThatCannotLogIn(t *testing.T) {
 	t.Parallel()
 	f, _ := installed(t)
 	var told atomic.Value
-	svc, err := localsetup.New(localsetup.Options{
+	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix, Configured: true,
 		Now: func() time.Time { return f.now }, CredentialChanged: func(agent, password string) { told.Store(agent + ":" + password) },
@@ -302,11 +302,11 @@ func TestRepairSetsANewPasswordForAnAgentThatCannotLogIn(t *testing.T) {
 	require.NoError(t, err)
 	ctx := context.Background()
 
-	_, err = svc.Check(ctx, f.fix(localsetup.JobRepair))
-	refusal(t, err, localsetup.CodeNothingToFix)
+	_, err = svc.Check(ctx, f.fix(setup.JobRepair))
+	refusal(t, err, setup.CodeNothingToFix)
 
 	f.db.Exec(t, `ALTER ROLE `+f.agentRole(t)+` PASSWORD 'changed-by-someone'`)
-	checked, err := svc.Check(ctx, f.fix(localsetup.JobRepair))
+	checked, err := svc.Check(ctx, f.fix(setup.JobRepair))
 	require.NoError(t, err)
 	require.Contains(t, checked.Lines[0], "This sets a new password for "+f.agentRole(t))
 	require.Contains(t, checked.SQL, "********")
@@ -314,7 +314,7 @@ func TestRepairSetsANewPasswordForAnAgentThatCannotLogIn(t *testing.T) {
 
 	old, err := config.ReadCredential(f.credentialFile())
 	require.NoError(t, err)
-	done, err := svc.Run(ctx, f.fix(localsetup.JobRepair))
+	done, err := svc.Run(ctx, f.fix(setup.JobRepair))
 	require.NoError(t, err)
 	require.NotEmpty(t, done.Lines)
 	next, err := config.ReadCredential(f.credentialFile())
@@ -331,15 +331,15 @@ func TestRepairSetsANewPasswordForAnAgentThatCannotLogIn(t *testing.T) {
 	got, err := svc.Doctor(ctx, f.doctor())
 	require.NoError(t, err)
 	require.Nil(t, got.Login, "the agent logs in again")
-	_, err = svc.Check(ctx, f.fix(localsetup.JobRepair))
-	refusal(t, err, localsetup.CodeNothingToFix)
+	_, err = svc.Check(ctx, f.fix(setup.JobRepair))
+	refusal(t, err, setup.CodeNothingToFix)
 }
 
 // trustFixture is an installed agent whose database host db.pin.example
 // this engine pins, read through a fake chain.
 type trustFixture struct {
 	*fixture
-	svc      *localsetup.Service
+	svc      *setup.LocalService
 	adminURL string
 	oldCA    *x509.Certificate
 	newCA    *x509.Certificate
@@ -368,12 +368,12 @@ func newTrustFixture(t *testing.T) *trustFixture {
 	require.NoError(t, config.WriteFile(f.credentialFile(), []byte(pinnedCred+"\n")))
 	_, err = trustdir.PinNew(f.config, pinHost, tf.oldCA, false)
 	require.NoError(t, err)
-	svc, err := localsetup.New(localsetup.Options{
+	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix, Configured: true,
 		Now:      func() time.Time { return f.now },
 		Profiles: func() *trustprofile.Set { return trustdir.Set(f.config) },
-		Dial: func(ctx context.Context, dsn string) (localsetup.Conn, error) {
+		Dial: func(ctx context.Context, dsn string) (setup.Conn, error) {
 			if !strings.Contains(dsn, pinHost) {
 				return setupbackend.Wrap(pgdial.Connect(ctx, dsn))
 			}
@@ -382,7 +382,7 @@ func newTrustFixture(t *testing.T) *trustFixture {
 			}
 			return setupbackend.Wrap(pgdial.Connect(ctx, agentURL))
 		},
-		DialPinned: func(ctx context.Context, _ string, pin *trustprofile.Profile) (localsetup.Conn, error) {
+		DialPinned: func(ctx context.Context, _ string, pin *trustprofile.Profile) (setup.Conn, error) {
 			tf.pinned = append(tf.pinned, pin)
 			return setupbackend.Wrap(pgdial.Connect(ctx, f.db.URL))
 		},
@@ -419,8 +419,8 @@ func (tf *trustFixture) pinHolds(c *x509.Certificate) bool {
 	return false
 }
 
-func (tf *trustFixture) trust(trustRoot string) localsetup.Request {
-	r := tf.fix(localsetup.JobTrust)
+func (tf *trustFixture) trust(trustRoot string) setup.Request {
+	r := tf.fix(setup.JobTrust)
 	r.DatabaseURL, r.TrustRoot = tf.adminURL, trustRoot
 	return r
 }
@@ -445,13 +445,13 @@ func TestTrustFixReplacesThePinOfAChangedCertificate(t *testing.T) {
 	oldSHA, newSHA := trustprofile.DERSHA256(tf.oldCA), trustprofile.DERSHA256(tf.newCA)
 
 	_, err := tf.svc.Check(ctx, tf.trust(""))
-	refusal(t, err, localsetup.CodeNothingToFix)
+	refusal(t, err, setup.CodeNothingToFix)
 	tf.pinned = nil
 
 	tf.chain.Store(&tf.newChain)
 	got, err := tf.svc.Doctor(ctx, tf.doctor())
 	require.NoError(t, err)
-	require.Equal(t, localsetup.StateChanged, got.Certificate.State)
+	require.Equal(t, setup.StateChanged, got.Certificate.State)
 	require.Equal(t, pinHost, got.Certificate.Host)
 	require.Equal(t, oldSHA, got.Certificate.Pinned)
 	require.Equal(t, newSHA, got.Certificate.Presented.SHA256)
@@ -459,19 +459,19 @@ func TestTrustFixReplacesThePinOfAChangedCertificate(t *testing.T) {
 	require.Equal(t, "app", got.Certificate.Database, "the database the agent's credential names")
 	require.False(t, got.Certificate.SameIssuer, "another key under the same name is a new issuer")
 	require.Nil(t, got.Login)
-	require.Equal(t, localsetup.StateUnknown, got.Labels.State, "nothing is read while the certificate changed")
-	require.Equal(t, localsetup.StateUnknown, got.Passkeys.State)
+	require.Equal(t, setup.StateUnknown, got.Labels.State, "nothing is read while the certificate changed")
+	require.Equal(t, setup.StateUnknown, got.Passkeys.State)
 
 	_, err = tf.svc.Check(ctx, tf.trust(""))
-	var r *localsetup.RefusalError
+	var r *setup.RefusalError
 	require.True(t, errors.As(err, &r))
-	require.Equal(t, localsetup.CodeCertificateNotVerified, r.Code)
+	require.Equal(t, setup.CodeCertificateNotVerified, r.Code)
 	require.Equal(t, newSHA, r.TrustRoot.SHA256)
 	require.Equal(t, oldSHA, r.Pinned)
 	require.Empty(t, tf.pinned, "no login before the person trusted it")
 
 	_, err = tf.svc.Check(ctx, tf.trust(oldSHA))
-	refusal(t, err, localsetup.CodeTrustRootMismatch)
+	refusal(t, err, setup.CodeTrustRootMismatch)
 
 	checked, err := tf.svc.Check(ctx, tf.trust(newSHA))
 	require.NoError(t, err)
@@ -498,7 +498,7 @@ func TestTrustFixReplacesThePinOfAChangedCertificate(t *testing.T) {
 
 	got, err = tf.svc.Doctor(ctx, tf.doctor())
 	require.NoError(t, err)
-	require.Equal(t, localsetup.StateOK, got.Certificate.State)
+	require.Equal(t, setup.StateOK, got.Certificate.State)
 	require.Nil(t, got.Login)
 }
 
@@ -514,13 +514,13 @@ func TestTrustFixRecordsTheEnginesPinOnAMismatch(t *testing.T) {
 
 	got, err := tf.svc.Doctor(ctx, tf.doctor())
 	require.NoError(t, err)
-	require.Equal(t, localsetup.StateMismatch, got.Certificate.State)
+	require.Equal(t, setup.StateMismatch, got.Certificate.State)
 	require.Equal(t, oldSHA, got.Certificate.Pinned)
 	require.Equal(t, other, got.Certificate.Recorded)
-	require.Equal(t, localsetup.StateUnlabeled, got.Labels.State, "a mismatch still reads the rest")
+	require.Equal(t, setup.StateUnlabeled, got.Labels.State, "a mismatch still reads the rest")
 
 	_, err = tf.svc.Check(ctx, tf.trust(oldSHA))
-	refusal(t, err, localsetup.CodeAnswersInvalid)
+	refusal(t, err, setup.CodeAnswersInvalid)
 
 	checked, err := tf.svc.Check(ctx, tf.trust(""))
 	require.NoError(t, err)
@@ -534,16 +534,16 @@ func TestTrustFixRecordsTheEnginesPinOnAMismatch(t *testing.T) {
 	// The run carries the pin the check showed: none, or another, records
 	// nothing.
 	_, err = tf.svc.Run(ctx, tf.trust(""))
-	refusal(t, err, localsetup.CodeTrustRootMismatch)
+	refusal(t, err, setup.CodeTrustRootMismatch)
 	stale := tf.trust("")
 	stale.Pinned = strings.Repeat("d", 64)
 	_, err = tf.svc.Run(ctx, stale)
-	refusal(t, err, localsetup.CodeTrustRootMismatch)
+	refusal(t, err, setup.CodeTrustRootMismatch)
 	require.Equal(t, []string{other}, recordedPins(t, tf), "nothing recorded")
 	onCheck := tf.trust("")
 	onCheck.Pinned = oldSHA
 	_, err = tf.svc.Check(ctx, onCheck)
-	refusal(t, err, localsetup.CodeAnswersInvalid)
+	refusal(t, err, setup.CodeAnswersInvalid)
 	run := tf.trust("")
 	run.Pinned = checked.Pinned
 	_, err = tf.svc.Run(ctx, run)
@@ -554,10 +554,10 @@ func TestTrustFixRecordsTheEnginesPinOnAMismatch(t *testing.T) {
 	require.Equal(t, len(before), len(after), "no file is written")
 
 	_, err = tf.svc.Check(ctx, tf.trust(""))
-	refusal(t, err, localsetup.CodeNothingToFix)
+	refusal(t, err, setup.CodeNothingToFix)
 	got, err = tf.svc.Doctor(ctx, tf.doctor())
 	require.NoError(t, err)
-	require.Equal(t, localsetup.StateOK, got.Certificate.State)
+	require.Equal(t, setup.StateOK, got.Certificate.State)
 }
 
 // REPAIR with the credential file gone writes a new one for the database
@@ -569,15 +569,15 @@ func TestRepairWritesANewCredentialWhenTheFileIsGone(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, os.Remove(f.credentialFile()))
 
-	_, err := svc.Check(ctx, f.fix(localsetup.JobLabels))
-	refusal(t, err, localsetup.CodeSetupFailed)
-	checked, err := svc.Check(ctx, f.fix(localsetup.JobRepair))
+	_, err := svc.Check(ctx, f.fix(setup.JobLabels))
+	refusal(t, err, setup.CodeSetupFailed)
+	checked, err := svc.Check(ctx, f.fix(setup.JobRepair))
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(checked.Lines, " "), "has no credential for demo_bot any more")
 	_, statErr := os.Stat(f.credentialFile())
 	require.ErrorIs(t, statErr, os.ErrNotExist, "a check writes nothing")
 
-	_, err = svc.Run(ctx, f.fix(localsetup.JobRepair))
+	_, err = svc.Run(ctx, f.fix(setup.JobRepair))
 	require.NoError(t, err)
 	dsn, err := config.ReadCredential(f.credentialFile())
 	require.NoError(t, err)
@@ -601,13 +601,13 @@ func TestPasskeyFixesRefuseTheAgentsOwnString(t *testing.T) {
 	require.NoError(t, err)
 	id := got.Passkeys.Items[0].CredentialID
 
-	remove := f.fix(localsetup.JobPasskeyRemove)
+	remove := f.fix(setup.JobPasskeyRemove)
 	remove.DatabaseURL, remove.CredentialID = agentURL, id
 	_, err = svc.Check(ctx, remove)
 	require.Error(t, err)
 	_, err = svc.Run(ctx, remove)
 	require.Error(t, err)
-	add := f.fix(localsetup.JobPasskeyAdd)
+	add := f.fix(setup.JobPasskeyAdd)
 	add.DatabaseURL = agentURL
 	_, err = svc.Check(ctx, add)
 	require.Error(t, err)

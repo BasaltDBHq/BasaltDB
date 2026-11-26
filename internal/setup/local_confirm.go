@@ -1,4 +1,4 @@
-package localsetup
+package setup
 
 import (
 	"context"
@@ -45,7 +45,7 @@ type confirmFacts struct {
 
 // readConfirm reads the confirm step's facts of conn, the admin connection
 // open reached with dsn; pinned is the pin it logged in against, or nil.
-func (s *Service) readConfirm(ctx context.Context, tx Tx, conn Conn, dsn string, pinned *pin) (confirmFacts, error) {
+func (s *LocalService) readConfirm(ctx context.Context, tx Tx, conn Conn, dsn string, pinned *pin) (confirmFacts, error) {
 	user, err := s.be.SessionUser(ctx, tx.Port())
 	if err != nil {
 		return confirmFacts{}, s.setupFailed("read the admin user", err)
@@ -68,7 +68,7 @@ func (s *Service) readConfirm(ctx context.Context, tx Tx, conn Conn, dsn string,
 // the provider's, an operator's profile (a pin among them) or the string's
 // sslrootcert is a root this host was given, and below verify-full nothing
 // verifies it.
-func (s *Service) certificateKind(dsn string) (string, string) {
+func (s *LocalService) certificateKind(dsn string) (string, string) {
 	a, err := s.be.ExplainTrust(dsn, s.opts.Profiles())
 	if err != nil {
 		return certNotVerified, ""

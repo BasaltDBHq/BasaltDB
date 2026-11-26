@@ -90,7 +90,7 @@ var uncheckedCredentialReads = map[string]string{
 	"internal/handoff/out/handofffiles/pathfiles.go:PathFiles.ReadCredential:config.ReadCredential":      "an engine not running as root (agentFilesFor)",
 	"internal/handoff/out/handofffiles/pathfiles.go:PathFiles.ReadPending:config.ReadOwnCredentialLimit": "an engine not running as root (agentFilesFor)",
 	"internal/handoff/out/handofffiles/cache.go:ProbeCacheFile.Read:config.ReadOwnCredential":            "the probe cache, not a connection string; never as root (a root engine does not collect, basalt status refuses root)",
-	"internal/setup/in/localsetup/agentjobs.go:Service.credentialTarget:ReadCredentialFile":              "the setup page's UPDATE and REMOVE: parsed for its target only, never connected with; refused as root (validateAgentJob)",
+	"internal/setup/local_agentjobs.go:LocalService.credentialTarget:ReadCredentialFile":                 "the setup page's UPDATE and REMOVE: parsed for its target only, never connected with; refused as root (validateAgentJob)",
 	"internal/setup/out/enginefiles/enginefiles.go:Files.ReadCredentialFile:config.ReadCredential":       "a one-line forward; its caller, Service.credentialTarget, is listed above",
 	"internal/handoff/out/handofffiles/setupfiles.go:SetupFiles.ReadSecret:config.ReadOwnCredential":     "a password, not a connection string, read only on a YES, which an engine running as root never reaches (it never collects)",
 }

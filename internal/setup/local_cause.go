@@ -1,12 +1,10 @@
-package localsetup
+package setup
 
 import (
 	"errors"
 	"net/url"
 	"regexp"
 	"strings"
-
-	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // maxCauseMessage bounds a cause's message in the log.
@@ -25,7 +23,7 @@ var secretForms = []*regexp.Regexp{
 const redacted = "[redacted]"
 
 // describeError is the message and detail of the database error in err,
-// false when it carries none (Backend.DatabaseError).
+// false when it carries none (LocalBackend.DatabaseError).
 type describeError func(err error) (message, detail string, ok bool)
 
 // causeOf is err's cause at step: the Postgres SQLSTATE and the server's
@@ -35,7 +33,7 @@ type describeError func(err error) (message, detail string, ok bool)
 // message redacted. describe nil reads no message: the SQLSTATE and the
 // error's text then.
 func causeOf(step string, err error, describe describeError) *Cause {
-	c := &Cause{Step: setup.FailedStep(step, err)}
+	c := &Cause{Step: FailedStep(step, err)}
 	if err == nil {
 		return c
 	}
@@ -46,14 +44,14 @@ func causeOf(step string, err error, describe describeError) *Cause {
 	}
 	switch {
 	case ok:
-		c.SQLState, c.Message = setup.SQLStateOf(err), message
+		c.SQLState, c.Message = SQLStateOf(err), message
 		if strings.HasPrefix(c.SQLState, "BS") && detail != "" {
 			// The guard's own refusals (BS…) put the reason in the detail,
 			// written by basalt_meta's SQL, never a quoted statement.
 			c.Message += ": " + detail
 		}
 	case describe == nil:
-		c.SQLState, c.Message = setup.SQLStateOf(err), err.Error()
+		c.SQLState, c.Message = SQLStateOf(err), err.Error()
 	default:
 		c.Message = err.Error()
 	}

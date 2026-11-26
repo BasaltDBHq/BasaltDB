@@ -1,4 +1,4 @@
-package localsetup
+package setup
 
 import (
 	"net/url"
@@ -7,7 +7,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -15,8 +14,8 @@ import (
 // role.<ref> included, and changes only the password.
 func TestNewCredentialKeepsTheUserName(t *testing.T) {
 	t.Parallel()
-	s, err := New(Options{
-		Backend:    setupbackend.Backend{},
+	s, err := NewLocal(LocalOptions{
+		Backend:    testBackend{},
 		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: "http://localhost:8787",
 		Profiles: func() *trustprofile.Set { return trustprofile.NewSet(nil, nil, nil) },
 	})

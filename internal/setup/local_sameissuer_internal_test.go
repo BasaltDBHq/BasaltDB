@@ -1,4 +1,4 @@
-package localsetup
+package setup
 
 import (
 	"crypto/ecdsa"

@@ -1,4 +1,4 @@
-package localsetup_test
+package setup_test
 
 import (
 	"bytes"
@@ -28,7 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
@@ -69,7 +69,7 @@ func (fakeUsers) Self() int { return 4000 }
 
 type fixture struct {
 	db     *guardtest.DB
-	svc    *localsetup.Service
+	svc    *setup.LocalService
 	config string
 	now    time.Time
 }
@@ -83,7 +83,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Skip("the test server's admin string has no password")
 	}
 	f := &fixture{db: d, config: filepath.Join(t.TempDir(), "engine.json"), now: time.Now()}
-	svc, err := localsetup.New(localsetup.Options{
+	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: d.Names.Prefix,
 		Now: func() time.Time { return f.now },
@@ -93,13 +93,13 @@ func newFixture(t *testing.T) *fixture {
 	return f
 }
 
-func (f *fixture) request() localsetup.Request {
-	return localsetup.Request{Job: localsetup.JobInstall, Agent: "demo_bot", OSUser: "alice", Demo: true, DatabaseURL: f.db.URL}
+func (f *fixture) request() setup.Request {
+	return setup.Request{Job: setup.JobInstall, Agent: "demo_bot", OSUser: "alice", Demo: true, DatabaseURL: f.db.URL}
 }
 
 func refusal(t *testing.T, err error, code string) {
 	t.Helper()
-	var r *localsetup.RefusalError
+	var r *setup.RefusalError
 	require.True(t, errors.As(err, &r), "%v", err)
 	require.Equal(t, code, r.Code, r.Message)
 }
@@ -113,7 +113,7 @@ func exists(t *testing.T, d *guardtest.DB, schema string) bool {
 }
 
 // register is the browser's part: a passkey made with check's challenge.
-func register(t *testing.T, c localsetup.Challenge) *localsetup.Passkey {
+func register(t *testing.T, c setup.Challenge) *setup.Passkey {
 	t.Helper()
 	rp, err := passkey.Local(origin)
 	require.NoError(t, err)
@@ -123,7 +123,7 @@ func register(t *testing.T, c localsetup.Challenge) *localsetup.Passkey {
 	require.NoError(t, err)
 	resp, err := auth.Register(rr, nil)
 	require.NoError(t, err)
-	return &localsetup.Passkey{RegistrationResponse: resp, Label: "laptop"}
+	return &setup.Passkey{RegistrationResponse: resp, Label: "laptop"}
 }
 
 func TestInstallChecksThenRunsOnceAndWritesTheEnginesFiles(t *testing.T) {
@@ -146,7 +146,7 @@ func TestInstallChecksThenRunsOnceAndWritesTheEnginesFiles(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist)
 
 	_, err = f.svc.Run(ctx, f.request())
-	refusal(t, err, localsetup.CodePasskeyRequired)
+	refusal(t, err, setup.CodePasskeyRequired)
 	require.False(t, exists(t, f.db, "basalt_meta"), "refused: nothing changed")
 
 	req := f.request()
@@ -184,9 +184,9 @@ func TestInstallChecksThenRunsOnceAndWritesTheEnginesFiles(t *testing.T) {
 
 	// Once: the engine has a config now.
 	_, err = f.svc.Run(ctx, req)
-	refusal(t, err, localsetup.CodeJobUnavailable)
+	refusal(t, err, setup.CodeJobUnavailable)
 	_, err = f.svc.Check(ctx, f.request())
-	refusal(t, err, localsetup.CodeJobUnavailable)
+	refusal(t, err, setup.CodeJobUnavailable)
 }
 
 // withParam adds a query parameter to a URL.
@@ -216,7 +216,7 @@ func TestRunRefusesAChallengeOfAnotherJobOrTooOld(t *testing.T) {
 	other.Agent = "other_bot"
 	other.Challenge, other.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	_, err = f.svc.Run(ctx, other)
-	refusal(t, err, localsetup.CodeChallengeInvalid)
+	refusal(t, err, setup.CodeChallengeInvalid)
 
 	// The same job on another database: the challenge is bound to the one
 	// the server named at check.
@@ -225,14 +225,14 @@ func TestRunRefusesAChallengeOfAnotherJobOrTooOld(t *testing.T) {
 	elsewhere.DatabaseURL = other2.URL
 	elsewhere.Challenge, elsewhere.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	_, err = f.svc.Run(ctx, elsewhere)
-	refusal(t, err, localsetup.CodeChallengeInvalid)
+	refusal(t, err, setup.CodeChallengeInvalid)
 	require.False(t, exists(t, other2, "basalt_meta"), "nothing changed there")
 
 	f.now = f.now.Add(16 * time.Minute)
 	late := f.request()
 	late.Challenge, late.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	_, err = f.svc.Run(ctx, late)
-	refusal(t, err, localsetup.CodeChallengeExpired)
+	refusal(t, err, setup.CodeChallengeExpired)
 	require.False(t, exists(t, f.db, "basalt_meta"), "nothing changed")
 }
 
@@ -253,12 +253,12 @@ func TestRefusalsNeverHoldTheAdminString(t *testing.T) {
 	for _, v := range []struct {
 		dsn, code string
 	}{
-		{wrong.String(), localsetup.CodeLoginFailed},
-		{unreachable.String(), localsetup.CodeDatabaseUnreachable},
-		{noPassword.String(), localsetup.CodeConnectionStringRefused},
-		{"host=localhost password=" + secret, localsetup.CodeConnectionStringRefused},
-		{withParam(f.db.URL, "host=other.example"), localsetup.CodeConnectionStringRefused},
-		{withParam(f.db.URL, "dbname=other"), localsetup.CodeConnectionStringRefused},
+		{wrong.String(), setup.CodeLoginFailed},
+		{unreachable.String(), setup.CodeDatabaseUnreachable},
+		{noPassword.String(), setup.CodeConnectionStringRefused},
+		{"host=localhost password=" + secret, setup.CodeConnectionStringRefused},
+		{withParam(f.db.URL, "host=other.example"), setup.CodeConnectionStringRefused},
+		{withParam(f.db.URL, "dbname=other"), setup.CodeConnectionStringRefused},
 	} {
 		req := f.request()
 		req.DatabaseURL = v.dsn
@@ -274,33 +274,33 @@ func TestRequestsTheEngineRefusesBeforeConnecting(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	dialed := false
-	svc, err := localsetup.New(localsetup.Options{
+	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: filepath.Join(dir, "engine.json"), Origin: origin, Users: fakeUsers{aliceGroups: []string{"4000"}},
-		Dial: func(context.Context, string) (localsetup.Conn, error) {
+		Dial: func(context.Context, string) (setup.Conn, error) {
 			dialed = true
 			return nil, errors.New("not here")
 		},
 	})
 	require.NoError(t, err)
-	good := localsetup.Request{Job: localsetup.JobInstall, Agent: "demo_bot", OSUser: "bob", Demo: true, DatabaseURL: unusedAdminURL}
+	good := setup.Request{Job: setup.JobInstall, Agent: "demo_bot", OSUser: "bob", Demo: true, DatabaseURL: unusedAdminURL}
 	for _, v := range []struct {
-		edit func(*localsetup.Request)
+		edit func(*setup.Request)
 		code string
 	}{
-		{func(r *localsetup.Request) { r.Job = "MIGRATE" }, localsetup.CodeInvalidArgument},
-		{func(r *localsetup.Request) { r.Job = localsetup.JobRemove }, localsetup.CodeJobUnavailable},
-		{func(r *localsetup.Request) { r.Job = localsetup.JobRepair }, localsetup.CodeJobUnavailable},
-		{func(r *localsetup.Request) { r.Job = localsetup.JobPasskeyRemove }, localsetup.CodeJobUnavailable},
-		{func(r *localsetup.Request) { r.Agent = "Bad-Name" }, localsetup.CodeInvalidArgument},
-		{func(r *localsetup.Request) { r.OSUser = "" }, localsetup.CodeInvalidArgument},
-		{func(r *localsetup.Request) { r.OSUser = "nobody-here" }, localsetup.CodeInvalidArgument},
-		{func(r *localsetup.Request) { r.OSUser = "root" }, localsetup.CodeInvalidArgument},
-		{func(r *localsetup.Request) { r.OSUser = "engine" }, localsetup.CodeInvalidArgument},
-		{func(r *localsetup.Request) { r.OSUser = "carol" }, localsetup.CodeInvalidArgument},
-		{func(r *localsetup.Request) { r.OSUser = "basalt-plugin-acme" }, localsetup.CodeInvalidArgument},
-		{func(r *localsetup.Request) { r.OSUser = "alice" }, localsetup.CodeInvalidArgument}, // in the engine's group
-		{func(r *localsetup.Request) { r.OSUser = "alice"; r.Demo = false }, localsetup.CodeInvalidArgument},
+		{func(r *setup.Request) { r.Job = "MIGRATE" }, setup.CodeInvalidArgument},
+		{func(r *setup.Request) { r.Job = setup.JobRemove }, setup.CodeJobUnavailable},
+		{func(r *setup.Request) { r.Job = setup.JobRepair }, setup.CodeJobUnavailable},
+		{func(r *setup.Request) { r.Job = setup.JobPasskeyRemove }, setup.CodeJobUnavailable},
+		{func(r *setup.Request) { r.Agent = "Bad-Name" }, setup.CodeInvalidArgument},
+		{func(r *setup.Request) { r.OSUser = "" }, setup.CodeInvalidArgument},
+		{func(r *setup.Request) { r.OSUser = "nobody-here" }, setup.CodeInvalidArgument},
+		{func(r *setup.Request) { r.OSUser = "root" }, setup.CodeInvalidArgument},
+		{func(r *setup.Request) { r.OSUser = "engine" }, setup.CodeInvalidArgument},
+		{func(r *setup.Request) { r.OSUser = "carol" }, setup.CodeInvalidArgument},
+		{func(r *setup.Request) { r.OSUser = "basalt-plugin-acme" }, setup.CodeInvalidArgument},
+		{func(r *setup.Request) { r.OSUser = "alice" }, setup.CodeInvalidArgument}, // in the engine's group
+		{func(r *setup.Request) { r.OSUser = "alice"; r.Demo = false }, setup.CodeInvalidArgument},
 	} {
 		req := good
 		v.edit(&req)
@@ -312,7 +312,7 @@ func TestRequestsTheEngineRefusesBeforeConnecting(t *testing.T) {
 	// With a config the engine runs no install.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "engine.json"), []byte("{}"), 0o600))
 	_, err = svc.Run(context.Background(), good)
-	refusal(t, err, localsetup.CodeJobUnavailable)
+	refusal(t, err, setup.CodeJobUnavailable)
 	require.NotContains(t, err.Error(), unusedAdminURL)
 	require.NotContains(t, err.Error(), "db.example")
 }
@@ -323,10 +323,10 @@ func TestRequestsTheEngineRefusesBeforeConnecting(t *testing.T) {
 func TestAdminStringRefusesKeysOutsideTheAllowlist(t *testing.T) {
 	t.Parallel()
 	dialed := false
-	svc, err := localsetup.New(localsetup.Options{
+	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin, Users: okUsers{},
-		Dial: func(context.Context, string) (localsetup.Conn, error) {
+		Dial: func(context.Context, string) (setup.Conn, error) {
 			dialed = true
 			return nil, errors.New("not here")
 		},
@@ -353,80 +353,80 @@ func TestAdminStringRefusesKeysOutsideTheAllowlist(t *testing.T) {
 		"sslmode=require;passfile=" + path,
 	} {
 		dialed = false
-		req := localsetup.Request{Job: localsetup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: unusedAdminURL + "?" + query}
+		req := setup.Request{Job: setup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: unusedAdminURL + "?" + query}
 		_, err := svc.Check(context.Background(), req)
-		refusal(t, err, localsetup.CodeConnectionStringRefused)
+		refusal(t, err, setup.CodeConnectionStringRefused)
 		require.NotContains(t, err.Error(), path, query)
 		require.NotContains(t, err.Error(), "db.example", query)
 		_, err = svc.Run(context.Background(), req)
-		refusal(t, err, localsetup.CodeConnectionStringRefused)
+		refusal(t, err, setup.CodeConnectionStringRefused)
 		require.False(t, dialed, "nothing connects with %s", query)
 	}
 	for _, query := range []string{"sslmode=verify-full", "application_name=app&connect_timeout=5", "channel_binding=require&target_session_attrs=any"} {
 		dialed = false
-		req := localsetup.Request{Job: localsetup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: unusedAdminURL + "?" + query}
+		req := setup.Request{Job: setup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: unusedAdminURL + "?" + query}
 		_, err := svc.Check(context.Background(), req)
-		var r *localsetup.RefusalError
+		var r *setup.RefusalError
 		require.True(t, errors.As(err, &r), query)
-		require.NotEqual(t, localsetup.CodeConnectionStringRefused, r.Code, query)
+		require.NotEqual(t, setup.CodeConnectionStringRefused, r.Code, query)
 		require.True(t, dialed, "an allowed key reaches the connection: %s", query)
 	}
 }
 
 func TestRealInstallRefusesBadSchemasAndPicksBeforeConnecting(t *testing.T) {
 	t.Parallel()
-	svc, err := localsetup.New(localsetup.Options{
+	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin,
-		Users: okUsers{}, Dial: func(context.Context, string) (localsetup.Conn, error) { return nil, errors.New("not here") },
+		Users: okUsers{}, Dial: func(context.Context, string) (setup.Conn, error) { return nil, errors.New("not here") },
 	})
 	require.NoError(t, err)
-	base := localsetup.Request{Job: localsetup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: unusedAdminURL}
-	pick := func(table, access string) []localsetup.TablePick {
-		return []localsetup.TablePick{{Table: table, Access: access}}
+	base := setup.Request{Job: setup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: unusedAdminURL}
+	pick := func(table, access string) []setup.TablePick {
+		return []setup.TablePick{{Table: table, Access: access}}
 	}
 	cases := map[string]struct {
-		mutate func(*localsetup.Request)
+		mutate func(*setup.Request)
 		code   string
 	}{
-		"demo with tables":     {func(r *localsetup.Request) { r.Demo = true; r.Tables = pick("public.a", "READ") }, localsetup.CodeAnswersInvalid},
-		"demo with schemas":    {func(r *localsetup.Request) { r.Demo = true; r.Schemas = []string{"public"} }, localsetup.CodeAnswersInvalid},
-		"no schema":            {func(r *localsetup.Request) { r.Schemas = []string{} }, localsetup.CodeAnswersInvalid},
-		"six schemas":          {func(r *localsetup.Request) { r.Schemas = []string{"a", "b", "c", "d", "e", "f"} }, localsetup.CodeAnswersInvalid},
-		"a system schema":      {func(r *localsetup.Request) { r.Schemas = []string{"basalt_meta"} }, localsetup.CodeAnswersInvalid},
-		"a pg_ schema":         {func(r *localsetup.Request) { r.Schemas = []string{"pg_toast"} }, localsetup.CodeAnswersInvalid},
-		"a schema twice":       {func(r *localsetup.Request) { r.Schemas = []string{"a", "a"} }, localsetup.CodeAnswersInvalid},
-		"a capital schema":     {func(r *localsetup.Request) { r.Schemas = []string{"Public"} }, localsetup.CodeAnswersInvalid},
-		"an empty pick list":   {func(r *localsetup.Request) { r.Tables = []localsetup.TablePick{} }, localsetup.CodeNoTables},
-		"a capital table":      {func(r *localsetup.Request) { r.Tables = pick("public.Users", "READ") }, localsetup.CodeAnswersInvalid},
-		"no schema in a pick":  {func(r *localsetup.Request) { r.Tables = pick("users", "READ") }, localsetup.CodeAnswersInvalid},
-		"a pick outside":       {func(r *localsetup.Request) { r.Tables = pick("other.users", "READ") }, localsetup.CodeAnswersInvalid},
-		"a bad access":         {func(r *localsetup.Request) { r.Tables = pick("public.users", "ALL") }, localsetup.CodeAnswersInvalid},
-		"a table picked twice": {func(r *localsetup.Request) { r.Tables = append(pick("public.a", "READ"), pick("public.a", "WRITE")...) }, localsetup.CodeAnswersInvalid},
+		"demo with tables":     {func(r *setup.Request) { r.Demo = true; r.Tables = pick("public.a", "READ") }, setup.CodeAnswersInvalid},
+		"demo with schemas":    {func(r *setup.Request) { r.Demo = true; r.Schemas = []string{"public"} }, setup.CodeAnswersInvalid},
+		"no schema":            {func(r *setup.Request) { r.Schemas = []string{} }, setup.CodeAnswersInvalid},
+		"six schemas":          {func(r *setup.Request) { r.Schemas = []string{"a", "b", "c", "d", "e", "f"} }, setup.CodeAnswersInvalid},
+		"a system schema":      {func(r *setup.Request) { r.Schemas = []string{"basalt_meta"} }, setup.CodeAnswersInvalid},
+		"a pg_ schema":         {func(r *setup.Request) { r.Schemas = []string{"pg_toast"} }, setup.CodeAnswersInvalid},
+		"a schema twice":       {func(r *setup.Request) { r.Schemas = []string{"a", "a"} }, setup.CodeAnswersInvalid},
+		"a capital schema":     {func(r *setup.Request) { r.Schemas = []string{"Public"} }, setup.CodeAnswersInvalid},
+		"an empty pick list":   {func(r *setup.Request) { r.Tables = []setup.TablePick{} }, setup.CodeNoTables},
+		"a capital table":      {func(r *setup.Request) { r.Tables = pick("public.Users", "READ") }, setup.CodeAnswersInvalid},
+		"no schema in a pick":  {func(r *setup.Request) { r.Tables = pick("users", "READ") }, setup.CodeAnswersInvalid},
+		"a pick outside":       {func(r *setup.Request) { r.Tables = pick("other.users", "READ") }, setup.CodeAnswersInvalid},
+		"a bad access":         {func(r *setup.Request) { r.Tables = pick("public.users", "ALL") }, setup.CodeAnswersInvalid},
+		"a table picked twice": {func(r *setup.Request) { r.Tables = append(pick("public.a", "READ"), pick("public.a", "WRITE")...) }, setup.CodeAnswersInvalid},
 	}
 	for name, c := range cases {
 		req := base
 		c.mutate(&req)
 		_, err := svc.Check(context.Background(), req)
 		require.Error(t, err, name)
-		var r *localsetup.RefusalError
+		var r *setup.RefusalError
 		require.True(t, errors.As(err, &r), name)
 		require.Equal(t, c.code, r.Code, name+": "+r.Message)
 	}
-	many := make([]localsetup.TablePick, 501)
+	many := make([]setup.TablePick, 501)
 	for i := range many {
-		many[i] = localsetup.TablePick{Table: "public.t" + strings.Repeat("a", i%5), Access: "READ"}
+		many[i] = setup.TablePick{Table: "public.t" + strings.Repeat("a", i%5), Access: "READ"}
 	}
 	req := base
 	req.Tables = many
 	_, err = svc.Check(context.Background(), req)
-	refusal(t, err, localsetup.CodeAnswersInvalid)
+	refusal(t, err, setup.CodeAnswersInvalid)
 	// Run without a pick is NO_TABLES, before it connects.
 	_, err = svc.Run(context.Background(), base)
-	refusal(t, err, localsetup.CodeNoTables)
+	refusal(t, err, setup.CodeNoTables)
 }
 
-func (f *fixture) real() localsetup.Request {
+func (f *fixture) real() setup.Request {
 	r := f.request()
 	r.Demo = false
 	r.Agent = "bot"
@@ -446,9 +446,9 @@ CREATE TABLE public."Mixed" (id bigint PRIMARY KEY)`)
 	require.NoError(t, err)
 	require.Nil(t, listing.Challenge, "nothing depends on a pick yet")
 	require.Empty(t, listing.SQL)
-	require.Contains(t, listing.Tables, localsetup.ListedTable{Table: "public.orders", CanWrite: true})
-	require.Contains(t, listing.Tables, localsetup.ListedTable{Table: "public.logs", CanWrite: false})
-	require.Contains(t, listing.Excluded, localsetup.ExcludedTable{Table: "public.Mixed", Owner: "unsupported name"})
+	require.Contains(t, listing.Tables, setup.ListedTable{Table: "public.orders", CanWrite: true})
+	require.Contains(t, listing.Tables, setup.ListedTable{Table: "public.logs", CanWrite: false})
+	require.Contains(t, listing.Excluded, setup.ExcludedTable{Table: "public.Mixed", Owner: "unsupported name"})
 	require.False(t, exists(t, f.db, "basalt_demo"), "a real install never makes the sample schema")
 	// The confirm step's facts: where the string logged in, as whom, and
 	// what verified the certificate; never the string itself.
@@ -458,7 +458,7 @@ CREATE TABLE public."Mixed" (id bigint PRIMARY KEY)`)
 	require.Equal(t, int(adminCfg.Port), listing.Port)
 	require.NotNil(t, listing.Certificate)
 	if _, tlsConn := f.db.Admin.PgConn().Conn().(*tls.Conn); !tlsConn {
-		require.Equal(t, &localsetup.ConfirmCertificate{Kind: "NONE"}, listing.Certificate, "no TLS: no certificate to name")
+		require.Equal(t, &setup.ConfirmCertificate{Kind: "NONE"}, listing.Certificate, "no TLS: no certificate to name")
 	}
 	raw, err := json.Marshal(listing)
 	require.NoError(t, err)
@@ -469,17 +469,17 @@ CREATE TABLE public."Mixed" (id bigint PRIMARY KEY)`)
 
 	// Write on a table with no primary key: the listing says it cannot.
 	req := f.real()
-	req.Tables = []localsetup.TablePick{{Table: "public.logs", Access: localsetup.AccessWrite}}
+	req.Tables = []setup.TablePick{{Table: "public.logs", Access: setup.AccessWrite}}
 	_, err = f.svc.Check(ctx, req)
-	refusal(t, err, localsetup.CodeTablesChanged)
+	refusal(t, err, setup.CodeTablesChanged)
 	// A table that is not there.
-	req.Tables = []localsetup.TablePick{{Table: "public.nothing", Access: localsetup.AccessRead}}
+	req.Tables = []setup.TablePick{{Table: "public.nothing", Access: setup.AccessRead}}
 	_, err = f.svc.Check(ctx, req)
-	refusal(t, err, localsetup.CodeTablesChanged)
+	refusal(t, err, setup.CodeTablesChanged)
 
-	req.Tables = []localsetup.TablePick{
-		{Table: "public.orders", Access: localsetup.AccessWrite},
-		{Table: "public.logs", Access: localsetup.AccessRead},
+	req.Tables = []setup.TablePick{
+		{Table: "public.orders", Access: setup.AccessWrite},
+		{Table: "public.logs", Access: setup.AccessRead},
 	}
 	checked, err := f.svc.Check(ctx, req)
 	require.NoError(t, err)
@@ -490,10 +490,10 @@ CREATE TABLE public."Mixed" (id bigint PRIMARY KEY)`)
 
 	// A passkey made for these picks does not fit others.
 	other := req
-	other.Tables = []localsetup.TablePick{{Table: "public.orders", Access: localsetup.AccessRead}}
+	other.Tables = []setup.TablePick{{Table: "public.orders", Access: setup.AccessRead}}
 	other.Challenge, other.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	_, err = f.svc.Run(ctx, other)
-	refusal(t, err, localsetup.CodeChallengeInvalid)
+	refusal(t, err, setup.CodeChallengeInvalid)
 
 	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	done, err := f.svc.Run(ctx, req)
@@ -522,7 +522,7 @@ func TestRealInstallAsksTheRowLevelSecurityQuestionAndRunNeedsItsAnswer(t *testi
 INSERT INTO public.vault VALUES (1, 'a');
 ALTER TABLE public.vault ENABLE ROW LEVEL SECURITY`)
 	req := f.real()
-	req.Tables = []localsetup.TablePick{{Table: "public.vault", Access: localsetup.AccessRead}}
+	req.Tables = []setup.TablePick{{Table: "public.vault", Access: setup.AccessRead}}
 	checked, err := f.svc.Check(ctx, req)
 	require.NoError(t, err)
 	require.Len(t, checked.Questions, 1)
@@ -535,7 +535,7 @@ ALTER TABLE public.vault ENABLE ROW LEVEL SECURITY`)
 	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	// The challenge binds the answers the check showed (ALL_ROWS): a run
 	// with none, another choice or another table is refused, nothing changed.
-	for _, answers := range [][]localsetup.Answer{
+	for _, answers := range [][]setup.Answer{
 		nil,
 		{{Table: "public.vault", Choice: "NONE"}},
 		{{Table: "public.vault", Choice: "MAYBE"}},
@@ -543,18 +543,18 @@ ALTER TABLE public.vault ENABLE ROW LEVEL SECURITY`)
 	} {
 		req.Answers = answers
 		_, err = f.svc.Run(ctx, req)
-		refusal(t, err, localsetup.CodeChallengeInvalid)
+		refusal(t, err, setup.CodeChallengeInvalid)
 	}
 	require.False(t, exists(t, f.db, "basalt_demo"))
 	_, statErr := os.Stat(f.config)
 	require.ErrorIs(t, statErr, os.ErrNotExist)
 	noChallenge := req
 	noChallenge.Challenge = nil
-	noChallenge.Answers = []localsetup.Answer{{Table: "public.vault", Choice: "ALL_ROWS"}}
+	noChallenge.Answers = []setup.Answer{{Table: "public.vault", Choice: "ALL_ROWS"}}
 	_, err = f.svc.Run(ctx, noChallenge)
-	refusal(t, err, localsetup.CodeChallengeInvalid)
+	refusal(t, err, setup.CodeChallengeInvalid)
 
-	req.Answers = []localsetup.Answer{{Table: "public.vault", Choice: "ALL_ROWS"}}
+	req.Answers = []setup.Answer{{Table: "public.vault", Choice: "ALL_ROWS"}}
 	_, err = f.svc.Run(ctx, req)
 	require.NoError(t, err)
 }
@@ -571,14 +571,14 @@ CREATE TABLE public.theirs (id bigint PRIMARY KEY);
 ALTER TABLE public.theirs OWNER TO `+other)
 	listing, err := f.svc.Check(ctx, f.real())
 	require.NoError(t, err)
-	require.Contains(t, listing.Excluded, localsetup.ExcludedTable{Table: "public.theirs", Owner: other})
+	require.Contains(t, listing.Excluded, setup.ExcludedTable{Table: "public.theirs", Owner: other})
 	for _, tbl := range listing.Tables {
 		require.NotEqual(t, "public.theirs", tbl.Table)
 	}
 
 	req := f.real()
-	req.Tables = []localsetup.TablePick{{Table: "public.vault", Access: localsetup.AccessWrite}}
-	req.Answers = []localsetup.Answer{{Table: "public.vault", Choice: "NONE"}}
+	req.Tables = []setup.TablePick{{Table: "public.vault", Access: setup.AccessWrite}}
+	req.Answers = []setup.Answer{{Table: "public.vault", Choice: "NONE"}}
 	checked, err := f.svc.Check(ctx, req)
 	require.NoError(t, err)
 	require.NotRegexp(t, `(?is)CREATE POLICY[^;]*public\.vault`, checked.SQL)
@@ -596,13 +596,13 @@ func TestRealInstallRunRefusesTablesThatChangedSinceTheCheck(t *testing.T) {
 	ctx := context.Background()
 	f.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY)`)
 	req := f.real()
-	req.Tables = []localsetup.TablePick{{Table: "public.orders", Access: localsetup.AccessWrite}}
+	req.Tables = []setup.TablePick{{Table: "public.orders", Access: setup.AccessWrite}}
 	checked, err := f.svc.Check(ctx, req)
 	require.NoError(t, err)
 	f.db.Exec(t, `DROP TABLE public.orders`)
 	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	_, err = f.svc.Run(ctx, req)
-	refusal(t, err, localsetup.CodeTablesChanged)
+	refusal(t, err, setup.CodeTablesChanged)
 	_, statErr := os.Stat(f.config)
 	require.ErrorIs(t, statErr, os.ErrNotExist, "nothing changed")
 }
@@ -631,10 +631,10 @@ func TestRunFinishesAnInstallWhoseConfigWriteFailed(t *testing.T) {
 	require.NoError(t, os.Chmod(dir, 0o500))
 	_, err = f.svc.Run(ctx, req)
 	require.NoError(t, os.Chmod(dir, 0o700))
-	refusal(t, err, localsetup.CodeSetupFailed)
-	var r *localsetup.RefusalError
+	refusal(t, err, setup.CodeSetupFailed)
+	var r *setup.RefusalError
 	require.ErrorAs(t, err, &r)
-	require.Equal(t, 500, r.Status)
+	require.True(t, r.Internal, "the page answers it with 500")
 	require.True(t, exists(t, f.db, "basalt_meta"), "the database part committed")
 	cred := filepath.Join(dir, "agents", "demo_bot.url")
 	before, err := os.ReadFile(cred)
@@ -669,7 +669,7 @@ func TestRunNeverTakesOverAForeignRole(t *testing.T) {
 	role := f.db.Names.Prefix + "_agent_demo_bot"
 	f.db.Exec(t, `CREATE ROLE `+role+` LOGIN PASSWORD 'someone-elses'`)
 	_, err := f.svc.Check(ctx, f.request())
-	refusal(t, err, localsetup.CodeRoleExists)
+	refusal(t, err, setup.CodeRoleExists)
 
 	// A credential that does not log in as that role changes nothing.
 	u, err := url.Parse(f.db.URL)
@@ -677,7 +677,7 @@ func TestRunNeverTakesOverAForeignRole(t *testing.T) {
 	u.User = url.UserPassword(role, "guessed")
 	require.NoError(t, config.WriteFile(filepath.Join(filepath.Dir(f.config), "agents", "demo_bot.url"), []byte(u.String()+"\n")))
 	_, err = f.svc.Run(ctx, f.request())
-	refusal(t, err, localsetup.CodeRoleExists)
+	refusal(t, err, setup.CodeRoleExists)
 	require.False(t, exists(t, f.db, "basalt_meta"), "nothing changed")
 }
 
@@ -714,7 +714,7 @@ func TestRunNeverFinishesWithACredentialForAnotherTarget(t *testing.T) {
 	for _, other := range []url.URL{alias, db} {
 		require.NoError(t, config.WriteFile(cred, []byte(other.String()+"\n")))
 		_, err = f.svc.Check(ctx, f.request())
-		refusal(t, err, localsetup.CodeRoleExists)
+		refusal(t, err, setup.CodeRoleExists)
 	}
 
 	// Pointing at this run's server and database, it is the engine's own.
@@ -726,42 +726,42 @@ func TestRunNeverFinishesWithACredentialForAnotherTarget(t *testing.T) {
 
 func TestRealInstallRefusesBadLabelsBeforeConnecting(t *testing.T) {
 	t.Parallel()
-	svc, err := localsetup.New(localsetup.Options{
+	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin,
-		Users: okUsers{}, Dial: func(context.Context, string) (localsetup.Conn, error) { return nil, errors.New("not here") },
+		Users: okUsers{}, Dial: func(context.Context, string) (setup.Conn, error) { return nil, errors.New("not here") },
 	})
 	require.NoError(t, err)
-	picked := []localsetup.TablePick{{Table: "public.people", Access: localsetup.AccessRead}}
-	label := func(table, column, class string) localsetup.ColumnClass {
-		return localsetup.ColumnClass{Table: table, Column: column, Class: class, Was: localsetup.Label{Class: "UNCLASSIFIED"}}
+	picked := []setup.TablePick{{Table: "public.people", Access: setup.AccessRead}}
+	label := func(table, column, class string) setup.ColumnClass {
+		return setup.ColumnClass{Table: table, Column: column, Class: class, Was: setup.Label{Class: "UNCLASSIFIED"}}
 	}
-	cases := map[string]localsetup.Request{
-		"labels without picks":     {ColumnClasses: []localsetup.ColumnClass{label("public.people", "email", "SECRET")}},
+	cases := map[string]setup.Request{
+		"labels without picks":     {ColumnClasses: []setup.ColumnClass{label("public.people", "email", "SECRET")}},
 		"restPublic without picks": {RestPublic: true},
-		"a table not picked":       {Tables: picked, ColumnClasses: []localsetup.ColumnClass{label("public.other", "email", "SECRET")}},
-		"a column twice":           {Tables: picked, ColumnClasses: []localsetup.ColumnClass{label("public.people", "email", "SECRET"), label("public.people", "email", "PUBLIC")}},
-		"UNCLASSIFIED set":         {Tables: picked, ColumnClasses: []localsetup.ColumnClass{label("public.people", "email", "UNCLASSIFIED")}},
-		"FREE_TEXT set":            {Tables: picked, ColumnClasses: []localsetup.ColumnClass{label("public.people", "email", "FREE_TEXT")}},
-		"identifier no entity":     {Tables: picked, ColumnClasses: []localsetup.ColumnClass{label("public.people", "email", "IDENTIFIER")}},
-		"no column":                {Tables: picked, ColumnClasses: []localsetup.ColumnClass{label("public.people", "", "SECRET")}},
+		"a table not picked":       {Tables: picked, ColumnClasses: []setup.ColumnClass{label("public.other", "email", "SECRET")}},
+		"a column twice":           {Tables: picked, ColumnClasses: []setup.ColumnClass{label("public.people", "email", "SECRET"), label("public.people", "email", "PUBLIC")}},
+		"UNCLASSIFIED set":         {Tables: picked, ColumnClasses: []setup.ColumnClass{label("public.people", "email", "UNCLASSIFIED")}},
+		"FREE_TEXT set":            {Tables: picked, ColumnClasses: []setup.ColumnClass{label("public.people", "email", "FREE_TEXT")}},
+		"identifier no entity":     {Tables: picked, ColumnClasses: []setup.ColumnClass{label("public.people", "email", "IDENTIFIER")}},
+		"no column":                {Tables: picked, ColumnClasses: []setup.ColumnClass{label("public.people", "", "SECRET")}},
 	}
-	many := make([]localsetup.ColumnClass, 501)
+	many := make([]setup.ColumnClass, 501)
 	for i := range many {
 		many[i] = label("public.people", "c"+strings.Repeat("x", i%7)+strings.Repeat("y", i/7), "SECRET")
 	}
-	cases["more than 500"] = localsetup.Request{Tables: picked, ColumnClasses: many}
-	cases["labels on the sample database"] = localsetup.Request{Demo: true, RestPublic: true}
-	cases["a trustRoot on the sample database"] = localsetup.Request{Demo: true, TrustRoot: strings.Repeat("a", 64)}
+	cases["more than 500"] = setup.Request{Tables: picked, ColumnClasses: many}
+	cases["labels on the sample database"] = setup.Request{Demo: true, RestPublic: true}
+	cases["a trustRoot on the sample database"] = setup.Request{Demo: true, TrustRoot: strings.Repeat("a", 64)}
 	for name, extra := range cases {
-		req := localsetup.Request{
-			Job: localsetup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: unusedAdminURL,
+		req := setup.Request{
+			Job: setup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: unusedAdminURL,
 			Demo: extra.Demo, TrustRoot: extra.TrustRoot, Tables: extra.Tables, ColumnClasses: extra.ColumnClasses, RestPublic: extra.RestPublic,
 		}
 		_, err := svc.Check(context.Background(), req)
-		var r *localsetup.RefusalError
+		var r *setup.RefusalError
 		require.True(t, errors.As(err, &r), name)
-		require.Equal(t, localsetup.CodeAnswersInvalid, r.Code, name+": "+r.Message)
+		require.Equal(t, setup.CodeAnswersInvalid, r.Code, name+": "+r.Message)
 	}
 }
 
@@ -772,11 +772,11 @@ func TestRealInstallListsColumnsWithSuggestionsAndWritesTheLabels(t *testing.T) 
 	f.db.Exec(t, `CREATE TABLE public.people (id bigint PRIMARY KEY, email text, nickname text);
 INSERT INTO public.people SELECT g, 'person' || g || '@example.com', 'n' || g FROM generate_series(1, 30) g`)
 	req := f.real()
-	req.Tables = []localsetup.TablePick{{Table: "public.people", Access: localsetup.AccessWrite}}
+	req.Tables = []setup.TablePick{{Table: "public.people", Access: setup.AccessWrite}}
 	checked, err := f.svc.Check(ctx, req)
 	require.NoError(t, err)
 	require.Len(t, checked.Columns, 3)
-	by := map[string]localsetup.ColumnInfo{}
+	by := map[string]setup.ColumnInfo{}
 	for _, c := range checked.Columns {
 		by[c.Column] = c
 		require.Equal(t, "UNCLASSIFIED", c.Class, "a database with no guard has no class")
@@ -790,12 +790,12 @@ INSERT INTO public.people SELECT g, 'person' || g || '@example.com', 'n' || g FR
 
 	// The labels go in the challenge: the passkey made for no labels does not
 	// fit labels, and a check with them issues its own.
-	req.ColumnClasses = []localsetup.ColumnClass{{Table: "public.people", Column: "email", Class: "IDENTIFIER", EntityType: "EMAIL", Was: localsetup.Label{Class: "UNCLASSIFIED"}}}
+	req.ColumnClasses = []setup.ColumnClass{{Table: "public.people", Column: "email", Class: "IDENTIFIER", EntityType: "EMAIL", Was: setup.Label{Class: "UNCLASSIFIED"}}}
 	req.RestPublic = true
 	other := req
 	other.Challenge, other.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	_, err = f.svc.Run(ctx, other)
-	refusal(t, err, localsetup.CodeChallengeInvalid)
+	refusal(t, err, setup.CodeChallengeInvalid)
 
 	labeled, err := f.svc.Check(ctx, req)
 	require.NoError(t, err)
@@ -804,16 +804,16 @@ INSERT INTO public.people SELECT g, 'person' || g || '@example.com', 'n' || g FR
 	changed.RestPublic = false
 	changed.Challenge, changed.Passkey = labeled.Challenge, register(t, *labeled.Challenge)
 	_, err = f.svc.Run(ctx, changed)
-	refusal(t, err, localsetup.CodeChallengeInvalid)
+	refusal(t, err, setup.CodeChallengeInvalid)
 
 	// A column that is no longer unclassified when the page saw it: nothing changes.
 	stale := req
-	stale.ColumnClasses = []localsetup.ColumnClass{{Table: "public.people", Column: "email", Class: "SECRET", Was: localsetup.Label{Class: "PUBLIC"}}}
+	stale.ColumnClasses = []setup.ColumnClass{{Table: "public.people", Column: "email", Class: "SECRET", Was: setup.Label{Class: "PUBLIC"}}}
 	staleChecked, err := f.svc.Check(ctx, stale)
 	require.NoError(t, err)
 	stale.Challenge, stale.Passkey = staleChecked.Challenge, register(t, *staleChecked.Challenge)
 	_, err = f.svc.Run(ctx, stale)
-	refusal(t, err, localsetup.CodeClassesChanged)
+	refusal(t, err, setup.CodeClassesChanged)
 	require.False(t, exists(t, f.db, "basalt_meta"))
 
 	req.Challenge, req.Passkey = labeled.Challenge, register(t, *labeled.Challenge)
@@ -836,11 +836,11 @@ func TestRealInstallColumnsWithoutASampleStillAnswer(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	f.db.Exec(t, `CREATE TABLE public.people (id bigint PRIMARY KEY, email text, nickname text)`)
-	svc, err := localsetup.New(localsetup.Options{
+	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix,
 		Now: func() time.Time { return f.now },
-		SampleColumn: func(_ context.Context, _ localsetup.Conn, col pii.Column) (pii.Sample, error) {
+		SampleColumn: func(_ context.Context, _ setup.Conn, col pii.Column) (pii.Sample, error) {
 			if col.Name == "email" {
 				return pii.Sample{}, errors.New("the connection failed")
 			}
@@ -849,7 +849,7 @@ func TestRealInstallColumnsWithoutASampleStillAnswer(t *testing.T) {
 	})
 	require.NoError(t, err)
 	req := f.real()
-	req.Tables = []localsetup.TablePick{{Table: "public.people", Access: localsetup.AccessWrite}}
+	req.Tables = []setup.TablePick{{Table: "public.people", Access: setup.AccessWrite}}
 	checked, err := svc.Check(ctx, req)
 	require.NoError(t, err, "a sample that fails or times out is not an error of the check")
 	require.Len(t, checked.Columns, 3)
@@ -868,10 +868,10 @@ func TestRealInstallFailsTheCheckWhenTheColumnsCannotBeRead(t *testing.T) {
 	f.db.Init(t, guardmodel.AgentSpec{Name: "first", Password: guard.NewPassword(), CreateOnly: true})
 	f.db.Exec(t, `REVOKE ALL ON basalt_meta.pii_columns FROM `+f.db.Names.Guard())
 	req := f.real()
-	req.Tables = []localsetup.TablePick{{Table: "public.people", Access: localsetup.AccessRead}}
+	req.Tables = []setup.TablePick{{Table: "public.people", Access: setup.AccessRead}}
 	req.RestPublic = true
 	_, err := f.svc.Check(ctx, req)
-	refusal(t, err, localsetup.CodeSetupFailed)
+	refusal(t, err, setup.CodeSetupFailed)
 }
 
 // pinFixture is an install whose admin connection first fails on the
@@ -879,7 +879,7 @@ func TestRealInstallFailsTheCheckWhenTheColumnsCannotBeRead(t *testing.T) {
 // pin it is given.
 type pinFixture struct {
 	*fixture
-	svc        *localsetup.Service
+	svc        *setup.LocalService
 	ca         *x509.Certificate
 	adminURL   string
 	pinnedWith []*trustprofile.Profile
@@ -896,11 +896,11 @@ func newPinFixture(t *testing.T) *pinFixture {
 	leafCert, err := x509.ParseCertificate(leaf.Certificate[0])
 	require.NoError(t, err)
 	p := &pinFixture{fixture: f, ca: ca, adminURL: "postgres://admin:" + mustPassword(t, f.db.URL) + "@" + pinHost + ":5432/app"}
-	svc, err := localsetup.New(localsetup.Options{
+	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix,
 		Now: func() time.Time { return f.now },
-		Dial: func(context.Context, string) (localsetup.Conn, error) {
+		Dial: func(context.Context, string) (setup.Conn, error) {
 			return nil, x509.UnknownAuthorityError{}
 		},
 		Profiles: func() *trustprofile.Set {
@@ -909,7 +909,7 @@ func newPinFixture(t *testing.T) *pinFixture {
 			}
 			return trustprofile.NewSet(nil, nil, nil)
 		},
-		DialPinned: func(ctx context.Context, dsn string, pin *trustprofile.Profile) (localsetup.Conn, error) {
+		DialPinned: func(ctx context.Context, dsn string, pin *trustprofile.Profile) (setup.Conn, error) {
 			p.pinnedWith = append(p.pinnedWith, pin)
 			p.pinnedDSNs = append(p.pinnedDSNs, dsn)
 			return setupbackend.Wrap(pgdial.Connect(ctx, f.db.URL))
@@ -924,10 +924,10 @@ func newPinFixture(t *testing.T) *pinFixture {
 	return p
 }
 
-func (p *pinFixture) req() localsetup.Request {
+func (p *pinFixture) req() setup.Request {
 	r := p.real()
 	r.DatabaseURL = p.adminURL
-	r.Tables = []localsetup.TablePick{{Table: "public.orders", Access: localsetup.AccessRead}}
+	r.Tables = []setup.TablePick{{Table: "public.orders", Access: setup.AccessRead}}
 	return r
 }
 
@@ -938,9 +938,9 @@ func TestRealInstallOffersAnUnknownAuthorityAndRefusesAnyOtherTrustRoot(t *testi
 	p.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY)`)
 
 	_, err := p.svc.Check(ctx, p.req())
-	var r *localsetup.RefusalError
+	var r *setup.RefusalError
 	require.True(t, errors.As(err, &r))
-	require.Equal(t, localsetup.CodeCertificateNotVerified, r.Code)
+	require.Equal(t, setup.CodeCertificateNotVerified, r.Code)
 	require.NotNil(t, r.TrustRoot)
 	require.Equal(t, trustprofile.DERSHA256(p.ca), r.TrustRoot.SHA256)
 	require.Equal(t, "CN=trustprofiletest root", r.TrustRoot.Subject)
@@ -951,10 +951,10 @@ func TestRealInstallOffersAnUnknownAuthorityAndRefusesAnyOtherTrustRoot(t *testi
 		req := p.req()
 		req.TrustRoot = bad
 		_, err = p.svc.Check(ctx, req)
-		refusal(t, err, localsetup.CodeTrustRootMismatch)
-		req.Challenge = &localsetup.Challenge{ExpiresAt: p.now.Add(time.Hour)} // run reads the chain before it checks the binding
+		refusal(t, err, setup.CodeTrustRootMismatch)
+		req.Challenge = &setup.Challenge{ExpiresAt: p.now.Add(time.Hour)} // run reads the chain before it checks the binding
 		_, err = p.svc.Run(ctx, req)
-		refusal(t, err, localsetup.CodeTrustRootMismatch)
+		refusal(t, err, setup.CodeTrustRootMismatch)
 	}
 	require.Empty(t, p.pinnedWith)
 }
@@ -982,7 +982,7 @@ func TestRealInstallPinsTheTrustedAuthorityBeforeTheCommit(t *testing.T) {
 	other.TrustRoot = ""
 	other.Challenge, other.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	_, err = p.svc.Run(ctx, other)
-	refusal(t, err, localsetup.CodeCertificateNotVerified)
+	refusal(t, err, setup.CodeCertificateNotVerified)
 	_, statErr := os.Stat(filepath.Join(filepath.Dir(p.config), "trust.d"))
 	require.ErrorIs(t, statErr, os.ErrNotExist, "nothing is pinned by a refused run")
 
@@ -1022,7 +1022,7 @@ func TestRealInstallRollsBackWhenTheHostIsCoveredByAnotherProfile(t *testing.T) 
 	require.NoError(t, err)
 	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	_, err = p.svc.Run(ctx, req)
-	refusal(t, err, localsetup.CodeSetupFailed)
+	refusal(t, err, setup.CodeSetupFailed)
 	require.False(t, exists(t, p.db, "basalt_meta"), "the whole install rolled back")
 	_, statErr := os.Stat(filepath.Join(filepath.Dir(p.config), "agents", "bot.url"))
 	require.ErrorIs(t, statErr, os.ErrNotExist)
@@ -1036,13 +1036,13 @@ func TestRealInstallBindsTheTrustRootToTheChallenge(t *testing.T) {
 	ctx := context.Background()
 	f.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY)`)
 	req := f.real()
-	req.Tables = []localsetup.TablePick{{Table: "public.orders", Access: localsetup.AccessRead}}
+	req.Tables = []setup.TablePick{{Table: "public.orders", Access: setup.AccessRead}}
 	checked, err := f.svc.Check(ctx, req)
 	require.NoError(t, err)
 	req.TrustRoot = strings.Repeat("a", 64) // ignored: the certificate verifies without it, but it is bound
 	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	_, err = f.svc.Run(ctx, req)
-	refusal(t, err, localsetup.CodeChallengeInvalid)
+	refusal(t, err, setup.CodeChallengeInvalid)
 }
 
 func TestRealInstallPinsOnVerifyFullWhateverModeTheStringNames(t *testing.T) {
@@ -1080,11 +1080,11 @@ func TestRealInstallARunAfterAFailedCommitRecordsThePinAgain(t *testing.T) {
 	_, err := trustdir.PinNew(p.config, pinHost, p.ca, false)
 	require.NoError(t, err)
 	p.profiles = func() *trustprofile.Set { return trustdir.Set(p.config) }
-	svc, err := localsetup.New(localsetup.Options{
+	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: p.config, Origin: origin, Users: fakeUsers{}, Prefix: p.db.Names.Prefix,
 		Now: func() time.Time { return p.now },
-		Dial: func(ctx context.Context, _ string) (localsetup.Conn, error) {
+		Dial: func(ctx context.Context, _ string) (setup.Conn, error) {
 			return setupbackend.Wrap(pgdial.Connect(ctx, p.db.URL))
 		}, // verifies through the pin
 		Profiles: func() *trustprofile.Set { return trustdir.Set(p.config) },
@@ -1141,13 +1141,13 @@ func (c cutBeforeCommit) Write(b []byte) (int, error) {
 
 // cutService is a setup service whose admin connections are wrapped by
 // wrap while *cut is true.
-func cutService(t *testing.T, f *fixture, cut *bool, wrap func(net.Conn) net.Conn) *localsetup.Service {
+func cutService(t *testing.T, f *fixture, cut *bool, wrap func(net.Conn) net.Conn) *setup.LocalService {
 	t.Helper()
-	svc, err := localsetup.New(localsetup.Options{
+	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix,
 		Now: func() time.Time { return f.now },
-		Dial: func(ctx context.Context, dsn string) (localsetup.Conn, error) {
+		Dial: func(ctx context.Context, dsn string) (setup.Conn, error) {
 			cfg, err := pgdial.ConnConfig(dsn)
 			if err != nil {
 				return nil, err
@@ -1176,14 +1176,14 @@ func TestRealInstallKeepsTheCredentialWhenTheCommitOutcomeIsUnknown(t *testing.T
 	cut := true
 	svc := cutService(t, f, &cut, func(c net.Conn) net.Conn { return cutAfterCommit{c} })
 	req := f.real()
-	req.Tables = []localsetup.TablePick{{Table: "public.orders", Access: localsetup.AccessRead}}
+	req.Tables = []setup.TablePick{{Table: "public.orders", Access: setup.AccessRead}}
 	checked, err := svc.Check(ctx, req)
 	require.NoError(t, err)
 	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	_, err = svc.Run(ctx, req)
-	var r *localsetup.RefusalError
+	var r *setup.RefusalError
 	require.True(t, errors.As(err, &r))
-	require.Equal(t, localsetup.CodeSetupFailed, r.Code)
+	require.Equal(t, setup.CodeSetupFailed, r.Code)
 	require.Contains(t, r.Message, "did not confirm")
 	cred := filepath.Join(filepath.Dir(f.config), "agents", "bot.url")
 	_, statErr := os.Stat(cred)
@@ -1211,14 +1211,14 @@ func TestRealInstallRemovesTheCredentialWhenTheCommitIsNeverSent(t *testing.T) {
 	cut := true
 	svc := cutService(t, f, &cut, func(c net.Conn) net.Conn { return cutBeforeCommit{c} })
 	req := f.real()
-	req.Tables = []localsetup.TablePick{{Table: "public.orders", Access: localsetup.AccessRead}}
+	req.Tables = []setup.TablePick{{Table: "public.orders", Access: setup.AccessRead}}
 	checked, err := svc.Check(ctx, req)
 	require.NoError(t, err)
 	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	_, err = svc.Run(ctx, req)
-	var r *localsetup.RefusalError
+	var r *setup.RefusalError
 	require.True(t, errors.As(err, &r))
-	require.Equal(t, localsetup.CodeSetupFailed, r.Code)
+	require.Equal(t, setup.CodeSetupFailed, r.Code)
 	require.NotContains(t, r.Message, "did not confirm")
 	require.Contains(t, r.Message, "nothing changed")
 	_, statErr := os.Stat(filepath.Join(filepath.Dir(f.config), "agents", "bot.url"))
@@ -1235,14 +1235,14 @@ func TestRealInstallDeletesTheCredentialWhenTheCommitKnownlyFails(t *testing.T) 
 	f.db.Exec(t, `CREATE FUNCTION public.refuse_at_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused at commit'; END $$;
 CREATE CONSTRAINT TRIGGER refuse_at_commit AFTER INSERT ON basalt_meta.passkeys DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.refuse_at_commit()`)
 	req := f.real()
-	req.Tables = []localsetup.TablePick{{Table: "public.orders", Access: localsetup.AccessRead}}
+	req.Tables = []setup.TablePick{{Table: "public.orders", Access: setup.AccessRead}}
 	checked, err := f.svc.Check(ctx, req)
 	require.NoError(t, err)
 	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	_, err = f.svc.Run(ctx, req)
-	var r *localsetup.RefusalError
+	var r *setup.RefusalError
 	require.True(t, errors.As(err, &r))
-	require.Equal(t, localsetup.CodeSetupFailed, r.Code)
+	require.Equal(t, setup.CodeSetupFailed, r.Code)
 	require.NotContains(t, r.Message, "did not confirm", "the server answered: the failure is known")
 	_, statErr := os.Stat(filepath.Join(filepath.Dir(f.config), "agents", "bot.url"))
 	require.ErrorIs(t, statErr, os.ErrNotExist, "the credential of a role that was rolled back is removed")
@@ -1250,9 +1250,9 @@ CREATE CONSTRAINT TRIGGER refuse_at_commit AFTER INSERT ON basalt_meta.passkeys 
 
 func TestInstallRefusesADatabaseNameToConfirm(t *testing.T) {
 	t.Parallel()
-	svc, err := localsetup.New(localsetup.Options{Backend: setupbackend.Backend{}, ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin, Users: fakeUsers{}, Prefix: "basalt"})
+	svc, err := setup.NewLocal(setup.LocalOptions{Backend: setupbackend.Backend{}, ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin, Users: fakeUsers{}, Prefix: "basalt"})
 	require.NoError(t, err)
-	req := localsetup.Request{Job: localsetup.JobInstall, Agent: "demo_bot", OSUser: "alice", Demo: true, DatabaseURL: unusedAdminURL, ConfirmName: "app"}
+	req := setup.Request{Job: setup.JobInstall, Agent: "demo_bot", OSUser: "alice", Demo: true, DatabaseURL: unusedAdminURL, ConfirmName: "app"}
 	_, err = svc.Check(context.Background(), req)
-	refusal(t, err, localsetup.CodeAnswersInvalid)
+	refusal(t, err, setup.CodeAnswersInvalid)
 }

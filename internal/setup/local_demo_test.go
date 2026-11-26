@@ -1,4 +1,4 @@
-package localsetup_test
+package setup_test
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // fixtureOn is newFixture on database d with a config of its own, as a
@@ -20,7 +20,7 @@ import (
 func fixtureOn(t *testing.T, d *guardtest.DB) *fixture {
 	t.Helper()
 	f := &fixture{db: d, config: filepath.Join(t.TempDir(), "engine.json"), now: time.Now()}
-	svc, err := localsetup.New(localsetup.Options{
+	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: d.Names.Prefix,
 		Now: func() time.Time { return f.now },

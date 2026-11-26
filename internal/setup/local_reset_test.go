@@ -1,4 +1,4 @@
-package localsetup_test
+package setup_test
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // The engine's answer to "Is this your database?" comes from its own files
@@ -25,13 +25,13 @@ func TestNotMineIsOnlyAMarkForBasaltInit(t *testing.T) {
 	f, _ := installed(t)
 	ctx := context.Background()
 	_, err := f.svc.Engine(ctx)
-	refusal(t, err, localsetup.CodeJobUnavailable)
+	refusal(t, err, setup.CodeJobUnavailable)
 
-	svc, err := localsetup.New(localsetup.Options{
+	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix, Configured: true,
 		Now: func() time.Time { return f.now },
-		Dial: func(context.Context, string) (localsetup.Conn, error) {
+		Dial: func(context.Context, string) (setup.Conn, error) {
 			t.Error("the engine check connected to a database")
 			return nil, errors.New("no connection")
 		},
@@ -48,22 +48,22 @@ func TestNotMineIsOnlyAMarkForBasaltInit(t *testing.T) {
 
 	before, err := os.ReadFile(f.config)
 	require.NoError(t, err)
-	_, err = svc.Check(ctx, localsetup.Request{})
-	refusal(t, err, localsetup.CodeJobUnavailable)
+	_, err = svc.Check(ctx, setup.Request{})
+	refusal(t, err, setup.CodeJobUnavailable)
 	require.NoError(t, svc.NotMine(ctx))
 	after, err := os.ReadFile(f.config)
 	require.NoError(t, err)
 	require.Equal(t, before, after, "a No changes no file")
 	require.FileExists(t, filepath.Join(filepath.Dir(f.config), "agents", "demo_bot.url"))
-	_, err = svc.Check(ctx, localsetup.Request{})
-	refusal(t, err, localsetup.CodeResetAsked)
-	_, err = svc.Check(ctx, localsetup.Request{})
-	refusal(t, err, localsetup.CodeJobUnavailable)
+	_, err = svc.Check(ctx, setup.Request{})
+	refusal(t, err, setup.CodeResetAsked)
+	_, err = svc.Check(ctx, setup.Request{})
+	refusal(t, err, setup.CodeJobUnavailable)
 
 	require.NoError(t, svc.NotMine(ctx))
 	f.now = f.now.Add(6 * time.Minute)
-	_, err = svc.Check(ctx, localsetup.Request{})
-	refusal(t, err, localsetup.CodeJobUnavailable)
+	_, err = svc.Check(ctx, setup.Request{})
+	refusal(t, err, setup.CodeJobUnavailable)
 }
 
 // After the reset script deleted the engine's files, the person's install
@@ -87,7 +87,7 @@ func TestAnInstallAfterAResetSetsANewPasswordForTheRoleLeft(t *testing.T) {
 	plain := f.request()
 	plain.Agent = "plain_bot"
 	_, err = f.svc.Check(ctx, plain)
-	refusal(t, err, localsetup.CodeRoleExists)
+	refusal(t, err, setup.CodeRoleExists)
 
 	checked, err := f.svc.Check(ctx, f.request())
 	require.NoError(t, err)

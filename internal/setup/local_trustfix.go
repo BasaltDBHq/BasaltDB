@@ -1,4 +1,4 @@
-package localsetup
+package setup
 
 import (
 	"context"
@@ -33,7 +33,7 @@ type agentHost struct {
 }
 
 // hostOf reads the agent's host and this engine's pin for it.
-func (s *Service) hostOf(a config.Agent) (agentHost, error) {
+func (s *LocalService) hostOf(a config.Agent) (agentHost, error) {
 	dsn, err := s.be.ReadCredential(a.Store.CredentialFile)
 	if err != nil {
 		return agentHost{}, refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
@@ -118,7 +118,7 @@ type trustCase struct {
 
 // readTrust reads the chain the agent's host presents, with the handshake
 // alone, and decides the case. A host no pin covers is NOTHING_TO_FIX.
-func (s *Service) readTrust(ctx context.Context, j agentJob) (trustCase, error) {
+func (s *LocalService) readTrust(ctx context.Context, j agentJob) (trustCase, error) {
 	h, err := s.hostOf(j.agent)
 	if err != nil {
 		return trustCase{}, err
@@ -165,7 +165,7 @@ func (s *Service) readTrust(ctx context.Context, j agentJob) (trustCase, error) 
 
 // openTrust logs in with the admin string, verify-full against that one
 // certificate: the new one the person trusted, or the engine's pin.
-func (s *Service) openTrust(ctx context.Context, j agentJob, tc trustCase) (Conn, error) {
+func (s *LocalService) openTrust(ctx context.Context, j agentJob, tc trustCase) (Conn, error) {
 	prof := tc.pin
 	if tc.changed {
 		prof = tc.next
@@ -183,7 +183,7 @@ func (s *Service) openTrust(ctx context.Context, j agentJob, tc trustCase) (Conn
 
 // trustPlan reads in tx what the fix would do, after the checks every fix
 // makes: for MISMATCH the ledger's record, which must name another pin.
-func (s *Service) trustPlan(ctx context.Context, tx Tx, j agentJob, tc trustCase) (CheckAnswer, error) {
+func (s *LocalService) trustPlan(ctx context.Context, tx Tx, j agentJob, tc trustCase) (CheckAnswer, error) {
 	database, err := s.fixDatabase(ctx, tx, j)
 	if err != nil {
 		return CheckAnswer{}, err
@@ -213,7 +213,7 @@ func recordSQL(host string, port int, sha string) string {
 // guardLiteral is s as a SQL string literal, for the shown SQL only.
 func guardLiteral(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
-func (s *Service) checkTrust(ctx context.Context, j agentJob) (CheckAnswer, error) {
+func (s *LocalService) checkTrust(ctx context.Context, j agentJob) (CheckAnswer, error) {
 	tc, err := s.readTrust(ctx, j)
 	if err != nil {
 		return CheckAnswer{}, err
@@ -239,7 +239,7 @@ func (s *Service) checkTrust(ctx context.Context, j agentJob) (CheckAnswer, erro
 // since the person approved it and the login checked it. For a ledger that
 // names another pin it writes no file, and a pin that changed since the
 // login is TRUST_ROOT_MISMATCH, nothing recorded.
-func (s *Service) runTrust(ctx context.Context, j agentJob) (RunAnswer, error) {
+func (s *LocalService) runTrust(ctx context.Context, j agentJob) (RunAnswer, error) {
 	tc, err := s.readTrust(ctx, j)
 	if err != nil {
 		return RunAnswer{}, err

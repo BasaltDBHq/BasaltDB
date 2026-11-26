@@ -270,7 +270,7 @@ func TestWatchWarnsAboutUnclassifiedColumns(t *testing.T) {
 	f.classify(t, time.Now())
 	ctx := context.Background()
 	log, out := newLog()
-	w := pii.NewWatch("bot", pii.NewMap(log), Classes(f.pool), log)
+	w := pii.NewWatch("bot", pii.NewMap(log), pii.StoreSet{Classes: Classes(f.pool)}, log)
 	require.NoError(t, w.Tick(ctx))
 	require.Contains(t, out.String(), "pii: 2 columns unclassified: public.plain.id, public.plain.label")
 	require.Contains(t, out.String(), "pii: classification loaded")

@@ -276,8 +276,16 @@ func TestWatchLogsTheStoresUnclassifiedFields(t *testing.T) {
 		{Name: "db.users.contact.email", DataType: "string"},
 		{Name: "db.users.age", DataType: "int", Changed: true},
 	}
-	require.NoError(t, NewWatch("bot", NewMap(log), store, log).Tick(context.Background()))
+	require.NoError(t, NewWatch("bot", NewMap(log), StoreSet{Classes: store}, log).Tick(context.Background()))
 	require.Contains(t, out.String(), "pii: 1 columns unclassified: db.users.contact.email")
 	require.Contains(t, out.String(), "pii: 1 columns changed type since they were labeled: db.users.age")
 	require.Contains(t, out.String(), "pii: classification loaded")
+}
+
+func TestNewWatchRefusesAStoreSetWithANilPort(t *testing.T) {
+	t.Parallel()
+	log := slog.New(slog.DiscardHandler)
+	require.PanicsWithValue(t, "piidict: store set missing ports: Classes", func() {
+		NewWatch("bot", NewMap(log), StoreSet{}, log)
+	})
 }

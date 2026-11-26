@@ -48,7 +48,7 @@ func events(t *testing.T, c *pgx.Conn, kind string) []event {
 func heartbeats(t *testing.T, c *pgx.Conn) []event { return events(t, c, "HEARTBEAT") }
 
 func newUpkeep(c *pgx.Conn, now func() time.Time) *ledger.Upkeep {
-	return ledger.New("bot", "test", store.NewUpkeep(c), slog.New(slog.DiscardHandler), now)
+	return ledger.New("bot", "test", ledger.StoreSet{Store: store.NewUpkeep(c)}, slog.New(slog.DiscardHandler), now)
 }
 
 // rewriteHistory changes row 1 and re-hashes the whole chain: the full
@@ -241,7 +241,7 @@ func TestRunStopsWithTheContext(t *testing.T) {
 
 func TestNewPanicsWithoutDeps(t *testing.T) {
 	t.Parallel()
-	require.Panics(t, func() { ledger.New("", "v", nil, slog.New(slog.DiscardHandler), time.Now) })
+	require.Panics(t, func() { ledger.New("", "v", ledger.StoreSet{}, slog.New(slog.DiscardHandler), time.Now) })
 }
 
 func TestTickWarnsAboutTablesRLSHides(t *testing.T) {
@@ -250,7 +250,7 @@ func TestTickWarnsAboutTablesRLSHides(t *testing.T) {
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 	d.Exec(t, `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY`)
 	var buf bytes.Buffer
-	u := ledger.New("bot", "test", store.NewUpkeep(a.Conn), slog.New(slog.NewTextHandler(&buf, nil)), time.Now)
+	u := ledger.New("bot", "test", ledger.StoreSet{Store: store.NewUpkeep(a.Conn)}, slog.New(slog.NewTextHandler(&buf, nil)), time.Now)
 	require.NoError(t, u.Tick(context.Background()))
 	require.Contains(t, buf.String(), "row-level security hides every row")
 	require.Contains(t, buf.String(), "table=public.leads")
@@ -311,7 +311,7 @@ func TestReinstallOverAKeptPinIsRecorded(t *testing.T) {
 
 	b := reinstall(t, d, a)
 	var logs bytes.Buffer
-	again := ledger.New("bot", "test", store.NewUpkeep(b.Conn), slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
+	again := ledger.New("bot", "test", ledger.StoreSet{Store: store.NewUpkeep(b.Conn)}, slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
 	require.NoError(t, again.Tick(ctx))
 	require.NoError(t, again.Tick(ctx))
 	for _, hb := range heartbeats(t, b.Conn) {
@@ -357,7 +357,7 @@ func TestReinstallWhileRunningIsRecorded(t *testing.T) {
 	ctx := context.Background()
 	pins := pinfile.File{Dir: t.TempDir()}
 	sw := &switchDB{q: a.Conn}
-	u := ledger.New("bot", "test", store.NewUpkeep(sw), slog.New(slog.DiscardHandler), time.Now).WithPins(pins)
+	u := ledger.New("bot", "test", ledger.StoreSet{Store: store.NewUpkeep(sw)}, slog.New(slog.DiscardHandler), time.Now).WithPins(pins)
 	// Twice: the second pins the first heartbeat, past the genesis.
 	require.NoError(t, u.Tick(ctx))
 	require.NoError(t, u.Tick(ctx))
@@ -414,7 +414,7 @@ func TestSameLedgerUnderANewInstallMovesThePin(t *testing.T) {
 	require.Positive(t, moved.Head.Seq, "a pinned row, not the genesis")
 
 	var logs bytes.Buffer
-	u := ledger.New("bot", "test", store.NewUpkeep(a.Conn), slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
+	u := ledger.New("bot", "test", ledger.StoreSet{Store: store.NewUpkeep(a.Conn)}, slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
 	require.NoError(t, u.Tick(ctx))
 	require.Empty(t, events(t, a.Conn, "PIN_SET_ASIDE"), "nothing recorded")
 	for _, hb := range heartbeats(t, a.Conn) {
@@ -512,7 +512,7 @@ func TestUnreportedPinIsKeptAndReportedBroken(t *testing.T) {
 			noReport(t, d, kind)
 
 			var logs bytes.Buffer
-			u := ledger.New("bot", "test", store.NewUpkeep(a.Conn), slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
+			u := ledger.New("bot", "test", ledger.StoreSet{Store: store.NewUpkeep(a.Conn)}, slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
 			for range 2 {
 				require.NoError(t, u.Tick(ctx))
 				hb := heartbeats(t, a.Conn)

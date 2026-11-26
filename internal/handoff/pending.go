@@ -2,6 +2,7 @@ package handoff
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -93,9 +94,10 @@ type Files interface {
 	WriteCredential(dsn string) error
 	// RemoveSecret removes .secret; a missing one is not an error.
 	RemoveSecret() error
-	// WritePin writes pin for host to trust.d, unless that pin is there
-	// already; it refuses when another trust profile covers host by then.
-	WritePin(host string, pin Pin) error
+	// WritePin writes the pin of top (caOnly: it verifies the chain alone)
+	// for host to trust.d, unless that pin is there already; it refuses
+	// when another trust profile covers host by then.
+	WritePin(host string, top *x509.Certificate, caOnly bool) error
 	// ConfirmSetup clears awaitingAddress from pending setup id.
 	ConfirmSetup(id string) error
 	// RefuseSetup replaces awaitingAddress with refused in pending setup id.
@@ -592,7 +594,7 @@ func (p *Pending) confirm(id string, db setupcode.Address) (Answer, error) {
 		return Answer{}, fmt.Errorf("read the agent's password: %w", err)
 	}
 	if p.pin.Profile != nil {
-		if err := p.o.Files.WritePin(db.Host, p.pin); err != nil {
+		if err := p.o.Files.WritePin(db.Host, p.pin.Top, p.pin.CAOnly); err != nil {
 			return Answer{}, fmt.Errorf("pin the database's certificate authority: %w", err)
 		}
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 )
@@ -65,7 +66,7 @@ type restartingEngine struct {
 func startRestarting(t *testing.T, socket string, tools *restartTools, upgrade <-chan struct{}, idle, drain time.Duration) *restartingEngine {
 	t.Helper()
 	a := engine.Agent{Name: "bot", UID: myUID(), SocketPath: socket, Server: mcpServer{tools.server()}}
-	e := engine.New(slog.New(slog.DiscardHandler), mcpLines{}, []engine.Agent{a}).WithRestart(engine.Restart{
+	e := engine.New(slog.New(slog.DiscardHandler), mcpLines{}, engineos.OS{}, []engine.Agent{a}).WithRestart(engine.Restart{
 		Upgrade: func(ctx context.Context) error {
 			select {
 			case <-upgrade:

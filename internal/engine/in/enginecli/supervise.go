@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"runtime"
 	"time"
@@ -28,10 +27,10 @@ func RunSupervise(ctx context.Context, configPath, startedBy string, io cli.Stdi
 		return m.Fail(io.Err, "engine", err)
 	}
 	// An update can drop empty folders; the engine makes its own too.
-	if err := os.MkdirAll(cfg.SocketDir, engine.PrivateDirMode); err != nil {
+	if err := t.MakeDirs(cfg.SocketDir, engine.PrivateDirMode); err != nil {
 		return m.Fail(io.Err, "engine", err)
 	}
-	release, err := config.LockFile(filepath.Join(cfg.SocketDir, engine.SuperviseLock))
+	release, err := t.LockFile(filepath.Join(cfg.SocketDir, engine.SuperviseLock))
 	if errors.Is(err, config.ErrLocked) {
 		_, _ = fmt.Fprintln(io.Err, "basalt engine: another basalt engine --supervise runs for this config")
 		return cli.ExitOK

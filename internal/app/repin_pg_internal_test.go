@@ -33,6 +33,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/handoff/out/handofffiles"
+	"github.com/basaltdbhq/basaltdb/internal/handoff/out/handoffnet"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
@@ -140,7 +142,7 @@ func (f rotationFixture) approve(t *testing.T, trustRoot string) {
 // memoryPending is engine.json's pending setup, held in memory; the pin is
 // replaced in the fixture's real trust.d.
 type memoryPending struct {
-	handoff.RepinSetupFiles
+	handofffiles.RepinSetupFiles
 	setup config.Setup
 }
 
@@ -155,11 +157,12 @@ func (f rotationFixture) engineRepin(t *testing.T) *handoff.Repin {
 		Credential: setupcode.Address{Host: repinHost, Port: 5432, Database: f.d.Admin.Config().Database},
 		Collector:  handoff.NewClient(nil, f.base, f.keys, time.Now),
 		Prober: handoff.Prober{
-			Resolver: staticResolver{netip.MustParseAddr("8.8.8.8")},
-			Dial:     f.newDial,
-			Profiles: trustdir.Set(f.cfg), Login: pgdial.Login,
+			Resolver:  staticResolver{netip.MustParseAddr("8.8.8.8")},
+			Dial:      f.newDial,
+			ReadChain: handoffnet.ReadChain,
+			Profiles:  trustdir.Set(f.cfg), Login: pgdial.Login,
 		},
-		Files: memoryPending{RepinSetupFiles: handoff.RepinSetupFiles{SetupFiles: handoff.SetupFiles{ConfigPath: f.cfg, Agent: "bot", Pins: trustPins{}}}, setup: f.setup},
+		Files: memoryPending{RepinSetupFiles: handofffiles.RepinSetupFiles{SetupFiles: handofffiles.SetupFiles{ConfigPath: f.cfg, Agent: "bot", Pins: trustPins{}}}, setup: f.setup},
 		Log:   slog.New(slog.DiscardHandler), Now: time.Now,
 	})
 	require.NoError(t, err)

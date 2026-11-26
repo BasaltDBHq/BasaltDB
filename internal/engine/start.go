@@ -28,8 +28,8 @@ func AgentOSUIDs(agents []config.Agent, lookup func(string) (uint32, error)) (ma
 // EnsureOwnDirs makes and tightens the folders a same-user engine owns: its
 // state directory, and its socket directory when every agent's OS user is
 // the engine's own (a socket directory other users reach stays 0755). A
-// service engine's folders are the service manager's.
-func EnsureOwnDirs(cfg config.Config, agentUIDs map[string]uint32, euid int) error {
+// service engine's folders are the service manager's. m makes them.
+func EnsureOwnDirs(m Machine, cfg config.Config, agentUIDs map[string]uint32, euid int) error {
 	if cfg.Service() {
 		return nil
 	}
@@ -41,5 +41,5 @@ func EnsureOwnDirs(cfg config.Config, agentUIDs map[string]uint32, euid int) err
 	if own {
 		dirs = append(dirs, cfg.SocketDir)
 	}
-	return ensurePrivateDirs(euid, dirs...)
+	return m.MakePrivateDirs(euid, StateDirMode, dirs...)
 }

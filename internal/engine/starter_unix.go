@@ -7,30 +7,48 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 )
 
 const (
 	startLockName = "start.lock"
 	engineLogName = "engine.log"
 	startPoll     = 50 * time.Millisecond
-	dialTimeout   = 200 * time.Millisecond
 )
+
+// StarterOS is the starter's reach into the machine's files: its folders,
+// the start, engine and supervisor locks, the binary and the engine log.
+// engine/out/engineos is the real one.
+type StarterOS interface {
+	// MakeDirs makes dir and any missing parents with mode.
+	MakeDirs(dir string, mode os.FileMode) error
+	// LockFile takes the exclusive lock on path without waiting:
+	// config.ErrLocked when another process holds it.
+	LockFile(path string) (release func(), err error)
+	// LockHolderRuns is true when a live process holds the pid lock at path.
+	LockHolderRuns(path string) bool
+	// StatPath is nil when path names a file, following links.
+	StatPath(path string) error
+	// ReadLastStop reads the supervisor's record at path; false when there
+	// is no usable record.
+	ReadLastStop(path string) (guidance.LastStop, bool)
+	// OpenLog opens the engine log at path for appending, never through a
+	// link.
+	OpenLog(path string) (*os.File, error)
+}
 
 // StarterDeps are the starter's reach into the machine; tests replace them.
 type StarterDeps struct {
+	// OS is the machine's files the starter reads and makes.
+	OS StarterOS
 	// Owner is the uid that owns path.
 	Owner func(path string) (int, error)
 	// Launch runs exe with args detached, its output to logFile.
@@ -41,29 +59,6 @@ type StarterDeps struct {
 	Wait time.Duration
 	// Now is the clock for the start hold-off; tests replace it.
 	Now func() time.Time
-}
-
-func SocketAnswers(socket string) bool {
-	c, err := net.DialTimeout("unix", socket, dialTimeout)
-	if err != nil {
-		return false
-	}
-	_ = c.Close()
-	return true
-}
-
-// LaunchDetached starts exe args in a new session with no stdin and
-// logFile for output, and lets it go: it outlives this process.
-func LaunchDetached(exe string, args []string, logFile *os.File) error {
-	cmd := exec.Command(exe, args...)
-	cmd.Stdout, cmd.Stderr = logFile, logFile
-	cmd.Dir = "/" // the config path is absolute; nothing depends on the shim's folder
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	go func() { _ = cmd.Wait() }() // reap it if it exits while this process lives
-	return nil
 }
 
 // NewStarter returns what starts the engine for configPath when a
@@ -121,7 +116,7 @@ func (s *starter) now() time.Time {
 
 // holdOff reports whether last-stop.json still holds off a new start.
 func (s *starter) holdOff() (until time.Time, stop guidance.LastStop, ok bool) {
-	stop, ok = ReadLastStop(s.stateDir())
+	stop, ok = s.deps.OS.ReadLastStop(filepath.Join(s.stateDir(), LastStopFile))
 	if !ok {
 		return time.Time{}, guidance.LastStop{}, false
 	}
@@ -149,13 +144,13 @@ func (s *starter) record(err error) error {
 // that engine is gone).
 func (s *starter) start(ctx context.Context) error {
 	// An update drops empty folders and resets modes; these are ours.
-	if err := os.MkdirAll(s.cfg.SocketDir, PrivateDirMode); err != nil {
+	if err := s.deps.OS.MakeDirs(s.cfg.SocketDir, PrivateDirMode); err != nil {
 		return s.record(err)
 	}
-	if err := os.MkdirAll(s.stateDir(), PrivateDirMode); err != nil {
+	if err := s.deps.OS.MakeDirs(s.stateDir(), PrivateDirMode); err != nil {
 		return s.record(err)
 	}
-	release, err := lockStart(filepath.Join(s.cfg.SocketDir, startLockName))
+	release, err := lockStart(s.deps.OS, filepath.Join(s.cfg.SocketDir, startLockName))
 	if errors.Is(err, config.ErrLocked) {
 		return s.waitSocket(ctx) // another shim is starting it
 	}
@@ -164,12 +159,12 @@ func (s *starter) start(ctx context.Context) error {
 	}
 	defer release()
 
-	if _, up, _ := pidlock.Running(LockPath(s.cfg.SocketDir)); up {
+	if s.deps.OS.LockHolderRuns(LockPath(s.cfg.SocketDir)) {
 		return s.engineRuns(ctx)
 	}
 	// A supervisor may hold its lock before its child takes the engine
 	// lock (it is starting, or waiting to restart). Do not launch another.
-	held, err := lockHeld(filepath.Join(s.cfg.SocketDir, SuperviseLock))
+	held, err := lockHeld(s.deps.OS, filepath.Join(s.cfg.SocketDir, SuperviseLock))
 	if err != nil {
 		return s.record(err)
 	}
@@ -181,10 +176,10 @@ func (s *starter) start(ctx context.Context) error {
 		// The shim treats an error as "try the socket once, do not wait".
 		return fmt.Errorf("the supervisor gave up at %s: %s; the next try is at %s", stop.At.UTC().Format(time.RFC3339), stop.Reason, until.UTC().Format(time.RFC3339))
 	}
-	if _, err := os.Stat(s.exe); err != nil {
+	if err := s.deps.OS.StatPath(s.exe); err != nil {
 		return s.record(fmt.Errorf("the basalt binary %s is gone", s.exe))
 	}
-	logFile, err := os.OpenFile(filepath.Join(s.stateDir(), engineLogName), os.O_WRONLY|os.O_APPEND|os.O_CREATE|syscall.O_NOFOLLOW, config.FileMode)
+	logFile, err := s.deps.OS.OpenLog(filepath.Join(s.stateDir(), engineLogName))
 	if err != nil {
 		return s.record(fmt.Errorf("open the engine log: %w", err))
 	}
@@ -235,7 +230,7 @@ func (s *starter) waitSocket(ctx context.Context) error {
 		case <-ctx.Done():
 			return s.record(ctx.Err())
 		case <-deadline.C:
-			_, up, _ := pidlock.Running(LockPath(s.cfg.SocketDir))
+			up := s.deps.OS.LockHolderRuns(LockPath(s.cfg.SocketDir))
 			s.mu.Lock()
 			s.stuck = up
 			s.mu.Unlock()
@@ -247,8 +242,8 @@ func (s *starter) waitSocket(ctx context.Context) error {
 
 // lockHeld reports whether another process holds an exclusive flock on
 // path, without keeping the lock. A missing file is not held.
-func lockHeld(path string) (bool, error) {
-	release, err := config.LockFile(path)
+func lockHeld(o StarterOS, path string) (bool, error) {
+	release, err := o.LockFile(path)
 	if errors.Is(err, config.ErrLocked) {
 		return true, nil
 	}
@@ -259,15 +254,15 @@ func lockHeld(path string) (bool, error) {
 	return false, nil
 }
 
-// lockStart is config.LockFile, trying again a few times when the folder
+// lockStart is o.LockFile, trying again a few times when the folder
 // another shim has just made is not visible yet (two shims racing to make
 // it on a fresh start).
-func lockStart(path string) (func(), error) {
+func lockStart(o StarterOS, path string) (func(), error) {
 	const tries = 5
 	var release func()
 	var err error
 	for range tries {
-		if release, err = config.LockFile(path); !errors.Is(err, os.ErrNotExist) {
+		if release, err = o.LockFile(path); !errors.Is(err, os.ErrNotExist) {
 			return release, err
 		}
 		time.Sleep(startPoll / 5)

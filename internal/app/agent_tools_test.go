@@ -156,6 +156,7 @@ func TestNewServicePanicsWithoutDeps(t *testing.T) {
 		"Delivery.ErrVaultNotConnected": func(d *Deps) { d.Delivery.ErrVaultNotConnected = nil },
 		"Status.Passkeys":               func(d *Deps) { d.Status.Passkeys = nil },
 		"Status.CrashReports":           func(d *Deps) { d.Status.CrashReports = nil },
+		"Status.CrashFile":              func(d *Deps) { d.Status.CrashFile = nil },
 		"Status.LatestGuardVersion":     func(d *Deps) { d.Status.LatestGuardVersion = nil },
 		"Status.UpdateMessage":          func(d *Deps) { d.Status.UpdateMessage = nil },
 		"Status.StartHoldOffUntil":      func(d *Deps) { d.Status.StartHoldOffUntil = nil },

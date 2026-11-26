@@ -12,6 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
@@ -56,6 +57,10 @@ func (engineCLIHost) NewEngineDownServer(down statusmcp.EngineDown) shim.Fallbac
 	return NewEngineDownServer(down)
 }
 
+func (engineCLIHost) SocketAgents(dir string) []string {
+	return engine.SocketAgents(engineos.OS{}, dir)
+}
+
 // commandName is the command a command line runs, for the report: only a
 // name from the command list, never an argument.
 func commandName(args []string) string {
@@ -81,8 +86,9 @@ func (engineHost) LastStopStartHoldOffUntil(rec servicespec.LastStopFileRecord, 
 	return laststop.StartHoldOffUntil(rec, configPath, now)
 }
 
-// engineTerminal is engine.Terminal on the CLI shell.
-type engineTerminal struct{}
+// engineTerminal is engine.Terminal on the CLI shell and the machine's
+// files (engineos).
+type engineTerminal struct{ engineos.OS }
 
 func (engineTerminal) TerminalText(s string) string { return cli.TerminalText(s) }
 

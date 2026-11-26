@@ -1,50 +1,3 @@
-internal/engine dirs_unix.go: imports syscall
-internal/engine dirs_unix.go: os.Lstat
-internal/engine dirs_unix.go: os.MkdirAll
-internal/engine dirs_unix.go: os.OpenFile
-internal/engine engine.go: imports syscall
-internal/engine engine.go: net.ListenUnix
-internal/engine engine.go: os.Chmod
-internal/engine engine.go: os.Lstat
-internal/engine engine.go: os.MkdirAll
-internal/engine engine.go: os.Remove
-internal/engine laststop.go: internal/lib/pidlock.Running
-internal/engine laststop.go: os.MkdirAll
-internal/engine laststop.go: os.Remove
-internal/engine laststop.go: os.Stat
-internal/engine laststop_unix.go: imports syscall
-internal/engine laststop_unix.go: os.OpenFile
-internal/engine starter_unix.go: imports os/exec
-internal/engine starter_unix.go: imports syscall
-internal/engine starter_unix.go: internal/config.LockFile
-internal/engine starter_unix.go: internal/lib/pidlock.Running
-internal/engine starter_unix.go: net.DialTimeout
-internal/engine starter_unix.go: os.MkdirAll
-internal/engine starter_unix.go: os.OpenFile
-internal/engine starter_unix.go: os.Stat
-internal/engine waits.go: os.Lstat
-internal/engine waits.go: os.ReadDir
-internal/handoff address.go: net.DefaultResolver
-internal/handoff address.go: net.Resolver
-internal/handoff cache.go: internal/config.ReadOwnCredential
-internal/handoff cache.go: internal/config.WriteFile
-internal/handoff cache.go: os.MkdirAll
-internal/handoff pathfiles.go: internal/config.ClearSetup
-internal/handoff pathfiles.go: internal/config.LockFile
-internal/handoff pathfiles.go: internal/config.ReadCredential
-internal/handoff pathfiles.go: internal/config.ReadOwnCredentialLimit
-internal/handoff pathfiles.go: internal/config.SameCredentialFile
-internal/handoff pathfiles.go: os.Lstat
-internal/handoff pathfiles.go: os.Rename
-internal/handoff probe.go: net.Dialer
-internal/handoff probe.go: pkg/trustpin.Fetch
-internal/handoff setupfiles.go: internal/config.LoadNoFollow
-internal/handoff setupfiles.go: internal/config.LockFile
-internal/handoff setupfiles.go: internal/config.ReadOwnCredential
-internal/handoff setupfiles.go: internal/config.UpdateConfig
-internal/handoff setupfiles.go: internal/config.WriteFile
-internal/handoff setupfiles.go: os.Lstat
-internal/handoff setupfiles.go: os.Remove
 internal/plugin install.go: os.Chmod
 internal/plugin install.go: os.Lstat
 internal/plugin install.go: os.Mkdir
@@ -92,5 +45,4 @@ internal/plugin verify.go: os.OpenFile
 internal/plugin verify.go: path/filepath.WalkDir
 internal/setup binary.go: path/filepath.EvalSymlinks
 internal/setup rotations.go: os.Lstat
-internal/status extra.go: os.Stat
 internal/status portalcheck.go: internal/lib/atomicfile.Write

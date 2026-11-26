@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/handoff/out/handofffiles"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 )
@@ -86,7 +87,7 @@ func TestRootEngineUsesOnlyTheComputedCredentialPath(t *testing.T) {
 	// Not as root, the config's path as it is.
 	files, err = agentFilesFor(agentEnv{configPath: cfgPath}, config.Agent{Name: "bot", Store: config.PostgresStore(elsewhere)})
 	require.NoError(t, err)
-	_, ok := files.(handoff.PathFiles)
+	_, ok := files.(handofffiles.PathFiles)
 	require.True(t, ok)
 }
 
@@ -180,7 +181,7 @@ func TestTheEngineDoesNotPromoteAPendingCredentialChangedAfterItsLogin(t *testin
 	}
 	adapters := map[string]func(t *testing.T, cfgPath, credFile string) handoff.AgentFiles{
 		"path": func(_ *testing.T, cfgPath, credFile string) handoff.AgentFiles {
-			return handoff.PathFiles{ConfigPath: cfgPath, CredFile: credFile}
+			return handofffiles.PathFiles{ConfigPath: cfgPath, CredFile: credFile}
 		},
 		"root": func(t *testing.T, cfgPath, credFile string) handoff.AgentFiles {
 			t.Helper()
@@ -236,7 +237,7 @@ func TestTheEngineRefusesAPendingCredentialOver4096Bytes(t *testing.T) {
 	require.Len(t, exact, 4096)
 	adapters := map[string]func(t *testing.T, cfgPath, credFile string) handoff.AgentFiles{
 		"path": func(_ *testing.T, cfgPath, credFile string) handoff.AgentFiles {
-			return handoff.PathFiles{ConfigPath: cfgPath, CredFile: credFile}
+			return handofffiles.PathFiles{ConfigPath: cfgPath, CredFile: credFile}
 		},
 		"root": func(t *testing.T, cfgPath, credFile string) handoff.AgentFiles {
 			t.Helper()

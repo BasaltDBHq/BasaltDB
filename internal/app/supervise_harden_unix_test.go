@@ -22,6 +22,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 )
 
@@ -156,7 +157,7 @@ func TestSuperviseStopsWhenStartedFromPathIsGone(t *testing.T) {
 	require.NoError(t, os.Remove(bin))
 
 	require.Eventually(t, func() bool {
-		stop, ok := engine.ReadLastStop(stateDir)
+		stop, ok := engine.ReadLastStop(engineos.OS{}, stateDir)
 		return ok && strings.Contains(stop.Reason, "is gone") && strings.Contains(stop.Reason, bin)
 	}, 8*time.Second, 50*time.Millisecond)
 	err = cmd.Wait()

@@ -19,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 )
@@ -66,6 +67,7 @@ func (r *starterRig) socket() string { return filepath.Join(r.cfg.SocketDir, "bo
 
 func (r *starterRig) deps(owner int, launchErr error) engine.StarterDeps {
 	return engine.StarterDeps{
+		OS:    engineos.OS{},
 		Owner: func(string) (int, error) { return owner, nil },
 		Launch: func(exe string, args []string, logFile *os.File) error {
 			r.launches.Add(1)

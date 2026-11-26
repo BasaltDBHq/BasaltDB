@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
@@ -202,10 +203,10 @@ func TestLastStopIsWrittenAndCleared(t *testing.T) {
 	want := `{"reason":"the engine crashed 5 times within 10s","at":"2026-11-20T01:02:03Z","engineSha256":"` + laststop.HashEngineJSON(cfg) + `"}`
 	require.JSONEq(t, want, string(raw))
 
-	engine.ClearLastStop(dir, log)
+	engine.ClearLastStop(engineos.OS{}, dir, log)
 	_, err = os.Stat(filepath.Join(dir, engine.LastStopFile))
 	require.ErrorIs(t, err, os.ErrNotExist)
-	engine.ClearLastStop(dir, log) // nothing to remove: no error
+	engine.ClearLastStop(engineos.OS{}, dir, log) // nothing to remove: no error
 }
 
 // A stray probe of the engine lock reads as a holder for a moment; only a
@@ -273,14 +274,14 @@ func TestSuperviseGivesUpWhenBinaryIsGoneOnRestart(t *testing.T) {
 func TestResolveSuperviseBinary(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "basalt")
-	_, err := engine.ResolveSuperviseBinary(path)
+	_, err := engine.ResolveSuperviseBinary(engineos.OS{}, path)
 	var gone *engine.BinaryGoneError
 	require.ErrorAs(t, err, &gone)
 	require.Equal(t, path, gone.Path)
 	require.Equal(t, "the basalt binary "+path+" is gone", gone.Error())
 
 	require.NoError(t, os.WriteFile(path, []byte("x"), 0o755))
-	got, err := engine.ResolveSuperviseBinary(path)
+	got, err := engine.ResolveSuperviseBinary(engineos.OS{}, path)
 	require.NoError(t, err)
 	require.Equal(t, path, got)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/handoff/out/handofffiles"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
@@ -23,7 +24,7 @@ func TestHandoffFilesWritePin(t *testing.T) {
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 	require.NoError(t, os.Chmod(dir, 0o700))
-	f := handoff.SetupFiles{ConfigPath: filepath.Join(dir, "engine.json"), Agent: "lead_bot", Pins: trustPins{}}
+	f := handofffiles.SetupFiles{ConfigPath: filepath.Join(dir, "engine.json"), Agent: "lead_bot", Pins: trustPins{}}
 	const host = "db.example.com"
 	pinOf := func(t *testing.T) handoff.Pin {
 		t.Helper()
@@ -33,14 +34,15 @@ func TestHandoffFilesWritePin(t *testing.T) {
 		return handoff.Pin{Profile: pf.Profile, Top: ca}
 	}
 	pin := pinOf(t)
-	require.NoError(t, f.WritePin(host, pin))
+	require.NoError(t, f.WritePin(host, pin.Top, pin.CAOnly))
 	got := trustdir.Set(f.ConfigPath).For(host)
 	require.NotNil(t, got)
 	require.Equal(t, trustprofile.PinName(host), got.Name)
 	require.Equal(t, []*x509.Certificate{pin.Top}, got.Certificates())
-	require.NoError(t, f.WritePin(host, pin), "the same pin again writes nothing")
+	require.NoError(t, f.WritePin(host, pin.Top, pin.CAOnly), "the same pin again writes nothing")
 
-	err = f.WritePin(host, pinOf(t))
+	other := pinOf(t)
+	err = f.WritePin(host, other.Top, other.CAOnly)
 	require.ErrorContains(t, err, "covers "+host)
 	require.True(t, trustdir.Set(f.ConfigPath).For(host).Certificates()[0].Equal(pin.Top), "the first pin stays")
 }

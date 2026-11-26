@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 )
 
 // TestDecodeRescopedReadsResources: rescope_revert's catalog lists
@@ -26,9 +26,9 @@ func TestDecodeRescopedReadsResources(t *testing.T) {
 	require.Equal(t, id, got.RevertID)
 	require.Equal(t, []byte{0, 1, 2}, []byte(got.RescopeNonce))
 	require.Equal(t, []byte{3, 4, 5}, []byte(got.ScopeToken))
-	require.Equal(t, &action.RevertCatalog{
-		Agents: []action.CatalogAgent{{Agent: "agent:bot", Changes: 2}}, Runs: []action.CatalogRun{},
-		Tables:       []action.CatalogTable{{Table: "public.leads", Rows: 3}},
+	require.Equal(t, &revertstore.RevertCatalog{
+		Agents: []revertstore.CatalogAgent{{Agent: "agent:bot", Changes: 2}}, Runs: []revertstore.CatalogRun{},
+		Tables:       []revertstore.CatalogTable{{Table: "public.leads", Rows: 3}},
 		ChangeAgents: map[uuid.UUID]string{change: "agent:bot"},
 	}, got.Catalog)
 

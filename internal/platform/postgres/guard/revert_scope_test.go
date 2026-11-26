@@ -12,10 +12,10 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
@@ -57,8 +57,8 @@ func newScopeTask(t *testing.T) scopeTask {
 	return e
 }
 
-func (e scopeTask) taskScope() action.Scope {
-	return action.Scope{Kind: revert.ScopeTask, ID: e.task}
+func (e scopeTask) taskScope() revertstore.Scope {
+	return revertstore.Scope{Kind: revert.ScopeTask, ID: e.task}
 }
 
 // scopeErrorText is err as the caller reads it (message, detail and hint),
@@ -116,8 +116,8 @@ func TestRevertScopeOwnWorkOnly(t *testing.T) {
 	cases[2].theirs = helperTask
 
 	for _, tc := range cases {
-		theirs := action.Scope{Kind: tc.kind, ID: tc.theirs}
-		none := action.Scope{Kind: tc.kind, ID: unknown}
+		theirs := revertstore.Scope{Kind: tc.kind, ID: tc.theirs}
+		none := revertstore.Scope{Kind: tc.kind, ID: unknown}
 		_, errTheirs := guard.PreviewRevert(ctx, e.bot.Conn, theirs)
 		requireScopeRefused(t, errTheirs, tc.detail)
 		_, errNone := guard.PreviewRevert(ctx, e.bot.Conn, none)
@@ -388,7 +388,7 @@ func TestRevertScopeEmptyTaskProposal(t *testing.T) {
 	requireCode(t, err, guard.CodeNothingToRevert)
 
 	// A run or change scope with nothing to restore is never stored.
-	_, err = guard.PrepareRevert(ctx, other.Conn, action.Scope{Kind: revert.ScopeRun, ID: reader.RunID}, "x")
+	_, err = guard.PrepareRevert(ctx, other.Conn, revertstore.Scope{Kind: revert.ScopeRun, ID: reader.RunID}, "x")
 	requireCode(t, err, guard.CodeNothingToRevert)
 }
 
@@ -448,7 +448,7 @@ func TestRevertScopeTableFilterApplies(t *testing.T) {
 	e := newScopeTask(t)
 	ctx := context.Background()
 	p := person(t, e.d)
-	s := action.Scope{Kind: revert.ScopeRun, ID: e.botB.RunID, Resources: []string{"public.lead_owner"}}
+	s := revertstore.Scope{Kind: revert.ScopeRun, ID: e.botB.RunID, Resources: []string{"public.lead_owner"}}
 	prep, err := guard.PrepareRevert(ctx, e.bot.Conn, s, "Only the owner")
 	require.NoError(t, err)
 	as, err := p.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)

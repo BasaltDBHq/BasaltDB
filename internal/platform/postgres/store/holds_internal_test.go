@@ -12,6 +12,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 )
 
@@ -43,7 +44,7 @@ func TestPreviewMarksOnlyThePreviewRun(t *testing.T) {
 	var re *action.RefusalError
 	require.ErrorAs(t, err, &re)
 	require.Equal(t, action.ReasonNotRepeatable, re.Reason)
-	var pf *action.PreviewFailedError
+	var pf *approvalstore.PreviewFailedError
 	require.False(t, errors.As(err, &pf))
 
 	_, err = s.Preview(ctx, action.Intent{}, agentstore.Request{Text: "INSERT INTO public.leads VALUES (1)"})

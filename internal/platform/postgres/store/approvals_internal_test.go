@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 )
 
@@ -19,7 +20,7 @@ type approvalRefusalRow struct {
 	name    string
 	mapping func(error) error
 	err     error
-	reason  action.ApprovalReason
+	reason  approvalstore.ApprovalReason
 	detail  string
 }
 
@@ -38,17 +39,17 @@ func TestApprovalRefusalsPerCall(t *testing.T) {
 	)
 	expired := guardErr("BS005", "APPROVAL_EXPIRED", "approval 0193a3f0-0000-7000-8000-000000000001 expired at 2026-11-25 10:00:00+00", "")
 	rows := []approvalRefusalRow{
-		{"find: not held by the role", findApprovalRefusal, ledger.ErrApprovalNotFound, action.ApprovalNotFound, ""},
+		{"find: not held by the role", findApprovalRefusal, ledger.ErrApprovalNotFound, approvalstore.ApprovalNotFound, ""},
 		{"find: any other error", findApprovalRefusal, errors.New("conn closed"), "", ""},
 		{"find: no rows", findApprovalRefusal, action.ErrNotFound, "", ""},
 
-		{"reveal: refused", revealApprovalRefusal, approvalInvalid("REVEAL_REFUSED"), action.ApprovalRevealRefused, "REVEAL_REFUSED"},
-		{"reveal: rows changed", revealApprovalRefusal, approvalInvalid("ROWS_CHANGED"), action.ApprovalRevealRowsChanged, "ROWS_CHANGED"},
-		{"reveal: no such approval", revealApprovalRefusal, approvalInvalid(noSuchApproval), action.ApprovalNotFound, noSuchApproval},
-		{"reveal: already approved", revealApprovalRefusal, approvalInvalid(approved), action.ApprovalNotOpen, approved},
-		{"reveal: already used", revealApprovalRefusal, approvalInvalid(used), action.ApprovalNotOpen, used},
-		{"reveal: another agent", revealApprovalRefusal, approvalInvalid(anotherAgent), action.ApprovalNotOpen, anotherAgent},
-		{"reveal: contains REVEAL_REFUSED", revealApprovalRefusal, approvalInvalid("not REVEAL_REFUSED"), action.ApprovalNotOpen, "not REVEAL_REFUSED"},
+		{"reveal: refused", revealApprovalRefusal, approvalInvalid("REVEAL_REFUSED"), approvalstore.ApprovalRevealRefused, "REVEAL_REFUSED"},
+		{"reveal: rows changed", revealApprovalRefusal, approvalInvalid("ROWS_CHANGED"), approvalstore.ApprovalRevealRowsChanged, "ROWS_CHANGED"},
+		{"reveal: no such approval", revealApprovalRefusal, approvalInvalid(noSuchApproval), approvalstore.ApprovalNotFound, noSuchApproval},
+		{"reveal: already approved", revealApprovalRefusal, approvalInvalid(approved), approvalstore.ApprovalNotOpen, approved},
+		{"reveal: already used", revealApprovalRefusal, approvalInvalid(used), approvalstore.ApprovalNotOpen, used},
+		{"reveal: another agent", revealApprovalRefusal, approvalInvalid(anotherAgent), approvalstore.ApprovalNotOpen, anotherAgent},
+		{"reveal: contains REVEAL_REFUSED", revealApprovalRefusal, approvalInvalid("not REVEAL_REFUSED"), approvalstore.ApprovalNotOpen, "not REVEAL_REFUSED"},
 		{"reveal: expired", revealApprovalRefusal, expired, "", ""},
 		{"reveal: time limit", revealApprovalRefusal, statementTimeout(), "", ""},
 		{"reveal: revert invalid", revealApprovalRefusal, revertInvalid("REVEAL_REFUSED"), "", ""},
@@ -60,7 +61,7 @@ func TestApprovalRefusalsPerCall(t *testing.T) {
 			t.Parallel()
 			mapped := MapError(row.err)
 			out := row.mapping(mapped)
-			refused := action.ApprovalRefusalOf(out)
+			refused := approvalstore.ApprovalRefusalOf(out)
 			if row.reason == "" {
 				require.Nil(t, refused, "%v", out)
 				require.Equal(t, mapped, out, "returned as MapError made it")

@@ -23,11 +23,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
@@ -55,8 +55,8 @@ func (probeAgent) RevertRequest(context.Context, uuid.UUID, string) (revert.Requ
 	return revert.Request{}, errors.New("RevertRequest")
 }
 
-func (probeAgent) RelayRevert(context.Context, revert.Response) (action.AppliedRevert, linksvc.Receipt, error) {
-	return action.AppliedRevert{}, linksvc.Receipt{}, errors.New("RelayRevert")
+func (probeAgent) RelayRevert(context.Context, revert.Response) (revertstore.AppliedRevert, linksvc.Receipt, error) {
+	return revertstore.AppliedRevert{}, linksvc.Receipt{}, errors.New("RelayRevert")
 }
 
 func (probeAgent) RescopeRevert(context.Context, uuid.UUID, string, revertsvc.ScopeRequest) (revertsvc.ScopeResponse, error) {

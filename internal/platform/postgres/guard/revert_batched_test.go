@@ -10,12 +10,12 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
@@ -49,13 +49,13 @@ func newBulkEnv(t *testing.T) bulkEnv {
 	return e
 }
 
-func (e bulkEnv) scope() action.Scope {
-	return action.Scope{Kind: revert.ScopeRun, ID: e.in.RunID}
+func (e bulkEnv) scope() revertstore.Scope {
+	return revertstore.Scope{Kind: revert.ScopeRun, ID: e.in.RunID}
 }
 
 // prepareAndSign prepares the run's revert and signs it with the person's
 // passkey through apply_revert.
-func (e bulkEnv) prepareAndSign(t *testing.T) (action.PreparedRevert, action.AppliedRevert) {
+func (e bulkEnv) prepareAndSign(t *testing.T) (revertstore.PreparedRevert, revertstore.AppliedRevert) {
 	t.Helper()
 	prep, as := prepareSigned(t, e.a, e.p, revert.ScopeRun, e.in.RunID)
 	signed, err := guard.ApplyRevert(context.Background(), e.a.Conn, prep.RevertID, as)
@@ -76,9 +76,9 @@ func pendingLines(t *testing.T, c *pgx.Conn, revertID uuid.UUID, limit int) []in
 }
 
 // applyAll runs the agent's loop until no line is pending.
-func (e bulkEnv) applyAll(t *testing.T, revertID uuid.UUID) []action.BatchResult {
+func (e bulkEnv) applyAll(t *testing.T, revertID uuid.UUID) []revertstore.BatchResult {
 	t.Helper()
-	var out []action.BatchResult
+	var out []revertstore.BatchResult
 	for {
 		lines := pendingLines(t, e.a.Conn, revertID, revert.MaxBatch)
 		if len(lines) == 0 {
@@ -311,7 +311,7 @@ func TestBatchPeopleWinPerLine(t *testing.T) {
 	e.d.Exec(t, `UPDATE public.items SET v = 'person' WHERE id = 7`)
 	res, err := guard.ApplyRevertBatch(ctx, e.a.Conn, prep.RevertID, []int{lineOf(7), lineOf(8)})
 	require.NoError(t, err)
-	require.Equal(t, []action.BatchItem{
+	require.Equal(t, []revertstore.BatchItem{
 		{Line: lineOf(7), Outcome: guardmodel.OutcomeSkipped, Conflict: revert.ConflictChangedAfter},
 		{Line: lineOf(8), Outcome: guardmodel.OutcomeRestored},
 	}, res.Items)

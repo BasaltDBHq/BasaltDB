@@ -18,6 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -40,8 +41,8 @@ type ScopeRequest struct {
 // (revert-scope-response.schema.json): the rebuilt request, and the catalog
 // for a proven widen or a narrow under its scope token.
 type ScopeResponse struct {
-	Request revert.Request        `json:"request"`
-	Catalog *action.RevertCatalog `json:"catalog,omitempty"`
+	Request revert.Request             `json:"request"`
+	Catalog *revertstore.RevertCatalog `json:"catalog,omitempty"`
 }
 
 // rescoped is what the engine holds in memory for a revert the person
@@ -54,7 +55,7 @@ type rescoped struct {
 	link    [sha256.Size]byte
 	token   []byte
 	request revert.Request
-	catalog *action.RevertCatalog
+	catalog *revertstore.RevertCatalog
 	expires time.Time
 }
 
@@ -173,7 +174,7 @@ func (rc *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret strin
 	if err != nil {
 		return ScopeResponse{}, err
 	}
-	req := action.RescopeRequest{RevertID: id, Select: in.Select}
+	req := revertstore.RescopeRequest{RevertID: id, Select: in.Select}
 	if widen {
 		raw, err := links.DecodeSecret(in.NewSecret)
 		if err != nil {
@@ -278,13 +279,13 @@ func (rc *Service) registerRelay(ctx context.Context, id uuid.UUID, token channe
 func (rc *Service) rescopeError(ctx context.Context, r action.Revert, err error) error {
 	refused := refusalOf(err)
 	switch {
-	case refused.Reason == action.RevertInvalid:
+	case refused.Reason == revertstore.RevertInvalid:
 		return &guidance.ArgumentError{Message: "the scope was refused: " + refused.Detail}
-	case refused.Reason == action.RevertWidenRefused:
+	case refused.Reason == revertstore.RevertWidenRefused:
 		return widenRefused()
-	case refused.Reason == action.RevertExpiredReason:
+	case refused.Reason == revertstore.RevertExpiredReason:
 		return rc.revertExpired(r)
-	case refused.Reason == action.RevertTimedOut && ctx.Err() == nil:
+	case refused.Reason == revertstore.RevertTimedOut && ctx.Err() == nil:
 		return rescopeTimeout(rc.store.Limits.Prepare)
 	}
 	return err

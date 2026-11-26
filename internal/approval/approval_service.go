@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -106,7 +107,7 @@ func (ac *Service) ColumnOrder(ctx context.Context, resources []string) (map[str
 // HeldWrite is a write held for the person's approval, with the preview
 // lines its notice is built from.
 type HeldWrite struct {
-	action.Held
+	approvalstore.Held
 	Lines []string
 }
 
@@ -130,7 +131,7 @@ func (e *HoldRefusalError) Unwrap() error { return e.Err }
 func (ac *Service) Hold(ctx context.Context, in action.Intent, req agentstore.Request, op action.Op) (HeldWrite, error) {
 	p, err := ac.store.Holds.Preview(ctx, in, req)
 	var notRepeatable *action.RefusalError
-	var previewFailed *action.PreviewFailedError
+	var previewFailed *approvalstore.PreviewFailedError
 	switch {
 	case errors.As(err, &previewFailed):
 		return HeldWrite{}, &HoldRefusalError{Err: previewFailed.Err}
@@ -146,7 +147,7 @@ func (ac *Service) Hold(ctx context.Context, in action.Intent, req agentstore.Re
 	if te := HoldTooLarge(p.Lines); te != nil {
 		return HeldWrite{}, &HoldRefusalError{Err: te}
 	}
-	held, err := ac.store.Holds.Hold(ctx, in, action.HoldRequest{Op: op, Request: req, Assigned: p.Assigned, Lines: p.Lines})
+	held, err := ac.store.Holds.Hold(ctx, in, approvalstore.HoldRequest{Op: op, Request: req, Assigned: p.Assigned, Lines: p.Lines})
 	if err != nil {
 		return HeldWrite{}, err
 	}

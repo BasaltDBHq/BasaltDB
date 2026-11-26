@@ -1,4 +1,4 @@
-package action
+package approvalstore
 
 import (
 	"errors"
@@ -6,14 +6,16 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
 // HeldRun is what re-runs a held write for a reveal: the run, task and
 // intent it was held in, from the binding's shared part, and the binding's
 // request as the person signed it, which only the store reads.
 type HeldRun struct {
-	Intent  Intent
+	Intent  action.Intent
 	Request approval.HeldRequest
 }
 
@@ -23,8 +25,8 @@ type HeldRun struct {
 // the preview lines the person signs, both from the store's preview
 // (HeldPreview).
 type HoldRequest struct {
-	Op       Op
-	Request  Request
+	Op       action.Op
+	Request  action.Request
 	Assigned []string
 	Lines    []string
 }
@@ -115,4 +117,13 @@ func ApprovalRefusalOf(err error) *ApprovalRefusalError {
 func IsApprovalRefused(err error, reason ApprovalReason) bool {
 	ar := ApprovalRefusalOf(err)
 	return ar != nil && ar.Reason == reason
+}
+
+// ApprovalListParams lists held writes that can still be approved or
+// applied. RunID uuid.Nil means every run; Status "" means PENDING and
+// APPROVED.
+type ApprovalListParams struct {
+	pagination.Params
+	RunID  uuid.UUID
+	Status string
 }

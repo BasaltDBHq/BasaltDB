@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
 )
 
@@ -48,7 +48,7 @@ func TestResourceNamesPassThroughToTheStore(t *testing.T) {
 	t.Parallel()
 	names := []string{"leads", "public.leads;drop", "a b.c", "public.leads", "s.t.u", "Public.\"Leads\""}
 	for _, kind := range []revert.Scope{revert.ScopeChange, revert.ScopeRun, revert.ScopeTask} {
-		scope, err := scopeIDs{Resources: names}.filtered(action.Scope{Kind: kind, ID: uuid.Must(uuid.NewV7())})
+		scope, err := scopeIDs{Resources: names}.filtered(revertstore.Scope{Kind: kind, ID: uuid.Must(uuid.NewV7())})
 		require.NoError(t, err, kind)
 		require.Equal(t, names, scope.Resources, kind)
 	}
@@ -80,7 +80,7 @@ func TestRevertAnswersNameStoreCodeAndResource(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, `{"line": 1, "outcome": "SKIPPED", "conflict": "KEY_TAKEN", "storeCode": "23505"}`, string(plan))
 
-	item, err := json.Marshal(action.BatchItem{Line: 1, Outcome: "SKIPPED", Conflict: conflict, StoreCode: code})
+	item, err := json.Marshal(revertstore.BatchItem{Line: 1, Outcome: "SKIPPED", Conflict: conflict, StoreCode: code})
 	require.NoError(t, err)
 	require.JSONEq(t, `{"line": 1, "outcome": "SKIPPED", "conflict": "KEY_TAKEN", "storeCode": "23505"}`, string(item))
 }

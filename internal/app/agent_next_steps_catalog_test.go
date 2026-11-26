@@ -25,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
@@ -77,12 +78,12 @@ type catalogReverts struct {
 	by    uuid.UUID
 }
 
-func (r catalogReverts) PreviewRevert(context.Context, action.Scope, string, int) (action.PreviewPage, error) {
-	out := action.PreviewPage{Lines: len(r.lines), AllAlreadyReverted: true, CursorFound: true}
+func (r catalogReverts) PreviewRevert(context.Context, revertstore.Scope, string, int) (revertstore.PreviewPage, error) {
+	out := revertstore.PreviewPage{Lines: len(r.lines), AllAlreadyReverted: true, CursorFound: true}
 	for _, text := range r.lines {
 		l, err := revert.ParseLine(text)
 		if err != nil {
-			return action.PreviewPage{}, err
+			return revertstore.PreviewPage{}, err
 		}
 		if l.Action == revert.ActionRestore {
 			out.Restore++
@@ -92,7 +93,7 @@ func (r catalogReverts) PreviewRevert(context.Context, action.Scope, string, int
 	return out, nil
 }
 
-func (r catalogReverts) RevertedBy(context.Context, action.Scope) (uuid.UUID, error) {
+func (r catalogReverts) RevertedBy(context.Context, revertstore.Scope) (uuid.UUID, error) {
 	return r.by, nil
 }
 

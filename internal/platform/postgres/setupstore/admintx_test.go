@@ -1,4 +1,4 @@
-package setup
+package setupstore_test
 
 import (
 	"context"
@@ -9,7 +9,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
-	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // A commit asked for with a context already done is never sent: a known
@@ -19,7 +20,7 @@ func TestAdminTxCommitNeverSent(t *testing.T) {
 	d := guardtest.New(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	err := adminTx(d.Admin)(ctx, func(q setuprun.Querier) error {
+	err := setup.AdminTx(setupstore.New(), setupstore.Port(d.Admin))(ctx, func(q setup.Querier) error {
 		if _, err := q.Exec(ctx, `CREATE TABLE public.never_committed (id int)`); err != nil {
 			return err
 		}
@@ -27,7 +28,7 @@ func TestAdminTxCommitNeverSent(t *testing.T) {
 		return nil
 	})
 	require.Error(t, err)
-	var u *setuprun.UnconfirmedError
+	var u *setup.UnconfirmedError
 	require.False(t, errors.As(err, &u), "a commit never sent is a known failure: %v", err)
 	// The driver closes a connection whose commit it never sent, the
 	// session still in a transaction: read on a new one.

@@ -6,6 +6,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
+
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -70,7 +72,7 @@ type Connected struct {
 // ConnectedAs is what conn reached (Connected).
 func ConnectedAs(ctx context.Context, conn *pgx.Conn) (Connected, error) {
 	var c Connected
-	// A catalog function and a SQL keyword squirrel cannot express.
-	err := conn.QueryRow(ctx, `SELECT pg_catalog.current_database()::text, session_user::text`).Scan(&c.Database, &c.User)
+	var err error
+	c.Database, c.User, err = store.ConnectedAs(ctx, setupstore.Port(conn))
 	return c, err
 }

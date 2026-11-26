@@ -1,18 +1,12 @@
 package setup
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"io"
 	"unicode/utf8"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
 	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
@@ -99,54 +93,4 @@ type RegisteredPasskey struct {
 	RPID         string
 	Origin       string
 	Label        string
-}
-
-func (p *Passkey) verified() bool { return p.cred.PublicKey != nil }
-
-func (p *Passkey) registered() *RegisteredPasskey {
-	return &RegisteredPasskey{CredentialID: append([]byte(nil), p.cred.ID...), RPID: p.cred.Relying.RPID, Origin: p.cred.Relying.Origin, Label: p.label}
-}
-
-// registerInTx registers the person's verified passkey in the setup's
-// transaction.
-func registerInTx(ctx context.Context, tx pgx.Tx, pk *Passkey) (*RegisteredPasskey, error) {
-	if err := guard.RegisterPasskey(ctx, tx, pk.cred, pk.label); err != nil {
-		return nil, err
-	}
-	return pk.registered(), nil
-}
-
-// requirePasskey refuses PASSKEY_REQUIRED, in the setup's transaction
-// before its script runs, when the database needs the person's passkey and
-// none was given: nothing changed.
-func requirePasskey(ctx context.Context, tx setuprun.Querier, add bool) error {
-	need, err := setuprun.PasskeyNeeded(ctx, store, tx, add)
-	if err != nil {
-		return err
-	}
-	if need {
-		return &setuprun.SetuprunRefusalError{Code: CodePasskeyRequired, Message: "this setup needs the person's portal passkey, and none was given"}
-	}
-	return nil
-}
-
-// askPasskey is the laptop's passkey step, after the setup committed (step
-// 7): it asks for the person's passkey and stores it when the database has
-// no active portal passkey, or in.AddPasskey asks for another.
-func askPasskey(ctx context.Context, conn *pgx.Conn, in RunInput) (*RegisteredPasskey, error) {
-	need, err := setuprun.PasskeyNeeded(ctx, store, pgquerier.Neutralize(conn), in.AddPasskey)
-	if err != nil || !need {
-		return nil, err
-	}
-	pk, err := in.AskPasskey(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if !pk.verified() {
-		return nil, errors.New("the passkey was not verified")
-	}
-	if err := guard.RegisterPasskey(ctx, conn, pk.cred, pk.label); err != nil {
-		return nil, err
-	}
-	return pk.registered(), nil
 }

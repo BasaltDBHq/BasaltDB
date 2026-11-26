@@ -249,21 +249,29 @@ func driverImport(p string) bool {
 }
 
 // inboundDriverFiles returns, sorted, the non-test Go files of inbound
-// packages under internal/ in fsys that import a database driver directly.
-func inboundDriverFiles(t *testing.T, fsys fs.FS) []string {
+// packages under internal/ in fsys that import a database driver directly,
+// and how many inbound files it scanned. testdata directories are skipped.
+func inboundDriverFiles(t *testing.T, fsys fs.FS) (files []string, scanned int) {
 	t.Helper()
 	var out []string
 	err := fs.WalkDir(fsys, "internal", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+		if d.IsDir() {
+			if d.Name() == "testdata" {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
 			return nil
 		}
 		dir := path.Dir(p)
 		if layerOf(dir) != lInbound || slices.Contains(testHelpers, dir) {
 			return nil
 		}
+		scanned++
 		src, err := fs.ReadFile(fsys, p)
 		if err != nil {
 			return err
@@ -284,21 +292,25 @@ func inboundDriverFiles(t *testing.T, fsys fs.FS) []string {
 		t.Fatalf("scanning inbound packages: %v", err)
 	}
 	slices.Sort(out)
-	return out
+	return out, scanned
 }
 
 func TestInboundDriverCheckCatchesAProbe(t *testing.T) {
 	fsys := fstest.MapFS{
-		"internal/agent/in/agentmcp/a.go":      {Data: []byte("package agentmcp\nimport \"github.com/jackc/pgx/v5/pgconn\"\n")},
-		"internal/agent/in/agentmcp/a_test.go": {Data: []byte("package agentmcp\nimport \"database/sql\"\n")},
-		"internal/agent/in/agentmcp/b.go":      {Data: []byte("package agentmcp\nimport \"fmt\"\n")},
-		"internal/platform/cli/c.go":           {Data: []byte("package cli\nimport sq \"database/sql\"\n")},
-		"internal/platform/cli/d.go":           {Data: []byte("package cli\nimport \"github.com/jackc/pgconn\"\n")},
-		"internal/platform/postgres/e.go":      {Data: []byte("package postgres\nimport \"github.com/jackc/pgx/v5\"\n")},
-		"internal/agent/f.go":                  {Data: []byte("package agent\nimport \"github.com/jackc/pgtype\"\n")},
-		"internal/testkit/connecttest/g.go":    {Data: []byte("package connecttest\nimport \"database/sql\"\n")},
+		"internal/agent/in/agentmcp/a.go":          {Data: []byte("package agentmcp\nimport \"github.com/jackc/pgx/v5/pgconn\"\n")},
+		"internal/agent/in/agentmcp/a_test.go":     {Data: []byte("package agentmcp\nimport \"database/sql\"\n")},
+		"internal/agent/in/agentmcp/b.go":          {Data: []byte("package agentmcp\nimport \"fmt\"\n")},
+		"internal/platform/cli/c.go":               {Data: []byte("package cli\nimport sq \"database/sql\"\n")},
+		"internal/platform/cli/d.go":               {Data: []byte("package cli\nimport \"github.com/jackc/pgconn\"\n")},
+		"internal/platform/postgres/e.go":          {Data: []byte("package postgres\nimport \"github.com/jackc/pgx/v5\"\n")},
+		"internal/agent/f.go":                      {Data: []byte("package agent\nimport \"github.com/jackc/pgtype\"\n")},
+		"internal/agent/in/agentmcp/testdata/h.go": {Data: []byte("package testdata\nimport \"database/sql\"\n")},
+		"internal/testkit/connecttest/g.go":        {Data: []byte("package connecttest\nimport \"database/sql\"\n")},
 	}
-	got := inboundDriverFiles(t, fsys)
+	got, scanned := inboundDriverFiles(t, fsys)
+	if scanned != 4 {
+		t.Errorf("scanned %d inbound files, want 4", scanned)
+	}
 	want := []string{"internal/agent/in/agentmcp/a.go", "internal/platform/cli/c.go", "internal/platform/cli/d.go"}
 	if !slices.Equal(got, want) {
 		t.Errorf("got %q, want %q", got, want)
@@ -310,7 +322,10 @@ func TestInboundDriverCheckCatchesAProbe(t *testing.T) {
 }
 
 func TestInboundImportsNoDriver(t *testing.T) {
-	got := inboundDriverFiles(t, os.DirFS(moduleRoot(t)))
+	got, scanned := inboundDriverFiles(t, os.DirFS(moduleRoot(t)))
+	if scanned == 0 {
+		t.Fatal("scanned no inbound Go files: the check would pass on nothing")
+	}
 	pinned := make([]string, 0, len(inboundDriverBaseline))
 	for f := range inboundDriverBaseline {
 		pinned = append(pinned, f)

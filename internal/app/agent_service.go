@@ -134,7 +134,7 @@ func NewService(d Deps) *Service {
 func (s *Service) wire() {
 	s.status = statussvc.New(s.statusCore(), &s.deps.Status)
 	s.delivery = linksvc.New(s.linksCore(), &s.deps.Delivery, s.approvalReads(), s.Failure)
-	s.revert = revertsvc.New(s.revertCore(), s.revertStoreSet(), &s.deps.Revert.Deps, s.deps.Core.Store, s.delivery, s.statementLimit(), s)
+	s.revert = revertsvc.New(s.revertCore(), s.revertStoreSet(), &s.deps.Revert.Deps, s.deps.Core.Store, s.delivery, storeStatementLimit(s.deps.Agent), s)
 	s.approval = approvalsvc.New(s.approvalCore(), s.approvalStoreSet(), &s.deps.Approval.Deps, s.delivery, s.revert, runChecker{s.deps.Core.Store}, s)
 	s.agent = agentsvc.New(s.agentCore(), s.agentStoreSet(), s.deps.Agent.PII, s.status.UpdateInfo, s.delivery, s.approval, s.status, s, s)
 	s.plugin = pluginsvc.New(s.pluginCore(), &s.deps.Plugin, s.delivery, s.status, s)
@@ -147,13 +147,14 @@ func (s *Service) approvalReads() approvalReads {
 	return approvalReads{Records: s.approvalStoreSet().Records, columns: s.deps.Approval.Columns}
 }
 
-// statementLimit is the agent's statement timeout, which a revert's answer
-// names: the store's limits, or 0 for an agent served without store data.
-func (s *Service) statementLimit() statementLimit {
-	if s.deps.Agent.Data == nil {
+// storeStatementLimit is the agent's statement timeout, which a revert's
+// answer names: the store's limits, or 0 for an agent served without store
+// data.
+func storeStatementLimit(a agentDeps) statementLimit {
+	if a.Data == nil {
 		return 0
 	}
-	return statementLimit(s.deps.Agent.Limits.StatementTimeout)
+	return statementLimit(a.Limits.StatementTimeout)
 }
 
 // statementLimit answers the revert use case's read of the agent's statement

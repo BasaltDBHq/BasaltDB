@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 )
 
 // TestRevertReadsTheStatementTimeoutFromTheStore: the statement timeout a
@@ -13,11 +15,10 @@ import (
 // served without store data, as the agent use case reported it.
 func TestRevertReadsTheStatementTimeoutFromTheStore(t *testing.T) {
 	t.Parallel()
-	s := &Service{}
-	s.deps.Agent.Limits.StatementTimeout = 5 * time.Second
-	require.Zero(t, s.statementLimit().StatementTimeout(), "no store data, no limit")
-	s.deps.Agent.Data = postgresStore{}
-	require.Equal(t, 5*time.Second, s.statementLimit().StatementTimeout())
+	a := agentDeps{Limits: action.Limits{StatementTimeout: 5 * time.Second}}
+	require.Zero(t, storeStatementLimit(a).StatementTimeout(), "no store data, no limit")
+	a.Data = postgresStore{}
+	require.Equal(t, 5*time.Second, storeStatementLimit(a).StatementTimeout())
 }
 
 // TestDeliveryReadsTheColumnOrderOnlyWhenWired: the pages read the field

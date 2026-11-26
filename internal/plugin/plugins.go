@@ -173,7 +173,7 @@ func configuredPlugins(cfg config.Config) []config.Plugin {
 	return configured
 }
 
-// NewFor is New, also when no entry is enabled:
+// NewFor is NewPlugins, also when no entry is enabled:
 // a same-user engine keeps one so it can start an entry approved while it
 // runs (pluginWatch).
 func NewFor(cfg config.Config, configPath string, o Options, log *slog.Logger) *Plugins {

@@ -5,13 +5,12 @@ package app
 import (
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
-	"syscall"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/lib/ownerfile"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/credfiles"
@@ -146,31 +145,24 @@ func missingStateDir(stateDir, goos string, owner int) error {
 // readRootKeyFile reads the key file in the state directory d, owned by
 // dirUID: an error wrapping fs.ErrNotExist when there is none.
 func readRootKeyFile(d trustedDir, dirUID int) (*channel.EngineKeys, error) {
-	f, err := config.OpenPlainAt(d, channel.KeyFileName, func(f *os.File) error {
-		fi, err := f.Stat()
-		if err != nil {
-			return err
-		}
-		st, ok := fi.Sys().(*syscall.Stat_t)
-		switch {
-		case !ok:
-			return errors.New("cannot read the key file's owner")
-		case int(st.Uid) != dirUID:
-			return fmt.Errorf("%s is owned by uid %d, not uid %d (the owner of %s)", f.Name(), st.Uid, dirUID, d.Path())
-		case fi.Mode().Perm()&0o077 != 0:
-			return fmt.Errorf("%s is mode %o; it must be readable by the engine's user only (0600)", f.Name(), fi.Mode().Perm())
-		}
-		return nil
-	})
+	f, err := config.OpenPlainAt(d, channel.KeyFileName, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	raw, err := io.ReadAll(io.LimitReader(f, rootKeyFileMax+1))
-	if err != nil {
-		return nil, err
-	}
+	raw, _, err := ownerfile.ReadOpen(f, ownerfile.Rules{
+		Owners: []int{dirUID}, OwnerName: fmt.Sprintf("uid %d (the owner of %s)", dirUID, d.Path()), MaxBytes: rootKeyFileMax,
+	})
 	defer clear(raw)
+	if err != nil {
+		switch re := ownerfile.Refusal(err); {
+		case re != nil && re.Rule == ownerfile.Owner:
+			return nil, fmt.Errorf("%s is %w", f.Name(), err)
+		case re != nil && re.Rule == ownerfile.Mode:
+			return nil, fmt.Errorf("%s is mode %o; it must be readable by the engine's user only (0600)", f.Name(), re.Perm)
+		}
+		return nil, fmt.Errorf("%s: %w", f.Name(), err)
+	}
 	return channel.ParseKeyFile(f.Name(), raw)
 }
 

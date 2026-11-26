@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/supabase"
+	"github.com/basaltdbhq/basaltdb/internal/lib/sqlident"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
@@ -597,7 +598,7 @@ ALTER ROLE %[1]s CONNECTION LIMIT %[4]d;`
 // tableRef is a parsed "schema.table".
 type tableRef struct{ schema, table string }
 
-func (t tableRef) ident() string { return pgx.Identifier{t.schema, t.table}.Sanitize() }
+func (t tableRef) ident() string { return sqlident.Quote(t.schema, t.table) }
 
 func parseTable(s string) (tableRef, error) {
 	parts := strings.Split(strings.TrimSpace(s), ".")
@@ -647,7 +648,7 @@ func checkTablesExist(ctx context.Context, q Querier, spec guardmodel.AgentSpec)
 }
 
 func planGrants(ctx context.Context, q Querier, role string, spec guardmodel.AgentSpec) ([]guardmodel.Statement, error) {
-	ident := pgx.Identifier{role}.Sanitize()
+	ident := sqlident.Quote(role)
 	var out []guardmodel.Statement
 	grant := func(privs string, tables []string) error {
 		for _, name := range tables {
@@ -660,7 +661,7 @@ func planGrants(ctx context.Context, q Querier, role string, spec guardmodel.Age
 				return err
 			}
 			sql := fmt.Sprintf("GRANT USAGE ON SCHEMA %s TO %s;\nGRANT %s ON %s TO %s;",
-				pgx.Identifier{t.schema}.Sanitize(), ident, privs, t.ident(), ident)
+				sqlident.Quote(t.schema), ident, privs, t.ident(), ident)
 			if privs != "SELECT" && len(seqs) > 0 {
 				sql += fmt.Sprintf("\nGRANT USAGE, SELECT ON SEQUENCE %s TO %s;", strings.Join(seqs, ", "), ident)
 			}
@@ -778,7 +779,7 @@ func roleDrop(ctx context.Context, q Querier, role string) (string, error) {
 	if !exists {
 		return "", nil
 	}
-	ident := pgx.Identifier{role}.Sanitize()
+	ident := sqlident.Quote(role)
 	// Plain SQL: DDL on a quoted role name. DROP OWNED BY needs the role's
 	// privileges, which an admin that is not a superuser holds only through
 	// an inherited membership: from Postgres 16 its automatic ADMIN grant

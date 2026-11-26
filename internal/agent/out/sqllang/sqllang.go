@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/lib/sqlident"
 )
 
 // maxParamsBytes is the limit of the guard's validating ledger functions
@@ -94,7 +95,7 @@ func (Language) ReadRow(target string, key map[string]any) agentstore.Request {
 	slices.Sort(cols)
 	conds, params := make([]string, 0, len(cols)), make([]any, 0, len(cols))
 	for i, c := range cols {
-		conds = append(conds, fmt.Sprintf("%s = $%d", sanitizeIdent(c), i+1))
+		conds = append(conds, fmt.Sprintf("%s = $%d", sqlident.Quote(c), i+1))
 		params = append(params, key[c])
 	}
 	return agentstore.Request{Text: "SELECT * FROM " + target + " WHERE " + strings.Join(conds, " AND "), Params: params}
@@ -108,11 +109,4 @@ func (Language) Args(req agentstore.Request) map[string]any {
 		args["params"] = req.Params
 	}
 	return args
-}
-
-// sanitizeIdent quotes a column name for the SQL a step suggests: in double
-// quotes, a double quote doubled and a NUL dropped.
-func sanitizeIdent(name string) string {
-	name = strings.ReplaceAll(name, "\x00", "")
-	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }

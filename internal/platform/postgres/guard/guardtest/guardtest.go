@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/sqlident"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 )
@@ -69,7 +70,7 @@ func NewRecreatable(t *testing.T) *DB {
 	_ = server.Close(ctx)
 	c, err := pgdial.Connect(ctx, dbURL(t, base, tpl))
 	require.NoError(t, err)
-	guardRole := pgx.Identifier{names.Guard()}.Sanitize()
+	guardRole := sqlident.Quote(names.Guard())
 	_, err = c.Exec(ctx, "CREATE ROLE "+guardRole+" NOLOGIN")
 	require.NoError(t, err)
 	_, err = c.Exec(ctx, "CREATE SCHEMA basalt_meta AUTHORIZATION "+guardRole)
@@ -192,7 +193,7 @@ func newDB(t *testing.T, base, suffix, template string) *DB {
 			return
 		}
 		for _, r := range roles {
-			if _, err := server.Exec(ctx, "DROP ROLE "+pgx.Identifier{r}.Sanitize()); err != nil {
+			if _, err := server.Exec(ctx, "DROP ROLE "+sqlident.Quote(r)); err != nil {
 				t.Errorf("cleanup drop role %s: %v", r, err)
 			}
 		}

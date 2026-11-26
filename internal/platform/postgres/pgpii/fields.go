@@ -18,6 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/lib/sqlident"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
@@ -137,7 +138,7 @@ func (k keyColumn) sql() string {
 	if k.system {
 		return k.name
 	}
-	return pgx.Identifier{k.name}.Sanitize()
+	return sqlident.Quote(k.name)
 }
 
 // keysetOf reads a table's relkind and its primary key columns with their
@@ -218,9 +219,9 @@ func rowPager(t piistore.ScanTarget, keys []keyColumn, page int) pager {
 		bounds = append(bounds, "CAST(? AS "+k.typ+")")
 	}
 	for _, c := range t.Fields {
-		sel = append(sel, pgx.Identifier{c.Field}.Sanitize())
+		sel = append(sel, sqlident.Quote(c.Field))
 	}
-	from := pgx.Identifier{t.Namespace, t.Name}.Sanitize()
+	from := sqlident.Quote(t.Namespace, t.Name)
 	tuple := "(" + strings.Join(order, ", ") + ") > (" + strings.Join(bounds, ", ") + ")"
 	return pager{
 		keyCols: len(keys),
@@ -241,9 +242,9 @@ func rowPager(t piistore.ScanTarget, keys []keyColumn, page int) pager {
 func onePassPager(t piistore.ScanTarget) pager {
 	sel := make([]string, 0, len(t.Fields))
 	for _, c := range t.Fields {
-		sel = append(sel, pgx.Identifier{c.Field}.Sanitize())
+		sel = append(sel, sqlident.Quote(c.Field))
 	}
-	from := pgx.Identifier{t.Namespace, t.Name}.Sanitize()
+	from := sqlident.Quote(t.Namespace, t.Name)
 	return pager{
 		onePass: true,
 		query: func([]string) (string, []any, error) {

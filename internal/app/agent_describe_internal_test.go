@@ -406,7 +406,7 @@ func TestOverviewNotGrantedHasNoAskPerson(t *testing.T) {
 		require.Equal(t, []string{"PERSON TELL_AGENT"}, stepKinds(t, m), operatedBy)
 		require.NotContains(t, m["personMessage"], "basalt ", "the person runs no command")
 		require.Contains(t, m["personMessage"], "3", operatedBy)
-		require.Contains(t, m["personMessage"], "a link where you pick the tables", operatedBy)
+		require.Contains(t, m["personMessage"], "a link where you pick the resources", operatedBy)
 		require.EqualValues(t, 3, m["counts"].(map[string]any)["notGranted"])
 	}
 }
@@ -587,7 +587,7 @@ func TestCommentTrimmed(t *testing.T) {
 	found := decodeBody(t, mustDescribe(t, s, map[string]any{"query": "orders"}))
 	item := found["items"].([]any)[0].(map[string]any)
 	require.Equal(t, strings.Repeat("é", 120), item["comment"])
-	require.Equal(t, "table", item["matched"])
+	require.Equal(t, "resource", item["matched"])
 }
 
 func TestDescribeSearchPagesAndExcludesSecrets(t *testing.T) {

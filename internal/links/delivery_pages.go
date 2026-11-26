@@ -30,10 +30,10 @@ type ColumnOrder interface {
 	ColumnOrder(ctx context.Context, resources []string) (map[string][]string, error)
 }
 
-// ColumnsOf is the field order of the resources lines name, for the pages'
+// FieldsOf is the field order of the resources lines name, for the pages'
 // display only (CONTRACT.md, Local pages): never signed, and a failure
 // only costs the order, so it is logged and nil is returned.
-func (dc *Service) ColumnsOf(ctx context.Context, lines []string) approval.ColumnOrder {
+func (dc *Service) FieldsOf(ctx context.Context, lines []string) approval.FieldOrder {
 	if !dc.approvals.HasColumns() {
 		return nil
 	}

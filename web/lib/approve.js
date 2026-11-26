@@ -107,13 +107,13 @@ const INSERT_NOTE = "New row. Columns not listed are filled in by the database."
 // them only, and as not checked when Postgres left out secret columns;
 // until then its values show as dots, and on a long link it says where to
 // see them.
-export function lineGroups(lines, shown = new Map(), longLink = false, columns = new Map()) {
+export function lineGroups(lines, shown = new Map(), longLink = false, fields = new Map()) {
   return changeGroups(
     lines.map((line, index) => ({ line, index })),
     {
       mid: "old",
       shown,
-      columns,
+      fields,
       longLink,
       who: null,
       skipped: () => false,
@@ -228,7 +228,7 @@ function renderLines(state) {
   }
   const longLink = state.relay === null;
   const shown = state.valuesHidden ? new Map() : state.shown;
-  $("lines").replaceChildren(...lineGroups(state.req.lines, shown, longLink, state.req.columns));
+  $("lines").replaceChildren(...lineGroups(state.req.lines, shown, longLink, state.req.fields));
 }
 
 // wireReveal offers Show values on a page the engine served with hidden

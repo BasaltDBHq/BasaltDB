@@ -16,7 +16,7 @@ import (
 // status), so only this map gives the page the table's order. A table the
 // agent cannot read is listed too: its column names are in pg_attribute,
 // which the agent role reads itself.
-func TestPagesRequestsCarryTheColumnOrder(t *testing.T) {
+func TestPagesRequestsCarryTheFieldOrder(t *testing.T) {
 	t.Parallel()
 	s := newRevealSetup(t)
 	want := map[string][]string{
@@ -27,7 +27,7 @@ func TestPagesRequestsCarryTheColumnOrder(t *testing.T) {
 
 	// Lead 20 has notes and no tags; lead 5's revert restores its tags too.
 	req, _ := s.approvalRequest(t)
-	require.Equal(t, approval.ColumnOrder{"public.leads": want["public.leads"], "public.lead_notes": want["public.lead_notes"]}, req.Columns)
+	require.Equal(t, approval.FieldOrder{"public.leads": want["public.leads"], "public.lead_notes": want["public.lead_notes"]}, req.Fields)
 	var line struct {
 		Old json.RawMessage `json:"old"`
 	}
@@ -35,18 +35,18 @@ func TestPagesRequestsCarryTheColumnOrder(t *testing.T) {
 	require.Regexp(t, `"score": \d+, "status"`, string(line.Old), "the rows carry jsonb order, not the table's")
 
 	rv, _ := s.revertRequest(t)
-	require.Equal(t, approval.ColumnOrder(want), rv.Columns)
+	require.Equal(t, approval.FieldOrder(want), rv.Fields)
 
 	// The order is not signed: the long link carries the binding and the
-	// lines only, and decoded it has no columns.
+	// lines only, and decoded it has no fields.
 	long, err := req.Fragment()
 	require.NoError(t, err)
 	back, _, err := approvaltest.ParseRequest(long)
 	require.NoError(t, err)
-	require.Nil(t, back.Columns)
+	require.Nil(t, back.Fields)
 	rvLong, err := rv.Fragment()
 	require.NoError(t, err)
 	rvBack, _, err := reverttest.ParseRequest(rvLong)
 	require.NoError(t, err)
-	require.Nil(t, rvBack.Columns)
+	require.Nil(t, rvBack.Fields)
 }

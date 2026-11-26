@@ -113,7 +113,7 @@ test("the approve button counts the write's own rows, and the cascade apart", ()
   assert.equal(approveLabel(summarize([update, { ...update, key: { id: 5 } }])), "Sign with your passkey: update 2 rows");
 });
 
-test("columns follow the table's order when the engine sends it, unlisted ones last; the rows' order without it", () => {
+test("columns follow the store's field order when the engine sends it, unlisted ones last; the rows' order without it", () => {
   globalThis.document = { createElement: fakeElement };
   const row = { ...lead, old: { id: 4, name: "Dana", score: 3, status: "open", extra: "x" } };
   const order = new Map([["public.leads", ["id", "name", "status", "score", "gone"]]]);

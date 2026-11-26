@@ -34,7 +34,7 @@
       "pattern": "^[A-Za-z0-9_-]{22}$",
       "description": "Planned (HR-1). The approval's current single-use reveal nonce, 16 bytes base64url, which a reveal proof signs. The column exists from basalt_meta version 29, but the engine serves it, and an approval reveal, only once version 30 is installed (open_reveal, reveal_approval_rows). Served only by the engine at GET /api/v1/approvals/{approvalId} (read with basalt_meta.reveal_nonce), never carried in a long link: a long link cannot reveal. See CONTRACT.md, Approvals, Rows hidden from the agent."
     },
-    "columns": {
+    "fields": {
       "type": "object",
       "additionalProperties": {
         "type": "array",
@@ -43,7 +43,7 @@
           "minLength": 1
         }
       },
-      "description": "Display only, never signed: each table the lines name (as they spell it) to its column names in table order (pg_attribute attnum, as the agent role reads the catalog). Served only by the engine, never carried in a long link. The page orders a table's columns by it, any column not listed after them in the order the rows carry; without it (a long link) the rows' order. See CONTRACT.md, Local pages."
+      "description": "Display only, never signed: each resource the lines name (as they spell it) to its field names in the store's order (Postgres: the table's columns by pg_attribute attnum, as the agent role reads the catalog). Served only by the engine, never carried in a long link. The page orders a resource's fields by it, any field not listed after them in the order the rows carry; without it (a long link) the rows' order. See CONTRACT.md, Local pages."
     },
     "credentialIds": {
       "type": "array",

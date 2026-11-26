@@ -215,7 +215,7 @@ func (rc *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret strin
 	}
 	rc.rescopes.put(id, next)
 	resp := next.request
-	resp.Columns = rc.delivery.ColumnsOf(ctx, resp.Lines)
+	resp.Fields = rc.delivery.FieldsOf(ctx, resp.Lines)
 	return ScopeResponse{Request: resp, Catalog: out.Catalog}, nil
 }
 

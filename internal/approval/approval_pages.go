@@ -35,7 +35,7 @@ func (ac *Service) ApprovalRequest(ctx context.Context, id uuid.UUID) (approval.
 	}
 	return approval.Request{
 		ApprovalID: a.ID, Binding: a.BindingText, Lines: a.Lines, RevealNonce: reveal, CredentialIDs: ids,
-		Columns: ac.delivery.ColumnsOf(ctx, a.Lines),
+		Fields: ac.delivery.FieldsOf(ctx, a.Lines),
 	}, nil
 }
 

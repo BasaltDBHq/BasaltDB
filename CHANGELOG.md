@@ -4,12 +4,6 @@ All notable changes to BasaltDB are recorded in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Changed
-
-- Go API: `pkg/trustprofile` takes a host and its `*tls.Config` (`TrustTLS`, `ExplainTLS`) in place of `Trust` and `Explain`, which took a `*pgconn.Config`, so the package no longer links the Postgres driver. Call `TrustTLS` once for each host of a connection.
-
 ## [0.1.0-alpha] - 2026-11-24
 
 The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup moves from the terminal to a page: the agent runs `basalt init` and the person finishes on the page it links. The CLI only starts things. Expect bugs and breaking changes between alpha releases, and read "Breaking for alpha installs" before you upgrade.
@@ -67,6 +61,7 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 - The engine's warning "plugin feed paused" gives a database refusal's class as `STORE_CODE <code>` (was `SQLSTATE <code>`); for Postgres the code is still the SQLSTATE. A log filter or alert that matches the old class needs the new one.
 - `describe`'s search names what matched in words that fit any store: `matched` is `resource`, `namespace` or `field <name>` (was `table`, `schema` or `column <name>`); `comment` does not change. The approval and revert pages' request, served by the engine, carries `fields` (was `columns`), each resource to its field names in the store's order, for display only. `describe`'s messages and next steps, a revert's person message ("only resource <name>", was "only table <name>") and the plugin feed's revert headline, and the descriptions of `describe`, `preview_revert`, `run_history`, `run_start`, `status` and `write` say resource, namespace and field where they said table, schema and column. An agent or tool that reads `matched` needs the new values.
 - `engine.json` must hold only its one JSON object. A file with anything after the closing brace, such as a second object, a `//` comment or stray characters, was accepted before. The engine now refuses to start with `config <path>: data after the JSON value`. To fix it, remove everything after the closing `}`.
+- Go API: `pkg/trustprofile` takes a host and its `*tls.Config` (`TrustTLS`, `ExplainTLS`) in place of `Trust` and `Explain`, which took a `*pgconn.Config`, so the package no longer links the Postgres driver. Call `TrustTLS` once for each host of a connection.
 
 ### Removed
 

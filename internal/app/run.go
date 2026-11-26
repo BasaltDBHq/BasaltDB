@@ -750,7 +750,7 @@ const guardLogTimeout = 15 * time.Second
 
 // agentFilesFor is how the engine reaches agent a's files: by path, or,
 // started as root, through directories opened without
-// following a link, from the computed credential path only (rootFiles).
+// following a link, from the computed credential path only (handofffiles.RootFiles).
 func agentFilesFor(env agentEnv, a config.Agent) (handoff.AgentFiles, error) {
 	if !env.asRoot {
 		return handofffiles.PathFiles{ConfigPath: env.configPath, CredFile: a.Store.CredentialFile}, nil

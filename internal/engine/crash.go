@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -75,7 +76,8 @@ func ReportPanic(h Host, t Terminal, w io.Writer, command string, v any, stack [
 	for _, dir := range dirs {
 		shared := command == engineCommand && dir == dirs[0]
 		id, err := rec.SaveIn(dir, shared, servicespec.CrashInput{Command: command, Kind: servicespec.CrashKindPanic, ErrorCode: "INTERNAL", Value: v, Stack: stack})
-		if err == nil {
+		// A report written whose older ones could not be deleted is saved.
+		if err == nil || errors.Is(err, servicespec.ErrCrashNotPruned) {
 			fmt.Fprintf(w, "basalt: crashed; report %s was saved in %s: the agent's status tool names it, with the link to file it on GitHub\n", id, t.TerminalText(dir))
 			return
 		}

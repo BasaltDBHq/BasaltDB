@@ -291,7 +291,7 @@ func TestChildStarterResolvesThePathAtEachRestart(t *testing.T) {
 	bin := filepath.Join(dir, "basalt")
 	trace := filepath.Join(dir, "trace")
 	writeSh(t, bin, "echo first >> '"+trace+"'; exit 1")
-	start := childStarter(bin, filepath.Join(dir, "cfg"), filepath.Join(dir, "lock"), dir, cli.Stdio{Out: io.Discard, Err: io.Discard}, slog.New(slog.DiscardHandler))
+	start := engineCLIHost{}.ChildStarter(bin, filepath.Join(dir, "cfg"), filepath.Join(dir, "lock"), dir, cli.Stdio{Out: io.Discard, Err: io.Discard}, slog.New(slog.DiscardHandler))
 
 	wait, err := start(context.Background(), engine.StartedByMCP)
 	require.NoError(t, err)
@@ -311,7 +311,7 @@ func TestChildStarterStopsWhenThePathIsGone(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "basalt")
 	writeSh(t, bin, "exit 1")
-	start := childStarter(bin, filepath.Join(dir, "cfg"), filepath.Join(dir, "lock"), dir, cli.Stdio{Out: io.Discard, Err: io.Discard}, slog.New(slog.DiscardHandler))
+	start := engineCLIHost{}.ChildStarter(bin, filepath.Join(dir, "cfg"), filepath.Join(dir, "lock"), dir, cli.Stdio{Out: io.Discard, Err: io.Discard}, slog.New(slog.DiscardHandler))
 	wait, err := start(context.Background(), engine.StartedByMCP)
 	require.NoError(t, err)
 	require.Error(t, wait())

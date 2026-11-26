@@ -62,7 +62,7 @@ var plainConfigLoads = map[string]string{
 	// No root on that platform.
 	"internal/platform/cli/config_other.go:loadConfigAsRoot:LoadOpenRaw": "platform without root",
 	// basalt mcp runs as the agent's OS user.
-	"internal/app/engine_commands.go:engineDown:Load": "basalt mcp, as the agent's user",
+	"internal/status/in/statusmcp/enginedown.go:LoadEngineDown:Load": "basalt mcp, as the agent's user",
 	// service install, as root, reads only pii.maxMemoryMB for the unit's
 	// memory limits, refusing a link at the config; the config itself is
 	// read again through openEngineFile before anything is written.

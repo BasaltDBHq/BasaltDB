@@ -3,6 +3,7 @@ package engine_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -25,14 +26,17 @@ type saved struct {
 
 // fakeRecorder fails in the directories in fail and records every call.
 type fakeRecorder struct {
-	fail  map[string]bool
-	calls *[]saved
+	fail, notPruned map[string]bool
+	calls           *[]saved
 }
 
 func (r fakeRecorder) SaveIn(dir string, shared bool, in servicespec.CrashInput) (string, error) {
 	*r.calls = append(*r.calls, saved{dir, shared, in})
 	if r.fail[dir] {
 		return "", errors.New("disk full in " + dir)
+	}
+	if r.notPruned[dir] {
+		return "r-2", fmt.Errorf("%w: permission denied", servicespec.ErrCrashNotPruned)
 	}
 	return "r-1", nil
 }
@@ -82,6 +86,20 @@ func TestReportPanicNamesTheSavedReport(t *testing.T) {
 		{state, true, servicespec.CrashInput{Command: "engine", Kind: servicespec.CrashKindPanic, ErrorCode: "INTERNAL", Value: "boom", Stack: []byte("stack")}},
 		{user, false, servicespec.CrashInput{Command: "engine", Kind: servicespec.CrashKindPanic, ErrorCode: "INTERNAL", Value: "boom", Stack: []byte("stack")}},
 	}, calls, "the engine tries its state directory first, and shares only that one")
+}
+
+// A report written whose older reports could not be deleted is saved: the
+// line names it.
+func TestReportPanicNamesAReportSavedWithoutPruning(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	_, state := crashDirsOf(base)
+	var calls []saved
+	h := fakeCrashHost{rec: fakeRecorder{notPruned: map[string]bool{state: true}, calls: &calls}, base: base}
+	var w bytes.Buffer
+	engine.ReportPanic(h, h, &w, "engine", "boom", nil)
+	require.Equal(t, "basalt: crashed; report r-2 was saved in <"+state+">: the agent's status tool names it, with the link to file it on GitHub\n", w.String())
+	require.Len(t, calls, 1, "the saved report ends the tries")
 }
 
 func TestReportPanicSaysWhenNothingIsSaved(t *testing.T) {

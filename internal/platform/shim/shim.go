@@ -24,10 +24,9 @@ import (
 )
 
 const (
+	// scannerInitSize is the first read buffer; either side's message may
+	// grow it to mcpserver.MaxMessageBytes, as the engine's MCP server reads.
 	scannerInitSize = 64 * 1024
-	// scannerMaxSize is the longest message either side may send, as the
-	// engine's MCP server reads it.
-	scannerMaxSize = 16 << 20
 
 	// DefaultReconnectWait is long enough for a service manager to restart
 	// the engine.
@@ -181,7 +180,7 @@ func serve(ctx context.Context, r *relay, in io.Reader) error {
 func readLines(ctx context.Context, in io.Reader, lines chan<- []byte, errs chan<- error) {
 	defer close(lines)
 	sc := bufio.NewScanner(in)
-	sc.Buffer(make([]byte, scannerInitSize), scannerMaxSize)
+	sc.Buffer(make([]byte, scannerInitSize), mcpserver.MaxMessageBytes)
 	for sc.Scan() {
 		line := bytes.TrimSpace(sc.Bytes())
 		if len(line) == 0 {
@@ -507,7 +506,7 @@ func (s *session) copyAnswers(ctx context.Context, out *lineWriter) {
 	defer s.markReady()
 	defer s.abandon(ctx, out)
 	sc := bufio.NewScanner(s.conn)
-	sc.Buffer(make([]byte, scannerInitSize), scannerMaxSize)
+	sc.Buffer(make([]byte, scannerInitSize), mcpserver.MaxMessageBytes)
 	for sc.Scan() {
 		if msg := mcpserver.PeerRefusal(sc.Bytes()); msg != "" {
 			// Not a request's answer: the requests left pending get its

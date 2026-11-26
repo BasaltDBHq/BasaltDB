@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // The labels of the Update check's LABELS fix (CONTRACT.md, Setup page, The
@@ -174,7 +175,7 @@ func deleteStaleClasses(ctx context.Context, tx pgx.Tx) error {
 	// catalog, and the whole subquery is constant text. A column exists when
 	// a relation of a readable kind holds it by these names, whoever may
 	// read it.
-	stale := psql.Delete("basalt_meta.pii_columns p").Where(`NOT EXISTS (SELECT 1
+	stale := sqlport.Builder.Delete("basalt_meta.pii_columns p").Where(`NOT EXISTS (SELECT 1
 		FROM pg_catalog.pg_namespace ns
 		JOIN pg_catalog.pg_class c ON c.relnamespace = ns.oid
 		JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
@@ -191,7 +192,7 @@ func deleteStaleClasses(ctx context.Context, tx pgx.Tx) error {
 // role, so a running engine reloads its classes. The caller acts as the
 // guard role.
 func setPIICatalog(ctx context.Context, tx pgx.Tx, at time.Time) error {
-	catalog := psql.Insert("basalt_meta.pii_catalog").
+	catalog := sqlport.Builder.Insert("basalt_meta.pii_catalog").
 		Columns("id", "fingerprint", "classified_at", "classified_by").
 		Values(true, sq.Expr("basalt_meta.pii_fingerprint()"), at, sq.Expr("session_user")).
 		Suffix(`ON CONFLICT (id) DO UPDATE SET fingerprint = EXCLUDED.fingerprint,

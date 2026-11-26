@@ -2,7 +2,6 @@ package sqlguard
 
 import (
 	"errors"
-	"strconv"
 	"time"
 )
 
@@ -46,10 +45,4 @@ func (l Limits) Validate() error {
 		return errors.New("read row limit must be between 1 and 100000")
 	}
 	return nil
-}
-
-// StatementTimeoutSetting is the value for
-// set_config('statement_timeout', ..., true), in milliseconds.
-func (l Limits) StatementTimeoutSetting() string {
-	return strconv.FormatInt(l.StatementTimeout.Milliseconds(), 10)
 }

@@ -200,7 +200,7 @@ func TestLimits(t *testing.T) {
 	t.Parallel()
 	l := sqlguard.DefaultLimits()
 	require.NoError(t, l.Validate())
-	require.Equal(t, "5000", l.StatementTimeoutSetting())
+	require.Equal(t, 5*time.Second, l.StatementTimeout)
 
 	require.Error(t, sqlguard.Limits{StatementTimeout: 0, ReadRowLimit: 10}.Validate())
 	require.Error(t, sqlguard.Limits{StatementTimeout: time.Hour, ReadRowLimit: 10}.Validate())

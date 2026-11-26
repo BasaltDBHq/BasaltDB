@@ -14,6 +14,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // RecordSetup records s with the admin connection, in the transaction that
@@ -34,7 +35,7 @@ func RecordSetup(ctx context.Context, q Querier, n guardmodel.Names, s guardmode
 		}
 		agent = role
 	}
-	sql, args, err := psql.Select().Column(sq.Expr("basalt_meta.record_setup(?::uuid, ?::text, ?::name, ?::int, ?::timestamptz)",
+	sql, args, err := sqlport.Builder.Select().Column(sq.Expr("basalt_meta.record_setup(?::uuid, ?::text, ?::name, ?::int, ?::timestamptz)",
 		s.ID, s.Kind, agent, s.GuardVersion, s.ExpiresAt)).ToSql()
 	if err != nil {
 		return 0, err
@@ -102,7 +103,7 @@ func SetupRecorded(ctx context.Context, q Querier, id uuid.UUID) (bool, error) {
 	if err != nil || !readable {
 		return false, err
 	}
-	sql, args, err := psql.Select("1").From("basalt_meta.agent_setups").Where(sq.Eq{"setup_id": id}).Prefix("SELECT EXISTS (").Suffix(")").ToSql()
+	sql, args, err := sqlport.Builder.Select("1").From("basalt_meta.agent_setups").Where(sq.Eq{"setup_id": id}).Prefix("SELECT EXISTS (").Suffix(")").ToSql()
 	if err != nil {
 		return false, err
 	}
@@ -121,7 +122,7 @@ func LatestAgentSetup(ctx context.Context, q Querier) (s guardmodel.AgentSetup, 
 	if err != nil || !readable {
 		return guardmodel.AgentSetup{}, false, err
 	}
-	sql, args, err := psql.Select("setup_id", "kind").From("basalt_meta.agent_setups").
+	sql, args, err := sqlport.Builder.Select("setup_id", "kind").From("basalt_meta.agent_setups").
 		OrderBy("used_at DESC", "setup_id DESC").Limit(1).ToSql()
 	if err != nil {
 		return guardmodel.AgentSetup{}, false, err
@@ -166,7 +167,7 @@ func SetupsFor(ctx context.Context, q Querier, id uuid.UUID, role string) ([]set
 	if role != "" {
 		where = append(where, sq.Eq{"agent_role": role})
 	}
-	sql, args, err := psql.Select("setup_id::text", "coalesce(agent_role::text, '')", "used_at").
+	sql, args, err := sqlport.Builder.Select("setup_id::text", "coalesce(agent_role::text, '')", "used_at").
 		From("basalt_meta.setups").Where(where).OrderBy("setup_id").ToSql()
 	if err != nil {
 		return nil, err

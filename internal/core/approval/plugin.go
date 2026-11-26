@@ -190,32 +190,23 @@ func ParsePluginRequest(fragment string) (PluginRequest, PluginBinding, error) {
 // signs (api/plugin/approval/response.schema.json), and the body of POST
 // /api/v1/plugins/{approvalId}/approve.
 type PluginApprovalResponse struct {
-	ApprovalID        uuid.UUID     `json:"approvalId"`
-	CredentialID      passkey.Bytes `json:"credentialId"`
-	AuthenticatorData passkey.Bytes `json:"authenticatorData"`
-	ClientDataJSON    passkey.Bytes `json:"clientDataJson"`
-	Signature         passkey.Bytes `json:"signature"`
+	ApprovalID uuid.UUID `json:"approvalId"`
+	passkey.SignedAssertion
 }
 
 // NewPluginApprovalResponse wraps an assertion for approvalID.
 func NewPluginApprovalResponse(approvalID uuid.UUID, a passkey.Assertion) PluginApprovalResponse {
-	return PluginApprovalResponse{
-		ApprovalID:        approvalID,
+	return PluginApprovalResponse{ApprovalID: approvalID, SignedAssertion: passkey.SignedAssertion{
 		CredentialID:      a.CredentialID,
 		AuthenticatorData: a.AuthenticatorData,
 		ClientDataJSON:    a.ClientDataJSON,
 		Signature:         a.Signature,
-	}
+	}}
 }
 
-// Assertion returns the WebAuthn assertion the response carries.
-func (r PluginApprovalResponse) Assertion() passkey.Assertion {
-	return passkey.Assertion{
-		CredentialID:      r.CredentialID,
-		AuthenticatorData: r.AuthenticatorData,
-		ClientDataJSON:    r.ClientDataJSON,
-		Signature:         r.Signature,
-	}
+// Signed returns the approval id and the assertion.
+func (r PluginApprovalResponse) Signed() (uuid.UUID, passkey.SignedAssertion) {
+	return r.ApprovalID, r.SignedAssertion
 }
 
 // DecodePluginResponse decodes the signed response the plugin approval
@@ -223,11 +214,8 @@ func (r PluginApprovalResponse) Assertion() passkey.Assertion {
 // refused.
 func DecodePluginResponse(raw []byte) (PluginApprovalResponse, error) {
 	var r PluginApprovalResponse
-	if err := passkey.DecodeStrict(raw, &r); err != nil {
-		return PluginApprovalResponse{}, Invalid("%v", err)
-	}
-	if r.ApprovalID == uuid.Nil || len(r.CredentialID) == 0 || len(r.AuthenticatorData) == 0 || len(r.ClientDataJSON) == 0 || len(r.Signature) == 0 {
-		return PluginApprovalResponse{}, Invalid("plugin approval response is missing a field")
+	if err := DecodeSigned(raw, &r, "plugin approval response is missing a field"); err != nil {
+		return PluginApprovalResponse{}, err
 	}
 	return r, nil
 }

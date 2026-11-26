@@ -5,6 +5,5 @@ internal/plugin plugins_service.go: osUnitSource: os/user.LookupGroup
 internal/plugin problem.go: CheckAgentUsers: os/user.LookupGroup
 internal/plugin problem.go: systemGroups: os/user.Lookup
 internal/setup binary.go: TemporaryBinaryWarning: path/filepath.EvalSymlinks
-internal/setup checks.go: CheckServicePersons: os/user.Lookup
 internal/setup rotations.go: ConfigGone: os.Lstat
 internal/status portalcheck.go: save: internal/lib/atomicfile.Write

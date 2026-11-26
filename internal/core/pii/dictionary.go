@@ -14,7 +14,8 @@ import (
 const (
 	DefaultMaxMemoryMB     = 512
 	DefaultMaxDeltaEntries = 1_000_000
-	bytesPerMB             = 1 << 20
+	// BytesPerMB converts pii.maxMemoryMB to bytes.
+	BytesPerMB = 1 << 20
 	// deltaHardLimitFactor: the delta keeps taking values past
 	// MaxDeltaEntries, while the early rebuild runs, up to this many times it.
 	deltaHardLimitFactor = 2
@@ -46,7 +47,7 @@ type DictionaryOptions struct {
 // DefaultDictionaryOptions are the contract defaults; now is the clock that stamps status.json.
 func DefaultDictionaryOptions(now func() time.Time) DictionaryOptions {
 	return DictionaryOptions{
-		MaxMemoryBytes:  DefaultMaxMemoryMB * bytesPerMB,
+		MaxMemoryBytes:  DefaultMaxMemoryMB * BytesPerMB,
 		MaxDeltaEntries: DefaultMaxDeltaEntries,
 		Now:             now,
 	}

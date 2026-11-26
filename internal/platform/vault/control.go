@@ -1,12 +1,12 @@
 package vault
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 )
 
 // Control message types (api/mcp/vault/control-message.schema.json).
@@ -238,15 +238,10 @@ func sessionCloseCode(code int) bool {
 
 func validRef(ref int64) bool { return ref >= 1 && ref <= maxRef }
 
-// decodeStrict decodes one JSON object into v, refusing unknown fields and
-// trailing data.
+// decodeStrict decodes one JSON object into v (strictjson.Decode); any
+// failure is errMalformed.
 func decodeStrict(data []byte, v any) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
-		return errMalformed
-	}
-	if dec.More() {
+	if strictjson.Decode(data, v) != nil {
 		return errMalformed
 	}
 	return nil

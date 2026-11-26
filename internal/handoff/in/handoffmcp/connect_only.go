@@ -11,9 +11,7 @@ import (
 	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
@@ -135,27 +133,8 @@ func (c ConnectOnly) confirm(ctx context.Context, raw json.RawMessage) (any, err
 // collects.
 func (c ConnectOnly) Status(ctx context.Context) (guidance.StatusReport, error) {
 	st := c.Handoff.StatusCollect(ctx)
-	cmds := c.Commands.OperatedBy(c.OperatedBy)
-	base := c.PagesBase
-	if base == "" {
-		base = links.DefaultLocal
-	}
-	r := guidance.StatusReport{
-		Agent: c.Name, OperatedBy: statussvc.OperatedBy(c.OperatedBy), Enforcement: statussvc.Enforcement(c.OperatedBy, c.SameUser),
-		Engine: guidance.EngineStatus{Reachable: true, Build: buildinfo.Version, StartedBy: statussvc.StartedByEnum(c.StartedBy)},
-		Guard:  guidance.GuardStatus{State: guardmodel.GuardUnknown, Build: c.LatestGuardVersion()},
-		Pages:  guidance.PagesStatus{Served: c.PagesOrigin != "", URL: base},
-	}
-	if c.Vault != nil {
-		v := c.Vault.VaultStatus()
-		r.Vault = &v
-	}
-	ps := guidance.Problems{Cmds: cmds, ConnectBudget: c.ConnectBudget}
-	r.Setup = handoff.ConnectOnlyProblems(st, &ps, c.Now())
-	list, err := ps.Sorted()
-	if err != nil {
-		return guidance.StatusReport{}, err
-	}
-	r.Problems, r.Ready = list, statussvc.Ready(list)
-	return r, nil
+	return statussvc.ConnectOnly(statussvc.Head{
+		Agent: c.Name, OperatedBy: c.OperatedBy, SameUser: c.SameUser, Build: buildinfo.Version, StartedBy: c.StartedBy,
+		PagesBase: c.PagesBase, PagesOrigin: c.PagesOrigin, Vault: c.Vault,
+	}, c.Commands.OperatedBy(c.OperatedBy), c.ConnectBudget, c.LatestGuardVersion(), st, c.Now())
 }

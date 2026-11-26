@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
@@ -17,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/enginefiles"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -43,7 +43,9 @@ func (shell) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
 
 // setupHost is basalt init --remote's real host: the adapters, reached
 // through this package's own functions.
-type setupHost struct{}
+// setupHost is the setup commands' host. Its engine files (by path) are
+// the setup page's adapter's (UpsertAgentVault for init --remote).
+type setupHost struct{ enginefiles.Files }
 
 func (setupHost) GuardAgentConnString(adminURL, role, password string) (string, error) {
 	return guard.AgentConnString(adminURL, role, password)
@@ -99,13 +101,7 @@ func (setupHost) OSDefaultUser(goos string) string { return osservice.DefaultUse
 
 func (setupHost) OSUnitPath(goos string) string { return osservice.UnitPath(goos) }
 
-func (setupHost) ConnTarget(dsn string) (setup.ConnTarget, error) {
-	cfg, err := pgconn.ParseConfig(dsn)
-	if err != nil {
-		return setup.ConnTarget{}, err
-	}
-	return setup.ConnTarget{Host: cfg.Host, Port: int(cfg.Port), SystemRoots: cfg.TLSConfig != nil && cfg.TLSConfig.RootCAs == nil}, nil
-}
+func (setupHost) ConnTarget(dsn string) (setup.ConnTarget, error) { return pgdial.ConnTarget(dsn) }
 
 func (setupHost) ServerMessage(err error) (string, bool) { return pgdial.ServerMessage(err) }
 

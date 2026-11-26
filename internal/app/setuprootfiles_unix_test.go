@@ -118,3 +118,33 @@ func requireEmptyDir(t *testing.T, dir string) {
 	}
 	require.Empty(t, names, "root wrote through the planted link into %s", dir)
 }
+
+// The key file root reads is checked as every owner-only file is: a file
+// open to others or owned by another user keeps its message, and an
+// oversized file is refused before it is parsed.
+func TestRootKeyFileRefusals(t *testing.T) {
+	t.Parallel()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	state := filepath.Join(root, "state")
+	require.NoError(t, os.Mkdir(state, 0o700))
+	trusted, err := rootTrustedOwner(state)
+	require.NoError(t, err)
+	d, err := setupHost{}.OSOpenTrustedDir(state, trusted, false)
+	require.NoError(t, err)
+	defer d.Close()
+	key := filepath.Join(state, channel.KeyFileName)
+
+	require.NoError(t, os.WriteFile(key, []byte("x"), 0o644))
+	require.NoError(t, os.Chmod(key, 0o644))
+	_, err = readRootKeyFile(d, os.Geteuid())
+	require.EqualError(t, err, key+" is mode 644; it must be readable by the engine's user only (0600)")
+
+	require.NoError(t, os.Chmod(key, 0o600))
+	_, err = readRootKeyFile(d, os.Geteuid()+1)
+	require.EqualError(t, err, fmt.Sprintf("%s is owned by uid %d, not uid %d (the owner of %s)", key, os.Geteuid(), os.Geteuid()+1, state))
+
+	require.NoError(t, os.WriteFile(key, make([]byte, rootKeyFileMax+1), 0o600))
+	_, err = readRootKeyFile(d, os.Geteuid())
+	require.ErrorContains(t, err, fmt.Sprintf("is more than the %d allowed", rootKeyFileMax))
+}

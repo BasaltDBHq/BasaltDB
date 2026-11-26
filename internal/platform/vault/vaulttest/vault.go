@@ -29,6 +29,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 )
 
 // readLimit is the transport's own cap. It sits above every protocol limit
@@ -302,7 +304,7 @@ func (v *Vault) authenticate(ctx context.Context, conn *websocket.Conn, engineID
 		Version *int   `json:"version"`
 		Sig     string `json:"sig"`
 	}
-	if err := decodeStrict(data, &auth); err != nil || auth.Type != TypeAuth || auth.Version == nil {
+	if err := strictjson.Decode(data, &auth); err != nil || auth.Type != TypeAuth || auth.Version == nil {
 		return CloseProtocol
 	}
 	if *auth.Version != int(Version) {
@@ -356,7 +358,7 @@ func (v *Vault) engineMessage(ctx context.Context, e *engineConn, typ websocket.
 
 func (v *Vault) register(ctx context.Context, e *engineConn, data []byte) websocket.StatusCode {
 	var m RegisterLink
-	if err := decodeStrict(data, &m); err != nil || !validRef(m.Ref) || !validLinkToken(m.LinkToken) {
+	if err := strictjson.Decode(data, &m); err != nil || !validRef(m.Ref) || !validLinkToken(m.LinkToken) {
 		return CloseProtocol
 	}
 	expiresAt, err := time.Parse(time.RFC3339, m.ExpiresAt)
@@ -414,7 +416,7 @@ func (v *Vault) bind(engineID, token string, expiresAt time.Time) string {
 
 func (v *Vault) unregister(ctx context.Context, e *engineConn, data []byte) websocket.StatusCode {
 	var m UnregisterLink
-	if err := decodeStrict(data, &m); err != nil || !validRef(m.Ref) || !validLinkToken(m.LinkToken) {
+	if err := strictjson.Decode(data, &m); err != nil || !validRef(m.Ref) || !validLinkToken(m.LinkToken) {
 		return CloseProtocol
 	}
 	verdict := Verdict{}
@@ -446,7 +448,7 @@ func (v *Vault) unregister(ctx context.Context, e *engineConn, data []byte) webs
 
 func (v *Vault) engineSessionClose(ctx context.Context, e *engineConn, data []byte) websocket.StatusCode {
 	var m SessionClose
-	if err := decodeStrict(data, &m); err != nil {
+	if err := strictjson.Decode(data, &m); err != nil {
 		return CloseProtocol
 	}
 	sid, err := ParseSID(m.SID)

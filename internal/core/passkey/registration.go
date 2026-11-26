@@ -21,11 +21,13 @@ const (
 	RegistrationResponsePrefix = "basalt-passkey.1."
 )
 
-// Sizes of the registration request's random fields.
+// Sizes of the registration request's random fields, and the longest
+// label (user name, display name, a passkey's label) in bytes. A service
+// that draws a request itself uses these.
 const (
-	challengeLen = 32
-	userIDLen    = 16
-	maxLabelLen  = 64
+	ChallengeLen = 32
+	UserIDLen    = 16
+	MaxLabelLen  = 64
 )
 
 // AlgES256 is the COSE algorithm id of ES256, the only one accepted.
@@ -51,12 +53,12 @@ func RegistrationRequestFor(challenge, userID []byte, userName, displayName stri
 }
 
 func (r RegistrationRequest) Validate() error {
-	if len(r.Challenge) != challengeLen || len(r.UserID) != userIDLen {
-		return rejected("registration request needs a %d-byte challenge and a %d-byte user id", challengeLen, userIDLen)
+	if len(r.Challenge) != ChallengeLen || len(r.UserID) != UserIDLen {
+		return rejected("registration request needs a %d-byte challenge and a %d-byte user id", ChallengeLen, UserIDLen)
 	}
 	for _, label := range []string{r.UserName, r.DisplayName} {
-		if label == "" || len(label) > maxLabelLen || !utf8.ValidString(label) {
-			return rejected("registration labels must be 1 to %d bytes of UTF-8", maxLabelLen)
+		if label == "" || len(label) > MaxLabelLen || !utf8.ValidString(label) {
+			return rejected("registration labels must be 1 to %d bytes of UTF-8", MaxLabelLen)
 		}
 	}
 	return nil

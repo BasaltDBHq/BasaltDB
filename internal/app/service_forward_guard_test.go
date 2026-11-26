@@ -33,8 +33,7 @@ var serviceWiring = map[string]string{
 	"agentCore":        "the agent service's part of the shared settings",
 	"statusCore":       "the status service's part of the shared settings",
 	"pluginCore":       "the plugin service's part of the shared settings",
-	"revertCore":       "the revert service's part of the shared settings",
-	"approvalCore":     "the approval service's part of the shared settings",
+	"heldCore":         "the approval and revert services' part of the shared settings",
 	"linksCore":        "the delivery service's part of the shared settings",
 	"agentStoreSet":    "builds the agent's StoreSet for the store's kind",
 	"approvalStoreSet": "builds the approval's StoreSet",
@@ -530,7 +529,6 @@ var portGlue = map[string]string{
 // become a forward or no longer implements a port fails the test.
 var portLogic = map[string]string{
 	"rootConfigDir.Upsert":        "the setup domain's config writer as root: checks the directory's owner before it writes",
-	"setupHost.ConnTarget":        "the setup host: parses the connection string's target",
 	"setupHost.OSOpenTrustedDir":  "the setup host: returns a nil interface on an error",
 	"setupHost.OpenRootConfigDir": "the setup host: returns a nil interface on an error",
 	"setupHost.RootEngineKey":     "the setup host: unwraps the config directory before it reads the key",

@@ -11,7 +11,7 @@ import (
 )
 
 // MaxPasskeyLabel is the registration request's label limit in bytes.
-const MaxPasskeyLabel = 64
+const MaxPasskeyLabel = passkey.MaxLabelLen
 
 // VerifyRegistrationCode checks a pasted registration code against req.
 func VerifyRegistrationCode(code string, req passkey.RegistrationRequest, rp passkey.Relying) (passkey.Credential, error) {

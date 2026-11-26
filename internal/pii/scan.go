@@ -20,7 +20,6 @@ const (
 	DefaultScanInterval      = 5 * time.Minute
 	DefaultScanPage          = 5000
 	DefaultScanRowsPerSecond = 20_000
-	bytesPerMB               = 1 << 20
 	// BytesPerAddBound is what a build holds in memory per value until it
 	// commits: two 8-byte keyed hashes. A cycle stops collecting past
 	// budget / BytesPerAddBound values, so the build itself stays within
@@ -75,7 +74,7 @@ func (o ScanOptions) withDefaults() ScanOptions {
 		o.RowsPerSecond = DefaultScanRowsPerSecond
 	}
 	if o.MaxMemoryBytes <= 0 {
-		o.MaxMemoryBytes = corepii.DefaultMaxMemoryMB * bytesPerMB
+		o.MaxMemoryBytes = corepii.DefaultMaxMemoryMB * corepii.BytesPerMB
 	}
 	if o.LoadTimeout <= 0 {
 		o.LoadTimeout = DefaultLoadTimeout

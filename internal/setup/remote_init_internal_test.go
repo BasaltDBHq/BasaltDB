@@ -1,27 +1,20 @@
 //go:build unix
 
-package setupcli
+package setup
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
-	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
-	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/credfiles"
 )
-
-// releasePage is where the person installs basalt on their own computer.
-const releasePage = "https://github.com/BasaltDBHq/BasaltDB/releases"
 
 // filesHost opens trusted directories as the real machine does.
 type filesHost struct{}
@@ -46,9 +39,9 @@ func (filesHost) OSLookupUID(name string) int { return osservice.LookupUID(name)
 // root opens.
 func TestInitRemotePromoteRefusesAChangedPending(t *testing.T) {
 	t.Parallel()
-	adapters := map[string]func(t *testing.T, dir string) setup.CredFiles{
-		"path": func(*testing.T, string) setup.CredFiles { return credfiles.PathCredFiles{} },
-		"root": func(t *testing.T, dir string) setup.CredFiles {
+	adapters := map[string]func(t *testing.T, dir string) CredFiles{
+		"path": func(*testing.T, string) CredFiles { return credfiles.PathCredFiles{} },
+		"root": func(t *testing.T, dir string) CredFiles {
 			t.Helper()
 			files, err := credfiles.OpenRootCredFiles(filesHost{}, dir, os.Geteuid())
 			require.NoError(t, err)
@@ -77,7 +70,7 @@ func TestInitRemotePromoteRefusesAChangedPending(t *testing.T) {
 				require.NoError(t, config.WriteFile(credFile, []byte(old)))
 				require.NoError(t, config.WriteFile(credFile+config.PendingSuffix, []byte("postgres://bt_agent_bot:new@db.example.com:5432/app\n")))
 				r := &remoteInit{credFile: credFile, files: open(t, dir)}
-				pending, err := setup.ReadCredentialIfAny(r.files, credFile+config.PendingSuffix)
+				pending, err := ReadCredentialIfAny(r.files, credFile+config.PendingSuffix)
 				require.NoError(t, err)
 
 				apply(t, credFile+config.PendingSuffix)
@@ -108,7 +101,7 @@ func TestInitRemotePromoteReturnsTheErrorReachingPending(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(files.Close)
 	r := &remoteInit{credFile: credFile, files: files}
-	pending, err := setup.ReadCredentialIfAny(r.files, credFile+config.PendingSuffix)
+	pending, err := ReadCredentialIfAny(r.files, credFile+config.PendingSuffix)
 	require.NoError(t, err)
 
 	elsewhere := filepath.Join(dir, "elsewhere.url")
@@ -124,20 +117,14 @@ func TestInitRemotePromoteReturnsTheErrorReachingPending(t *testing.T) {
 	require.Equal(t, old, string(got), "the credential file is unchanged")
 }
 
-func TestSetupPersonMessageFitsForTheLongestName(t *testing.T) {
-	t.Parallel()
-	name := ""
-	for n := 1; n < 100; n++ {
-		if candidate := strings.Repeat("a", n); config.ValidAgentName(candidate) {
-			name = candidate
-		}
-	}
-	require.GreaterOrEqual(t, len(name), 50)
-	pm := setup.SetupPersonMessage(name, "3f9a 21c0 7d44 e1b2 90ac")
-	withoutURL := strings.Replace(pm, releasePage+"\n", "", 1)
-	require.LessOrEqual(t, utf8.RuneCountInString(withoutURL), guidance.MaxPersonMessageLength, pm)
-	require.Equal(t, 1, strings.Count(pm, name), "the agent is named once")
+// stderrEnv is a RemoteEnv that takes the notes only: any other call
+// panics on the nil RemoteEnv.
+type stderrEnv struct {
+	RemoteEnv
+	w io.Writer
 }
+
+func (e stderrEnv) Stderr() io.Writer { return e.w }
 
 // fakeConfigDir is a RootConfigDir that records what is upserted.
 type fakeConfigDir struct {
@@ -164,8 +151,8 @@ func TestRootWriteConfigUsesTheOpenedConfigDir(t *testing.T) {
 	d := &fakeConfigDir{}
 	var stderr bytes.Buffer
 	r := &remoteInit{
-		c: &cli.IO{Stderr: &stderr}, configDir: d, osUser: "bot", credFile: filepath.Join(dir, "agents", "bot.url"),
-		f:        setup.RemoteFlags{Agent: "bot", ConfigPath: filepath.Join(dir, "engine.json")},
+		env: stderrEnv{w: &stderr}, configDir: d, osUser: "bot", credFile: filepath.Join(dir, "agents", "bot.url"),
+		f:        RemoteFlags{Agent: "bot", ConfigPath: filepath.Join(dir, "engine.json")},
 		settings: config.Settings{SocketDir: "/run/basalt"},
 	}
 	require.NoError(t, r.writeConfig(nil))

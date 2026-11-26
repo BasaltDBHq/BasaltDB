@@ -5,9 +5,7 @@
 package setuppage
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -15,6 +13,7 @@ import (
 	"net/http"
 
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/web"
@@ -135,7 +134,7 @@ func (st setupRoutes) doctor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req setup.DoctorRequest
-	if !decodeStrict(raw, &req) {
+	if strictjson.Decode(raw, &req) != nil {
 		pageserver.WriteError(w, http.StatusBadRequest, setup.CodeInvalidArgument, "The body is not a setup request.")
 		return
 	}
@@ -143,8 +142,6 @@ func (st setupRoutes) doctor(w http.ResponseWriter, r *http.Request) {
 	st.answer(w, answer, err, "doctor")
 }
 
-// decodeStrict decodes raw into v, refusing unknown fields and trailing
-// data.
 // engine answers what the engine is set up with, and notMine marks the
 // person's "No, this isn't mine" for basalt init (CONTRACT.md, Not your
 // database). Both take an empty object, never the admin string, and
@@ -179,17 +176,11 @@ func (st setupRoutes) empty(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	var none struct{}
-	if !decodeStrict(raw, &none) {
+	if strictjson.Decode(raw, &none) != nil {
 		pageserver.WriteError(w, http.StatusBadRequest, setup.CodeInvalidArgument, "This route takes an empty object.")
 		return false
 	}
 	return true
-}
-
-func decodeStrict(raw []byte, v any) bool {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	return dec.Decode(v) == nil && !dec.More()
 }
 
 func (st setupRoutes) request(w http.ResponseWriter, r *http.Request) (setup.Request, bool) {
@@ -198,7 +189,7 @@ func (st setupRoutes) request(w http.ResponseWriter, r *http.Request) (setup.Req
 		return setup.Request{}, false
 	}
 	var req setup.Request
-	if !decodeStrict(raw, &req) {
+	if strictjson.Decode(raw, &req) != nil {
 		pageserver.WriteError(w, http.StatusBadRequest, setup.CodeInvalidArgument, "The body is not a setup request.")
 		return setup.Request{}, false
 	}

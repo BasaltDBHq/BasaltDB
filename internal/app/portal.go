@@ -23,5 +23,5 @@ func newPortalChecker(pagesBase, stateDir string, log *slog.Logger, now func() t
 // portal's origin, fetched over HTTPS (portalfetch): the engine's daily
 // check and scripts/portal-verify use the same.
 func PortalcheckOptions(base string) status.PortalverifyOptions {
-	return status.PortalcheckOptions(base, portalfetch.New(base))
+	return status.PortalcheckOptions(portalfetch.New(base))
 }

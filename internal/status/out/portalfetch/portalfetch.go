@@ -29,6 +29,9 @@ type Fetcher struct {
 // slash.
 func New(base string) *Fetcher { return &Fetcher{base: base, client: newClient(base)} }
 
+// Base is the portal's origin the fetcher reaches, without a trailing slash.
+func (f *Fetcher) Base() string { return f.base }
+
 // Get fetches urlPath under the portal's origin: the status code, the
 // response header and at most limit bytes of the body. Its error is the
 // reason the report shows (errText).

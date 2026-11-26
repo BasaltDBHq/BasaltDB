@@ -6,16 +6,18 @@ import (
 	core "github.com/basaltdbhq/basaltdb/internal/core/trustprofile"
 )
 
-// TrustTLS makes host's TLS config t, when it verifies the host name
-// (sslmode=verify-full) and one of set's profiles matches host, trust that
-// profile's roots as well as the system's authorities. A config that
-// already has roots (sslrootcert, PGSSLROOTCERT, a service file or
-// ~/.postgresql/root.crt) keeps them: the person named the root. The host
-// name check stays on; verify-ca, require and weaker modes are left as the
-// driver built them. A connection with several hosts calls it once for each
-// host and its own TLS config, so each profile's roots are trusted only for
-// that profile's hosts. Call it once per parsed config: on a copy for each
-// new connection of a pool.
+// TrustTLS makes host's TLS config t, when it verifies the host name and
+// one of set's profiles matches host, trust that profile's roots as well as
+// the system's authorities. t is the caller's own config, with the TLS
+// settings its connection string or client options gave it; for a Postgres
+// connection, sslmode=verify-full is the mode that verifies the host name.
+// A config that already has roots (for Postgres, sslrootcert,
+// PGSSLROOTCERT, a service file or ~/.postgresql/root.crt) keeps them: the
+// person named the root. The host name check stays on; a config that does
+// not verify the host name is left as the caller built it. A connection
+// with several hosts calls it once for each host and its own TLS config,
+// so each profile's roots are trusted only for that profile's hosts. Call
+// it once per config: on a copy for each new connection of a pool.
 func TrustTLS(host string, t *tls.Config, set *Set) { core.Trust(host, t, set) }
 
 // Applies says what verifies a host's certificate.

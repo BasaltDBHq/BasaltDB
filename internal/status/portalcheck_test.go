@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/textproto"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,8 +15,27 @@ import (
 
 var t0 = time.Date(2026, 11, 14, 9, 0, 0, 0, time.UTC)
 
+// originOnly is a fetcher of the portal at its value that fetches nothing.
+type originOnly string
+
+func (o originOnly) Base() string { return string(o) }
+
+func (originOnly) Get(context.Context, string, int64) (int, textproto.MIMEHeader, []byte, error) {
+	return 0, nil, nil, errors.New("not fetched")
+}
+
+// A check that could not run names the portal its fetcher reaches: the
+// origin checked and the origin named come from one place.
+func TestAFailedCheckNamesTheFetchersPortal(t *testing.T) {
+	t.Parallel()
+	c := NewChecker(PortalverifyOptions{Fetch: originOnly("https://other.example")}, "", slog.New(slog.DiscardHandler), func() time.Time { return t0 })
+	c.verify = func(context.Context, PortalverifyOptions) (*Report, error) { return nil, errors.New("down") }
+	require.Equal(t, "https://other.example", c.Check(context.Background()).PortalURL)
+	require.Empty(t, PortalverifyOptions{}.portalURL())
+}
+
 func checker(dir string, rep *Report, err error) *Checker {
-	c := NewChecker(PortalverifyOptions{Base: "https://portal.example"}, dir, slog.New(slog.DiscardHandler), func() time.Time { return t0 })
+	c := NewChecker(PortalverifyOptions{Fetch: originOnly("https://portal.example")}, dir, slog.New(slog.DiscardHandler), func() time.Time { return t0 })
 	c.verify = func(context.Context, PortalverifyOptions) (*Report, error) { return rep, err }
 	return c
 }
@@ -88,7 +108,7 @@ func TestLastIsEmptyBeforeTheFirstCheckAndKeepsTheLatest(t *testing.T) {
 func TestRunChecksAtOnceAndAgainEachInterval(t *testing.T) {
 	t.Parallel()
 	calls := make(chan struct{}, 8)
-	c := NewChecker(PortalverifyOptions{Base: "https://portal.example"}, "", slog.New(slog.DiscardHandler), time.Now)
+	c := NewChecker(PortalverifyOptions{Fetch: originOnly("https://portal.example")}, "", slog.New(slog.DiscardHandler), time.Now)
 	c.verify = func(context.Context, PortalverifyOptions) (*Report, error) {
 		calls <- struct{}{}
 		return report(), nil

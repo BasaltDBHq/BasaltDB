@@ -63,11 +63,10 @@ type Report struct {
 
 // PortalverifyOptions configures Verify.
 type PortalverifyOptions struct {
-	// Base is the portal origin, without a trailing slash.
-	Base string
 	// Files is the embedded copy; every regular file in it is checked.
 	Files fs.FS
-	// Fetch fetches the portal's paths (out/portalfetch for Base); required.
+	// Fetch fetches the portal's paths; required. Its Base is the portal
+	// the report names, so the origin checked and the origin named are one.
 	Fetch PageFetcher
 	// Headers are the response headers every file must carry; only
 	// Content-Security-Policy is compared, plus the media type of .js.
@@ -187,7 +186,7 @@ func Verify(ctx context.Context, o PortalverifyOptions) (*Report, error) {
 	if client == nil {
 		return nil, errors.New("status: the portal check has no fetcher")
 	}
-	r := &Report{PortalURL: o.Base, Files: make([]File, 0, len(paths))}
+	r := &Report{PortalURL: client.Base(), Files: make([]File, 0, len(paths))}
 	for _, p := range paths {
 		want, err := fs.ReadFile(o.Files, p)
 		if err != nil {

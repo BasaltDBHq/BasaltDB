@@ -33,6 +33,7 @@ func TestFetcherStaysOnTheOrigin(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	f := portalfetch.New(srv.URL)
+	require.Equal(t, srv.URL, f.Base())
 	ctx := context.Background()
 
 	code, header, body, err := f.Get(ctx, "/moved", 100)

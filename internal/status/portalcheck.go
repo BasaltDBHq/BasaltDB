@@ -97,13 +97,13 @@ func resultOf(rep *Report, now time.Time) Result {
 // connectPageFile is the connect page's embedded file.
 const connectPageFile = "connect/index.html"
 
-// PortalcheckOptions is what the check compares and how it is run for base, the
-// portal's origin, fetched through fetch: the pages embedded in this binary,
+// PortalcheckOptions is what the check compares and how it is run for the
+// portal fetch reaches (its Base): the pages embedded in this binary,
 // the routes people load pages at and the headers they must carry. basalt
 // portal verify uses the same.
-func PortalcheckOptions(base string, fetch PageFetcher) PortalverifyOptions {
+func PortalcheckOptions(fetch PageFetcher) PortalverifyOptions {
 	o := PortalverifyOptions{
-		Base: base, Fetch: fetch, Files: web.Files, Headers: textproto.MIMEHeader(httpsec.ExpectedPortal()),
+		Fetch: fetch, Files: web.Files, Headers: textproto.MIMEHeader(httpsec.ExpectedPortal()),
 		// The connect page reaches the connect service (CONTRACT.md, The
 		// connect page): its own policy, never stored.
 		FileHeaders: map[string]textproto.MIMEHeader{connectPageFile: textproto.MIMEHeader(httpsec.ExpectedConnectPage())},
@@ -127,7 +127,7 @@ type Checker struct {
 	last *Result
 }
 
-// NewChecker returns a checker for the portal at opts.Base. Results are also
+// NewChecker returns a checker for the portal opts.Fetch reaches. Results are also
 // written to stateDir (fileName) unless it is empty.
 func NewChecker(opts PortalverifyOptions, stateDir string, log *slog.Logger, now func() time.Time) *Checker {
 	return &Checker{opts: opts, stateDir: stateDir, log: log, now: now, verify: Verify}
@@ -148,7 +148,7 @@ func (c *Checker) Check(ctx context.Context) Result {
 	rep, err := c.verify(ctx, c.opts)
 	var res Result
 	if err != nil {
-		res = Result{PortalURL: c.opts.Base, CheckedAt: c.now(), Error: err.Error()}
+		res = Result{PortalURL: c.opts.portalURL(), CheckedAt: c.now(), Error: err.Error()}
 	} else {
 		res = resultOf(rep, c.now())
 	}
@@ -200,3 +200,11 @@ func save(dir string, res Result) error {
 
 // resultFileMode keeps the check result to its own user.
 const resultFileMode = 0o600
+
+// portalURL is the portal o checks, its fetcher's origin; "" without one.
+func (o PortalverifyOptions) portalURL() string {
+	if o.Fetch == nil {
+		return ""
+	}
+	return o.Fetch.Base()
+}

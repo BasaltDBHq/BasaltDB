@@ -64,10 +64,11 @@ func (s *LocalService) readConfirm(ctx context.Context, tx Tx, conn Conn, dsn st
 }
 
 // certificateKind is what verifies dsn's certificate as the engine dials it
-// (trustprofile.ExplainTLS with the profiles in force): a built-in profile is
-// the provider's, an operator's profile (a pin among them) or the string's
-// sslrootcert is a root this host was given, and below verify-full nothing
-// verifies it.
+// (s.be.ExplainTrust, which is pgdial.ExplainWith: dsn parsed as the driver
+// parses it, then explainConfig with the profiles in force): a built-in
+// profile is the provider's, an operator's profile (a pin among them) or
+// the string's sslrootcert is a root this host was given, and below
+// verify-full nothing verifies it.
 func (s *LocalService) certificateKind(dsn string) (string, string) {
 	a, err := s.be.ExplainTrust(dsn, s.opts.Profiles())
 	if err != nil {

@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - A read and a refused action are recorded with qualified resource names, as a write is: the agent's `leads` is `public.leads` in `run_history` and the ledger, resolved with the agent's own `search_path`. A read recorded the name as the agent wrote it, and a refused action recorded no resource at all. The guard gets schema version 12 (breaking): run `basalt init` again and update the guard on the page it opens.
 - The next step of `APPROVAL_INVALID` `DIFFERENT_WRITE` now repeats the held write's large integer params exactly. They were rounded through a float, so sending the step as it was refused the write again.
+- A tool call that panics and could not save a crash report now answers `INTERNAL` with a `personMessage` that says so, as every `INTERNAL` error does; it had none.
 
 ## [0.1.0-alpha] - 2026-11-24
 

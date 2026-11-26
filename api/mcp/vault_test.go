@@ -45,6 +45,7 @@ func TestVaultSchemas(t *testing.T) {
 		"control-message.schema.json",
 		"frame-message.schema.json",
 		"handshake-payload.schema.json",
+		"limits.schema.json",
 		"receipt.schema.json",
 		"vectors.schema.json",
 	})
@@ -90,6 +91,43 @@ func TestVaultCloseCodes(t *testing.T) {
 		}
 		_, ok := byName[name]
 		require.True(t, ok, "vectors.schema.json expects %s, which is not a close code", name)
+	}
+}
+
+// vaultLimit is one entry of api/mcp/vault/limits.json.
+type vaultLimit struct {
+	Name    string `json:"name"`
+	Value   int64  `json:"value"`
+	Unit    string `json:"unit"`
+	Meaning string `json:"meaning"`
+}
+
+// TestVaultLimits checks the shared limits file is well formed and that
+// CONTRACT.md names every limit in it. The engine's constants are checked
+// against the same file in internal/platform/vault.
+func TestVaultLimits(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile(filepath.Join("vault", "limits.json"))
+	require.NoError(t, err)
+	var file struct {
+		Limits []vaultLimit `json:"limits"`
+	}
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.DisallowUnknownFields()
+	require.NoError(t, dec.Decode(&file))
+	require.NotEmpty(t, file.Limits)
+
+	contract, err := contractdoc.Read()
+	require.NoError(t, err)
+	seen := make(map[string]bool, len(file.Limits))
+	for _, l := range file.Limits {
+		require.Regexp(t, screamingCase, l.Name)
+		require.False(t, seen[l.Name], "limit %s listed twice", l.Name)
+		seen[l.Name] = true
+		require.Positive(t, l.Value, l.Name)
+		require.Contains(t, []string{"BYTES", "SECONDS", "COUNT"}, l.Unit, l.Name)
+		require.NotEmpty(t, l.Meaning, l.Name)
+		require.True(t, strings.Contains(string(contract), "`"+l.Name+"`"), "limit %s is not in CONTRACT.md", l.Name)
 	}
 }
 

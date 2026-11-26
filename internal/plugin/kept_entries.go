@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -71,39 +70,39 @@ func withNamedAgents(cfg config.Config, entries []config.Plugin) config.Config {
 // readEntries reads the entries file's bytes, nil when it does not exist.
 func (s *Store) readEntries() ([]byte, error) {
 	p := s.EntriesPath()
-	f, err := s.files.OpenFile(p, os.O_RDONLY|s.files.NoFollow(), 0)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
 	unsafe := func(why string) error {
 		return refused(ReasonUnsafePath, "%s %s, so the engine keeps no plugin entry until it is moved aside "+
 			"(sudo mv %s %s.bad) and the engine restarted", p, why, p, p)
 	}
-	if err != nil {
+	// Every check is on the open file's details, before it is read.
+	raw, err := s.files.ReadOpen(p, os.O_RDONLY|s.files.NoFollow(), MaxEntriesFileBytes+1, func(fi fs.FileInfo) error {
+		links, ok := s.files.Links(fi)
+		uid, _ := s.files.Owner(fi)
+		switch {
+		case !fi.Mode().IsRegular():
+			return unsafe("is not a regular file")
+		case !ok || links != 1:
+			return unsafe("has more than one link")
+		case uid != uint32(os.Geteuid()):
+			return unsafe("is " + errNotEngineUser.Error())
+		case fi.Mode().Perm()&0o022 != 0:
+			return unsafe("can be written by group or others")
+		case fi.Size() > MaxEntriesFileBytes:
+			return unsafe(fmt.Sprintf("is over %d bytes", MaxEntriesFileBytes))
+		}
+		return nil
+	})
+	switch failedStep(err) {
+	case opOpen:
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
 		return nil, unsafe("cannot be opened, or is a symlink")
-	}
-	defer func() { _ = f.Close() }()
-	fi, err := f.Stat()
-	if err != nil {
+	case opStat, opRead:
 		return nil, unsafe("cannot be read")
 	}
-	links, ok := s.files.Links(fi)
-	uid, _ := s.files.Owner(fi)
-	switch {
-	case !fi.Mode().IsRegular():
-		return nil, unsafe("is not a regular file")
-	case !ok || links != 1:
-		return nil, unsafe("has more than one link")
-	case uid != uint32(os.Geteuid()):
-		return nil, unsafe("is " + errNotEngineUser.Error())
-	case fi.Mode().Perm()&0o022 != 0:
-		return nil, unsafe("can be written by group or others")
-	case fi.Size() > MaxEntriesFileBytes:
-		return nil, unsafe(fmt.Sprintf("is over %d bytes", MaxEntriesFileBytes))
-	}
-	raw, err := io.ReadAll(io.LimitReader(f, MaxEntriesFileBytes+1))
 	if err != nil {
-		return nil, unsafe("cannot be read")
+		return nil, err
 	}
 	if len(raw) > MaxEntriesFileBytes {
 		return nil, unsafe(fmt.Sprintf("is over %d bytes", MaxEntriesFileBytes))
@@ -209,16 +208,21 @@ func (t *Taken) Manifest() ([]byte, error) {
 		return nil, refused(ReasonUnsafePath, "the upload's directory cannot be opened")
 	}
 	defer func() { _ = root.Close() }()
-	f, err := root.OpenFile(ManifestFile, os.O_RDONLY|t.s.files.NoFollow(), 0)
-	if err != nil {
+	notRegular := refused(ReasonUnsafePath, "%s of the upload is not a regular file", ManifestFile)
+	raw, err := root.ReadOpen(ManifestFile, os.O_RDONLY|t.s.files.NoFollow(), MaxManifestBytes+1, func(fi fs.FileInfo) error {
+		if !fi.Mode().IsRegular() {
+			return notRegular
+		}
+		return nil
+	})
+	switch step := failedStep(err); {
+	case step == opOpen:
 		return nil, refused(ReasonUnsafePath, "%s of the upload cannot be opened, or is a symlink", ManifestFile)
-	}
-	defer func() { _ = f.Close() }()
-	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
-		return nil, refused(ReasonUnsafePath, "%s of the upload is not a regular file", ManifestFile)
-	}
-	raw, err := io.ReadAll(io.LimitReader(f, MaxManifestBytes+1))
-	if err != nil || len(raw) > MaxManifestBytes {
+	case step == opStat:
+		return nil, notRegular
+	case step == "" && err != nil:
+		return nil, err
+	case err != nil || len(raw) > MaxManifestBytes:
 		return nil, refused(ReasonTooLarge, "%s of the upload is over %d bytes", ManifestFile, MaxManifestBytes)
 	}
 	return raw, nil

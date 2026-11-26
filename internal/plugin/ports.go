@@ -2,9 +2,9 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"io"
 	"io/fs"
-	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -93,11 +93,27 @@ type Ports struct {
 // Files is the port to the file system: the plugin service does no file
 // I/O itself (plugin/out/pluginfs implements it). Each method is the os call
 // of the same name unless its comment says otherwise; the service keeps the
-// steps, their order, the checks and the refusals. The files and roots it
-// opens are handles the service reads and writes.
+// steps, their order, the checks and the refusals. No open file reaches the
+// service: a method that opens one does each step on that one open file and
+// closes it, running the service's check on the open file's details (never
+// on the path) before anything is read or written, so the file checked is
+// the file read. A step that fails is an *fs.PathError whose Op names the
+// step (opOpen, opStat, opRead, opCreate, opWrite); an error the check
+// returns comes back as it is.
 type Files interface {
-	OpenRoot(dir string) (*os.Root, error)
-	OpenFile(name string, flag int, perm fs.FileMode) (*os.File, error)
+	// OpenRoot opens dir once as an os.Root; every name is then resolved
+	// inside it.
+	OpenRoot(dir string) (FileRoot, error)
+	// ReadOpen opens name with flag, Stats the open file, runs check on its
+	// details (no Stat and no check when check is nil), reads up to most
+	// bytes from it and closes it.
+	ReadOpen(name string, flag int, most int64, check func(fs.FileInfo) error) ([]byte, error)
+	// HashOpen opens name with flag, Stats the open file, runs check on its
+	// details and returns the SHA-256 of the whole open file.
+	HashOpen(name string, flag int, check func(fs.FileInfo) error) ([]byte, error)
+	// WriteNew creates name, which must not exist (O_EXCL, mode), writes data
+	// to it, sets mode on it, syncs it when sync is set and closes it.
+	WriteNew(name string, data []byte, mode fs.FileMode, sync bool) error
 	ReadFile(name string) ([]byte, error)
 	Lstat(name string) (fs.FileInfo, error)
 	ReadDir(name string) ([]fs.DirEntry, error)
@@ -125,6 +141,53 @@ type Files interface {
 	// Links is the hard link count of the file fi describes; false when fi
 	// carries none.
 	Links(fi fs.FileInfo) (uint64, bool)
+}
+
+// FileRoot is a directory Files.OpenRoot opened once: every name is resolved
+// inside it, and each method opens, uses and closes its file within the
+// call. It is an alias of an interface literal, the same literal as
+// pluginfs.FileRoot, so the adapter satisfies Files without importing this
+// package.
+type FileRoot = interface {
+	// Lstat is os.Root.Lstat.
+	Lstat(name string) (fs.FileInfo, error)
+	// Mkdir is os.Root.Mkdir.
+	Mkdir(name string, perm fs.FileMode) error
+	// Chmod is os.Root.Chmod.
+	Chmod(name string, mode fs.FileMode) error
+	// ReadOpen is Files.ReadOpen on name inside the root.
+	ReadOpen(name string, flag int, most int64, check func(fs.FileInfo) error) ([]byte, error)
+	// CopyOut opens name inside the root with flag and Stats that open
+	// file; check gets its details and returns the mode of the copy. It
+	// then creates dst (outside the root, O_EXCL, perm), copies the open
+	// file into it, sets mode on the new file, syncs and closes it.
+	CopyOut(name string, flag int, check func(fs.FileInfo) (fs.FileMode, error), dst string, perm fs.FileMode) error
+	// WriteOpen opens name inside the root with flag and perm, Stats that
+	// open file, runs check on its details and, when check passes, writes
+	// data to it.
+	WriteOpen(name string, flag int, perm fs.FileMode, check func(fs.FileInfo) error, data []byte) error
+	// Close closes the root.
+	Close() error
+}
+
+// The steps a Files or FileRoot method names in the Op of the *fs.PathError it
+// returns: the same strings as pluginfs.OpOpen and the rest.
+const (
+	opOpen   = "open"
+	opStat   = "stat"
+	opRead   = "read"
+	opCreate = "create"
+	opWrite  = "write"
+)
+
+// failedStep is the step an open-file method failed in, "" when err is no
+// step's failure (an error the service's own check returned).
+func failedStep(err error) string {
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return pe.Op
+	}
+	return ""
 }
 
 // UnitHost is the plugin units a service engine expects: the OS service

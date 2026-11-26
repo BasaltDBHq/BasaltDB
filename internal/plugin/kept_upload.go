@@ -211,29 +211,31 @@ func (s *Store) writePart(u *upload, p string, offset int64, b []byte) error {
 			return unsafe("has a component that is not a directory")
 		}
 	}
-	name := filepath.FromSlash(p)
 	flags := os.O_WRONLY | s.files.NoFollow()
 	if offset == 0 {
 		flags |= os.O_CREATE | os.O_EXCL
 	} else {
 		flags |= os.O_APPEND
 	}
-	f, err := root.OpenFile(name, flags, uploadFile)
-	if err != nil {
+	// Checked on the open file, before the part is written to it.
+	err = root.WriteOpen(filepath.FromSlash(p), flags, uploadFile, func(fi fs.FileInfo) error {
+		if !fi.Mode().IsRegular() {
+			return unsafe("is not a regular file")
+		}
+		if links, ok := s.files.Links(fi); !ok || links != 1 || fi.Size() != offset {
+			return unsafe("is not the file the engine wrote")
+		}
+		return nil
+	}, b)
+	switch failedStep(err) {
+	case opOpen:
 		return unsafe("cannot be opened as a new or held file")
-	}
-	defer func() { _ = f.Close() }()
-	fi, err := f.Stat()
-	if err != nil || !fi.Mode().IsRegular() {
+	case opStat:
 		return unsafe("is not a regular file")
-	}
-	if links, ok := s.files.Links(fi); !ok || links != 1 || fi.Size() != offset {
-		return unsafe("is not the file the engine wrote")
-	}
-	if _, err := f.Write(b); err != nil {
+	case opWrite:
 		return refused(ReasonUnsafePath, "%s cannot be written. The upload was dropped", p)
 	}
-	return nil
+	return err
 }
 
 // Taken is an upload PLUGIN_OPEN holds: its directory and the paths it

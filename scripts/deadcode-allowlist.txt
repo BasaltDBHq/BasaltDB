@@ -89,7 +89,6 @@ internal/core/pii.writeFolded
 internal/engine.Engine.WithPeerUID
 internal/engine.Engine.WithRefuseDrain
 internal/engine/out/binwatch.Watcher.WithInterval
-internal/handoff.NewLocalWatch
 internal/handoff.Repin.Done
 internal/handoff.Repin.Problem
 internal/ledger.Upkeep.Head
@@ -100,11 +99,6 @@ internal/pii.memDict.Lookup
 internal/pii.memDict.add
 internal/pii.newMemDict
 internal/pii.roundTrips
-internal/pii/out/dictfile.ReadStatus
-internal/platform/osservice.PluginInstallPlan
-internal/platform/osservice.PluginRemoveSteps
-internal/platform/osservice.PluginStopSteps
-internal/platform/osservice.hasLog
 internal/platform/postgres/guard.AppendTestMigrations
 internal/platform/postgres/guard.KeepTestMigrationsUpTo
 internal/platform/postgres/guard.PIIClassCounts
@@ -159,11 +153,6 @@ internal/plugin.ParsePrivateKey
 internal/plugin.Plugins.run
 internal/plugin.SignManifest
 internal/plugin/out/plugintransport/dial.SocketDirIs
-internal/setup/out/trustdir.Add
-internal/setup/out/trustdir.Disable
-internal/setup/out/trustdir.Remove
-internal/setup/out/trustdir.otherRoots
 internal/status.ValidateURL
 internal/status.isLoopback
-internal/status.localStatus.report
 pkg/trustprofile.SetSystemRootsForTest

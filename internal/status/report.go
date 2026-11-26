@@ -11,10 +11,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
-	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
 
 // Status is the status tool: whether the agent is served and each problem
@@ -25,8 +23,7 @@ func (sc *Service) Status(ctx context.Context) (guidance.StatusReport, error) {
 	return sc.statusDeps().report(ctx)
 }
 
-// statusDeps are what a status report reads: the Service's own in the
-// engine, localStatus's for basalt status on an engine run as the person.
+// statusDeps are what a status report reads: the Service's own.
 type statusDeps struct {
 	name, operatedBy, build   string
 	startedBy                 string
@@ -42,14 +39,10 @@ type statusDeps struct {
 	linkBudget                int
 	access                    AccessReader
 	update                    *guidance.UpdateInfo
-	// engineKey is the engine id basalt status read from the running
-	// engine's key file ("" when it is refused), nil when it reports no
-	// engine record (localStatus.EngineKey); the engine uses vault.
-	engineKey    *string
-	engineRecord EngineRecordReader
-	trust        TrustReporter
-	cmds         guidance.Commands
-	probe        Probe
+	engineRecord              EngineRecordReader
+	trust                     TrustReporter
+	cmds                      guidance.Commands
+	probe                     Probe
 	// watch is the agent's pending setup as this report reads it.
 	watch    handoff.SetupWatch
 	passkeys func(context.Context) ([]passkey.Credential, error)
@@ -72,70 +65,6 @@ func (sc *Service) statusDeps() statusDeps {
 		errs: sc.core.Errors, latestGuard: sc.deps.LatestGuardVersion, crashReports: sc.deps.CrashReports, crashFile: sc.deps.CrashFile,
 		update: sc.UpdateInfo(), passkeys: sc.deps.Passkeys.Passkeys, log: sc.core.Log, now: sc.core.Now,
 	}
-}
-
-// localStatus is what basalt status reads for an agent whose engine runs as
-// the person's own OS user (same-user mode): the config, the agent's own
-// credential and whether the engine process runs. Its report is the status
-// tool's, with engine.reachable from the process and ENGINE_UNREACHABLE
-// when it does not run.
-type localStatus struct {
-	Name       string
-	Commands   guidance.Commands
-	OperatedBy string
-	Setup      *config.Setup
-	// PagesBase is the config's pages base URL; PagesOrigin is the origin
-	// of the local pages when the running engine serves them, else empty.
-	PagesBase, PagesOrigin string
-	EngineRunning          bool
-	// EngineUnknown: whether the engine runs cannot be told, so there is
-	// no ENGINE_UNREACHABLE problem (engine.reachable stays false).
-	EngineUnknown bool
-	// DevLocalPages is the config's devLocalPages (problem DEV_LOCAL_PAGES).
-	DevLocalPages bool
-	// ConnectBudget is the config's config.ConnectLinkBudget (0: no connect
-	// link).
-	ConnectBudget int
-	// Portal is the last daily portal check the engine saved (problem
-	// PORTAL_MISMATCH); nil when the config names no portal.
-	Portal PortalReporter
-	// EngineKey, for an engine that runs and whose key file this user
-	// reads, is its engine id ("" when the key file is refused): the report
-	// then has engineRecord, read with EngineRecord, and its problems. Nil
-	// leaves engineRecord out, as for an engine that is down.
-	EngineKey    *string
-	EngineRecord EngineRecordReader
-	// Trust: see Deps.Trust.
-	Trust    TrustReporter
-	Probe    Probe
-	Passkeys func(context.Context) ([]passkey.Credential, error)
-	Log      *slog.Logger
-	Now      func() time.Time
-	// Errors maps a failure to the contract's tool error; LatestGuardVersion
-	// is the basalt_meta version this build installs.
-	Errors             guidance.ErrorMap
-	LatestGuardVersion func() int
-}
-
-// report is the status report. It panics on a missing probe, passkey
-// reader, logger or clock.
-func (l localStatus) report(ctx context.Context) (guidance.StatusReport, error) {
-	if l.Probe == nil || l.Passkeys == nil || l.Log == nil || l.Now == nil || l.LatestGuardVersion == nil {
-		panic("agent: local status needs a probe, a passkey reader, a logger, a clock and the guard version")
-	}
-	base := l.PagesBase
-	if base == "" {
-		base = links.DefaultLocal
-	}
-	return statusDeps{
-		name: l.Name, operatedBy: l.OperatedBy, build: buildinfo.Version, pagesBase: base, pagesOrigin: l.PagesOrigin,
-		sameUser: true, devLocalPages: l.DevLocalPages, connectBudget: l.ConnectBudget, portal: l.Portal, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, probe: l.Probe,
-		engineKey: l.EngineKey, engineRecord: l.EngineRecord, trust: l.Trust,
-		// basalt status reads; the running engine finishes the setup.
-		watch:    handoff.NewLocalWatch(l.Setup, l.Probe, l.Log, l.Now),
-		passkeys: l.Passkeys, log: l.Log, now: l.Now,
-		errs: l.Errors, latestGuard: l.LatestGuardVersion,
-	}.report(ctx)
 }
 
 func (s statusDeps) report(ctx context.Context) (guidance.StatusReport, error) {
@@ -208,8 +137,6 @@ func (s statusDeps) report(ctx context.Context) (guidance.StatusReport, error) {
 	switch {
 	case s.vault != nil && r.Vault != nil:
 		r.EngineRecord = s.engineRecordStatus(ctx, r.Vault.EngineID, readable, &ps)
-	case s.engineKey != nil:
-		r.EngineRecord = s.engineRecordStatus(ctx, *s.engineKey, readable, &ps)
 	}
 	list, err := ps.Sorted()
 	if err != nil {

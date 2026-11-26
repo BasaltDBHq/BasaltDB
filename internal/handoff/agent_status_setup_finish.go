@@ -94,16 +94,6 @@ func (k *SetupKeeper) Watch(database string, probe setupProbe, finisher SetupFin
 	}
 }
 
-// NewLocalWatch is the pending setup as basalt status reads it for an engine
-// run as the person: the running engine finishes the setup, so nothing here
-// does.
-func NewLocalWatch(setup *config.Setup, probe setupProbe, log *slog.Logger, now func() time.Time) SetupWatch {
-	return SetupWatch{
-		setup: setup, probe: probe, finisher: NoFinisher{}, finished: func(string) {},
-		notRecorded: &setupCache{}, lockTrouble: &lockTrouble{}, log: log, now: now,
-	}
-}
-
 // pending is the agent's pending setup, nil when none is.
 func (k *SetupKeeper) pending() *config.Setup {
 	k.mu.Lock()

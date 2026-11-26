@@ -43,23 +43,29 @@ install)
 remove)
 	as_root remove
 	;;
-cleanup)
-	out=${2:?usage: service.sh cleanup <out-dir>}
+collect)
+	out=${2:?usage: service.sh collect <out-dir> [suffix]}
+	sfx=${3:-}
 	mkdir -p "$out"
 	if [ "$os" = Darwin ]; then
-		sudo cat /Library/Logs/Basalt/engine.log >"$out/engine.log" 2>&1 || true
-		sudo launchctl print system/dev.basaltdb.engine >"$out/service-state.txt" 2>&1 || true
+		sudo cat /Library/Logs/Basalt/engine.log >"$out/engine$sfx.log" 2>&1 || true
+		sudo launchctl print system/dev.basaltdb.engine >"$out/service-state$sfx.txt" 2>&1 || true
 	else
-		sudo journalctl -u basalt-engine --no-pager >"$out/engine.log" 2>&1 || true
-		sudo systemctl status basalt-engine --no-pager >"$out/service-state.txt" 2>&1 || true
+		sudo journalctl -u basalt-engine --no-pager >"$out/engine$sfx.log" 2>&1 || true
+		sudo systemctl status basalt-engine --no-pager >"$out/service-state$sfx.txt" 2>&1 || true
 	fi
-	# The remove script refuses while the engine's config exists. A run that
-	# failed before its Remove leaves it, so it goes first.
+	;;
+cleanup)
+	out=${2:?usage: service.sh cleanup <out-dir>}
+	# The flow saves engine.log and service-state.txt before its remove step;
+	# these copies are for a run that stopped earlier or never got there, and
+	# use their own names so they never replace the earlier ones.
+	sh "$0" collect "$out" -at-exit
 	sudo rm -f "$config"
 	as_root remove || echo "service.sh: the remove script did not finish" >&2
 	;;
 *)
-	echo "usage: service.sh install <basalt-binary> | remove | cleanup <out-dir>" >&2
+	echo "usage: service.sh install <basalt-binary> | remove | collect <out-dir> [suffix] | cleanup <out-dir>" >&2
 	exit 2
 	;;
 esac

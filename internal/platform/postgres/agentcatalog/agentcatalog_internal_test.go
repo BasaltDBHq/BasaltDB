@@ -22,3 +22,14 @@ func TestPgActionNamesBasaltsOps(t *testing.T) {
 	require.Equal(t, []action.Op{action.OpRead, action.OpUpdate}, r.Actions)
 	require.Nil(t, pgResource(pgcatalog.Relation{OID: 16384, Schema: "public", Name: "leads", Kind: "TABLE"}).Actions)
 }
+
+// TestPgMatchedNamesTheStoreNeutralWords: a search match says resource,
+// namespace and field, never the catalog's table, schema and column.
+func TestPgMatchedNamesTheStoreNeutralWords(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "resource", pgMatched("table"))
+	require.Equal(t, "namespace", pgMatched("schema"))
+	require.Equal(t, "field invoice_id", pgMatched("column invoice_id"))
+	require.Equal(t, "field column x", pgMatched("column column x"))
+	require.Equal(t, "comment", pgMatched("comment"))
+}

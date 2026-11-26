@@ -571,7 +571,7 @@ const APPROVAL_REQUEST_FIELDS = ["approvalId", "binding", "lines"];
 // exactly as parseApprovalRequest does. The engine may also send
 // revealNonce; a long link never carries it.
 export async function checkApprovalRequest(value) {
-  const req = strictObject(value, "approval request", APPROVAL_REQUEST_FIELDS, ["credentialIds", "revealNonce", "columns"]);
+  const req = strictObject(value, "approval request", APPROVAL_REQUEST_FIELDS, ["credentialIds", "revealNonce", "fields"]);
   const revealNonce = checkNonce(req, "revealNonce", "approval request");
   const binding = parseBinding(req.binding);
   if (req.approvalId !== binding.approvalId) {
@@ -591,25 +591,25 @@ export async function checkApprovalRequest(value) {
     lines: req.lines.map(parseLine),
     credentialIds: decodeCredentialIds(req.credentialIds),
     revealNonce,
-    columns: checkColumns(req, "approval request"),
+    fields: checkFields(req, "approval request"),
     challenge: await challengeFor(req.binding),
   };
 }
 
-// checkColumns reads the optional, unsigned column order the engine serves
+// checkFields reads the optional, unsigned field order the engine serves
 // for the page's display (CONTRACT.md, Local pages): resource to its
-// field names in the resource's order, each name once (the first place it is
+// field names in the store's order, each name once (the first place it is
 // listed). A Map; empty when absent.
-function checkColumns(req, what) {
+function checkFields(req, what) {
   const out = new Map();
-  if (!("columns" in req)) return out;
-  const cols = req.columns;
-  if (cols === null || typeof cols !== "object" || Array.isArray(cols)) throw new CodeError(`${what} columns is not an object`);
-  for (const [table, names] of Object.entries(cols)) {
+  if (!("fields" in req)) return out;
+  const fields = req.fields;
+  if (fields === null || typeof fields !== "object" || Array.isArray(fields)) throw new CodeError(`${what} fields is not an object`);
+  for (const [resource, names] of Object.entries(fields)) {
     if (!Array.isArray(names) || names.some((n) => typeof n !== "string" || n === "")) {
-      throw new CodeError(`${what} columns of "${table}" is not a list of names`);
+      throw new CodeError(`${what} fields of "${resource}" is not a list of names`);
     }
-    out.set(table, [...new Set(names)]);
+    out.set(resource, [...new Set(names)]);
   }
   return out;
 }
@@ -765,7 +765,7 @@ const REVERT_REQUEST_FIELDS = ["revertId", "binding", "lines"];
 // revealNonce, the nonce of a reveal proof; a long link carries neither
 // (decodeRequest refuses them there).
 export async function checkRevertRequest(value) {
-  const req = strictObject(value, "revert request", REVERT_REQUEST_FIELDS, ["credentialIds", "rescopeNonce", "revealNonce", "columns"]);
+  const req = strictObject(value, "revert request", REVERT_REQUEST_FIELDS, ["credentialIds", "rescopeNonce", "revealNonce", "fields"]);
   const rescopeNonce = checkNonce(req, "rescopeNonce", "revert request");
   const revealNonce = checkNonce(req, "revealNonce", "revert request");
   const binding = parseRevertBinding(req.binding);
@@ -782,7 +782,7 @@ export async function checkRevertRequest(value) {
     credentialIds: decodeCredentialIds(req.credentialIds),
     rescopeNonce,
     revealNonce,
-    columns: checkColumns(req, "revert request"),
+    fields: checkFields(req, "revert request"),
     challenge: await challengeFor(req.binding),
   };
 }

@@ -30,7 +30,7 @@ func (a describeArgs) check() error {
 	case a.Sort != "":
 		return &guidance.ArgumentError{Message: "invalid arguments: describe has no sort; search results come ranked"}
 	case a.Query != nil && a.Resource != nil:
-		return &guidance.ArgumentError{Message: "invalid arguments: give query (search) or resource (one table), not both"}
+		return &guidance.ArgumentError{Message: "invalid arguments: give query (search) or resource (describe one resource), not both"}
 	case a.IfFingerprint != nil && a.Resource == nil:
 		return &guidance.ArgumentError{Message: "invalid arguments: ifFingerprint goes with resource"}
 	case (a.Limit != 0 || a.Cursor != "") && a.Query == nil:

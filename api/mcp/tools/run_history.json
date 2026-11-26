@@ -2,7 +2,7 @@
   "name": "run_history",
   "status": "IMPLEMENTED",
   "milestone": "M1",
-  "description": "The change records of one run of this agent, applied and refused, with the rows each change wrote (cascades included; values of tables the agent cannot read are redacted, values older than 30 days pruned). Newest first, cursor-paginated.",
+  "description": "The change records of one run of this agent, applied and refused, with the rows each change wrote (cascades included; values of resources the agent cannot read are redacted, values older than 30 days pruned). Newest first, cursor-paginated.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,

@@ -177,11 +177,11 @@ const INSERTED_NOTE = "Rows marked \u2212 were inserted by the agent; the revert
 // to them only, and as not checked when Postgres left out secret columns;
 // until then its values show as dots, and on a long link it says where to
 // see them. A row with no values to show is named by its key.
-export function lineGroups(items, who = null, shown = new Map(), longLink = false, columns = new Map(), agents = null) {
+export function lineGroups(items, who = null, shown = new Map(), longLink = false, fields = new Map(), agents = null) {
   return changeGroups(items, {
     mid: "now",
     shown,
-    columns,
+    fields,
     longLink,
     who: who === null ? null : () => agentTag(who),
     agents,
@@ -346,8 +346,8 @@ function render(state) {
   // Lines in a shape the page cannot draw are not drawn as records.
   const items = signingRefusal(req) === null ? req.lines.map((line, index) => ({ line, index })) : [];
   const restore = items.filter((i) => i.line.action !== "SKIP");
-  $("restore").replaceChildren(...lineGroups(restore, who, shown, longLink, req.columns, agents));
-  $("skip").replaceChildren(...lineGroups(items.filter((i) => i.line.action === "SKIP"), who, shown, longLink, req.columns, agents));
+  $("restore").replaceChildren(...lineGroups(restore, who, shown, longLink, req.fields, agents));
+  $("skip").replaceChildren(...lineGroups(items.filter((i) => i.line.action === "SKIP"), who, shown, longLink, req.fields, agents));
   $("restore-count").replaceChildren(...countText(restore.map((i) => i.line)).map((c) => el("span", `count-${c.op.toLowerCase()}`, c.text)));
   $("signed-hash").textContent = signedText(req);
   renderReveal(state);

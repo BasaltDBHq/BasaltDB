@@ -357,7 +357,8 @@ func (s *Store) StartRun(ctx context.Context, in action.Intent) error {
 // transaction-local, the statement as given with its parameters, then the
 // change stamped with statement, parameters and duration before COMMIT. Any
 // error rolls the whole action back. The rows the write returns go to
-// returned before COMMIT; nil is for a caller that hands them to no agent.
+// returned before COMMIT. With a nil returned, a write that returns rows is
+// refused and rolled back.
 func (s *Store) Write(ctx context.Context, in action.Intent, op action.Op, sql string, params []any, returned Returned) (action.WriteResult, error) {
 	r0, err := s.writeRaw(ctx, in, op, sql, params, returned)
 	return r0, MapError(err)

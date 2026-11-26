@@ -113,20 +113,3 @@ func valueText(v any) (string, bool) {
 	}
 	return s, s != ""
 }
-
-// On is the observer reading the map through c (the agent's pool), as the
-// query tool calls it.
-func (o *Observer) On(c Classes) BoundObserver {
-	return BoundObserver{o: o, c: c}
-}
-
-// BoundObserver is an Observer with its class store.
-type BoundObserver struct {
-	o *Observer
-	c Classes
-}
-
-// Observe is Observer.Observe through the bound class store.
-func (b BoundObserver) Observe(ctx context.Context, fields []piistore.ResultField, rows []map[string]any) error {
-	return b.o.Observe(ctx, b.c, fields, rows)
-}

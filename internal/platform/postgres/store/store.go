@@ -39,7 +39,14 @@ type Store struct {
 // closed). tx is the write's transaction, driver-free. It is an alias of a
 // plain func type, so the wiring's SQL store port declares the same shape
 // itself and stays a port, not a reference to this adapter.
+//
+// A write that returns rows with a nil Returned is refused before COMMIT
+// (errNoReturned); a write that returns none never calls it.
 type Returned = func(ctx context.Context, tx sqlport.Port, cols []action.Column, rows []map[string]any) error
+
+// errNoReturned refuses a write that returned rows with no Returned to hand
+// them to: an engine defect, rolled back so nothing unseen is applied.
+var errNoReturned = errors.New("postgres: a write returned rows with no Returned to hand them to")
 
 // NewStore returns a store on db. Every transaction it begins is pinned
 // (guard.PinSession), so the row images the guard stores, the lines a
@@ -106,7 +113,11 @@ func (s *Store) write(ctx context.Context, op action.Op, sql string, params []an
 		if err != nil {
 			return err
 		}
-		if len(rows) > 0 && returned != nil {
+		if len(rows) > 0 {
+			// Rows no one sees are never returned: the write rolls back.
+			if returned == nil {
+				return errNoReturned
+			}
 			if err := returned(ctx, pgquerier.Neutralize(tx), cols, rows); err != nil {
 				return err
 			}

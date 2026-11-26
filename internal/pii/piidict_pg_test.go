@@ -171,7 +171,7 @@ func TestValuesReadAreInTheDictionaryAndTokenizedConsistently(t *testing.T) {
 	f.classify(t, time.Now())
 	ctx := context.Background()
 	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
-	obs := NewObserver(NewMap(slog.New(slog.DiscardHandler)), dict).On(pgpii.Classes(f.pool))
+	obs := boundObserver{NewObserver(NewMap(slog.New(slog.DiscardHandler)), dict), pgpii.Classes(f.pool)}
 
 	reader := postgres.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
 	res, err := reader.Read(ctx, `SELECT c.id, c.email, c.phone, c.name, lower(c.email) AS computed, c.note FROM customers c ORDER BY c.id`, nil, action.Statement{})
@@ -198,6 +198,17 @@ func resultFields(cols []action.Column) []piistore.ResultField {
 		out[i] = piistore.ResultField{Ref: c.Ref, Key: c.Name}
 	}
 	return out
+}
+
+// boundObserver is an Observer reading the map through one class store, as
+// the agent's PII port reads a query's classes through the agent's pool.
+type boundObserver struct {
+	o *Observer
+	c Classes
+}
+
+func (b boundObserver) Observe(ctx context.Context, fields []piistore.ResultField, rows []map[string]any) error {
+	return b.o.Observe(ctx, b.c, fields, rows)
 }
 
 // returned is obs as a write hands it its returned rows, reading the map in
@@ -247,7 +258,7 @@ func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 	ctx := context.Background()
 	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
-	obs := NewObserver(classes, dict).On(pgpii.Classes(f.pool))
+	obs := boundObserver{NewObserver(classes, dict), pgpii.Classes(f.pool)}
 	reader := postgres.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
 	s := NewScanner(dict, []ScanSource{{Agent: "bot", Map: classes, Classes: pgpii.Classes(f.pool), Fields: pgpii.Fields(f.pool, sqlguard.DefaultLimits(), DefaultLoadTimeout)}},
 		ScanOptions{}, slog.New(slog.DiscardHandler))

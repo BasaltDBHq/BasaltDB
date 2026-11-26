@@ -179,8 +179,8 @@ func TestScanTextMatchesTheQueryTool(t *testing.T) {
 	for i, c := range res.Columns {
 		fields[i] = piistore.ResultField{Ref: c.Ref, Key: c.Name}
 	}
-	obs := pii.NewObserver(pii.NewMap(slog.New(slog.DiscardHandler)), read).On(Classes(f.pool))
-	require.NoError(t, obs.Observe(ctx, fields, res.Rows))
+	obs := pii.NewObserver(pii.NewMap(slog.New(slog.DiscardHandler)), read)
+	require.NoError(t, obs.Observe(ctx, Classes(f.pool), fields, res.Rows))
 
 	for v, want := range map[string]bool{
 		"j@corp.ee": true, `"j@corp.ee"`: false,

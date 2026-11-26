@@ -10,11 +10,12 @@ import (
 	"os"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
 // MaxCredentialBytes bounds a credential: the connection string read from
 // stdin, and what a credential file may hold.
-const MaxCredentialBytes = 4096
+const MaxCredentialBytes = servicespec.MaxCredentialBytes
 
 // Files reaches init --remote's credential files: the setup service's
 // CredFiles, the same interface type (an alias of it).

@@ -16,6 +16,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/osusers"
 	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
 
 	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
@@ -41,12 +43,10 @@ func (engineCLIHost) ChildStarter(startedFrom, configPath, lockPath, stateDir st
 }
 
 func (engineCLIHost) RunServiceAt(ctx context.Context, args []string, io cli.Stdio, configPath string) int {
-	return runServiceAt(ctx, args, io, configPath)
+	return setupcli.RunServiceInstall(ctx, args, io, configPath, setupHost{}, osusers.Users{})
 }
 
-func (engineCLIHost) EngineLog(w io.Writer) *slog.Logger {
-	return slog.New(logredact.NewTextHandler(w, nil))
-}
+func (engineCLIHost) EngineLog(w io.Writer) *slog.Logger { return logredact.NewTextLogger(w) }
 
 func (engineCLIHost) EngineDown(name, configPath string, log *slog.Logger) (statusmcp.EngineDown, error) {
 	return statusmcp.LoadEngineDown(name, configPath, AgentServiceManager(), agentEngineHost(), log)

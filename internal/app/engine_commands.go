@@ -25,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/osusers"
 	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
 )
 
@@ -277,7 +278,7 @@ func agentSpecFromStdin(in io.Reader, spec servicespec.Spec, a agentInstall, cre
 	if err := setupcli.CheckAgentOSUser(a.osUser, spec.User); err != nil {
 		return spec, err
 	}
-	if err := setup.CheckServicePersons(a.personUIDs, spec.User); err != nil {
+	if err := setup.CheckServicePersons(a.personUIDs, spec.User, osusers.Users{}); err != nil {
 		return spec, err
 	}
 	if a.keepCredential {

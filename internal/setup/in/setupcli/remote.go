@@ -148,30 +148,6 @@ func printConnectOnly(c *cli.IO, res setup.RemoteInitResult, expires time.Time) 
 	return err
 }
 
-// agentQuerier is the agent's connection as the setup service's query port:
-// each call is the connection's own. Pgx is the connection, for the adapter
-// that runs the guard's reads on it.
-type agentQuerier struct{ conn cli.Querier }
-
-func (q agentQuerier) Exec(ctx context.Context, sql string, args ...any) (setup.Result, error) {
-	return q.conn.Exec(ctx, sql, args...)
-}
-
-func (q agentQuerier) Query(ctx context.Context, sql string, args ...any) (setup.Rows, error) {
-	rows, err := q.conn.Query(ctx, sql, args...)
-	if err != nil {
-		return nil, err
-	}
-	return rows, nil
-}
-
-func (q agentQuerier) QueryRow(ctx context.Context, sql string, args ...any) setup.Row {
-	return q.conn.QueryRow(ctx, sql, args...)
-}
-
-// Pgx is the agent's connection.
-func (q agentQuerier) Pgx() cli.Querier { return q.conn }
-
 // remoteEnv is the CLI's IO as the setup service's RemoteEnv.
 type remoteEnv struct{ c *cli.IO }
 
@@ -196,12 +172,15 @@ func (e remoteEnv) LoadEngineConfig(path string) (config.Config, error) {
 	return cli.LoadEngineConfig(e.c, path)
 }
 
+// AgentLogin is the CLI's login: the connection it returns is the
+// service's port as it is, and carries the driver connection for the
+// adapter that runs the guard's reads on it.
 func (e remoteEnv) AgentLogin(ctx context.Context, dsn string) (setup.RemoteAgentConn, error) {
 	conn, err := e.c.AgentLogin(ctx, dsn)
 	if err != nil {
 		return nil, err
 	}
-	return agentConn{agentQuerier{conn}, conn}, nil
+	return conn, nil
 }
 
 func (e remoteEnv) Probe(ctx context.Context, dsn string) error { return e.c.Probe(ctx, dsn) }
@@ -212,15 +191,6 @@ func (e remoteEnv) FetchChain() func(ctx context.Context, host string, port int)
 
 // MkdirStateDir makes the engine's state directory with the engine's mode.
 func (e remoteEnv) MkdirStateDir(path string) error { return os.MkdirAll(path, engine.StateDirMode) }
-
-// agentConn is the agent's login as the service's RemoteAgentConn: its
-// queries through agentQuerier, its close the connection's own.
-type agentConn struct {
-	agentQuerier
-	conn cli.AgentConn
-}
-
-func (a agentConn) Close(ctx context.Context) error { return a.conn.Close(ctx) }
 
 // cliUsage marks the setup service's usage errors as the CLI's (exit 2),
 // keeping their text.

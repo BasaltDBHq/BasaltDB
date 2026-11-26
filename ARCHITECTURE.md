@@ -63,7 +63,7 @@ An inbound adapter translates; it does not reach an outbound adapter or another 
 - `setupcli` → `internal/engine`, `enginecli` and `internal/handoff`: it installs the engine service, reads its crash loops and the handoff's login refusal.
 - `statusmcp` → `internal/engine`: the engine's abandoned-run message.
 
-A new edge fails until it is listed, and a listed edge that is gone fails too. `TestInboundImportsNoDriver` fails a non-test inbound file that imports a database driver; the CLI shell's three files that open the connections its commands use (`internal/platform/cli/host.go`, `io.go`, `trust.go`) are listed with the reason.
+A new edge fails until it is listed, and a listed edge that is gone fails too. `TestInboundImportsNoDriver` fails a non-test inbound file that imports a database driver, with no file listed: the CLI shell gets its connections through its `Host` port in driver-free types, and `internal/app` fills it with pgdial.
 
 Test files and the test helper packages are exempt from the layer rules, core purity and the decision rule. A test helper is named `<x>test` and sits in package `<x>` (`guardtest`, `passkeytest`, `textruletest`, the core test oracles), or sits under `internal/testkit` or `internal/plugin/out/plugintransport/testnotifier`; the test finds them by that shape. A program (`package main`, anything under `cmd/`) is never a helper by its name, and the three helpers that sit elsewhere (`mcptest`, `pagetest`, `adaptertest`) are named in the test. No other non-test file imports a test helper (`TestArchitecture`); the smoke programs under `scripts/` may.
 

@@ -51,13 +51,6 @@ var pgxImports = []string{"github.com/jackc/pgx", "github.com/jackc/pgconn"}
 var pgxAllowed = map[string]string{
 	"pkg/trustprofile/pgconn.go: import github.com/jackc/pgx/v5/pgconn": "Trust and Explain take a *pgconn.Config as part of the public API " +
 		"(the same named edge the driver-free rule skips)",
-	"internal/platform/cli/host.go: import github.com/jackc/pgx/v5": "the CLI shell's Host opens the database connections its commands use " +
-		"(Connect returns the *pgx.Conn), filled by internal/app",
-	"internal/platform/cli/io.go: import github.com/jackc/pgx/v5": "the CLI's querier type and IO.Dial over the pgx handle " +
-		"(an inbound package declares the type itself; it may not import an outbound one)",
-	"internal/platform/cli/io.go: import github.com/jackc/pgx/v5/pgconn":    "the CLI's querier type returns a pgconn.CommandTag",
-	"internal/platform/cli/trust.go: import github.com/jackc/pgx/v5":        "the CLI connects with the trust profile applied (cli.Connect)",
-	"internal/platform/cli/trust.go: import github.com/jackc/pgx/v5/pgconn": "the trust profile is applied to a parsed *pgconn.Config",
 }
 
 // pgxFindings are the imports of a pgx package by a non-test file of a

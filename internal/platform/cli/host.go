@@ -2,12 +2,9 @@ package cli
 
 import (
 	"context"
+	"crypto/x509"
 	"io"
 	"os"
-
-	"github.com/jackc/pgx/v5"
-
-	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 // Machine is what basalt init does on the machine beyond Postgres: elevate
@@ -102,17 +99,28 @@ type System interface {
 // of a config file. The shell names no adapter; app fills it.
 type Host interface {
 	// Connect opens one connection, usable through a transaction pooler.
-	Connect(ctx context.Context, dsn string) (*pgx.Conn, error)
+	Connect(ctx context.Context, dsn string) (Conn, error)
 	// WithCertificateHint is err with what can fix it, when it is a
 	// certificate of dsn's host that did not verify.
 	WithCertificateHint(dsn string, err error) error
 	// CertificateNotVerified reports whether err is a server certificate
 	// that did not verify.
 	CertificateNotVerified(err error) bool
-	// CurrentTrustProfileSet is the trust profiles a connection opened now
-	// uses.
-	CurrentTrustProfileSet() *trustprofile.Set
+	// PinnedHost is dsn's host when the trust profile a connection opened
+	// now uses for it is that host's pin; false otherwise, and for a
+	// string the driver cannot parse.
+	PinnedHost(dsn string) (PinnedHost, bool)
 	// OSOpenTrustedFile opens path read-only for root, never through a
 	// symlink, its directory trusted only from root or owner.
 	OSOpenTrustedFile(path string, owner int) (*os.File, error)
+}
+
+// PinnedHost is a database host a trust profile pins: its name as pinned,
+// its port, and the certificates it is pinned to. An unnamed struct, so
+// the adapter that answers it returns the same type with no import of
+// this package.
+type PinnedHost = struct {
+	Host  string
+	Port  int
+	Roots []*x509.Certificate
 }

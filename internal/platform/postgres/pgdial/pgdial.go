@@ -25,6 +25,7 @@ package pgdial
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"strings"
@@ -34,6 +35,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -155,6 +157,41 @@ func PoolConfig(dsn string) (*pgxpool.Config, error) {
 func TrustOfConfig(cfg *pgconn.Config) (trustprofile.Applied, []trustprofile.Refused) {
 	set := Trust()
 	return trustprofile.Explain(cfg, set), set.Refused()
+}
+
+// Pinned is a database host a trust profile pins: its name as pinned, its
+// port, and the certificates it is pinned to. An unnamed struct, so the
+// CLI declares the same type with no import of this package.
+type Pinned = struct {
+	Host  string
+	Port  int
+	Roots []*x509.Certificate
+}
+
+// PinnedHost is dsn's host, as pinned, when the trust profile a connection
+// opened now uses for it (Trust) is that host's pin (trustprofile.PinName).
+// ok is false otherwise, and for a string pgx cannot parse.
+func PinnedHost(dsn string) (p Pinned, ok bool) {
+	cfg, err := pgconn.ParseConfig(dsn)
+	if err != nil {
+		return Pinned{}, false
+	}
+	a := trustprofile.Explain(cfg, Trust())
+	host := trustprofile.NormalizeHost(cfg.Host)
+	if a.Profile == nil || a.Profile.Name != trustprofile.PinName(host) {
+		return Pinned{}, false
+	}
+	return Pinned{Host: host, Port: int(cfg.Port), Roots: a.Profile.Certificates()}, true
+}
+
+// ConnectNeutral is Connect seen through driver-free types
+// (pgquerier.NeutralConn): a nil Closer with the error when it fails.
+func ConnectNeutral(ctx context.Context, dsn string) (pgquerier.Closer, error) {
+	conn, err := Connect(ctx, dsn)
+	if err != nil {
+		return nil, err
+	}
+	return pgquerier.NeutralConn(conn), nil
 }
 
 // CertificateNotVerified reports whether err is a server certificate that

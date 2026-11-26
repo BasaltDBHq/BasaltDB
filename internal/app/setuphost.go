@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
@@ -32,8 +31,10 @@ import (
 // package's own functions.
 type shell struct{}
 
-func (shell) Connect(ctx context.Context, dsn string) (*pgx.Conn, error) {
-	return pgdial.Connect(ctx, dsn)
+// Connect opens the connection with pgdial and hands the CLI its
+// driver-free port (pgquerier.NeutralConn).
+func (shell) Connect(ctx context.Context, dsn string) (cli.Conn, error) {
+	return pgdial.ConnectNeutral(ctx, dsn)
 }
 
 func (shell) WithCertificateHint(dsn string, err error) error {
@@ -42,7 +43,7 @@ func (shell) WithCertificateHint(dsn string, err error) error {
 
 func (shell) CertificateNotVerified(err error) bool { return pgdial.CertificateNotVerified(err) }
 
-func (shell) CurrentTrustProfileSet() *trustprofile.Set { return pgdial.Trust() }
+func (shell) PinnedHost(dsn string) (cli.PinnedHost, bool) { return pgdial.PinnedHost(dsn) }
 
 func (shell) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
 	return osservice.OpenTrustedFile(path, owner)

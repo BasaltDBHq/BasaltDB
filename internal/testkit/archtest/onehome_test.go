@@ -377,15 +377,10 @@ func directDialFindings(pkgs map[string]*goPkg) ([]string, int) {
 	return tally(out), files
 }
 
-// parsesOnly reads a connection string's host, port, user or database and
-// opens nothing.
-const parsesOnly = "parses the connection string only to read its target; it opens no connection"
-
 // directDialsAllowed are today's uses outside pgdial.
 var directDialsAllowed = map[string]string{
 	"internal/platform/postgres/store/password.go: pgxpool.NewWithConfig": "opens the pool from pgdial.PoolConfig, " +
 		"adding the password refresh",
-	"internal/platform/cli/trust.go: pgconn.ParseConfig": parsesOnly,
 }
 
 func TestConnectionsOpenThroughPgdial(t *testing.T) {

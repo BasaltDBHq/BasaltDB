@@ -39,7 +39,7 @@ func TestLimitsMatchSharedFile(t *testing.T) {
 		"MAX_ROUTE":               {maxRoute, vaulttest.MaxRoute},
 		"MAX_CONTROL":             {maxControl, vaulttest.MaxControl},
 		"MAX_EXPIRY_AHEAD":        {secs(vaulttest.MaxExpiryAhead)},
-		"CHALLENGE_TTL":           {secs(vaulttest.ChallengeTTL)},
+		"CHALLENGE_TTL":           {secs(AuthTimeout), secs(vaulttest.ChallengeTTL)},
 		"MIN_LINKS_PER_ENGINE":    {vaulttest.MinLinksPerEngine},
 		"MAX_SESSIONS_PER_LINK":   {MaxSessionsPerLink},
 		"MAX_SESSIONS_PER_ENGINE": {MaxSessions},

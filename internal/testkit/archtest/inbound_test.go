@@ -1,8 +1,6 @@
 package archtest
 
 import (
-	"os"
-	"os/exec"
 	"slices"
 	"strings"
 	"testing"
@@ -179,29 +177,11 @@ func TestInboundChecksCatchAProbe(t *testing.T) {
 	}
 }
 
-func allGraph(t *testing.T, root, goos string) map[string][]string {
-	t.Helper()
-	cmd := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}} {{join .Imports \" \"}}", "./internal/...")
-	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "GOOS="+goos)
-	raw, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("go list -deps ./internal/... (GOOS=%s) failed: %v\n%s", goos, err, raw)
-	}
-	graph := map[string][]string{}
-	for _, line := range strings.Split(string(raw), "\n") {
-		if f := strings.Fields(line); len(f) > 0 {
-			graph[f[0]] = f[1:]
-		}
-	}
-	return graph
-}
-
 func TestInboundOnlyTranslates(t *testing.T) {
 	root := moduleRoot(t)
 	var reach, edges []string
 	for _, goos := range []string{"linux", "darwin"} {
-		graph := allGraph(t, root, goos)
+		graph := listGraph(t, root, goos, "...")
 		roots := inboundRoots(graph)
 		if len(roots) < len(domains) {
 			t.Fatalf("found %d inbound packages (GOOS=%s), want at least %d", len(roots), goos, len(domains))

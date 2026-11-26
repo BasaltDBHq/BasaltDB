@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
 )
 
 // upload is one open upload: bytes the engine holds for a peer uid, read by
@@ -52,7 +54,7 @@ func (s *Store) Begin(uid uint32) (Upload, error) {
 	if err := s.checkOwnDir(s.uploadsDir()); err != nil {
 		return Upload{}, refused(ReasonUnsafePath, "%s", err)
 	}
-	id := uuid.New() //nolint:forbidigo // baseline: a UUIDv4 on the wire; move to internal/lib/uniqueid
+	id := uniqueid.NewRandom() // a UUIDv4 on the wire
 	if err := s.files.Mkdir(filepath.Join(s.uploadsDir(), id.String()), uploadDirMode); err != nil {
 		return Upload{}, err
 	}

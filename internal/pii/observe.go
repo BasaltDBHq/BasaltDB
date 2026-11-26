@@ -12,11 +12,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 )
 
-// Adder takes values into the dictionary's delta (corepii.FuseDictionary).
-type Adder interface {
-	Add(t corepii.EntityType, value, phoneRegion string) error
-}
-
 // Observer adds the values of IDENTIFIER columns the agent is about to get
 // (query rows, write RETURNING rows) to the dictionary, with the column's
 // entity type and phone region (M5.1 plan, section 6, "Values the agent

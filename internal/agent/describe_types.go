@@ -18,46 +18,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 )
 
-// Catalog reads the structure of the store the agent can see, on the
-// agent's own credential (CONTRACT.md, describe), in the store-neutral types
-// of core/agentstore. The store's adapter fills the content; the service
-// decides what is hidden.
-type Catalog interface {
-	// Resources lists the readable resources by namespace and name, and
-	// counts the ones in user namespaces the agent cannot read.
-	Resources(ctx context.Context) ([]agentstore.Resource, int, error)
-	// Find returns namespace.name, or false when it is absent or unreadable.
-	Find(ctx context.Context, namespace, name string) (agentstore.Resource, bool, error)
-	// Describe reads one resource Find or Resources returned.
-	Describe(ctx context.Context, ref agentstore.ResourceRef) (agentstore.Detail, error)
-	// Guarded reports whether basalt init guards the resource, so its
-	// writes run under the write policy; false where the guard predates
-	// the record of it.
-	Guarded(ctx context.Context, ref agentstore.ResourceRef) (bool, error)
-	// Search finds readable resources by name, field or comment; exclude
-	// lists fields never matched or named.
-	Search(ctx context.Context, q string, exclude []agentstore.FieldRef, after *agentstore.Cursor, limit int) ([]agentstore.Match, error)
-	// Structure is the sorted structure lines the catalog fingerprint hashes.
-	Structure(ctx context.Context) ([]string, error)
-	// Database is the database the credential connects to.
-	Database() string
-	// Host is the host that database is on (name and host only, never a
-	// user, port or credential).
-	Host() string
-}
-
-// ClassResolver is the agent's PII classification, by field.
-type ClassResolver interface {
-	// Resolve is the classes of refs, in their order.
-	Resolve(ctx context.Context, refs []agentstore.FieldRef) ([]pii.Class, error)
-	// Secrets lists the SECRET fields: describe never lists, matches or
-	// names them.
-	Secrets(ctx context.Context) ([]agentstore.FieldRef, error)
-	// CatalogFingerprint is agent_pii_catalog.fingerprint as hex, empty
-	// before the first basalt classify.
-	CatalogFingerprint(ctx context.Context) (string, error)
-}
-
 // noCatalog serves a service built without a catalog: every describe call
 // is an engine defect (INTERNAL).
 type noCatalog struct{}

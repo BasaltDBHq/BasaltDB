@@ -78,15 +78,15 @@ var uncheckedCredentialReads = map[string]string{
 	"internal/app/engine_commands.go:keptCredentialSpec:readKeptCredential":                "service install writes it back for the engine's user and never connects with it",
 	// app forwards credfiles.ReadKeptCredential: a read site of its own, added
 	// with the move.
-	"internal/app/setupfiles.go:readKeptCredential:credfiles.ReadKeptCredential":          "a one-line forward; its one caller, keptCredentialSpec, is listed above",
-	"internal/setup/out/credfiles/keptcred_unix.go:readOwnCredential:readCredentialFile":  "only a file this process's user owns (ownedByThisUser): root's own as root",
-	"internal/setup/out/credfiles/keptcred_unix.go:readCredentialFile:readCredentialFrom": "its owner rule is its caller's, and its callers are listed here",
-	"internal/setup/out/credfiles/pathfiles.go:PathCredFiles.Read:readOwnCredential":      "init --remote not as root",
-	"internal/handoff/pathfiles.go:PathFiles.ReadCredential:config.ReadCredential":        "an engine not running as root (agentFilesFor)",
-	"internal/handoff/pathfiles.go:PathFiles.ReadPending:config.ReadOwnCredentialLimit":   "an engine not running as root (agentFilesFor)",
-	"internal/handoff/cache.go:FileCache.Load:config.ReadOwnCredential":                   "the probe cache, not a connection string; never as root (a root engine does not collect, basalt status refuses root)",
-	"internal/setup/in/localsetup/agentjobs.go:credentialTarget:config.ReadCredential":    "the setup page's UPDATE and REMOVE: parsed for its target only, never connected with; refused as root (validateAgentJob)",
-	"internal/handoff/setupfiles.go:SetupFiles.ReadSecret:config.ReadOwnCredential":       "a password, not a connection string, read only on a YES, which an engine running as root never reaches (it never collects)",
+	"internal/app/setupfiles.go:readKeptCredential:credfiles.ReadKeptCredential":                   "a one-line forward; its one caller, keptCredentialSpec, is listed above",
+	"internal/setup/out/credfiles/keptcred_unix.go:readOwnCredential:readCredentialFile":           "only a file this process's user owns (ownedByThisUser): root's own as root",
+	"internal/setup/out/credfiles/keptcred_unix.go:readCredentialFile:readCredentialFrom":          "its owner rule is its caller's, and its callers are listed here",
+	"internal/setup/out/credfiles/pathfiles.go:PathCredFiles.Read:readOwnCredential":               "init --remote not as root",
+	"internal/handoff/pathfiles.go:PathFiles.ReadCredential:config.ReadCredential":                 "an engine not running as root (agentFilesFor)",
+	"internal/handoff/pathfiles.go:PathFiles.ReadPending:config.ReadOwnCredentialLimit":            "an engine not running as root (agentFilesFor)",
+	"internal/handoff/cache.go:FileCache.Load:config.ReadOwnCredential":                            "the probe cache, not a connection string; never as root (a root engine does not collect, basalt status refuses root)",
+	"internal/setup/out/enginefiles/enginefiles.go:Files.ReadCredentialFile:config.ReadCredential": "the setup page's UPDATE and REMOVE: parsed for its target only, never connected with; refused as root (validateAgentJob)",
+	"internal/handoff/setupfiles.go:SetupFiles.ReadSecret:config.ReadOwnCredential":                "a password, not a connection string, read only on a YES, which an engine running as root never reaches (it never collects)",
 }
 
 // checkedCredentialReads are root's reads of another user's file, which call

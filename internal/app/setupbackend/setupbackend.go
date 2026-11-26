@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
+	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/demo"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
@@ -23,15 +24,20 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/enginefiles"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 	psetup "github.com/basaltdbhq/basaltdb/pkg/setup"
+	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 // Backend implements localsetup's Backend: the setup store (which is also
 // internal/setup's backend) and the connection, trust and passkey calls localsetup
 // makes itself.
-type Backend struct{ setupstore.Store }
+type Backend struct {
+	setupstore.Store
+	enginefiles.Files
+}
 
 // Connections and their trust.
 
@@ -202,6 +208,28 @@ func (Backend) ListPasskeys(ctx context.Context, q setup.Querier) ([]setup.Activ
 	out := make([]setup.ActivePasskey, len(keys))
 	for i, k := range keys {
 		out[i] = setup.ActivePasskey{Credential: k.Credential, Label: k.Label, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt}
+	}
+	return out, nil
+}
+
+// FetchChain reads the chain host:port presents with the TLS handshake alone.
+func (Backend) FetchChain(ctx context.Context, host string, port int) ([]*x509.Certificate, error) {
+	return trustpin.Fetch(ctx, nil, host, port)
+}
+
+// SuggestColumns runs the PII classifier over cols with its default
+// options, keeping no value.
+func (Backend) SuggestColumns(ctx context.Context, cols []piistore.Column, sample setup.SampleFunc) ([]setup.ColumnSuggestion, error) {
+	results, err := pii.SuggestAll(ctx, cols, pii.SampleFunc(sample), pii.Options{}, func(pii.Column, pii.Suggestion) bool { return false })
+	if err != nil {
+		return nil, err
+	}
+	out := make([]setup.ColumnSuggestion, len(results))
+	for i, r := range results {
+		out[i] = setup.ColumnSuggestion{
+			Column: r.Column, Class: r.Suggestion.Class, EntityType: r.Suggestion.EntityType,
+			PhoneRegion: r.Suggestion.PhoneRegion, Reason: r.Suggestion.Reason,
+		}
 	}
 	return out, nil
 }

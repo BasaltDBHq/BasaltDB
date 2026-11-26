@@ -84,7 +84,7 @@ func (s *Service) configuredAgent(agent, osUser string) (config.Agent, string, e
 	if err != nil {
 		return config.Agent{}, "", refuse(CodeInvalidArgument, "This setup link names an agent whose name cannot be used. Ask the agent for a new link.")
 	}
-	cfg, err := config.Load(s.opts.ConfigPath)
+	cfg, err := s.be.LoadConfig(s.opts.ConfigPath)
 	if err != nil {
 		return config.Agent{}, "", refuse(CodeSetupFailed, "This engine cannot read its config; nothing changed.")
 	}
@@ -106,7 +106,7 @@ func (s *Service) configuredAgent(agent, osUser string) (config.Agent, string, e
 // agent. The engine serves no agent any more, and basalt init removes its
 // service.
 func (s *Service) engineRemoved() error {
-	if _, err := os.Lstat(s.opts.ConfigPath); errors.Is(err, os.ErrNotExist) {
+	if err := s.be.Lstat(s.opts.ConfigPath); errors.Is(err, os.ErrNotExist) {
 		return refuse(CodeEngineRemoved, "BasaltDB is removed from this engine: it serves no agent any more. Your computer asks for your password next, to remove the engine service.")
 	}
 	return nil
@@ -150,7 +150,7 @@ func (s *Service) validateAgentJob(req Request, run bool) (agentJob, error) {
 	if err != nil {
 		return agentJob{}, err
 	}
-	want, err := credentialTarget(a, s.be.ParseTarget)
+	want, err := s.credentialTarget(a)
 	missing := false
 	switch {
 	case err != nil && req.Job == JobRepair && errors.Is(err, os.ErrNotExist):
@@ -169,7 +169,7 @@ func (s *Service) validateAgentJob(req Request, run bool) (agentJob, error) {
 	if req.Job != JobRemove {
 		return j, nil
 	}
-	cfg, err := config.Load(s.opts.ConfigPath)
+	cfg, err := s.be.LoadConfig(s.opts.ConfigPath)
 	if err != nil {
 		return agentJob{}, refuse(CodeSetupFailed, "This engine cannot read its config; nothing changed.")
 	}
@@ -179,7 +179,7 @@ func (s *Service) validateAgentJob(req Request, run bool) (agentJob, error) {
 		}
 		// An agent whose credential cannot be read cannot be served
 		// either: it goes with the removal rather than stay behind.
-		if t, err := credentialTarget(o, s.be.ParseTarget); err != nil || setup.SameDatabase(want, t) {
+		if t, err := s.credentialTarget(o); err != nil || setup.SameDatabase(want, t) {
 			j.others = append(j.others, o.Name)
 		}
 	}
@@ -257,14 +257,13 @@ func checkFields(req Request, run bool) error {
 	return nil
 }
 
-// credentialTarget is the database the agent's credential connects to, as
-// parse reads it (Backend.ParseTarget).
-func credentialTarget(a config.Agent, parse func(dsn string) (setup.Target, error)) (setupcode.Target, error) {
-	dsn, err := config.ReadCredential(a.Store.CredentialFile)
+// credentialTarget is the database the agent's credential connects to.
+func (s *Service) credentialTarget(a config.Agent) (setupcode.Target, error) {
+	dsn, err := s.be.ReadCredentialFile(a.Store.CredentialFile)
 	if err != nil {
 		return setupcode.Target{}, err
 	}
-	pc, err := parse(dsn)
+	pc, err := s.be.ParseTarget(dsn)
 	if err != nil {
 		return setupcode.Target{}, err
 	}
@@ -551,7 +550,7 @@ func (s *Service) removeRefusal(err error) error {
 // files. The config goes first: a run that stops between the two leaves
 // only a credential no config names.
 func (s *Service) forget(agents []string) (removedFile bool, err error) {
-	cfg, err := config.Load(s.opts.ConfigPath)
+	cfg, err := s.be.LoadConfig(s.opts.ConfigPath)
 	if err != nil {
 		return false, err
 	}
@@ -561,13 +560,13 @@ func (s *Service) forget(agents []string) (removedFile bool, err error) {
 			creds = append(creds, a.Store.CredentialFile)
 		}
 	}
-	removedFile, err = config.RemoveAgents(s.opts.ConfigPath, agents)
+	removedFile, err = s.be.RemoveAgents(s.opts.ConfigPath, agents)
 	if err != nil {
 		return false, err
 	}
 	for _, c := range creds {
-		_ = os.Remove(c)
-		_ = os.Remove(c + ".pending")
+		_ = s.be.Remove(c)
+		_ = s.be.Remove(c + ".pending")
 	}
 	return removedFile, nil
 }

@@ -427,29 +427,31 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 // engineFiles are the agent's credential and engine.json, next to each
 // other in the engine's own folder.
 type engineFiles struct {
+	fs                 setup.EngineFiles
 	config, credential string
 }
 
 func (s *Service) files(agent string) engineFiles {
 	return engineFiles{
+		fs:         s.be,
 		config:     s.opts.ConfigPath,
 		credential: filepath.Join(filepath.Dir(s.opts.ConfigPath), "agents", agent+".url"),
 	}
 }
 
 func (f engineFiles) writeCredential(dsn string) error {
-	if err := config.WriteFile(f.credential, []byte(dsn+"\n")); err != nil {
+	if err := f.fs.WriteFile(f.credential, []byte(dsn+"\n")); err != nil {
 		return refuse(CodeSetupFailed, "This engine could not write the agent's credential; nothing changed.")
 	}
 	return nil
 }
 
-func (f engineFiles) removeCredential() { _ = os.Remove(f.credential) }
+func (f engineFiles) removeCredential() { _ = f.fs.Remove(f.credential) }
 
 // writeConfig adds the agent to a new engine.json: a person-operated
 // service engine serving the local pages.
 func (f engineFiles) writeConfig(req Request, uid uint32) error {
-	_, err := config.UpsertAgentVault(f.config, config.Settings{
+	_, err := f.fs.UpsertAgentVault(f.config, config.Settings{
 		SocketDir: config.DefaultSocketDir(runtime.GOOS), Mode: config.ModeService, PagesURL: links.DefaultLocal,
 		OperatedBy: "PERSON", PersonUIDs: []uint32{uid}, VaultDefault: config.VaultOff,
 	}, config.Agent{Name: req.Agent, OSUser: req.OSUser, Store: config.PostgresStore(f.credential)})

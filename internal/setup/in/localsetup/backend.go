@@ -38,6 +38,12 @@ type CatalogTable = struct {
 // string that makes the driver read a file (passfile, sslrootcert).
 type Backend interface {
 	setup.SetuprunBackend
+	// The engine's own files, and the PII classifier.
+	setup.EngineFiles
+	setup.Classifier
+	// FetchChain reads the chain host:port presents with the TLS handshake
+	// alone.
+	FetchChain(ctx context.Context, host string, port int) ([]*x509.Certificate, error)
 	// Connections and their trust.
 	Connect(ctx context.Context, dsn string) (Conn, error)
 	// ConnectPinned opens dsn trusting only p's certificate for its host.

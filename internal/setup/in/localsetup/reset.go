@@ -103,7 +103,7 @@ func (s *Service) engineConfig() (config.Config, error) {
 	if s.opts.Euid() == 0 {
 		return config.Config{}, refuse(CodeJobUnavailable, "An engine running as root never serves this page's jobs.")
 	}
-	cfg, err := config.Load(s.opts.ConfigPath)
+	cfg, err := s.be.LoadConfig(s.opts.ConfigPath)
 	if err != nil {
 		return config.Config{}, refuse(CodeSetupFailed, "This engine cannot read its config; nothing changed.")
 	}

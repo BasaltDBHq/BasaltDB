@@ -38,11 +38,6 @@ type pin struct {
 	profile *trustprofile.Profile
 }
 
-// probe reads the chain host:port presents with the TLS handshake alone.
-func probe(ctx context.Context, host string, port int) ([]*x509.Certificate, error) {
-	return trustpin.Fetch(ctx, nil, host, port)
-}
-
 // loginRefused: the database refused the login (SQLSTATE class 28,
 // invalid authorization).
 func loginRefused(err error) bool {

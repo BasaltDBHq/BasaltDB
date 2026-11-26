@@ -12,7 +12,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
-	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
@@ -229,7 +228,7 @@ func (s *Service) suggest(ctx context.Context, conn Conn, listed []piistore.Colu
 	defer cancel()
 	read := s.be.PIISampler(conn.Port(), sampleStatementTimeout, sampleChars)
 	if s.opts.SampleColumn != nil {
-		read = func(ctx context.Context, col pii.Column) (pii.Sample, error) {
+		read = func(ctx context.Context, col piistore.Column) (piistore.Sample, error) {
 			return s.opts.SampleColumn(ctx, conn, col)
 		}
 	}
@@ -237,11 +236,11 @@ func (s *Service) suggest(ctx context.Context, conn Conn, listed []piistore.Colu
 	// A failed or timed-out sample is not an error of the check: the column
 	// gets no suggestion, and the driver's message (which can quote a value)
 	// is dropped.
-	unsampled := func(col pii.Column) pii.Sample {
+	unsampled := func(col piistore.Column) piistore.Sample {
 		failed[col.FullName()] = true
-		return pii.Sample{Unavailable: pii.UnavailableTimeout}
+		return piistore.Sample{Unavailable: piistore.UnavailableTimeout}
 	}
-	sample := func(_ context.Context, col pii.Column) (pii.Sample, error) {
+	sample := func(_ context.Context, col piistore.Column) (piistore.Sample, error) {
 		if sctx.Err() != nil {
 			return unsampled(col), nil //nolint:nilerr // the driver's message can quote a value; the column gets no suggestion
 		}
@@ -252,7 +251,7 @@ func (s *Service) suggest(ctx context.Context, conn Conn, listed []piistore.Colu
 		}
 		return smp, nil
 	}
-	results, err := pii.SuggestAll(sctx, cc, sample, pii.Options{}, func(pii.Column, pii.Suggestion) bool { return false })
+	results, err := s.be.SuggestColumns(sctx, cc, sample)
 	if err != nil {
 		return
 	}
@@ -260,7 +259,7 @@ func (s *Service) suggest(ctx context.Context, conn Conn, listed []piistore.Colu
 		if failed[r.Column.FullName()] {
 			continue
 		}
-		out[i].SuggestedClass, out[i].SuggestedEntityType = r.Suggestion.Class, r.Suggestion.EntityType
-		out[i].SuggestedRegion, out[i].Reason = r.Suggestion.PhoneRegion, r.Suggestion.Reason
+		out[i].SuggestedClass, out[i].SuggestedEntityType = r.Class, r.EntityType
+		out[i].SuggestedRegion, out[i].Reason = r.PhoneRegion, r.Reason
 	}
 }

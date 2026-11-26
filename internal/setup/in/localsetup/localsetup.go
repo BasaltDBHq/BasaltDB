@@ -19,7 +19,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/pii"
+	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -182,11 +182,11 @@ type Options struct {
 	DialPinned func(ctx context.Context, dsn string, pin *trustprofile.Profile) (Conn, error)
 	// Profiles are the trust profiles in force (Backend.Trust outside tests).
 	Profiles func() *trustprofile.Set
-	// Probe reads the chain a host presents (trustpin.Fetch outside tests).
+	// Probe reads the chain a host presents (Backend.FetchChain outside tests).
 	Probe func(ctx context.Context, host string, port int) ([]*x509.Certificate, error)
 	// SampleColumn reads a column's sample for the check's suggestions
 	// (the classifier's sampler outside tests).
-	SampleColumn func(ctx context.Context, conn Conn, col pii.Column) (pii.Sample, error)
+	SampleColumn func(ctx context.Context, conn Conn, col piistore.Column) (piistore.Sample, error)
 	// Euid is this process's effective user id (os.Geteuid outside tests).
 	Euid func() int
 	// CredentialChanged tells the running engine an agent's new password,
@@ -236,7 +236,7 @@ func New(o Options) (*Service, error) {
 		o.Profiles = o.Backend.Trust
 	}
 	if o.Probe == nil {
-		o.Probe = probe
+		o.Probe = o.Backend.FetchChain
 	}
 	if o.Euid == nil {
 		o.Euid = os.Geteuid
@@ -266,7 +266,7 @@ type job struct {
 
 // validate checks everything that needs no database, in order.
 func (s *Service) validate(req Request) (job, error) {
-	if _, err := os.Lstat(s.opts.ConfigPath); !errors.Is(err, os.ErrNotExist) {
+	if err := s.be.Lstat(s.opts.ConfigPath); !errors.Is(err, os.ErrNotExist) {
 		return job{}, refuse(CodeJobUnavailable, "This engine is already set up. An install never changes an engine that has a config; ask the agent for the setup link of the change you want.")
 	}
 	if isAgentJob(req.Job) {

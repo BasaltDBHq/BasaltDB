@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 
-	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -106,7 +104,7 @@ func (s *Service) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) 
 	credFile := j.agent.Store.CredentialFile
 	var old []byte
 	if !j.missing {
-		if old, err = os.ReadFile(credFile); err != nil {
+		if old, err = s.be.ReadFile(credFile); err != nil {
 			return RunAnswer{}, refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
 		}
 	}
@@ -129,7 +127,7 @@ func (s *Service) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) 
 			return refuse(CodeSetupFailed, fmt.Sprintf("The role %s is not a plain agent role this admin can repair (elevated attributes, other memberships, owned objects or settings it cannot reset). Nothing changed.", j.role))
 		}
 		wrote = true
-		if err := config.WriteFile(credFile, []byte(next+"\n")); err != nil {
+		if err := s.be.WriteFile(credFile, []byte(next+"\n")); err != nil {
 			return refuse(CodeSetupFailed, "This engine could not write the agent's credential; nothing changed.")
 		}
 		return nil
@@ -142,9 +140,9 @@ func (s *Service) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) 
 		}
 		switch {
 		case wrote && j.missing:
-			_ = os.Remove(credFile) // the role keeps its old password
+			_ = s.be.Remove(credFile) // the role keeps its old password
 		case wrote:
-			_ = config.WriteFile(credFile, old) // the role keeps its old password
+			_ = s.be.WriteFile(credFile, old) // the role keeps its old password
 		}
 		return RunAnswer{}, timeLimit(ctx, s.asRefusal(err))
 	}

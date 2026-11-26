@@ -46,6 +46,10 @@ const (
 // crash reports.
 const CrashDirName = "crash"
 
+// ErrCrashNotPruned is a crash save's error when the report was written but
+// older reports could not all be deleted: the report's id is good.
+var ErrCrashNotPruned = errors.New("older crash reports were not deleted")
+
 // CrashInput is what a crash handler knows.
 type CrashInput struct {
 	// Command is the command or tool name; anything not shaped like one is

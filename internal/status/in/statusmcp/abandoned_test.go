@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"log/slog"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -49,4 +50,21 @@ func TestAnswerAbandonedNeverRunsTheCallAgain(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(result.Content[0].Text), &te))
 	require.Equal(t, guidance.CodeUnavailable, te.Code)
 	require.Equal(t, guidance.ReasonEngineUnreachable, te.Reason)
+}
+
+// basalt mcp given a socket whose name is no agent name keeps that name and
+// builds its commands for the fallback agent; a missing config is kept as
+// the error status reports.
+func TestLoadEngineDownFallsBackToAnAgentName(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "engine.json")
+	down, err := LoadEngineDown("not an agent!", path, testManager(), testEngineHost(), slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+	require.Equal(t, "not an agent!", down.Name)
+	require.Equal(t, fallbackAgentName, down.Commands.AgentName())
+	require.Nil(t, down.Config)
+	require.Error(t, down.ConfigErr)
+
+	_, err = LoadEngineDown("bot", "relative/engine.json", testManager(), testEngineHost(), slog.New(slog.DiscardHandler))
+	require.ErrorContains(t, err, "must be absolute")
 }

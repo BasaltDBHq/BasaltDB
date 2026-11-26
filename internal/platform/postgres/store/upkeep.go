@@ -11,6 +11,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // Upkeep is the store side of the engine's timer (ledger.Store) on one
@@ -72,7 +73,7 @@ func pinFate(f ledger.PinFate) action.PinFate {
 
 // LastHeartbeat is the agent's latest HEARTBEAT, zero when none.
 func (u *Upkeep) LastHeartbeat(ctx context.Context) (time.Time, error) {
-	q, args, err := psql.Select("max(at)").From("basalt_meta.agent_ledger").
+	q, args, err := sqlport.Builder.Select("max(at)").From("basalt_meta.agent_ledger").
 		Where(sq.Eq{"kind": string(guard.EventHeartbeat)}).ToSql()
 	if err != nil {
 		return time.Time{}, err

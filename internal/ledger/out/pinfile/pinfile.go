@@ -100,7 +100,9 @@ func (f File) Load(name string) (chainpin.Pin, bool, error) {
 	return pin, true, nil
 }
 
-// Save replaces the pin named name atomically (write, then rename).
+// Save replaces the pin named name atomically (write, then rename), and
+// syncs the directory: a pin lost in a crash would let the next start
+// trust the chain afresh.
 func (f File) Save(name string, pin chainpin.Pin) error {
 	h := pin.Head
 	path, err := f.path(name)
@@ -118,5 +120,5 @@ func (f File) Save(name string, pin chainpin.Pin) error {
 	if err != nil {
 		return err
 	}
-	return atomicfile.Write(path, raw, atomicfile.Options{Mode: fileMode})
+	return atomicfile.Write(path, raw, atomicfile.Options{Mode: fileMode, SyncDir: true})
 }

@@ -6,16 +6,14 @@ import (
 	"strings"
 	"time"
 
-	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/agentcatalog"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
-
-var psql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 
 // Querier is a pool, a connection or a transaction, on the agent's
 // credential.
@@ -133,7 +131,7 @@ func readSnapshot(ctx context.Context, db Querier, between func()) (piistore.Sna
 		return piistore.Snapshot{}, err
 	}
 	between()
-	q, args, err := psql.Select("table_oid", "attnum", "table_schema", "table_name", "column_name",
+	q, args, err := sqlport.Builder.Select("table_oid", "attnum", "table_schema", "table_name", "column_name",
 		"class", "coalesce(entity_type, '')", "coalesce(phone_region, '')").
 		From("basalt_meta.agent_pii_columns").OrderBy("table_oid", "attnum").ToSql()
 	if err != nil {
@@ -165,14 +163,14 @@ func readSnapshot(ctx context.Context, db Querier, between func()) (piistore.Sna
 // before the first basalt classify).
 func readMarks(ctx context.Context, db Querier) (piistore.Marks, error) {
 	var mk piistore.Marks
-	q, args, err := psql.Select("basalt_meta.pii_fingerprint()").ToSql()
+	q, args, err := sqlport.Builder.Select("basalt_meta.pii_fingerprint()").ToSql()
 	if err != nil {
 		return mk, err
 	}
 	if err := db.QueryRow(ctx, q, args...).Scan(&mk.Fingerprint); err != nil {
 		return mk, err
 	}
-	q, args, err = psql.Select("fingerprint", "classified_at").From("basalt_meta.agent_pii_catalog").ToSql()
+	q, args, err = sqlport.Builder.Select("fingerprint", "classified_at").From("basalt_meta.agent_pii_catalog").ToSql()
 	if err != nil {
 		return mk, err
 	}

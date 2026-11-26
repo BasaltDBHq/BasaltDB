@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // OpenPluginApproval opens a plugin approval for the agents in d, each
@@ -92,7 +93,7 @@ func sortedCopy(in []string) []string {
 // APPROVAL_INVALID (DetailApprovalNotFound, DetailApprovalCancelled,
 // DetailAlreadyApproved, or a failed passkey check) and APPROVAL_EXPIRED.
 func SubmitPluginApproval(ctx context.Context, q Querier, r guardmodel.PluginApprovalResponse) (time.Time, error) {
-	sql, args, err := psql.Select().Column(sq.Expr(
+	sql, args, err := sqlport.Builder.Select().Column(sq.Expr(
 		"basalt_meta.submit_plugin_approval(?::uuid, ?::bytea, ?::bytea, ?::bytea, ?::bytea)",
 		r.ApprovalID.String(), r.Assertion.CredentialID, r.Assertion.AuthenticatorData,
 		r.Assertion.ClientDataJSON, r.Assertion.Signature)).ToSql()
@@ -118,7 +119,7 @@ var pluginApprovalColumns = []string{
 // APPROVED, not ended, and matches the entry. It needs schema version
 // PluginApprovalsVersion: on an older guard the view does not exist.
 func ReadPluginApprovals(ctx context.Context, q Querier) ([]guardmodel.PluginApprovalRecord, error) {
-	sql, args, err := psql.Select(pluginApprovalColumns...).
+	sql, args, err := sqlport.Builder.Select(pluginApprovalColumns...).
 		Options("DISTINCT ON (name, instance)").
 		From("basalt_meta.agent_plugin_approvals").
 		Where("names_caller").
@@ -136,7 +137,7 @@ func ReadPluginApprovals(ctx context.Context, q Querier) ([]guardmodel.PluginApp
 // ReadPluginApproval returns one plugin approval the calling role may see
 // (it names the role or the role opened it), and false when there is none.
 func ReadPluginApproval(ctx context.Context, q Querier, id uuid.UUID) (guardmodel.PluginApprovalRecord, bool, error) {
-	sql, args, err := psql.Select(pluginApprovalColumns...).
+	sql, args, err := sqlport.Builder.Select(pluginApprovalColumns...).
 		From("basalt_meta.agent_plugin_approvals").
 		Where(sq.Eq{"approval_id": id.String()}).ToSql()
 	if err != nil {

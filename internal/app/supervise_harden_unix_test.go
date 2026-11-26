@@ -37,17 +37,17 @@ func TestSupervisedChildStopsWhenParentIsKilled(t *testing.T) {
 	switch os.Getenv(testSuperviseRoleEnv) {
 	case "child":
 		watchSupervisedParent(context.Background())
+		if err := os.WriteFile(os.Getenv(testSupervisePidFileEnv), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+			os.Exit(1)
+		}
 		time.Sleep(30 * time.Second)
 		os.Exit(0)
 	case "parent":
-		cmd := exec.Command(os.Args[0], "-test.run=^TestSupervisedChildStopsWhenParentIsKilled$")
-		cmd.Env = append(cleanTestEnv(), testSuperviseRoleEnv+"=child")
-		prepareSuperviseChild(cmd)
-		if err := cmd.Start(); err != nil {
+		// The child is started as the supervisor starts its engine.
+		if err := os.Setenv(testSuperviseRoleEnv, "child"); err != nil {
 			os.Exit(1)
 		}
-		if err := os.WriteFile(os.Getenv(testSupervisePidFileEnv), []byte(strconv.Itoa(cmd.Process.Pid)), 0o600); err != nil {
-			_ = cmd.Process.Kill()
+		if _, err := engineos.StartChild(context.Background(), os.Args[0], []string{"-test.run=^TestSupervisedChildStopsWhenParentIsKilled$"}, io.Discard, io.Discard); err != nil {
 			os.Exit(1)
 		}
 		_, _ = os.Stdin.Read(make([]byte, 1))

@@ -7,6 +7,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
 // TestInitIsTheOneSetupCommand checks the one basalt command a step names
@@ -25,14 +26,14 @@ func TestInitIsTheOneSetupCommand(t *testing.T) {
 
 func TestCommandsRefuseARelativeConfigPath(t *testing.T) {
 	t.Parallel()
-	_, err := newCommands("bot", "engine.json", "linux", testManager())
+	_, err := newCommands("bot", "engine.json", "linux", osservice.Manager())
 	require.Error(t, err)
 }
 
 func TestCommandsRefuseABadAgentName(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"", "Bot", "bot; rm -rf /", "a b", "$(x)"} {
-		_, err := newCommands(name, "", "linux", testManager())
+		_, err := newCommands(name, "", "linux", osservice.Manager())
 		require.Error(t, err, name)
 	}
 }
@@ -67,7 +68,7 @@ func TestShellQuoteALeadingEquals(t *testing.T) {
 
 func mustCommands(t *testing.T, path, goos string) guidance.Commands {
 	t.Helper()
-	c, err := newCommands("bot", path, goos, testManager())
+	c, err := newCommands("bot", path, goos, osservice.Manager())
 	require.NoError(t, err)
 	return c
 }

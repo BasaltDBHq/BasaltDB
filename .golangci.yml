@@ -227,7 +227,8 @@ linters:
               desc: the signed-message codecs sit below the approval's store port types; they must not import them
             - pkg: github.com/basaltdbhq/basaltdb/internal/core/revertstore
               desc: the signed-message codecs sit below the revert's store port types; they must not import them
-    # Every id BasaltDB generates is a UUIDv7 from internal/lib/uniqueid.
+    # Every id BasaltDB generates comes from internal/lib/uniqueid: a UUIDv7,
+    # or a UUIDv4 (NewRandom) for an id that must not reveal when it was made.
     forbidigo:
       analyze-types: true
       forbid:

@@ -26,6 +26,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgerrors"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
@@ -126,7 +127,7 @@ func TestToolErrorMapping(t *testing.T) {
 		{errors.New("password=hunter2 something broke"), guidance.CodeInternal, "", ""},
 	}
 	for _, c := range cases {
-		te := testErrors().ToolError(c.err)
+		te := pgerrors.Map().ToolError(c.err)
 		require.Equal(t, c.code, te.Code, c.err.Error())
 		require.Equal(t, c.reason, te.Reason, c.err.Error())
 		require.Equal(t, c.storeCode, te.StoreCode, c.err.Error())

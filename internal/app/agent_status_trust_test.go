@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
 
 	"github.com/stretchr/testify/require"
@@ -32,7 +33,7 @@ func trustStatusOf(t *testing.T, operatedBy string, probe *fakeProbe, rep status
 	setApprovals(&d, keys{n: 1})
 	d.Core.Now = func() time.Time { return statusNow }
 	d.Status.Trust = rep
-	cmds, err := newCommands("bot", "", "linux", testManager())
+	cmds, err := newCommands("bot", "", "linux", osservice.Manager())
 	require.NoError(t, err)
 	d.Core.Commands = cmds
 	r, err := NewService(d).status.Status(context.Background())

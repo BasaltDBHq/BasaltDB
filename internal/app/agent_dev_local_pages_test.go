@@ -7,6 +7,7 @@ import (
 	"time"
 
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 
 	"github.com/stretchr/testify/require"
 
@@ -28,7 +29,7 @@ func devLocalStatus(t *testing.T, operatedBy string) guidance.StatusReport {
 	d.Status.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 1})
 	d.Core.Now = func() time.Time { return statusNow }
-	cmds, err := newCommands("bot", "", "linux", testManager())
+	cmds, err := newCommands("bot", "", "linux", osservice.Manager())
 	require.NoError(t, err)
 	d.Core.Commands = cmds
 	r, err := NewService(d).status.Status(context.Background())
@@ -44,7 +45,7 @@ func TestDevLocalPagesWarnsOnEveryPersonMessage(t *testing.T) {
 	d.Status.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 0}) // NO_PASSKEY too: two problems
 	d.Core.Now = func() time.Time { return statusNow }
-	cmds, err := newCommands("bot", "", "linux", testManager())
+	cmds, err := newCommands("bot", "", "linux", osservice.Manager())
 	require.NoError(t, err)
 	d.Core.Commands = cmds
 	srv, _ := serverOf(NewService(d))

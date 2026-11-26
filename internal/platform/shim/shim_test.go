@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
 
@@ -93,7 +94,7 @@ func startShimWith(t *testing.T, socket string, opts shim.Options) (*client, <-c
 	// valid name passes app's checks, so they are guidance.NewCommands' own.
 	cmds := guidance.NewCommands("bot", "", config.DefaultPath("linux"), "linux", testServiceManager())
 	down := statusmcp.EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
-	fallback := statusmcp.NewServer(down, app.Instructions)
+	fallback := statusmcp.NewServer(down, app.Instructions, downTools(down))
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	done := make(chan error, 1)
@@ -240,4 +241,16 @@ func testEngineHost() status.EngineHost {
 		LatestGuardVersion: func() int { return 1 },
 		StartHoldOffUntil:  func(guidance.LastStop, string, time.Time) (time.Time, bool) { return time.Time{}, false },
 	}
+}
+
+// downTools are down's tools as the engine serves them while it is down:
+// every IMPLEMENTED contract, and status, each answering down.Call.
+func downTools(down statusmcp.EngineDown) []mcpserver.Tool {
+	var out []mcpserver.Tool
+	for _, c := range mcpcontract.MustLoad() {
+		if c.Status == mcpcontract.StatusImplemented || c.Name == guidance.ToolStatus {
+			out = append(out, mcpserver.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: down.Call(c.Name)})
+		}
+	}
+	return out
 }

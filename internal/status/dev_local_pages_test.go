@@ -9,11 +9,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
 func TestDevLocalPagesStepIsTheAgentsInit(t *testing.T) {
 	t.Parallel()
-	cmds := guidance.NewCommands("bot", "", config.DefaultPath("linux"), "linux", testManager())
+	cmds := guidance.NewCommands("bot", "", config.DefaultPath("linux"), "linux", osservice.Manager())
 	b := guidance.NewSteps()
 	person := devLocalPagesSteps(b, cmds.OperatedBy(mcpcontract.OperatedByAgent))
 	steps, err := b.Build()

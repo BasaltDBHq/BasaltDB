@@ -9,6 +9,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/agent/in/agentmcp"
 	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalmcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/handoff/in/handoffmcp"
 	ledgersvc "github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/ledger/in/ledgermcp"
@@ -35,7 +38,7 @@ func AgentTools(svc *Service) []mcpserver.Tool {
 	for _, list := range [][]mcpserver.Tool{
 		agentmcp.Tools(svc.agent, mount), ledgermcp.Tools(ledgerRuns{Reads: svc.ledger, agent: &svc.deps.Agent}, mount),
 		approvalmcp.Tools(svc.approval, mount), revertmcp.Tools(svc.revert, mount), pluginmcp.Tools(pluginRequester{svc.plugin}, mount),
-		statusmcp.Tools(svc.status, mount), handoffmcp.Tools(mount),
+		statusmcp.Tools(svc.status, mount), handoffmcp.Tools(noDatabaseWaits{}, mount),
 	} {
 		tools = append(tools, list...)
 	}
@@ -61,6 +64,33 @@ func inServedOrder(tools []mcpserver.Tool) []mcpserver.Tool {
 	}
 	slices.SortStableFunc(tools, func(a, b mcpserver.Tool) int { return rank(a) - rank(b) })
 	return tools
+}
+
+// degradedTools are the tools of an agent served without its engine or its
+// database: the engine is down (statusmcp.EngineDown) or its connect-only
+// setup waits (handoffmcp.ConnectOnly). Every IMPLEMENTED contract, and
+// status, in the contracts' order, answers with call(name), wrapped once
+// with the admin-credential refusal.
+func degradedTools(call func(tool string) func(context.Context, json.RawMessage) (any, error)) []mcpserver.Tool {
+	contracts := mcpcontract.MustLoad()
+	out := make([]mcpserver.Tool, 0, len(contracts))
+	for _, c := range contracts {
+		// status is served even if its contract were not IMPLEMENTED: on purpose,
+		// a degraded agent always answers status.
+		if c.Status != mcpcontract.StatusImplemented && c.Name != guidance.ToolStatus {
+			continue
+		}
+		out = append(out, mcpserver.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: mcpserver.RefuseAdminCredential(c.Name, call(c.Name))})
+	}
+	return out
+}
+
+// noDatabaseWaits is confirm_database's confirmer on a served agent, where
+// no connect-only setup waits for its database.
+type noDatabaseWaits struct{}
+
+func (noDatabaseWaits) ConfirmDatabase(context.Context, string, setupcode.Address, bool) (handoff.ConfirmResult, error) {
+	return handoff.ConfirmResult{}, handoff.ErrNotWaiting
 }
 
 // ledgerRuns is the ledger's read side as run_history calls it, with the

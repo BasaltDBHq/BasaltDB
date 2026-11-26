@@ -23,6 +23,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgerrors"
 )
 
 // basalt status on an engine run in the foreground reads the record too:
@@ -34,7 +35,7 @@ func TestLocalStatusEngineRecord(t *testing.T) {
 		t.Helper()
 		cmds := commandsAt("")
 		r, err := localStatus{
-			Errors: testErrors(), LatestGuardVersion: guard.LatestVersion,
+			Errors: pgerrors.Map(), LatestGuardVersion: guard.LatestVersion,
 			Name: "bot", Commands: cmds, EngineRunning: true, EngineKey: key, EngineRecord: read,
 			Probe: &fakeProbe{st: currentGuard()},
 			Passkeys: func(context.Context) ([]passkey.Credential, error) {

@@ -44,11 +44,7 @@ func newCommands(t *testing.T, configPath string) guidance.Commands {
 	const name = "bot"
 	require.True(t, config.ValidAgentName(name), name)
 	require.True(t, configPath == "" || filepath.IsAbs(configPath), configPath)
-	return guidance.NewCommands(name, configPath, config.DefaultPath("linux"), "linux", testManager())
-}
-
-func testManager() guidance.ServiceManager {
-	return guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
+	return guidance.NewCommands(name, configPath, config.DefaultPath("linux"), "linux", osservice.Manager())
 }
 
 func testEngineHost() status.EngineHost {
@@ -94,10 +90,10 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 	t.Parallel()
 	cmds := newCommands(t, "/srv/basalt/engine.json")
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
-	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, down.Tools()...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, downTools(down)...)
 
-	served := make([]string, 0, len(down.Tools()))
-	for _, tool := range down.Tools() {
+	served := make([]string, 0, len(downTools(down)))
+	for _, tool := range downTools(down) {
 		served = append(served, tool.Name)
 	}
 	slices.Sort(served)
@@ -141,7 +137,7 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 		Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}},
 	}
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Config: cfg, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
-	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, down.Tools()...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, downTools(down)...)
 
 	v, ok := stepcatalogtest.CatalogOf(t).AgentOperatedEntry(mcpcontract.VariantError, guidance.CodeUnavailable, guidance.ReasonEngineUnreachable, "")
 	require.True(t, ok)
@@ -178,7 +174,7 @@ func TestEngineDownNamesWhyTheStartFailed(t *testing.T) {
 	require.False(t, r.Ready)
 
 	var query mcpserver.Tool
-	for _, tool := range down.Tools() {
+	for _, tool := range downTools(down) {
 		if tool.Name == "query" {
 			query = tool
 		}
@@ -216,4 +212,16 @@ func TestEngineDownToolNamesHoldOff(t *testing.T) {
 	require.Error(t, callErr)
 	require.Contains(t, callErr.Error(), "the engine stopped and was not restarted: the engine crashed 5 times within 10s")
 	require.Contains(t, callErr.Error(), "The next try is at 2026-11-21T08:01:00Z")
+}
+
+// downTools are down's tools as internal/app serves them, without app's
+// admin-credential wrap: every IMPLEMENTED contract, and status.
+func downTools(down EngineDown) []mcpserver.Tool {
+	var out []mcpserver.Tool
+	for _, c := range mcpcontract.MustLoad() {
+		if c.Status == mcpcontract.StatusImplemented || c.Name == guidance.ToolStatus {
+			out = append(out, mcpserver.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: down.Call(c.Name)})
+		}
+	}
+	return out
 }

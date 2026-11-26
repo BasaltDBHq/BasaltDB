@@ -111,7 +111,7 @@ func engineDownServer(name, configPath string, log *slog.Logger) (statusmcp.Serv
 	if err != nil {
 		return statusmcp.Server{}, err
 	}
-	return statusmcp.NewServer(down, Instructions), nil
+	return statusmcp.NewServer(down, Instructions, degradedTools(down.Call)), nil
 }
 
 // runService is basalt service for the command table.

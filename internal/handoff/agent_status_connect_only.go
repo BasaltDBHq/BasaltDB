@@ -1,7 +1,6 @@
 package handoff
 
 import (
-	"context"
 	"errors"
 	"net"
 	"strconv"
@@ -199,13 +198,6 @@ func confirmedSteps(b *guidance.Steps) string {
 // refusedResultSteps: the address and the password are gone; a new code.
 func refusedResultSteps(b *guidance.Steps, cmds guidance.Commands) string {
 	return databaseRefusedSteps(b, cmds)
-}
-
-// Handoff is the engine's connect-only setup (handoff.Pending).
-type Handoff interface {
-	State() State
-	StatusCollect(ctx context.Context) State
-	Confirm(ctx context.Context, setupID string, db setupcode.Address, yes bool) (Answer, error)
 }
 
 // NewConfirmResult is confirm_database's result for ans.

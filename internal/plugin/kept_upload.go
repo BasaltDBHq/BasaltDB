@@ -54,7 +54,7 @@ func (s *Store) Begin(uid uint32) (Upload, error) {
 	if err := s.checkOwnDir(s.uploadsDir()); err != nil {
 		return Upload{}, refused(ReasonUnsafePath, "%s", err)
 	}
-	id := uniqueid.NewRandom() // a UUIDv4 on the wire
+	id := uniqueid.NewRandom()
 	if err := s.files.Mkdir(filepath.Join(s.uploadsDir(), id.String()), uploadDirMode); err != nil {
 		return Upload{}, err
 	}

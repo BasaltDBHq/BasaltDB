@@ -2,11 +2,9 @@ package handoff
 
 import (
 	"context"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/netip"
 	"sync"
 	"time"
 
@@ -25,24 +23,6 @@ import (
 // shows the trusted top. It asks no confirm_database: the database is the
 // one the credential already names. The setup then finishes as any pending
 // setup does.
-
-// RepinProber resolves the credential's host and reads its chain: Prober.
-type RepinProber interface {
-	Resolve(ctx context.Context, a setupcode.Address) (netip.Addr, error)
-	// Repin checks approved against the chain the server presents to this
-	// machine, the engine's own pin for the host left out.
-	Repin(ctx context.Context, a setupcode.Address, ip netip.Addr, approved string) (Pin, error)
-}
-
-// RepinFiles are the agent's entry in engine.json and the config's trust.d.
-type RepinFiles interface {
-	// PendingSetup is the agent's pending setup in engine.json now.
-	PendingSetup() (config.Setup, bool, error)
-	// ReplacePin replaces the engine's own pin for host with top's (caOnly:
-	// it verifies the chain alone), under the config lock; it refuses when
-	// another profile covers host.
-	ReplacePin(host string, top *x509.Certificate, caOnly bool) error
-}
 
 // RepinOptions build a Repin.
 type RepinOptions struct {

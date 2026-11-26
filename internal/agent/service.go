@@ -197,11 +197,15 @@ type Unavailable interface {
 	UnavailableSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failure) string
 }
 
-// New returns the service over core and the agent's store. A nil Data,
-// Catalog or Classes is replaced by one that fails closed, and a nil pii by
-// one that adds nothing; a nil Visibility hides nothing. Give it the other
-// use cases it asks with SetPorts before it serves a write.
-func New(core Core, store StoreSet, pii PIIObserver, update func() *guidance.UpdateInfo) *Service {
+// New returns the service over core and the agent's store, with the other
+// use cases it asks: the delivery of held actions, the approvals, the upgrade
+// warnings of run_start, the link of an approval error and the steps of an
+// UNAVAILABLE error. A nil Data, Catalog or Classes is replaced by one that
+// fails closed, and a nil pii by one that adds nothing; a nil Visibility
+// hides nothing.
+func New(core Core, store StoreSet, pii PIIObserver, update func() *guidance.UpdateInfo,
+	delivery Delivery, approvals Approvals, upgrade UpgradeWarner, next ApprovalLinker, steps Unavailable,
+) *Service {
 	if store.Data == nil {
 		store.Data = noData{}
 	}
@@ -214,20 +218,10 @@ func New(core Core, store StoreSet, pii PIIObserver, update func() *guidance.Upd
 	if pii == nil {
 		pii = noPII{}
 	}
-	return &Service{core: core, store: store, pii: pii, update: update}
-}
-
-// SetPorts gives the service the use cases it asks: the delivery of held
-// actions, the approvals, the upgrade warnings of run_start, the link of an
-// approval error and the steps of an UNAVAILABLE error.
-func (ds *Service) SetPorts(delivery Delivery, approvals Approvals, upgrade UpgradeWarner, next ApprovalLinker, steps Unavailable) {
-	ds.delivery, ds.approvals, ds.upgrade, ds.next, ds.steps = delivery, approvals, upgrade, next, steps
-}
-
-// StatementTimeout is the agent's statement timeout, 0 when the service
-// knows no store data or its Data has zero Limits.
-func (ds *Service) StatementTimeout() time.Duration {
-	return ds.store.Data.Limits().StatementTimeout
+	return &Service{
+		core: core, store: store, pii: pii, update: update,
+		delivery: delivery, approvals: approvals, upgrade: upgrade, next: next, steps: steps,
+	}
 }
 
 // Family is the family of the agent's store: it picks the tools the agent

@@ -16,7 +16,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/web"
 )
 
@@ -47,12 +47,12 @@ func NewConfiguredSetupHandlers(origin string) pageserver.SetupHandlers {
 	}
 }
 
-// SetupJobs runs the setup page's jobs (localsetup.Service).
+// SetupJobs runs the setup page's jobs (setup.LocalService).
 type SetupJobs interface {
-	Check(ctx context.Context, req localsetup.Request) (localsetup.CheckAnswer, error)
-	Run(ctx context.Context, req localsetup.Request) (localsetup.RunAnswer, error)
-	Doctor(ctx context.Context, req localsetup.DoctorRequest) (localsetup.DoctorAnswer, error)
-	Engine(ctx context.Context) (localsetup.EngineAnswer, error)
+	Check(ctx context.Context, req setup.Request) (setup.CheckAnswer, error)
+	Run(ctx context.Context, req setup.Request) (setup.RunAnswer, error)
+	Doctor(ctx context.Context, req setup.DoctorRequest) (setup.DoctorAnswer, error)
+	Engine(ctx context.Context) (setup.EngineAnswer, error)
 	NotMine(ctx context.Context) error
 }
 
@@ -131,12 +131,12 @@ func (st setupRoutes) doctor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if pageserver.HoldsDatabaseURL(raw) {
-		pageserver.WriteError(w, http.StatusBadRequest, localsetup.CodeInvalidArgument, "This route never takes the admin connection string.")
+		pageserver.WriteError(w, http.StatusBadRequest, setup.CodeInvalidArgument, "This route never takes the admin connection string.")
 		return
 	}
-	var req localsetup.DoctorRequest
+	var req setup.DoctorRequest
 	if !decodeStrict(raw, &req) {
-		pageserver.WriteError(w, http.StatusBadRequest, localsetup.CodeInvalidArgument, "The body is not a setup request.")
+		pageserver.WriteError(w, http.StatusBadRequest, setup.CodeInvalidArgument, "The body is not a setup request.")
 		return
 	}
 	answer, err := st.jobs.Doctor(r.Context(), req)
@@ -175,12 +175,12 @@ func (st setupRoutes) empty(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	if pageserver.HoldsDatabaseURL(raw) {
-		pageserver.WriteError(w, http.StatusBadRequest, localsetup.CodeInvalidArgument, "This route never takes the admin connection string.")
+		pageserver.WriteError(w, http.StatusBadRequest, setup.CodeInvalidArgument, "This route never takes the admin connection string.")
 		return false
 	}
 	var none struct{}
 	if !decodeStrict(raw, &none) {
-		pageserver.WriteError(w, http.StatusBadRequest, localsetup.CodeInvalidArgument, "This route takes an empty object.")
+		pageserver.WriteError(w, http.StatusBadRequest, setup.CodeInvalidArgument, "This route takes an empty object.")
 		return false
 	}
 	return true
@@ -192,15 +192,15 @@ func decodeStrict(raw []byte, v any) bool {
 	return dec.Decode(v) == nil && !dec.More()
 }
 
-func (st setupRoutes) request(w http.ResponseWriter, r *http.Request) (localsetup.Request, bool) {
+func (st setupRoutes) request(w http.ResponseWriter, r *http.Request) (setup.Request, bool) {
 	raw, ok := st.body(w, r)
 	if !ok {
-		return localsetup.Request{}, false
+		return setup.Request{}, false
 	}
-	var req localsetup.Request
+	var req setup.Request
 	if !decodeStrict(raw, &req) {
-		pageserver.WriteError(w, http.StatusBadRequest, localsetup.CodeInvalidArgument, "The body is not a setup request.")
-		return localsetup.Request{}, false
+		pageserver.WriteError(w, http.StatusBadRequest, setup.CodeInvalidArgument, "The body is not a setup request.")
+		return setup.Request{}, false
 	}
 	return req, true
 }
@@ -209,11 +209,11 @@ func (st setupRoutes) request(w http.ResponseWriter, r *http.Request) (localsetu
 // the setup routes' limit.
 func (st setupRoutes) body(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if r.Header.Get("Origin") != st.origin {
-		pageserver.WriteError(w, http.StatusForbidden, localsetup.CodeInvalidArgument, "The request does not come from the setup page.")
+		pageserver.WriteError(w, http.StatusForbidden, setup.CodeInvalidArgument, "The request does not come from the setup page.")
 		return nil, false
 	}
 	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
-		pageserver.WriteError(w, http.StatusUnsupportedMediaType, localsetup.CodeInvalidArgument, "The body must be application/json.")
+		pageserver.WriteError(w, http.StatusUnsupportedMediaType, setup.CodeInvalidArgument, "The body must be application/json.")
 		return nil, false
 	}
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, setupMaxBody))
@@ -223,7 +223,7 @@ func (st setupRoutes) body(w http.ResponseWriter, r *http.Request) ([]byte, bool
 		pageserver.WriteError(w, http.StatusRequestEntityTooLarge, "REQUEST_TOO_LARGE", "The body is over 256 KiB.")
 		return nil, false
 	case err != nil:
-		pageserver.WriteError(w, http.StatusBadRequest, localsetup.CodeInvalidArgument, "The body cannot be read.")
+		pageserver.WriteError(w, http.StatusBadRequest, setup.CodeInvalidArgument, "The body cannot be read.")
 		return nil, false
 	}
 	return raw, true
@@ -234,10 +234,10 @@ func (st setupRoutes) answer(w http.ResponseWriter, answer any, err error, call 
 		pageserver.WriteJSON(w, http.StatusOK, answer)
 		return
 	}
-	ref := localsetup.AsRefusal(err)
+	ref := setup.AsRefusal(err)
 	if c := ref.Cause; c != nil {
 		// The cause is redacted where it is made: no connection string or
-		// password (localsetup.Cause).
+		// password (setup.Cause).
 		st.log.Warn("setup page: refused", "call", call, "code", ref.Code, "step", c.Step, "sqlstate", c.SQLState, "cause", c.Message)
 	} else {
 		st.log.Info("setup page: refused", "call", call, "code", ref.Code)
@@ -249,7 +249,7 @@ func (st setupRoutes) answer(w http.ResponseWriter, answer any, err error, call 
 // CERTIFICATE_NOT_VERIFIED the chain top the person may trust.
 type setupErrorDTO struct {
 	pageserver.ErrorDTO
-	TrustRoot *localsetup.TrustRoot `json:"trustRoot,omitempty"`
+	TrustRoot *setup.TrustRoot `json:"trustRoot,omitempty"`
 	// Pinned is the SHA-256 pinned now, on a TRUST check's refusal of a
 	// changed certificate.
 	Pinned string `json:"pinned,omitempty"`
@@ -257,17 +257,17 @@ type setupErrorDTO struct {
 
 // setupStatus maps a refusal to its HTTP status (CONTRACT.md, The local
 // setup page, Errors).
-func setupStatus(r *localsetup.RefusalError) int {
-	if r.Status != 0 {
-		return r.Status
+func setupStatus(r *setup.RefusalError) int {
+	if r.Internal {
+		return http.StatusInternalServerError
 	}
 	switch r.Code {
-	case localsetup.CodeInvalidArgument, localsetup.CodeConnectionStringRefused, localsetup.CodeAnswersInvalid,
-		localsetup.CodeChallengeExpired, localsetup.CodeChallengeInvalid, localsetup.CodePasskeyInvalid:
+	case setup.CodeInvalidArgument, setup.CodeConnectionStringRefused, setup.CodeAnswersInvalid,
+		setup.CodeChallengeExpired, setup.CodeChallengeInvalid, setup.CodePasskeyInvalid:
 		return http.StatusBadRequest
-	case localsetup.CodeDatabaseUnreachable:
+	case setup.CodeDatabaseUnreachable:
 		return http.StatusServiceUnavailable
-	case localsetup.CodeTimeLimit:
+	case setup.CodeTimeLimit:
 		return http.StatusGatewayTimeout
 	}
 	return http.StatusConflict
@@ -279,10 +279,10 @@ type configuredSetup struct{ origin string }
 
 func (c configuredSetup) refuse(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Origin") != c.origin {
-		pageserver.WriteError(w, http.StatusForbidden, localsetup.CodeInvalidArgument, "The request does not come from the setup page.")
+		pageserver.WriteError(w, http.StatusForbidden, setup.CodeInvalidArgument, "The request does not come from the setup page.")
 		return
 	}
-	pageserver.WriteError(w, http.StatusConflict, localsetup.CodeJobUnavailable,
+	pageserver.WriteError(w, http.StatusConflict, setup.CodeJobUnavailable,
 		"This engine is already set up. An install never changes an engine that has a config; ask the agent for the setup link of the change you want.")
 }
 

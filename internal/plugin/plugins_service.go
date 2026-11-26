@@ -207,7 +207,7 @@ func (ep *Plugins) units() *UnitSource {
 	return osUnitSource(ep.o.Ports)
 }
 
-// dialer is the options' dialer, which New requires.
+// dialer is the options' dialer, which NewPlugins requires.
 func (ep *Plugins) dialer() Dialer { return ep.o.Dialer }
 
 // initServiceUnits reads, once, what a service engine's plugin units must

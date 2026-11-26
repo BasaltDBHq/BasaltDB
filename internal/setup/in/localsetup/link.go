@@ -1,3 +1,6 @@
+// Package localsetup is the local setup page's link: the job a setup link
+// carries, the link itself and the page's routes. The page's jobs are the
+// setup service's (internal/setup, LocalService); setuppage serves them.
 package localsetup
 
 import (

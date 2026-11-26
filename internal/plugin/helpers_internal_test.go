@@ -107,7 +107,7 @@ func runtimeOf(t *testing.T, a *guardtest.Agent, ep *Plugins) (*status.Service, 
 	if ep != nil {
 		deps.Plugins = ep
 	}
-	svc := status.NewService(core, &deps)
+	svc := status.New(core, &deps)
 	return svc, map[string]AgentLedger{"bot": {ports: testPorts, db: pool, admit: pluginAdmit(svc)}}
 }
 

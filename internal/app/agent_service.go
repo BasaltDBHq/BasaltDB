@@ -127,21 +127,41 @@ func NewService(d Deps) *Service {
 }
 
 // wire builds the use cases over the service's dependencies. Each holds a
-// reference to its own group of s.deps and to the shared core group.
+// reference to its own group of s.deps and to the shared core group, and
+// takes the other use cases it asks in its constructor: delivery reads the
+// approval records from the store, so it comes first, then revert, approval
+// and the agent.
 func (s *Service) wire() {
-	s.status = statussvc.NewService(s.statusCore(), &s.deps.Status)
-	s.agent = agentsvc.New(s.agentCore(), s.agentStoreSet(), s.deps.Agent.PII, s.status.UpdateInfo)
-	// approval and delivery read each other: approval is built first and is
-	// given the delivery and revert use cases once they exist.
-	s.approval = approvalsvc.New(s.approvalCore(), s.approvalStoreSet(), &s.deps.Approval.Deps, runChecker{s.deps.Core.Store}, s)
-	s.delivery = linksvc.New(s.linksCore(), &s.deps.Delivery, s.approval, s.Failure)
-	s.revert = revertsvc.New(s.revertCore(), s.revertStoreSet(), &s.deps.Revert.Deps, s.deps.Core.Store, s.delivery, s.agent, s)
-	s.approval.SetDelivery(s.delivery)
-	s.approval.SetReverts(s.revert)
-	s.plugin = pluginsvc.NewService(s.pluginCore(), &s.deps.Plugin, s.delivery, s.status, s)
+	s.status = statussvc.New(s.statusCore(), &s.deps.Status)
+	s.delivery = linksvc.New(s.linksCore(), &s.deps.Delivery, s.approvalReads(), s.Failure)
+	s.revert = revertsvc.New(s.revertCore(), s.revertStoreSet(), &s.deps.Revert.Deps, s.deps.Core.Store, s.delivery, storeStatementLimit(s.deps.Agent), s)
+	s.approval = approvalsvc.New(s.approvalCore(), s.approvalStoreSet(), &s.deps.Approval.Deps, s.delivery, s.revert, runChecker{s.deps.Core.Store}, s)
+	s.agent = agentsvc.New(s.agentCore(), s.agentStoreSet(), s.deps.Agent.PII, s.status.UpdateInfo, s.delivery, s.approval, s.status, s, s)
+	s.plugin = pluginsvc.New(s.pluginCore(), &s.deps.Plugin, s.delivery, s.status, s)
 	s.ledger = ledgersvc.NewReads(s.deps.Core.Store)
-	s.agent.SetPorts(s.delivery, s.approval, s.status, s, s)
 }
+
+// approvalReads is what the delivery use case reads of the approval
+// records: the approval's store and its column order.
+func (s *Service) approvalReads() approvalReads {
+	return approvalReads{Records: s.approvalStoreSet().Records, columns: s.deps.Approval.Columns}
+}
+
+// storeStatementLimit is the agent's statement timeout, which a revert's
+// answer names: the store's limits, or 0 for an agent served without store
+// data.
+func storeStatementLimit(a agentDeps) statementLimit {
+	if a.Data == nil {
+		return 0
+	}
+	return statementLimit(a.Limits.StatementTimeout)
+}
+
+// statementLimit answers the revert use case's read of the agent's statement
+// timeout.
+type statementLimit time.Duration
+
+func (l statementLimit) StatementTimeout() time.Duration { return time.Duration(l) }
 
 // agentCore is the part of the shared settings the agent use cases read.
 func (s *Service) agentCore() agentsvc.Core {
@@ -177,8 +197,7 @@ func (s *Service) approvalCore() approvalsvc.Core {
 type runChecker struct{ store agentStore }
 
 func (r runChecker) CheckRun(ctx context.Context, id uuid.UUID) error {
-	_, err := ledgersvc.FindRun(ctx, r.store, id)
-	return err
+	return ledgersvc.CheckRun(ctx, r.store, id)
 }
 
 // linksCore is the part of the shared settings the delivery use case reads.

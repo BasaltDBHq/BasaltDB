@@ -2,6 +2,8 @@ package ledger_test
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -107,4 +109,29 @@ func TestReinstallNoticeReplacesControlCharacters(t *testing.T) {
 	line := ledger.ReinstallNotice(r)[0]
 	require.NotContains(t, line, "\x1b")
 	require.NotContains(t, line, "\n")
+}
+
+type reinstallsOf struct {
+	rs  guard.Reinstalls
+	err error
+}
+
+func (r reinstallsOf) Reinstalls(context.Context) (guard.Reinstalls, error) { return r.rs, r.err }
+
+// ReadReinstallMessage is the person message of what the reader reads, and
+// its error when it cannot read.
+func TestReadReinstallMessage(t *testing.T) {
+	t.Parallel()
+	installed := noticeAt
+	r := guard.Reinstall{Install: testInstall, InstalledAt: &installed, InstalledBy: "postgres", Reports: []guard.ReinstallReport{report("bot", 7, 0)}}
+	rs := guard.Reinstalls{List: []guard.Reinstall{r}}
+	want, _ := ledger.ReinstallPersonMessage(rs, personMessageLimit)
+	msg, ok, err := ledger.ReadReinstallMessage(context.Background(), reinstallsOf{rs: rs}, personMessageLimit)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, want, msg)
+
+	_, ok, err = ledger.ReadReinstallMessage(context.Background(), reinstallsOf{err: errors.New("down")}, personMessageLimit)
+	require.EqualError(t, err, "down")
+	require.False(t, ok)
 }

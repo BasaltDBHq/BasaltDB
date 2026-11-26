@@ -14,7 +14,6 @@ import (
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/platform/httpserver"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
@@ -28,9 +27,9 @@ type WaitOptions struct {
 	ConfigPath string
 	Log        *slog.Logger
 	// Dial, Users and Prefix replace the setup's defaults (tests only:
-	// localsetup.Options).
-	Dial   func(ctx context.Context, dsn string) (localsetup.Conn, error)
-	Users  localsetup.Users
+	// setup.LocalOptions).
+	Dial   func(ctx context.Context, dsn string) (setup.Conn, error)
+	Users  setup.Users
 	Prefix string
 }
 
@@ -43,7 +42,7 @@ type WaitOptions struct {
 // error the listener is closed.
 func WaitForConfig(ctx context.Context, o WaitOptions) (net.Listener, error) {
 	addr, configPath, log := o.Addr, o.ConfigPath, o.Log
-	jobs, err := newLocalSetup(localsetup.Options{ConfigPath: configPath, Origin: o.Origin, Dial: o.Dial, Users: o.Users, Prefix: o.Prefix})
+	jobs, err := newLocalSetup(setup.LocalOptions{ConfigPath: configPath, Origin: o.Origin, Dial: o.Dial, Users: o.Users, Prefix: o.Prefix})
 	if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -23,6 +24,28 @@ var configLoaders = map[string]bool{
 	"Load": true, "LoadOpen": true, "LoadOpenRaw": true, "LoadNoFollow": true,
 	"UpsertAgent": true, "UpsertAgentVault": true, "UpsertedVault": true,
 	"ClearSetup": true, "UpdateConfig": true, "RemoveAgents": true,
+}
+
+// portConfigLoaders are the methods of setup.EngineFiles that forward a
+// config loader, with the loader each forwards: a call to one of them on
+// any receiver other than a package counts as that loader, so the callers
+// of the port stay in view.
+var portConfigLoaders = map[string]string{
+	"LoadConfig": "Load", "UpsertAgentVault": "UpsertAgentVault", "RemoveAgents": "RemoveAgents",
+}
+
+// importedNames is every name file f imports a package under.
+func importedNames(f *ast.File) map[string]bool {
+	out := map[string]bool{}
+	for _, imp := range f.Imports {
+		switch {
+		case imp.Name == nil:
+			out[path.Base(strings.Trim(imp.Path.Value, `"`))] = true
+		case imp.Name.Name != "." && imp.Name.Name != "_":
+			out[imp.Name.Name] = true
+		}
+	}
+	return out
 }
 
 // plainConfigLoads are the only places in cmd/basalt and internal/
@@ -52,22 +75,27 @@ var plainConfigLoads = map[string]string{
 	"internal/handoff/out/handofffiles/setupfiles.go:PendingSetup:LoadNoFollow": "the engine's hand-off, as the engine's user",
 	// The setup page's agent jobs (update, remove, repair) refuse an
 	// engine that runs as root before they read the config.
-	"internal/setup/in/localsetup/agentjobs.go:configuredAgent:Load": "the setup page's agent jobs, after refusing an engine that runs as root",
+	"internal/setup/local_agentjobs.go:configuredAgent:Load": "the setup page's agent jobs, after refusing an engine that runs as root",
 	// Reached only after configuredAgent, which refuses an engine that
 	// runs as root.
-	"internal/setup/in/localsetup/agentjobs.go:validateAgentJob:Load": "after configuredAgent refused an engine that runs as root",
+	"internal/setup/local_agentjobs.go:validateAgentJob:Load": "after configuredAgent refused an engine that runs as root",
 	// runAgentJob's removal, after validateAgentJob (configuredAgent)
 	// refused an engine that runs as root.
-	"internal/setup/in/localsetup/agentjobs.go:forget:Load": "a removal, after configuredAgent refused an engine that runs as root",
+	"internal/setup/local_agentjobs.go:forget:Load": "a removal, after configuredAgent refused an engine that runs as root",
 	// The setup page's reset refuses an engine that runs as root before it
 	// reads the config.
-	"internal/setup/in/localsetup/reset.go:engineConfig:Load":              "the setup page's reset, after refusing an engine that runs as root",
+	"internal/setup/local_reset.go:engineConfig:Load":                      "the setup page's reset, after refusing an engine that runs as root",
 	"internal/app/setup.go:agentServiceSpec:UpsertedVault":                 "the hardened read: root opens the existing config through openEngineFile",
 	"internal/handoff/out/handofffiles/pathfiles.go:ClearSetup:ClearSetup": "the engine's hand-off, as the engine's user",
 	"internal/handoff/out/handofffiles/setupfiles.go:change:UpdateConfig":  "never as root: a root engine never collects an address (ErrEngineAsRoot), so the confirm step that writes the config is never reached",
-	"internal/setup/in/localsetup/agentjobs.go:forget:RemoveAgents":        "a removal, after configuredAgent refused an engine that runs as root",
-	"internal/setup/in/localsetup/run.go:writeConfig:UpsertAgentVault":     "an engine with no config writes its first engine.json; WaitsForConfig never waits as root",
-	"internal/setup/in/setupcli/remote.go:writeConfig:UpsertAgentVault":    "not as root: as root the upsert goes through the config directory opened without following links (configDir)",
+	"internal/setup/local_agentjobs.go:forget:RemoveAgents":                "a removal, after configuredAgent refused an engine that runs as root",
+	"internal/setup/local_run.go:writeConfig:UpsertAgentVault":             "an engine with no config writes its first engine.json; WaitsForConfig never waits as root",
+	// The setup page's engine files forward each loader for the callers
+	// listed above (setup.EngineFiles), which reach them by port.
+	"internal/setup/out/enginefiles/enginefiles.go:LoadConfig:Load":                   "a one-line forward; its callers are listed above",
+	"internal/setup/out/enginefiles/enginefiles.go:RemoveAgents:RemoveAgents":         "a one-line forward; its caller, forget, is listed above",
+	"internal/setup/out/enginefiles/enginefiles.go:UpsertAgentVault:UpsertAgentVault": "a one-line forward; its caller, writeConfig, is listed above",
+	"internal/setup/in/setupcli/remote.go:writeConfig:UpsertAgentVault":               "not as root: as root the upsert goes through the config directory opened without following links (configDir)",
 }
 
 // configLoadsIn lists the config loaders f refers to, as
@@ -90,17 +118,19 @@ func configLoadsIn(name string, f *ast.File) []string {
 			pkgs[imp.Name.Name] = true
 		}
 	}
-	if len(pkgs) == 0 && !dot {
-		return nil
-	}
+	imported := importedNames(f)
 	var found []string
 	scan := func(where string, n ast.Node) {
 		var visit func(n ast.Node) bool
 		visit = func(n ast.Node) bool {
 			switch n := n.(type) {
 			case *ast.SelectorExpr:
-				if id, ok := n.X.(*ast.Ident); ok && pkgs[id.Name] && configLoaders[n.Sel.Name] {
+				id, isIdent := n.X.(*ast.Ident)
+				if isIdent && pkgs[id.Name] && configLoaders[n.Sel.Name] {
 					found = append(found, name+":"+where+":"+n.Sel.Name)
+				}
+				if loader, ok := portConfigLoaders[n.Sel.Name]; ok && (!isIdent || !imported[id.Name]) {
+					found = append(found, name+":"+where+":"+loader)
 				}
 				// The selected name is a field or method, never the
 				// dot-imported function: look only at what it selects from.
@@ -226,4 +256,10 @@ func a() { config.Load("p"); other.LoadOpen("p", nil) }
 import "sync"
 func a() { var m sync.Map; m.Load("k") }
 `)))
+	require.Equal(t, []string{"x.go:a:Load", "x.go:b:UpsertAgentVault", "x.go:c:RemoveAgents"}, configLoadsIn("x.go", parse(`package main
+import "other"
+func a() { s.be.LoadConfig("p") }
+func b() { f.fs.UpsertAgentVault("p", st, ag) }
+func c() { files.RemoveAgents("p", nil); other.LoadConfig("p") }
+`)), "a call through the engine-files port is the loader it forwards, on any receiver but a package")
 }

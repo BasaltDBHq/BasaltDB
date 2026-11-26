@@ -144,6 +144,23 @@ func ReinstallNotice(r guard.Reinstall) []string {
 	return out
 }
 
+// ReinstallReader reads the reinstalls the guard and the engine's kept copy
+// record.
+type ReinstallReader interface {
+	Reinstalls(ctx context.Context) (guard.Reinstalls, error)
+}
+
+// ReadReinstallMessage is the status problem's personMessage of the
+// reinstalls r reads (ReinstallPersonMessage); false when there is none.
+func ReadReinstallMessage(ctx context.Context, r ReinstallReader, limit int) (string, bool, error) {
+	rs, err := r.Reinstalls(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	msg, ok := ReinstallPersonMessage(rs, limit)
+	return msg, ok, nil
+}
+
 // ReinstallPersonMessage is the status problem's personMessage: the newest
 // reinstall's first notice line, then noticeRunLog, the Vault user cut to VaultUserCut characters, and the role
 // names cut too when the message would be over limit characters. False

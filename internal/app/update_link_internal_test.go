@@ -23,7 +23,7 @@ func TestAgentCommandsCarryTheUpdateLinkOnlyWhereTheSetupJobsRun(t *testing.T) {
 
 	cmds, err = agentEnv{cfg: cfg, setupOrigin: setup.PageOrigin}.commands(a)
 	require.NoError(t, err)
-	want, err := localsetup.Link(setup.PageOrigin, localsetup.Job{Job: localsetup.JobUpdate, Agent: "demo_bot", OSUser: "alice"})
+	want, err := localsetup.Link(setup.PageOrigin, localsetup.Job{Job: setup.JobUpdate, Agent: "demo_bot", OSUser: "alice"})
 	require.NoError(t, err)
 	require.Equal(t, want, cmds.UpdateLinkURL())
 }

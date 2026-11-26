@@ -94,9 +94,8 @@ func TestHoldExitsRecordWhatTheyRecordedBefore(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			ledger := &refusalLedger{}
-			wc := newTestService(t, "linux", "", func(s *settings) { s.store.Ledger = ledger })
-			approvals := approvalsvc.New(approvalsvc.Core{}, approvalsvc.StoreSet{Records: tc.store, Holds: tc.store, Proofs: tc.store}, &approvalsvc.Deps{}, nil, nil)
-			wc.SetPorts(nil, approvals, nil, nil, nil)
+			approvals := approvalsvc.New(approvalsvc.Core{}, approvalsvc.StoreSet{Records: tc.store, Holds: tc.store, Proofs: tc.store}, &approvalsvc.Deps{}, nil, nil, nil, nil)
+			wc := newTestService(t, "linux", "", func(s *settings) { s.store.Ledger, s.approvals = ledger, approvals })
 			req := agentstore.Request{Text: "DELETE FROM public.leads WHERE id = $1", Params: []any{1}}
 			in := action.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "drop a lead"}
 

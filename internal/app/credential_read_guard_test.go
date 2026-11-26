@@ -40,6 +40,11 @@ var (
 
 // credfilesImport is the setup domain's credential file adapter: the readers
 // of basalt init --remote and basalt service install.
+// portCredentialReaders are the methods of setup.EngineFiles that forward a
+// credential reader: a call to one on any receiver other than a package
+// counts as a read, so the callers of the port stay in view.
+var portCredentialReaders = map[string]bool{"ReadCredentialFile": true}
+
 const credfilesImport = "github.com/basaltdbhq/basaltdb/internal/setup/out/credfiles"
 
 // readerPkg is a package with credential readers of its own, the config
@@ -85,7 +90,8 @@ var uncheckedCredentialReads = map[string]string{
 	"internal/handoff/out/handofffiles/pathfiles.go:PathFiles.ReadCredential:config.ReadCredential":      "an engine not running as root (agentFilesFor)",
 	"internal/handoff/out/handofffiles/pathfiles.go:PathFiles.ReadPending:config.ReadOwnCredentialLimit": "an engine not running as root (agentFilesFor)",
 	"internal/handoff/out/handofffiles/cache.go:ProbeCacheFile.Read:config.ReadOwnCredential":            "the probe cache, not a connection string; never as root (a root engine does not collect, basalt status refuses root)",
-	"internal/setup/in/localsetup/agentjobs.go:credentialTarget:config.ReadCredential":                   "the setup page's UPDATE and REMOVE: parsed for its target only, never connected with; refused as root (validateAgentJob)",
+	"internal/setup/local_agentjobs.go:LocalService.credentialTarget:ReadCredentialFile":                 "the setup page's UPDATE and REMOVE: parsed for its target only, never connected with; refused as root (validateAgentJob)",
+	"internal/setup/out/enginefiles/enginefiles.go:Files.ReadCredentialFile:config.ReadCredential":       "a one-line forward; its caller, Service.credentialTarget, is listed above",
 	"internal/handoff/out/handofffiles/setupfiles.go:SetupFiles.ReadSecret:config.ReadOwnCredential":     "a password, not a connection string, read only on a YES, which an engine running as root never reaches (it never collects)",
 }
 
@@ -159,6 +165,7 @@ func credentialReadsIn(name string, f *ast.File, folder string) map[string]bool 
 			}
 		}
 	}
+	imported := importedNames(f)
 	found := map[string]bool{}
 	scan := func(where string, body ast.Node) {
 		var reads []string
@@ -167,6 +174,9 @@ func credentialReadsIn(name string, f *ast.File, folder string) map[string]bool 
 		visit = func(n ast.Node) bool {
 			switch n := n.(type) {
 			case *ast.SelectorExpr:
+				if id, isIdent := n.X.(*ast.Ident); portCredentialReaders[n.Sel.Name] && (!isIdent || !imported[id.Name]) {
+					reads = append(reads, n.Sel.Name)
+				}
 				if id, ok := n.X.(*ast.Ident); ok {
 					if cfg[id.Name] && configCredentialReaders[n.Sel.Name] {
 						reads = append(reads, "config."+n.Sel.Name)
@@ -321,6 +331,14 @@ func b() { s, _ := config.ReadCredential("p"); CheckForeignDSN(s) }
 	require.Empty(t, credentialReadsIn("x.go", parse(`package main
 func a() { var m reader; m.ReadCredential("p"); x.readOwnCredential("p") }
 `), "internal/setup/out/credfiles"), "a method or another package's field is not a reader")
+	require.Equal(t, map[string]bool{"x.go:t.a:ReadCredentialFile": false, "x.go:b:ReadCredentialFile": true}, credentialReadsIn("x.go", parse(`package main
+import (
+	"other"
+	"`+pgdialImport+`"
+)
+func (s *t) a() { s.be.ReadCredentialFile("p"); other.ReadCredentialFile("p") }
+func b() { d, _ := files.ReadCredentialFile("p"); pgdial.CheckForeignDSN(d) }
+`), "internal/x"), "a call through the engine-files port is a read, on any receiver but a package")
 }
 
 // The guard follows credfiles' readers: qualified from any package, under

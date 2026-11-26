@@ -22,11 +22,11 @@ func TestNewRefusesAStoreSetWithANilPort(t *testing.T) {
 		set := full()
 		breakIt(&set)
 		require.PanicsWithValue(t, "approval: store set missing ports: "+name, func() {
-			New(Core{}, set, &Deps{}, nil, nil)
+			New(Core{}, set, &Deps{}, nil, nil, nil, nil)
 		}, name)
 	}
 	require.PanicsWithValue(t, "approval: store set missing ports: Records, Holds, Proofs", func() {
-		New(Core{}, StoreSet{}, &Deps{}, nil, nil)
+		New(Core{}, StoreSet{}, &Deps{}, nil, nil, nil, nil)
 	})
-	require.NotPanics(t, func() { New(Core{}, full(), &Deps{}, nil, nil) })
+	require.NotPanics(t, func() { New(Core{}, full(), &Deps{}, nil, nil, nil, nil) })
 }

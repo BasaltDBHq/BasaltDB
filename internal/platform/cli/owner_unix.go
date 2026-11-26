@@ -21,19 +21,6 @@ func InfoOwnerUID(fi os.FileInfo) (int, bool) {
 	return int(st.Uid), true
 }
 
-// FileOwnerUID is the uid that owns path.
-func FileOwnerUID(path string) (int, error) {
-	fi, err := os.Stat(path)
-	if err != nil {
-		return 0, err
-	}
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		return 0, errors.New("no owner in the file's stat")
-	}
-	return int(st.Uid), nil
-}
-
 // ExistingOwner is the owner of path or, when it does not exist, of the
 // nearest directory above it that does, not following a link.
 func ExistingOwner(path string) (int, error) {

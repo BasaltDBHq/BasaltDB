@@ -17,9 +17,10 @@ func TestPlanRefusesATickedSetupWithoutTicks(t *testing.T) {
 	allTables := &setupcode.Agent{Name: "bot", AllTables: &setupcode.AllTables{Schemas: []string{"public"}}}
 	keepsGrants := &setupcode.Agent{Name: "bot", Write: []string{}, Read: []string{}}
 	for name, s := range map[string]*Setup{
-		"an INSTALL code with allTables":          {P: setupcode.Payload{Kind: setupcode.KindInstall, Agent: allTables}},
-		"an AGENT code that runs as an INSTALL":   {P: setupcode.Payload{Kind: setupcode.KindAgent, Agent: allTables}, asInstall: true},
-		"an AGENT code for a role with no grants": {P: setupcode.Payload{Kind: setupcode.KindAgent, Agent: keepsGrants}, noGrants: true},
+		"an INSTALL code with allTables":                     {P: setupcode.Payload{Kind: setupcode.KindInstall, Agent: allTables}},
+		"an AGENT code that runs as an INSTALL":              {P: setupcode.Payload{Kind: setupcode.KindAgent, Agent: allTables}, asInstall: true},
+		"an AGENT code for a role with no grants":            {P: setupcode.Payload{Kind: setupcode.KindAgent, Agent: keepsGrants}, noGrants: true},
+		"an AGENT code that keeps grants, run as an INSTALL": {P: setupcode.Payload{Kind: setupcode.KindAgent, Agent: keepsGrants}, asInstall: true},
 	} {
 		require.True(t, s.Ticked(), name)
 		_, err := (&Prepared{Setup: s}).plan(context.Background(), nil)

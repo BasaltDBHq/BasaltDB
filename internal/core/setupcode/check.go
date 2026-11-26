@@ -10,7 +10,7 @@ import (
 )
 
 // ClockSkew is the clock difference tolerated between the code-maker and
-// the person's computer (RI-13). Expiry itself has no skew.
+// the connect service, which runs the code (RI-13). Expiry itself has no skew.
 const ClockSkew = 5 * time.Minute
 
 // timeLayout is how refusals show a time: 2026-11-12 07:02 UTC.
@@ -22,7 +22,7 @@ const timeLayout = "2006-01-02 15:04 UTC"
 // does not have. Every guard version records setups.
 const MinGuardVersion = 1
 
-// CheckLocal applies the person's computer's checks to a decoded code, in
+// CheckLocal applies the runner's own checks to a decoded code, in
 // the contract's order: EXPIRED (now at or past expiresAt),
 // SETUP_ID_IN_FUTURE (the setupId's time more than ClockSkew ahead),
 // EXPIRY_TOO_FAR (expiresAt more than Lifetime and ClockSkew ahead), then
@@ -81,8 +81,8 @@ func (p Payload) agentWord() string {
 	return p.Agent.Name
 }
 
-// Database is what the person's computer read with the admin connection
-// string.
+// Database is what the runner (the connect service) read with the admin
+// connection string.
 type Database struct {
 	// Prefix of the installed basalt_meta (its owner role is
 	// <prefix>_guard); empty when none is installed.

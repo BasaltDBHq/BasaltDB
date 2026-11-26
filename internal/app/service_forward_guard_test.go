@@ -50,7 +50,9 @@ var serviceWiring = map[string]string{
 
 // isForward reports whether body is a forward: empty, or one return or call
 // statement, or one call whose results are all discarded (_ = f()). One if,
-// switch or loop is not a forward, however short.
+// switch or loop is not a forward, however short, and neither is a call of a
+// function literal (return func() { ... }()); a function literal passed as
+// an argument is allowed.
 func isForward(body *ast.BlockStmt) bool {
 	switch len(body.List) {
 	case 0:
@@ -58,17 +60,114 @@ func isForward(body *ast.BlockStmt) bool {
 	case 1:
 		switch st := body.List[0].(type) {
 		case *ast.ReturnStmt, *ast.ExprStmt:
-			return true
 		case *ast.AssignStmt:
 			for _, lhs := range st.Lhs {
 				if id, ok := lhs.(*ast.Ident); !ok || id.Name != "_" {
 					return false
 				}
 			}
-			return true
+		default:
+			return false
 		}
+		for _, call := range outerCalls(body.List[0]) {
+			if _, ok := ast.Unparen(call.Fun).(*ast.FuncLit); ok {
+				return false
+			}
+		}
+		return true
 	}
 	return false
+}
+
+// outerCalls are the calls a forward's one statement makes at its top: the
+// results of a return, the expression of a call statement, the right side
+// of an assignment. Calls in their arguments are not among them.
+func outerCalls(st ast.Stmt) []*ast.CallExpr {
+	var exprs []ast.Expr
+	switch st := st.(type) {
+	case *ast.ReturnStmt:
+		exprs = st.Results
+	case *ast.ExprStmt:
+		exprs = []ast.Expr{st.X}
+	case *ast.AssignStmt:
+		exprs = st.Rhs
+	}
+	var calls []*ast.CallExpr
+	for _, e := range exprs {
+		if call, ok := ast.Unparen(e).(*ast.CallExpr); ok {
+			calls = append(calls, call)
+		}
+	}
+	return calls
+}
+
+// forwardsIntoApp returns the checked methods (Type.Method) whose body is a
+// forward whose call lands in pkg itself: on a free function of pkg, or on a
+// method of pkg that is not itself a checked forward. Moving logic into a
+// helper beside the method does not make it a forward. A call of an
+// interface method is a forward, whoever declares the interface.
+func forwardsIntoApp(files []*ast.File, pkg *types.Package, info *types.Info, checked map[string]bool) []string {
+	forward := map[string]bool{}
+	callees := map[string][]*types.Func{}
+	for _, f := range files {
+		for _, decl := range f.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			key := receiverName(fn) + "." + fn.Name.Name
+			if !checked[key] || !isForward(fn.Body) {
+				continue
+			}
+			forward[key] = true
+			if len(fn.Body.List) == 0 {
+				continue
+			}
+			for _, call := range outerCalls(fn.Body.List[0]) {
+				var id *ast.Ident
+				switch fun := ast.Unparen(call.Fun).(type) {
+				case *ast.Ident:
+					id = fun
+				case *ast.SelectorExpr:
+					id = fun.Sel
+				}
+				if callee, ok := info.Uses[id].(*types.Func); ok && callee.Pkg() == pkg {
+					callees[key] = append(callees[key], callee)
+				}
+			}
+		}
+	}
+	var into []string
+	for changed := true; changed; {
+		changed = false
+		for key := range forward {
+			for _, callee := range callees[key] {
+				recv := callee.Signature().Recv()
+				if recv != nil && types.IsInterface(recv.Type()) {
+					continue
+				}
+				if recv == nil || !forward[typeName(recv.Type())+"."+callee.Name()] {
+					delete(forward, key)
+					into = append(into, key)
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	slices.Sort(into)
+	return into
+}
+
+// typeName is the name of t, a named type or a pointer to one.
+func typeName(t types.Type) string {
+	if p, ok := t.(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	if n, ok := t.(*types.Named); ok {
+		return n.Obj().Name()
+	}
+	return ""
 }
 
 // receiverName is the type name of fn's receiver, with any pointer and type
@@ -158,10 +257,46 @@ func serviceForwardProblems(files int, methods, notForward []string, logic, wiri
 // Where internal/app implements a port, the method is a one-line forward to
 // a service: a method on *Service in a non-test file is one return or call
 // statement, or is listed in serviceLogic (logic waiting to move) or
-// serviceWiring (building the services) with a reason.
+// serviceWiring (building the services) with a reason. A forward into a
+// helper of app's own counts as logic (forwardsIntoApp).
 func TestServiceMethodsOnlyForward(t *testing.T) {
-	files, methods, notForward := serviceMethods(t, ".")
-	require.Empty(t, serviceForwardProblems(files, methods, notForward, serviceLogic, serviceWiring))
+	scan := scanApp(t)
+	require.Empty(t, serviceForwardProblems(scan.files, scan.serviceMethods, scan.serviceNotForward, serviceLogic, serviceWiring))
+}
+
+// appScan is the answer of both scans of internal/app.
+type appScan struct {
+	files                             int
+	serviceMethods, serviceNotForward []string
+	portMethods, portNotForward       []string
+}
+
+// scanApp runs both scans on internal/app: the Service scan on every file,
+// whatever its build constraints, and the port scan, and the check of where
+// each forward lands, on the package as built for this machine.
+func scanApp(t *testing.T) appScan {
+	t.Helper()
+	var scan appScan
+	scan.files, scan.serviceMethods, scan.serviceNotForward = serviceMethods(t, ".")
+	files, pkg, info, domains := loadApp(t, ".")
+	ports := domainPorts(domains)
+	require.NotEmpty(t, ports, "no package app reaches declares a port: the scan checks nothing")
+	scan.portMethods, scan.portNotForward = portMethods(files, pkg, ports)
+	checked := map[string]bool{}
+	for _, key := range scan.portMethods {
+		checked[key] = true
+	}
+	for _, name := range scan.serviceMethods {
+		checked["Service."+name] = true
+	}
+	for _, key := range forwardsIntoApp(files, pkg, info, checked) {
+		if name, ok := strings.CutPrefix(key, "Service."); ok {
+			scan.serviceNotForward = append(scan.serviceNotForward, name)
+		} else {
+			scan.portNotForward = append(scan.portNotForward, key)
+		}
+	}
+	return scan
 }
 
 // The scan is proven on a probe package: a method with logic is reported, a
@@ -181,6 +316,9 @@ func (s *Service) Forward() int { return s.x.F() }
 func (s *Service) Call() { s.x.F() }
 func (s *Service) Discard() { _ = s.x.F() }
 func (s *Service) Assign() { s.x = nil }
+func (s *Service) CallsLiteral() int { return func() int { n := s.x.F(); return n }() }
+func (s *Service) DiscardsLiteral() { _ = (func() int { return s.x.F() })() }
+func (s *Service) PassesLiteral() { s.run(func() { s.x.F() }) }
 func (s Service) TwoStatements() int {
 	n := s.x.F()
 	return n
@@ -209,14 +347,16 @@ func (s *Service) InATest() int { n := 1; return n }
 
 	files, methods, notForward := serviceMethods(t, dir)
 	require.Equal(t, 1, files)
-	require.ElementsMatch(t, []string{"Forward", "Call", "Discard", "Assign", "TwoStatements", "OneSwitch", "Listed"}, methods)
-	require.ElementsMatch(t, []string{"Assign", "TwoStatements", "OneSwitch", "Listed"}, notForward)
+	require.ElementsMatch(t, []string{"Forward", "Call", "Discard", "Assign", "CallsLiteral", "DiscardsLiteral", "PassesLiteral", "TwoStatements", "OneSwitch", "Listed"}, methods)
+	require.ElementsMatch(t, []string{"Assign", "CallsLiteral", "DiscardsLiteral", "TwoStatements", "OneSwitch", "Listed"}, notForward)
 
 	problems := serviceForwardProblems(files, methods, notForward,
 		map[string]string{"Listed": "probe", "Gone": "probe"},
 		map[string]string{"Forward": "probe"})
 	require.Equal(t, []string{
 		"(*Service).Assign does more than forward: move the logic to the service that owns it and leave a one-line forward",
+		"(*Service).CallsLiteral does more than forward: move the logic to the service that owns it and leave a one-line forward",
+		"(*Service).DiscardsLiteral does more than forward: move the logic to the service that owns it and leave a one-line forward",
 		"(*Service).OneSwitch does more than forward: move the logic to the service that owns it and leave a one-line forward",
 		"(*Service).TwoStatements does more than forward: move the logic to the service that owns it and leave a one-line forward",
 		"serviceLogic entry Gone matches no method on Service that does more than forward: remove it",
@@ -233,37 +373,51 @@ func (s *Service) InATest() int { n := 1; return n }
 // still here. The list only shrinks: an entry whose method is gone, has
 // become a forward or no longer implements a port fails the test.
 var portLogic = map[string]string{
-	"runChecker.CheckRun":         "looks the run up in the ledger and drops the run it found",
-	"agentProbe.ReinstallNotice":  "reads the store's reinstalls and renders the ledger's person message",
-	"pgErrors.ServerMessage":      "the setup domain's DBErrors on pgx: unwraps a Postgres server error",
-	"rootConfigDir.Upsert":        "the setup domain's config writer as root: checks the directory's owner before it writes",
-	"rootFiles.ReadCredential":    "the setup domain's credential files as root: reads through the checked read",
-	"rootFiles.Promote":           "the setup domain's credential files as root: checks the pending file before it renames it",
-	"rootFiles.ClearSetup":        "the setup domain's credential files as root: picks the owner before it clears the setup",
-	"rootFiles.Close":             "the setup domain's credential files as root: closes both directories",
-	"EngineDownServer.Abandoned":  "basalt mcp with the engine down: answers each request line itself",
-	"gatedDispatcher.Dispatch":    "the pages API: refuses a request while the engine restarts",
-	"sessionDispatcher.Dispatch":  "the pages API: translates the channel's request and response to the pages' types",
-	"homeSource.Home":             "the home page: caches its read for a short time",
-	"vaultLinks.Live":             "the Vault channel: converts the live relay links",
-	"vaultLinks.Session":          "the Vault channel: converts a relay link and zeroes its key",
-	"osHost.ResolvedExecutable":   "the OS adapter: resolves the binary's path",
-	"osHost.DialogAvailable":      "the OS adapter: checks for the admin dialog",
-	"osHost.AdminDialog":          "the OS adapter: runs the admin dialog",
-	"osHost.SetupState":           "the OS adapter: reads the setup page's state over HTTP",
-	"osHost.EngineBuild":          "the OS adapter: reads the engine's build over HTTP",
-	"osHost.ServiceRuns":          "the OS adapter: reads the service manager's runs",
-	"osHost.Sudo":                 "the OS adapter: runs a command with sudo",
-	"osHost.Run":                  "the OS adapter: runs a command",
-	"osHost.PagesUp":              "the OS adapter: probes the pages over HTTP",
-	"osHost.Probe":                "the OS adapter: probes the engine's socket",
-	"osHost.EngineLog":            "the OS adapter: reads the engine's log",
-	"setupHost.ConnTarget":        "the setup host: parses the connection string's target",
-	"setupHost.OSInstallScript":   "the setup host: reads the binary's source, then builds the install script",
-	"setupHost.OSRestartScript":   "the setup host: reads the binary's source, then builds the restart script",
-	"setupHost.OSOpenTrustedDir":  "the setup host: returns a nil interface on an error",
-	"setupHost.OpenRootConfigDir": "the setup host: returns a nil interface on an error",
-	"setupHost.RootEngineKey":     "the setup host: unwraps the config directory before it reads the key",
+	"runChecker.CheckRun":               "looks the run up in the ledger and drops the run it found",
+	"agentProbe.ReinstallNotice":        "reads the store's reinstalls and renders the ledger's person message",
+	"pgErrors.ServerMessage":            "the setup domain's DBErrors on pgx: unwraps a Postgres server error",
+	"rootConfigDir.Upsert":              "the setup domain's config writer as root: checks the directory's owner before it writes",
+	"rootFiles.ReadCredential":          "the setup domain's credential files as root: reads through the checked read",
+	"rootFiles.Promote":                 "the setup domain's credential files as root: checks the pending file before it renames it",
+	"rootFiles.ClearSetup":              "the setup domain's credential files as root: picks the owner before it clears the setup",
+	"rootFiles.Close":                   "the setup domain's credential files as root: closes both directories",
+	"EngineDownServer.Abandoned":        "basalt mcp with the engine down: answers each request line itself",
+	"gatedDispatcher.Dispatch":          "the pages API: refuses a request while the engine restarts",
+	"sessionDispatcher.Dispatch":        "the pages API: translates the channel's request and response to the pages' types",
+	"homeSource.Home":                   "the home page: caches its read for a short time",
+	"vaultLinks.Live":                   "the Vault channel: converts the live relay links",
+	"vaultLinks.Session":                "the Vault channel: converts a relay link and zeroes its key",
+	"osHost.ResolvedExecutable":         "the OS adapter: resolves the binary's path",
+	"osHost.DialogAvailable":            "the OS adapter: checks for the admin dialog",
+	"osHost.AdminDialog":                "the OS adapter: runs the admin dialog",
+	"osHost.SetupState":                 "the OS adapter: reads the setup page's state over HTTP",
+	"osHost.EngineBuild":                "the OS adapter: reads the engine's build over HTTP",
+	"osHost.ServiceRuns":                "the OS adapter: reads the service manager's runs",
+	"osHost.Sudo":                       "the OS adapter: runs a command with sudo",
+	"osHost.Run":                        "the OS adapter: runs a command",
+	"osHost.PagesUp":                    "the OS adapter: probes the pages over HTTP",
+	"osHost.Probe":                      "the OS adapter: probes the engine's socket",
+	"osHost.EngineLog":                  "the OS adapter: reads the engine's log",
+	"setupHost.ConnTarget":              "the setup host: parses the connection string's target",
+	"setupHost.OSInstallScript":         "the setup host: reads the binary's source, then builds the install script",
+	"setupHost.OSRestartScript":         "the setup host: reads the binary's source, then builds the restart script",
+	"setupHost.OSOpenTrustedDir":        "the setup host: returns a nil interface on an error",
+	"setupHost.OpenRootConfigDir":       "the setup host: returns a nil interface on an error",
+	"setupHost.RootEngineKey":           "the setup host: unwraps the config directory before it reads the key",
+	"engineCLIHost.CommandName":         "forwards to app's commandName, which picks the command's name",
+	"engineCLIHost.Fail":                "forwards to app's fail, which prints a command's error",
+	"engineCLIHost.ChildStarter":        "forwards to app's childStarter, which starts the engine as a child",
+	"engineCLIHost.RunServiceAt":        "forwards to app's runServiceAt, the whole basalt service install command",
+	"engineCLIHost.EngineLog":           "forwards to app's engineLog, which builds the engine's logger",
+	"engineCLIHost.EngineDown":          "forwards to app's engineDown, which reads the config for basalt mcp with the engine down",
+	"engineCLIHost.EngineStarter":       "forwards to app's engineStarter, which starts the engine for basalt mcp",
+	"engineCLIHost.NewEngineDownServer": "forwards to app's NewEngineDownServer",
+	"engineHost.NewRecorder":            "forwards to app's newRecorder, the crash recorder",
+	"rootFiles.ReadPending":             "forwards to rootFiles.read, the checked credential read",
+	"setupHost.LoadOrCreateEngineKeys":  "forwards to app's loadOrCreateEngineKeys, which reads or creates the channel keys",
+	"setupHost.OpenRootCredFiles":       "forwards to app's openRootCredFiles, which opens the credential files as root",
+	"setupHost.RootTrustedOwner":        "forwards to app's rootTrustedOwner, which checks the config directory's owner",
+	"setupHost.ServerMessage":           "forwards to pgErrors.ServerMessage, which is listed itself",
 }
 
 // declaresPorts reports whether the package at path, in module, is one whose
@@ -291,7 +445,7 @@ type listedPackage struct {
 // loadApp type-checks the package in dir, as built for this machine, against
 // its dependencies' export data from go list, and returns it with its files
 // and the packages it reaches that declare ports (declaresPorts).
-func loadApp(t *testing.T, dir string) ([]*ast.File, *types.Package, []*types.Package) {
+func loadApp(t *testing.T, dir string) ([]*ast.File, *types.Package, *types.Info, []*types.Package) {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-export", "-deps", "-json=ImportPath,Name,Dir,Export,GoFiles,Module", ".")
 	cmd.Dir = dir
@@ -331,7 +485,8 @@ func loadApp(t *testing.T, dir string) ([]*ast.File, *types.Package, []*types.Pa
 		require.NoError(t, err, name)
 		files = append(files, f)
 	}
-	pkg, err := (&types.Config{Importer: imp}).Check(self.ImportPath, fset, files, nil)
+	info := &types.Info{Uses: map[*ast.Ident]types.Object{}}
+	pkg, err := (&types.Config{Importer: imp}).Check(self.ImportPath, fset, files, info)
 	require.NoError(t, err)
 	var domains []*types.Package
 	for _, p := range pkgs {
@@ -342,7 +497,7 @@ func loadApp(t *testing.T, dir string) ([]*ast.File, *types.Package, []*types.Pa
 		require.NoError(t, err, p.ImportPath)
 		domains = append(domains, d)
 	}
-	return files, pkg, domains
+	return files, pkg, info, domains
 }
 
 // domainPorts are the non-empty, non-generic interface types the packages
@@ -449,13 +604,15 @@ func portForwardProblems(methods, notForward []string, list map[string]string) [
 // or call statement, or is listed in portLogic with a reason. The package is
 // type-checked as built for this machine, so files only other platforms
 // build (*_other.go) are not checked; CI runs the test on linux, and darwin
-// gives the same answer.
+// gives the same answer. A forward into a helper of app's own counts as
+// logic (forwardsIntoApp).
+//
+// Not covered: a method promoted from an embedded field (the embedded type's
+// own methods are checked only if that type is itself a port type of app),
+// and calls in a forward's arguments (return s.x.F(helper(v))).
 func TestPortMethodsOnlyForward(t *testing.T) {
-	files, pkg, domains := loadApp(t, ".")
-	ports := domainPorts(domains)
-	require.NotEmpty(t, ports, "no package app reaches declares a port: the scan checks nothing")
-	methods, notForward := portMethods(files, pkg, ports)
-	require.Empty(t, portForwardProblems(methods, notForward, portLogic))
+	scan := scanApp(t)
+	require.Empty(t, portForwardProblems(scan.portMethods, scan.portNotForward, portLogic))
 }
 
 // The port scan is proven on a probe: a probe domain declares a port and a
@@ -531,6 +688,70 @@ func (s *Service) Tell(int) {}
 	}, portForwardProblems(methods, notForward, map[string]string{"logic.Ask": "probe", "gone.Ask": "probe"}))
 	require.Equal(t, []string{"the port scan found no app method that implements a port: it checks nothing"},
 		portForwardProblems(nil, nil, nil))
+}
+
+// A forward into app's own code is logic: a call of a free function of app,
+// or of an app method that is not itself a checked forward. A call of
+// another checked forward, of an interface method or of another package is
+// a forward.
+func TestForwardIntoAppIsLogic(t *testing.T) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "probe.go", `package app
+
+type port interface{ Ask() int }
+
+func helper() int { n := 1; return n }
+
+type checked struct{ p port }
+
+func (c checked) Ask() int { return c.p.Ask() }
+
+type unchecked struct{}
+
+func (unchecked) Ask() int { return 1 }
+
+type uses struct {
+	p port
+	c checked
+	u unchecked
+	l *listed
+}
+
+func (u uses) Interface() int  { return u.p.Ask() }
+func (u uses) Checked() int    { return u.c.Ask() }
+func (u uses) Helper() int     { return helper() }
+func (u uses) Discard()        { _ = helper() }
+func (u uses) Unchecked() int  { return u.u.Ask() }
+func (u uses) ViaHelper() int  { return u.Helper() }
+func (u uses) Listed() int     { return u.l.Ask() }
+func (u uses) InArgument() int { return max(helper(), 0) }
+
+type listed struct{}
+
+func (*listed) Ask() int {
+	n := 1
+	return n
+}
+
+type Service struct{ u uses }
+
+func (s *Service) Forward() int { return s.u.Checked() }
+func (s *Service) Helper() int  { return helper() }
+`, parser.SkipObjectResolution)
+	require.NoError(t, err)
+	info := &types.Info{Uses: map[*ast.Ident]types.Object{}}
+	pkg, err := (&types.Config{}).Check("example.com/m/internal/app", fset, []*ast.File{f}, info)
+	require.NoError(t, err)
+	checked := map[string]bool{}
+	for _, key := range []string{
+		"checked.Ask", "uses.Interface", "uses.Checked", "uses.Helper", "uses.Discard", "uses.Unchecked",
+		"uses.ViaHelper", "uses.Listed", "uses.InArgument", "listed.Ask", "Service.Forward", "Service.Helper",
+	} {
+		checked[key] = true
+	}
+	require.Equal(t, []string{
+		"Service.Helper", "uses.Discard", "uses.Helper", "uses.Listed", "uses.Unchecked", "uses.ViaHelper",
+	}, forwardsIntoApp([]*ast.File{f}, pkg, info, checked))
 }
 
 // declaresPorts takes every package under internal/ but app and testkit,

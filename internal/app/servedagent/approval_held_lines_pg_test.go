@@ -2,8 +2,6 @@ package servedagent_test
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -44,9 +42,9 @@ func TestAHeldDeleteOfALargeValueIsApproved(t *testing.T) {
 		Old map[string]json.RawMessage `json:"old"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(held.Lines[0]), &line))
-	sum := sha256.Sum256([]byte(strings.Repeat("x", bigValue)))
-	require.Equal(t, "(1.9 MiB, sha256 "+hex.EncodeToString(sum[:])+")", largevalue.Summary(line.Old["body"], "body"),
-		"the line carries the value whole, so it is shown by its size and hash")
+	oldBody, err := largevalue.Text(line.Old["body"])
+	require.NoError(t, err)
+	require.Equal(t, strings.Repeat("x", bigValue), oldBody, "the line carries the value whole")
 
 	as, err := e.person.Sign(approval.Challenge(held.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)

@@ -59,11 +59,5 @@ func ParseRequest(fragment string) (revert.Request, revert.Binding, error) {
 
 // NewResponse wraps an assertion for revertID.
 func NewResponse(revertID uuid.UUID, a passkey.Assertion) revert.Response {
-	return revert.Response{
-		RevertID:          revertID,
-		CredentialID:      a.CredentialID,
-		AuthenticatorData: a.AuthenticatorData,
-		ClientDataJSON:    a.ClientDataJSON,
-		Signature:         a.Signature,
-	}
+	return revert.Response{RevertID: revertID, SignedAssertion: passkey.SignedAssertionOf(a)}
 }

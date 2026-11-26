@@ -37,13 +37,7 @@ func ParseRequest(fragment string) (approval.Request, approval.Binding, error) {
 
 // NewResponse wraps an assertion for approvalID.
 func NewResponse(approvalID uuid.UUID, a passkey.Assertion) approval.Response {
-	return approval.Response{
-		ApprovalID:        approvalID,
-		CredentialID:      a.CredentialID,
-		AuthenticatorData: a.AuthenticatorData,
-		ClientDataJSON:    a.ClientDataJSON,
-		Signature:         a.Signature,
-	}
+	return approval.Response{ApprovalID: approvalID, SignedAssertion: passkey.SignedAssertionOf(a)}
 }
 
 // Verify checks a response against the binding text it should sign and the

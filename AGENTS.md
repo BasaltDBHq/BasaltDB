@@ -9,7 +9,7 @@ BasaltDB is **the action ledger for AI agents on your database**. It is not a da
 - Module: `github.com/basaltdbhq/basaltdb`
 - Binary: `cmd/basalt` (CLI, engine and MCP shim in one binary)
 - **Before you open a PR, and before every push:** run `make fmt` and commit what it changes, then `make lint` (0 issues). CI fails on gofumpt and goimports drift, so unformatted code does not merge.
-- **The gate is GitHub CI:** a pull request merges only when the `check` job of `.github/workflows/ci.yml` is green. It needs every other job, the Postgres test shards, the secret scan, the container, systemd, darwin archive and macOS smoke jobs among them. `make ci` (see `make help`) runs a local subset: lint, vet, dead code, the shard check, the script checks, the portal build and the race tests.
+- **The gate is GitHub CI:** a pull request merges only when the `check` job of `.github/workflows/ci.yml` is green. It needs the lint, vet, script, secret scan and test jobs (the test shards run against Postgres) and the container, systemd, darwin archive and macOS smoke jobs; the manual release end-to-end job is not part of it. `make ci` (see `make help`) runs a local subset: lint, vet, dead code, the shard check, the script checks, the portal build and the race tests.
 - **Commits and PR titles:** Conventional Commits `type(scope): message`, lowercase imperative, no trailing period.
 - **Stack conflicts:** update a PR branch by merging its **base branch into the PR head** (`git checkout <pr-branch> && git merge origin/<base>`, resolve conflicts, commit the merge). Do **not** rebase and do **not** force-push. Work **bottom-up** through the stack (merge into the lowest conflicted PR first, then the next).
 - Never push to `master` directly.

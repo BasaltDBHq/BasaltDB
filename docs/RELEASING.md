@@ -43,7 +43,7 @@ git push origin "$NEXT_TAG-rc.1"
 
 4. Wait for its [Release](../.github/workflows/release.yml) run. It builds and signs the archives, runs the end-to-end test against them on `macos-15` (arm64), `macos-15-intel` and `ubuntu-latest` (jobs `e2e (<runner>)`), and when every leg passes saves those same files as a **draft** GitHub release named after the candidate (only maintainers see drafts, so no user, update check or `install.sh` ever finds one), with the body "Release candidate for `<release>`. Not for general use." No release notes, Homebrew, npm, MCP registry or portal check. `install.sh` never picks a candidate.
    - **Red:** nothing is published. The failed job and step say what broke. Fix it on `master`, then push `-rc.2` (the next `N`) on the new commit and wait again. A flaky leg can be re-run from the Actions page; a re-run that passes counts.
-5. Before a stable release (a tag with no prerelease suffix), check the connect service. It runs a setup from the connect page with the setup package of the engine version it pins ([Connect](../contract/connect.md#connect)), and refuses a code from a newer guard with `BINARY_TOO_OLD`. Its pinned engine must be this release's commit or a newer one, and its own check of that pin must pass against this commit, before you push the tag.
+5. Check the connect service. It runs a setup from the connect page with the setup package of the engine version it pins ([Connect](../contract/connect.md#connect)), and refuses a code from a newer guard with `BINARY_TOO_OLD`. Its pinned engine must be this release's commit or a newer one, and its own check of that pin must pass against this commit, before you push the tag.
 6. Push the release on the same commit:
 
 ```bash

@@ -4,6 +4,12 @@ All notable changes to BasaltDB are recorded in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- The setup page creates the passkey on the first try for an agent or database with a long name. The name your password manager shows for the passkey is shortened to fit and ends with "…"; before, the page refused every passkey it made with "This passkey was made for another setup page".
+
 ## [0.1.0-alpha] - 2026-11-24
 
 The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup moves from the terminal to a page: the agent runs `basalt init` and the person finishes on the page it links. The CLI only starts things. Expect bugs and breaking changes between alpha releases, and read "Breaking for alpha installs" before you upgrade.

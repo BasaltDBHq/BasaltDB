@@ -162,11 +162,9 @@ type bound struct {
 func (s *LocalService) challenge(req Request, b bound) (Challenge, error) {
 	c := Challenge{
 		Challenge: make([]byte, passkey.ChallengeLen), UserID: make([]byte, passkey.UserIDLen),
-		UserName: "BasaltDB · " + req.Agent, DisplayName: "BasaltDB · " + b.database,
-		ExpiresAt: s.opts.Now().Add(challengeExpiry).UTC().Truncate(time.Second),
-	}
-	if len(c.DisplayName) > maxLabel {
-		c.DisplayName = c.UserName
+		UserName:    passkey.FitLabel("BasaltDB · " + req.Agent),
+		DisplayName: passkey.FitLabel("BasaltDB · " + b.database),
+		ExpiresAt:   s.opts.Now().Add(challengeExpiry).UTC().Truncate(time.Second),
 	}
 	if _, err := rand.Read(c.Challenge); err != nil {
 		return Challenge{}, err

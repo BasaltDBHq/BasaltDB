@@ -134,6 +134,6 @@ func (l *Person) RejectRevert(ctx context.Context, id uuid.UUID, note string) (r
 }
 
 // ListRevertLines is ListRevertLines.
-func (l *Person) ListRevertLines(ctx context.Context, p action.RevertLineParams) (pagination.Page[action.RevertLine], error) {
+func (l *Person) ListRevertLines(ctx context.Context, p revertstore.RevertLineParams) (pagination.Page[revertstore.RevertLine], error) {
 	return ListRevertLines(ctx, l.db, p)
 }

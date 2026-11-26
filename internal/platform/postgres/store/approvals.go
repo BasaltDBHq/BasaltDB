@@ -154,7 +154,7 @@ func (s *Store) findApprovalRaw(ctx context.Context, id uuid.UUID) (action.Appro
 }
 
 // listApprovalsRaw is ListApprovals before MapError.
-func (s *Store) listApprovalsRaw(ctx context.Context, p action.ApprovalListParams) (pagination.Page[action.Approval], error) {
+func (s *Store) listApprovalsRaw(ctx context.Context, p approvalstore.ApprovalListParams) (pagination.Page[action.Approval], error) {
 	return ledger.ListOpenApprovals(ctx, s.db, p)
 }
 

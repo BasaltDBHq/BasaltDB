@@ -29,7 +29,7 @@ type StoreSet struct {
 // data.
 type Records interface {
 	FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error)
-	ListApprovals(ctx context.Context, p action.ApprovalListParams) (pagination.Page[action.Approval], error)
+	ListApprovals(ctx context.Context, p approvalstore.ApprovalListParams) (pagination.Page[action.Approval], error)
 	Passkeys(ctx context.Context) ([]passkey.Credential, error)
 	// RevealNonce is the reveal nonce of an approval or revert the role
 	// holds (approval.KindApprove or approval.KindRevert).

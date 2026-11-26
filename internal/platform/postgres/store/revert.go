@@ -163,7 +163,7 @@ func (s *Store) findRevertRaw(ctx context.Context, id uuid.UUID) (action.Revert,
 }
 
 // revertLinesRaw is RevertLines before MapError.
-func (s *Store) revertLinesRaw(ctx context.Context, p action.RevertLineParams) (pagination.Page[action.RevertLine], error) {
+func (s *Store) revertLinesRaw(ctx context.Context, p revertstore.RevertLineParams) (pagination.Page[revertstore.RevertLine], error) {
 	return ledger.ListRevertLinesMarked(ctx, s.db, p)
 }
 

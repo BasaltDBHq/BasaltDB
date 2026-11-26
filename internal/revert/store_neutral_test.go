@@ -363,22 +363,22 @@ func (s *objectStore) FindRevert(_ context.Context, id uuid.UUID) (action.Revert
 	return out, nil
 }
 
-func (s *objectStore) RevertLines(_ context.Context, p action.RevertLineParams) (pagination.Page[action.RevertLine], error) {
+func (s *objectStore) RevertLines(_ context.Context, p revertstore.RevertLineParams) (pagination.Page[revertstore.RevertLine], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.count("RevertLines")
 	r, ok := s.reverts[p.RevertID]
 	if !ok {
-		return pagination.Page[action.RevertLine]{}, s.refuse(revertstore.RevertNotFound, "", "")
+		return pagination.Page[revertstore.RevertLine]{}, s.refuse(revertstore.RevertNotFound, "", "")
 	}
 	after := int64(0)
 	if p.Cursor != "" {
 		var err error
 		if after, err = pagination.DecodeSeqCursor(p.Cursor); err != nil {
-			return pagination.Page[action.RevertLine]{}, err
+			return pagination.Page[revertstore.RevertLine]{}, err
 		}
 	}
-	var out pagination.Page[action.RevertLine]
+	var out pagination.Page[revertstore.RevertLine]
 	for _, l := range r.lines {
 		if int64(l.no) <= after || (p.Outcome != "" && l.outcome != p.Outcome) {
 			continue
@@ -387,7 +387,7 @@ func (s *objectStore) RevertLines(_ context.Context, p action.RevertLineParams) 
 			out.NextCursor = pagination.EncodeSeqCursor(int64(out.Items[len(out.Items)-1].No))
 			break
 		}
-		out.Items = append(out.Items, action.RevertLine{No: l.no, Text: l.text, Outcome: l.outcome, Conflict: l.conflict, StoreCode: l.code, Batch: l.batch})
+		out.Items = append(out.Items, revertstore.RevertLine{No: l.no, Text: l.text, Outcome: l.outcome, Conflict: l.conflict, StoreCode: l.code, Batch: l.batch})
 	}
 	return out, nil
 }

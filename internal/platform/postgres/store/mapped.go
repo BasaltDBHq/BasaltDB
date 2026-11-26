@@ -183,7 +183,7 @@ func (s *Store) FindApproval(ctx context.Context, id uuid.UUID) (action.Approval
 }
 
 // ListApprovals returns one page of the agent's open approvals.
-func (s *Store) ListApprovals(ctx context.Context, p action.ApprovalListParams) (pagination.Page[action.Approval], error) {
+func (s *Store) ListApprovals(ctx context.Context, p approvalstore.ApprovalListParams) (pagination.Page[action.Approval], error) {
 	r0, err := s.listApprovalsRaw(ctx, p)
 	return r0, MapError(err)
 }
@@ -271,7 +271,7 @@ func (s *Store) FindRevert(ctx context.Context, id uuid.UUID) (action.Revert, er
 
 // RevertLines returns one page of a batched plan's lines, with values too
 // large for the agent left out (CONTRACT.md, Large values).
-func (s *Store) RevertLines(ctx context.Context, p action.RevertLineParams) (pagination.Page[action.RevertLine], error) {
+func (s *Store) RevertLines(ctx context.Context, p revertstore.RevertLineParams) (pagination.Page[revertstore.RevertLine], error) {
 	r0, err := s.revertLinesRaw(ctx, p)
 	return r0, MapError(err)
 }

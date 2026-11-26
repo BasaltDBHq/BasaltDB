@@ -8,6 +8,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
 // HeldRun is what re-runs a held write for a reveal: the run, task and
@@ -116,4 +117,13 @@ func ApprovalRefusalOf(err error) *ApprovalRefusalError {
 func IsApprovalRefused(err error, reason ApprovalReason) bool {
 	ar := ApprovalRefusalOf(err)
 	return ar != nil && ar.Reason == reason
+}
+
+// ApprovalListParams lists held writes that can still be approved or
+// applied. RunID uuid.Nil means every run; Status "" means PENDING and
+// APPROVED.
+type ApprovalListParams struct {
+	pagination.Params
+	RunID  uuid.UUID
+	Status string
 }

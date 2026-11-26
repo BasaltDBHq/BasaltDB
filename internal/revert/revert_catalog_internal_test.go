@@ -250,7 +250,7 @@ func caseBatchedRevert(t *testing.T, status string) action.Revert {
 func planItems(outcome string, nos ...int) []RevertPlanLine {
 	out := make([]RevertPlanLine, 0, len(nos))
 	for _, n := range nos {
-		out = append(out, RevertPlanLine{RevertLine: action.RevertLine{No: n, Outcome: outcome}})
+		out = append(out, RevertPlanLine{RevertLine: revertstore.RevertLine{No: n, Outcome: outcome}})
 	}
 	return out
 }

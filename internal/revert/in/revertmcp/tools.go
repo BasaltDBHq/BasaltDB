@@ -14,7 +14,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
@@ -28,7 +27,7 @@ import (
 // Reverts is the revert use case as the revert tools call it.
 type Reverts interface {
 	PreviewRevert(ctx context.Context, p revertsvc.PreviewRevertParams) (revertsvc.RevertPreview, error)
-	RevertPlan(ctx context.Context, p action.RevertLineParams) (revertsvc.RevertPlan, error)
+	RevertPlan(ctx context.Context, p revertstore.RevertLineParams) (revertsvc.RevertPlan, error)
 	ApplyRevertBatch(ctx context.Context, p revertsvc.ApplyRevertBatchParams) (revertsvc.AppliedBatch, error)
 	RequestRevert(ctx context.Context, p revertsvc.RequestRevertParams) (revertsvc.RequestedRevert, error)
 	AwaitRevert(ctx context.Context, p revertsvc.AwaitRevertParams) (revertsvc.RequestedRevert, error)
@@ -419,7 +418,7 @@ func (h handlers) revertPlan(ctx context.Context, raw json.RawMessage) (any, err
 	if args.Sort != "" {
 		return nil, &guidance.ArgumentError{Message: "invalid arguments: revert_plan has no sort; lines come in execution order"}
 	}
-	params := action.RevertLineParams{Params: args.Params, RevertID: uuid.MustParse(args.RevertID)}
+	params := revertstore.RevertLineParams{Params: args.Params, RevertID: uuid.MustParse(args.RevertID)}
 	if args.Pending {
 		params.Outcome = guardmodel.OutcomePending
 	}

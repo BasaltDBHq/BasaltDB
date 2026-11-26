@@ -136,7 +136,7 @@ func TestMarkedRevertLinesCutChangeIDs(t *testing.T) {
 	prep, err := guardPrepare(t, a, in.RunID)
 	require.NoError(t, err)
 
-	p := action.RevertLineParams{Params: pagination.Params{Limit: pagination.MaxLimit}, RevertID: prep}
+	p := revertstore.RevertLineParams{Params: pagination.Params{Limit: pagination.MaxLimit}, RevertID: prep}
 	cut := 0
 	for {
 		full, err := ledger.ListRevertLines(ctx, a.Conn, p)
@@ -200,7 +200,7 @@ func TestListOpenApprovalsReadsAHeldWrite(t *testing.T) {
 	require.NoError(t, err)
 	_, err = store.Hold(ctx, action.Intent(in), approvalstore.HoldRequest{Op: action.OpDelete, Request: req, Assigned: p.Assigned, Lines: p.Lines})
 	require.NoError(t, err)
-	page, err := ledger.ListOpenApprovals(ctx, a.Conn, action.ApprovalListParams{Params: pagination.Params{Limit: 1}})
+	page, err := ledger.ListOpenApprovals(ctx, a.Conn, approvalstore.ApprovalListParams{Params: pagination.Params{Limit: 1}})
 	require.NoError(t, err)
 	require.Len(t, page.Items, 1)
 	got := page.Items[0].Request

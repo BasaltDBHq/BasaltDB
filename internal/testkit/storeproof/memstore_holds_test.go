@@ -67,7 +67,7 @@ func (s *memStore) FindApproval(_ context.Context, id uuid.UUID) (action.Approva
 	return a.rec, nil
 }
 
-func (s *memStore) ListApprovals(_ context.Context, p action.ApprovalListParams) (pagination.Page[action.Approval], error) {
+func (s *memStore) ListApprovals(_ context.Context, p approvalstore.ApprovalListParams) (pagination.Page[action.Approval], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.count("ListApprovals")

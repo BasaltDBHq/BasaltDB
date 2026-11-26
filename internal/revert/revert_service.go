@@ -100,7 +100,7 @@ func cursorHash(cursor string) (string, error) {
 // parsed. Plan is nil on a widened plan's line that names a change the
 // agent did not make: the agent's view leaves its text out (RS-5).
 type RevertPlanLine struct {
-	action.RevertLine
+	revertstore.RevertLine
 	Plan *revert.Line
 }
 
@@ -123,7 +123,7 @@ type RevertPlan struct {
 // RevertPlan returns a large revert plan this agent prepared, its progress
 // and one page of its lines, for the agent to apply with ApplyRevertBatch
 // once the person signed it.
-func (rc *Service) RevertPlan(ctx context.Context, p action.RevertLineParams) (RevertPlan, error) {
+func (rc *Service) RevertPlan(ctx context.Context, p revertstore.RevertLineParams) (RevertPlan, error) {
 	r, err := rc.store.Records.FindRevert(ctx, p.RevertID)
 	if refusalOf(err).Reason == revertstore.RevertNotFound {
 		return RevertPlan{}, &toolresult.ToolError{Code: guidance.CodeNotFound, Reason: guidance.ReasonRevert, Message: fmt.Sprintf("no revert %s prepared by this agent", p.RevertID)}

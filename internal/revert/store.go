@@ -37,7 +37,7 @@ type Limits struct {
 // Records reads the ledger of the agent's reverts. It never changes data.
 type Records interface {
 	FindRevert(ctx context.Context, id uuid.UUID) (action.Revert, error)
-	RevertLines(ctx context.Context, p action.RevertLineParams) (pagination.Page[action.RevertLine], error)
+	RevertLines(ctx context.Context, p revertstore.RevertLineParams) (pagination.Page[revertstore.RevertLine], error)
 	// ListOpenReverts lists the role's PENDING and APPLYING reverts, keyset
 	// on the revert id (list_pending, LP-1).
 	ListOpenReverts(ctx context.Context, p action.RevertListParams) (pagination.Page[action.Revert], error)

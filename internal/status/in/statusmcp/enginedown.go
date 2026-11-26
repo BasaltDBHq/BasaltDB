@@ -71,25 +71,17 @@ func (d EngineDown) gaveUpMessage() string {
 	return status.EngineGaveUpMessage(d.Host, stop, d.ConfigPath, d.Now())
 }
 
-// Tools are the tools of every IMPLEMENTED contract, and status, each
-// answering as above.
-func (d EngineDown) Tools() []mcpserver.Tool {
+// Call is how tool answers while the engine is down, as above: status
+// reports, every other tool is UNAVAILABLE. internal/app serves it for every
+// IMPLEMENTED contract, and status, and wraps each once.
+func (d EngineDown) Call(tool string) func(context.Context, json.RawMessage) (any, error) {
 	if d.Log == nil || d.Now == nil {
 		panic("statusmcp: engine-down tools need a logger and a clock")
 	}
-	contracts := mcpcontract.MustLoad()
-	out := make([]mcpserver.Tool, 0, len(contracts))
-	for _, c := range contracts {
-		if c.Status != mcpcontract.StatusImplemented && c.Name != guidance.ToolStatus {
-			continue
-		}
-		call := d.unreachable(c.Name)
-		if c.Name == guidance.ToolStatus {
-			call = d.status
-		}
-		out = append(out, mcpserver.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: mcpserver.RefuseAdminCredential(c.Name, call)})
+	if tool == guidance.ToolStatus {
+		return d.status
 	}
-	return out
+	return d.unreachable(tool)
 }
 
 func (d EngineDown) status(_ context.Context, raw json.RawMessage) (any, error) {
@@ -182,11 +174,11 @@ type Server struct {
 	down EngineDown
 }
 
-// NewServer is the engine-down tools of down, served as an agent's MCP
-// server with instructions.
-func NewServer(down EngineDown, instructions string) Server {
+// NewServer serves tools, the engine-down tools of down that internal/app
+// built from down.Call, as an agent's MCP server with instructions.
+func NewServer(down EngineDown, instructions string, tools []mcpserver.Tool) Server {
 	info := mcpserver.Info{Name: "basalt", Version: buildinfo.Version, Instructions: instructions}
-	return Server{Server: mcpserver.NewServer(info, down.Tools()...), down: down}
+	return Server{Server: mcpserver.NewServer(info, tools...), down: down}
 }
 
 // Abandoned answers a request the engine took and never answered

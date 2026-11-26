@@ -94,7 +94,7 @@ var plainConfigLoads = map[string]string{
 	// listed above (setup.EngineFiles), which reach them by port.
 	"internal/setup/out/enginefiles/enginefiles.go:LoadConfig:Load":                   "a one-line forward; its callers are listed above",
 	"internal/setup/out/enginefiles/enginefiles.go:RemoveAgents:RemoveAgents":         "a one-line forward; its caller, forget, is listed above",
-	"internal/setup/out/enginefiles/enginefiles.go:UpsertAgentVault:UpsertAgentVault": "a one-line forward; its callers, the two writeConfig (the setup page and init --remote), are listed above",
+	"internal/setup/out/enginefiles/enginefiles.go:UpsertAgentVault:UpsertAgentVault": "a one-line forward; its callers, the two writeConfig, are listed here (the setup page's above, init --remote's below)",
 	"internal/setup/remote_init.go:writeConfig:UpsertAgentVault":                      "not as root: as root the upsert goes through the config directory opened without following links (configDir)",
 }
 

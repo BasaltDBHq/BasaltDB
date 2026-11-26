@@ -20,7 +20,7 @@ import (
 func statusProblems(t *testing.T, operatedBy, configPath string, foreground bool, problems []pluginProblem) (list []guidance.Problem, ready bool) {
 	t.Helper()
 	cmds := guidance.NewCommands("bot", configPath, config.DefaultPath("linux"), "linux",
-		guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs})
+		osservice.Manager())
 	if foreground {
 		cmds = cmds.Foreground()
 	}

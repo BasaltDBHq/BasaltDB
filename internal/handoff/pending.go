@@ -2,7 +2,6 @@ package handoff
 
 import (
 	"context"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -59,53 +58,6 @@ const fastEvery = 15 * time.Second
 // reach check, Probes), and how long a PREVIEW address that was not
 // reached waits before it is probed again.
 const reuseFor = 5 * time.Minute
-
-// Collector asks the connect service for the address and reports whether
-// the engine reached a PREVIEW one: *Client.
-type Collector interface {
-	Collect(ctx context.Context, setupID, fingerprint string) (Collected, error)
-	Report(ctx context.Context, setupID, fingerprint string, a setupcode.Address, r Reach) error
-}
-
-// AddressProber probes an address with logins bound to fail: Prober.
-// Resolve checks the address and resolves its host once; ProbeAt probes the
-// address it resolved to.
-type AddressProber interface {
-	Resolve(ctx context.Context, a setupcode.Address) (netip.Addr, error)
-	// Approve checks, with the TLS handshake alone, the certificate
-	// authority the person trusted on the connect page against the chain
-	// the server presents to this machine.
-	Approve(ctx context.Context, a setupcode.Address, ip netip.Addr, approved string) (Pin, error)
-	ProbeAt(ctx context.Context, a setupcode.Address, ip netip.Addr, user string, pin Pin) (Probed, error)
-}
-
-// Files are the agent's files and its entry in engine.json, as the engine
-// reaches them. Lock is the agent's lock, the one basalt init --remote
-// takes; the other methods run under it.
-type Files interface {
-	Lock() (unlock func(), err error)
-	// PendingSetup is the agent's pending setup in engine.json now; false
-	// when none.
-	PendingSetup() (config.Setup, bool, error)
-	// ReadSecret reads the agent's .secret: the password init generated.
-	ReadSecret() (string, error)
-	// WriteCredential writes the agent's credential file, 0600 and
-	// atomically; it refuses to replace one that exists.
-	WriteCredential(dsn string) error
-	// RemoveSecret removes .secret; a missing one is not an error.
-	RemoveSecret() error
-	// WritePin writes the pin of top (caOnly: it verifies the chain alone)
-	// for host to trust.d, unless that pin is there already; it refuses
-	// when another trust profile covers host by then.
-	WritePin(host string, top *x509.Certificate, caOnly bool) error
-	// ConfirmSetup clears awaitingAddress from pending setup id.
-	ConfirmSetup(id string) error
-	// RefuseSetup replaces awaitingAddress with refused in pending setup id.
-	RefuseSetup(id string) error
-	// MarkAddressInvalid sets addressInvalid in pending setup id: the next
-	// basalt init --remote forgets it and makes a recovery code.
-	MarkAddressInvalid(id string) error
-}
 
 // State is what status reports about the connect-only setup.
 type State struct {

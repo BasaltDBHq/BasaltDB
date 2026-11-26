@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/keyfile"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
@@ -16,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/credfiles"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/enginefiles"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -41,10 +43,9 @@ func (shell) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
 	return osservice.OpenTrustedFile(path, owner)
 }
 
-// setupHost is basalt init --remote's real host: the adapters, reached
-// through this package's own functions.
-// setupHost is the setup commands' host. Its engine files (by path) are
-// the setup page's adapter's (UpsertAgentVault for init --remote).
+// setupHost is the setup commands' real host: each method forwards to the
+// adapter that does it, and its engine files (by path) are the setup page's
+// adapter's (UpsertAgentVault for init --remote).
 type setupHost struct{ enginefiles.Files }
 
 func (setupHost) GuardAgentConnString(adminURL, role, password string) (string, error) {
@@ -70,11 +71,7 @@ func (setupHost) TrustProfileFor(configPath, host string) *trustprofile.Profile 
 }
 
 func (setupHost) OSOpenTrustedDir(dir string, owner int, create bool) (trustedDir, error) {
-	d, err := osservice.OpenTrustedDir(dir, owner, create)
-	if err != nil {
-		return nil, err
-	}
-	return d, nil
+	return osservice.OpenTrustedDirPort(dir, owner, create)
 }
 
 func (setupHost) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
@@ -108,38 +105,17 @@ func (setupHost) ServerMessage(err error) (string, bool) { return pgdial.ServerM
 func (setupHost) PathCredFiles() setup.CredFiles { return pathCredFiles{} }
 
 func (h setupHost) OpenRootCredFiles(dir string, trusted int) (setup.CredFiles, error) {
-	return openRootCredFiles(h, dir, trusted)
+	return credfiles.OpenRootCredFiles(h, dir, trusted)
 }
 
-func (setupHost) RootTrustedOwner(dir string) (int, error) { return rootTrustedOwner(dir) }
+func (setupHost) RootTrustedOwner(dir string) (int, error) { return credfiles.RootTrustedOwner(dir) }
 
 func (h setupHost) OpenRootConfigDir(dir string, trusted int) (setup.RootConfigDir, error) {
-	d, err := openRootConfigDir(h, dir, trusted)
-	if err != nil {
-		return nil, err
-	}
-	return d, nil
+	return credfiles.OpenRootConfigDir(h, dir, trusted)
 }
 
 func (h setupHost) RootEngineKey(stateDir, goos string, cfg setup.RootConfigDir, now func() time.Time) ([]byte, error) {
-	d, _ := cfg.(*rootConfigDir)
-	return rootEngineKey(h, stateDir, goos, d, now)
-}
-
-// setupFilesHost is how setup reaches the files root reads and writes for
-// the engine's user: directories and files opened from / without following
-// a link anyone but root or their owner controls, and OS user ids.
-type setupFilesHost interface {
-	// OSOpenTrustedDir opens dir for root, refusing a directory on the way
-	// that someone other than root or owner could swap; create makes it
-	// when missing.
-	OSOpenTrustedDir(dir string, owner int, create bool) (trustedDir, error)
-	// OSOpenTrustedFile opens path read-only for root: its directory as
-	// OSOpenTrustedDir does, the file itself never through a symlink.
-	OSOpenTrustedFile(path string, owner int) (*os.File, error)
-	// OSLookupUID is the uid of the OS user name, or -1 when there is no
-	// such user.
-	OSLookupUID(name string) int
+	return credfiles.RootEngineKey(h, stateDir, goos, cfg, now, engine.StateDirMode)
 }
 
 // probeLogin tries a login with dsn and closes it: the error says how far

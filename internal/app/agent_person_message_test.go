@@ -12,6 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
 // TestRemovedCommandCatchesEveryRemovedForm: the check the catalog tests
@@ -128,7 +129,7 @@ var urlPattern = regexp.MustCompile(`https?://\S+`)
 // sets, word for word as CONTRACT.md has it.
 func TestTooManyConnectionsMessageWords(t *testing.T) {
 	t.Parallel()
-	cmds, err := newCommands("lead_bot", "", "linux", testManager())
+	cmds, err := newCommands("lead_bot", "", "linux", osservice.Manager())
 	require.NoError(t, err)
 	require.Equal(t, "The agent lead_bot has used all 8 database connections Basalt allows it. "+
 		"Another engine for the same agent may be running, or a stopped engine left sessions open. "+

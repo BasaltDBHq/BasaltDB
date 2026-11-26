@@ -191,11 +191,14 @@ func (h carrierHost) GuardAgentVersion(ctx context.Context, q setup.Querier) (in
 // pgquerier.Of: the real setupcli carrier, not a test double of it.
 func TestInitRemoteHandsTheGuardTheAgentsOwnConnection(t *testing.T) {
 	t.Parallel()
-	conn := loggedInConn{}
+	// A pointer: the guard gets this connection, the same one, not just a
+	// connection of its type.
+	conn := &loggedInConn{}
 	cfg, _ := pendingAgent(t)
 	var got pgquerier.Querier
 	_, err := runRemote(t, carrierHost{recordedHost: recordedHost{recorded: false}, got: &got}, cfg,
 		func(context.Context, string) (cli.AgentConn, error) { return conn, nil })
 	require.NoError(t, err)
-	require.Equal(t, pgquerier.Querier(conn), got)
+	require.Same(t, conn, got)
+	require.NotSame(t, &loggedInConn{}, got, "a connection of the same type is not the same one")
 }

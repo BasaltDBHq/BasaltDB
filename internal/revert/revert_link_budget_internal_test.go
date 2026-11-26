@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgerrors"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
 
@@ -100,7 +101,7 @@ func TestRevertInvalidRestatesTheRequestsLink(t *testing.T) {
 			guidance.ReasonBadSignature:   func() error { return s.badSignature(ctx, big, "the code does not verify") },
 			guidance.ReasonPasskeyRevoked: func() error { return s.passkeyRevoked(ctx, big) },
 		} {
-			te := testErrors().ToolError(refuse())
+			te := pgerrors.Map().ToolError(refuse())
 			require.Equal(t, guidance.CodeRevertInvalid, te.Code, name)
 			stepcatalogtest.RequirePersonMessage(t, te.PersonMessage, te.Links)
 			require.NotContains(t, te.PersonMessage, "#2.", "%s %q: no long link in the message", name, origin)
@@ -135,7 +136,7 @@ func TestWidenedRevertInvalidNamesNoLink(t *testing.T) {
 	r := revertOf(t, "Undo the bad merge", revertLines(2), false)
 	r.Widened = true
 	for _, origin := range []string{localPages, ""} {
-		te := testErrors().ToolError(newService(t, "linux", "", pagesOrigin(origin), linkBudget(links.DefaultBudget)).badSignature(ctx, r, "m"))
+		te := pgerrors.Map().ToolError(newService(t, "linux", "", pagesOrigin(origin), linkBudget(links.DefaultBudget)).badSignature(ctx, r, "m"))
 		require.Equal(t, toolresult.ActionOpenLink, te.NextSteps[0].Action)
 		require.Empty(t, te.NextSteps[0].URL, origin)
 		require.NotContains(t, te.NextSteps[0].Text, "short link the agent gave you", origin)

@@ -22,21 +22,6 @@ type Cached struct {
 	NotBefore time.Time `json:"notBefore"`
 }
 
-// ProbeCache keeps Cached between processes, so a reached PREVIEW address
-// is probed once per flow whichever process collects it (CONTRACT.md, The
-// engine and a connect-only code, Collecting).
-type ProbeCache interface {
-	Load(setupID string) (Cached, bool)
-	Save(c Cached) error
-}
-
-// CacheFile is the file a FileCache keeps its probe in, read and written
-// whole (handofffiles.ProbeCacheFile in the engine's state directory).
-type CacheFile interface {
-	Read() (string, error)
-	Write(raw []byte) error
-}
-
 // FileCache is a ProbeCache in one file.
 type FileCache struct{ file CacheFile }
 

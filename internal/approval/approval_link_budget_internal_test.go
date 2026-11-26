@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
@@ -94,7 +95,7 @@ func TestApprovalNoticeWithoutANewLinkAddsNoURL(t *testing.T) {
 
 func TestApprovalNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 	t.Parallel()
-	cmds := guidance.NewCommands("a_rather_long_agent_name_for_a_bot", "/Users/someone/Library/Application Support/Basalt/with/a/deep/path/engine.json", config.DefaultPath("darwin"), "darwin", testManager())
+	cmds := guidance.NewCommands("a_rather_long_agent_name_for_a_bot", "/Users/someone/Library/Application Support/Basalt/with/a/deep/path/engine.json", config.DefaultPath("darwin"), "darwin", osservice.Manager())
 	lines := make([]string, 0, 40)
 	for i := range 40 { // many cascaded tables with long names make a long headline
 		lines = append(lines, fmt.Sprintf(`{"op": "DELETE", "key": {"id": %d}, "old": {"id": %d}, "set": null, "shape": "RECORD", "store": {"kind": "POSTGRES", "verb": "DELETE"}, "cascaded": true, "resource": "some_schema_%d.a_table_with_a_long_name_%d"}`, i, i, i, i))

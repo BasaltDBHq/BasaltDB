@@ -14,6 +14,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/credfiles"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -59,12 +60,12 @@ func locked(configPath string, create bool, change func(d *osservice.TrustedDir,
 
 // fileOwner is who a file written in trust.d belongs to: the config
 // directory's owner when root writes it (so the engine's user reads it as
-// its own), else this process (-1).
+// its own, credfiles.CredentialOwner), else this process (-1).
 func fileOwner(trusted int) int {
-	if os.Geteuid() != 0 || trusted <= 0 {
+	if os.Geteuid() != 0 {
 		return -1
 	}
-	return trusted
+	return credfiles.CredentialOwner(trusted)
 }
 
 // Pin writes the exact-host operator profile for host (pin-<host>, match

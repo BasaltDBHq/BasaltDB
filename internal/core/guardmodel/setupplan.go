@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
@@ -110,11 +111,9 @@ type RoleTimeouts struct {
 	ThisDatabase string
 }
 
-// Uncovered is an agent-writable table or cascade target without the guard.
-type Uncovered struct {
-	Table string
-	Why   string
-}
+// Uncovered is an agent-writable table or cascade target without the guard:
+// the ledger's action.Uncovered, which the store hands to the ledger as is.
+type Uncovered = action.Uncovered
 
 // DemoPlan is what seeding the sample schema will run.
 type DemoPlan struct {

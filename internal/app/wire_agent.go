@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
@@ -22,7 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgcatalog"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgerrors"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/crashfile"
@@ -55,24 +54,10 @@ func AgentHostDeps() Deps {
 
 // AgentServiceManager is the host's service manager, for the agent's
 // commands.
-func AgentServiceManager() guidance.ServiceManager {
-	return guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
-}
+func AgentServiceManager() guidance.ServiceManager { return osservice.Manager() }
 
 // AgentErrors are the adapters' error values the agent maps to tool errors.
-func AgentErrors() guidance.ErrorMap {
-	return guidance.ErrorMap{
-		InvalidParams: ledger.ErrInvalidParams,
-		InvalidIntent: guard.ErrInvalidIntent,
-		RowTooLarge: func(err error) (string, bool) {
-			var rl *resultsize.RowTooLargeError
-			if errors.As(err, &rl) {
-				return rl.Error(), true
-			}
-			return "", false
-		},
-	}
-}
+func AgentErrors() guidance.ErrorMap { return pgerrors.Map() }
 
 // agentEngineHost is what the status of an engine that is down reads from
 // the host.

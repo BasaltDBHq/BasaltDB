@@ -28,6 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgerrors"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pluginledger"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginstate"
@@ -96,9 +97,9 @@ func runtimeOf(t *testing.T, a *guardtest.Agent, ep *Plugins) (*status.Service, 
 	t.Cleanup(pool.Close)
 	pg := newPGAgent(t, a.URL, 2)
 	core := status.Core{
-		Name: "bot", Log: quietLog(), Now: time.Now, Errors: testErrorMap(), PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget,
+		Name: "bot", Log: quietLog(), Now: time.Now, Errors: pgerrors.Map(), PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget,
 		Commands: guidance.NewCommands("bot", "", config.DefaultPath(runtime.GOOS), runtime.GOOS,
-			guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}),
+			osservice.Manager()),
 	}
 	deps := status.Deps{
 		Passkeys: pg.store, LatestGuardVersion: guard.LatestVersion,

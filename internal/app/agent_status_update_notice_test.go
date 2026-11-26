@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
 
 	"github.com/stretchr/testify/require"
@@ -22,7 +23,7 @@ func TestStatusCarriesTheUpdateWhenOneIsKnown(t *testing.T) {
 		d.Status.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 		setApprovals(&d, keys{n: 1})
 		d.Core.Now = func() time.Time { return statusNow }
-		cmds, err := newCommands("bot", "", "linux", testManager())
+		cmds, err := newCommands("bot", "", "linux", osservice.Manager())
 		require.NoError(t, err)
 		d.Core.Commands = cmds
 		s := NewService(d)

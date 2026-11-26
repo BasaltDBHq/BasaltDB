@@ -28,7 +28,7 @@ type RemoteFlags struct {
 	Agent, Prefix, ConfigPath string
 	Timeout                   time.Duration
 	OperatedBy                OperatedBy
-	// Vault is what init asks the config's vault to be (setupcli.ChooseVault).
+	// Vault is what init asks the config's vault to be (ChooseVault).
 	Vault VaultChoice
 }
 
@@ -59,8 +59,10 @@ type RemoteInitResult struct {
 }
 
 // CredFiles reads and writes the agent's credential file, its .pending and
-// its .lock for init --remote, each named by its full path.
-type CredFiles interface {
+// its .lock for init --remote, each named by its full path. It is an alias
+// of the interface itself, so the adapter (setup/out/credfiles) returns it
+// with no import of this package.
+type CredFiles = interface {
 	Lock(path string) (func(), error)
 	// Read reads a credential file this process wrote (with the checks of
 	// credfiles' readOwnCredential); an error wrapping fs.ErrNotExist when
@@ -202,10 +204,10 @@ var ErrNoEngineForTrust = errors.New("the database's certificate changed, and th
 // StateDirName is the engine's state directory next to a per-user config.
 const StateDirName = "state"
 
-// RootConfigDir is the config directory init --remote opened as root: the
-// consumer is the setup CLI, whose host opens it, and the type is here so
-// the host's implementation need not import that controller.
-type RootConfigDir interface {
+// RootConfigDir is the config directory init --remote opened as root. It is
+// an alias of the interface itself, so the adapter (setup/out/credfiles)
+// returns it with no import of this package.
+type RootConfigDir = interface {
 	// Upsert is config.UpsertAgentVault on the config file name, relative to
 	// the opened directory.
 	Upsert(name string, s config.Settings, a config.Agent) (config.VaultWritten, error)

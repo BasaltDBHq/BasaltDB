@@ -6,19 +6,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
-// StoppedFiles are the agent's files a confirmation the engine stopped in
-// is finished on.
-type StoppedFiles interface {
-	// CredentialExists reports whether the agent's credential file exists,
-	// not following a link.
-	CredentialExists() (bool, error)
-	Lock() (unlock func(), err error)
-	// RemoveSecret removes .secret; a missing one is not an error.
-	RemoveSecret() error
-	// ConfirmSetup clears awaitingAddress from pending setup id.
-	ConfirmSetup(id string) error
-}
-
 // ServesConnectOnly says whether the agent with pending setup is one the
 // engine serves with the connect-only runtime: waiting for its address, or
 // refused. An agent whose credential file exists with awaitingAddress still

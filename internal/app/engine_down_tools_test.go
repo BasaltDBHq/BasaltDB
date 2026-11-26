@@ -1,4 +1,4 @@
-package statusmcp
+package app
 
 import (
 	"bytes"
@@ -12,11 +12,13 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
+	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
 
-// The engine-down tools (basalt mcp, engine not answering) refuse a call
-// that holds an admin connection string too, and name nothing of it.
+// The engine-down tools (basalt mcp, engine not answering) are every
+// IMPLEMENTED contract, and they refuse a call that holds an admin
+// connection string too, and name nothing of it.
 func TestEngineDownToolsRefuseAnAdminURL(t *testing.T) {
 	t.Parallel()
 	const secret = "s3cretpassw0rd"
@@ -25,8 +27,13 @@ func TestEngineDownToolsRefuseAnAdminURL(t *testing.T) {
 	entry, ok := stepcatalogtest.CatalogOf(t).ErrorEntry(guidance.CodeInvalidArgument, guidance.ReasonAdminCredential, "")
 	require.True(t, ok)
 
-	down := EngineDown{Host: testEngineHost(), Name: "bot", Log: slog.New(slog.NewTextHandler(&logs, nil)), Now: func() time.Time { return statusNow }}
-	downTools := down.Tools()
+	down := statusmcp.EngineDown{Host: testEngineHost(), Name: "bot", Log: slog.New(slog.NewTextHandler(&logs, nil)), Now: func() time.Time { return statusNow }}
+	downTools := degradedTools(down.Call)
+	served := make([]string, 0, len(downTools))
+	for _, tool := range downTools {
+		served = append(served, tool.Name)
+	}
+	require.NoError(t, stepcatalogtest.CheckServed(mcpcontract.MustLoad(), served), "the shim lists exactly the IMPLEMENTED contracts")
 	downSrv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, downTools...)
 	for _, tool := range downTools {
 		for _, args := range []map[string]any{{"sql": url}, {url: true}} {

@@ -240,22 +240,17 @@ func (s *Server) Handler() http.Handler {
 			mux.HandleFunc("GET "+r.Path, s.static(r.File))
 		}
 	}
-	mux.HandleFunc("GET /api/v1/approvals/{approvalId}", s.approvals.Get)
-	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/approve", s.approvals.Approve)
-	mux.HandleFunc("GET /api/v1/reverts/{revertId}", s.reverts.Get)
-	mux.HandleFunc("POST /api/v1/reverts/{revertId}/apply", s.reverts.Apply)
-	mux.HandleFunc("POST /api/v1/reverts/{revertId}/scope", s.reverts.Scope)
-	mux.HandleFunc("POST /api/v1/reverts/{revertId}/reject", s.reverts.Reject)
-	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/reveal", s.approvals.Reveal)
-	mux.HandleFunc("POST /api/v1/reverts/{revertId}/reveal", s.reverts.Reveal)
+	// The approval, revert and plugin approval routes: the same table a
+	// Vault session dispatches from.
+	for _, r := range sessionRoutes {
+		mux.HandleFunc(r.pattern(), r.handler(s))
+	}
 	mux.HandleFunc("GET "+SetupPagePath+"{$}", s.setup.Page)
 	mux.HandleFunc("POST "+SetupCheckPath, s.setup.Check)
 	mux.HandleFunc("POST "+SetupRunPath, s.setup.Run)
 	mux.HandleFunc("POST "+SetupDoctorPath, s.setup.Doctor)
 	mux.HandleFunc("POST "+SetupEnginePath, s.setup.Engine)
 	mux.HandleFunc("POST "+SetupNotMinePath, s.setup.NotMine)
-	mux.HandleFunc("GET /api/v1/plugins/{approvalId}", s.plugins.Get)
-	mux.HandleFunc("POST /api/v1/plugins/{approvalId}/approve", s.plugins.Approve)
 	return refuseDatabaseURL(s.origin, mux)
 }
 

@@ -16,6 +16,25 @@ import (
 // stdin, and what a credential file may hold.
 const MaxCredentialBytes = 4096
 
+// Files reaches init --remote's credential files: the setup service's
+// CredFiles, the same interface type (an alias of it).
+type Files = interface {
+	Lock(path string) (func(), error)
+	Read(path string) (string, os.FileInfo, error)
+	Stat(path string) (os.FileInfo, error)
+	Write(path string, data []byte) error
+	Rename(from, to string) error
+	Remove(path string) error
+	Close()
+}
+
+// ConfigDir is the config directory init --remote opened as root: the setup
+// service's RootConfigDir, the same interface type (an alias of it).
+type ConfigDir = interface {
+	Upsert(name string, s config.Settings, a config.Agent) (config.VaultWritten, error)
+	Close()
+}
+
 // FilesHost is how setup reaches the files root reads and writes for the
 // engine's user: directories and files opened from / without following a
 // link anyone but root or their owner controls, and OS user ids.
@@ -33,8 +52,9 @@ type FilesHost interface {
 }
 
 // TrustedDir is a directory opened by OSOpenTrustedDir: files in it are
-// reached relative to its descriptor, never by path.
-type TrustedDir interface {
+// reached relative to its descriptor, never by path. It is an alias of the
+// interface itself, the same type as osservice.TrustedDirPort.
+type TrustedDir = interface {
 	config.Dir
 	// CreateFile makes name with data, owned by owner (< 0: this process),
 	// refusing one that exists.

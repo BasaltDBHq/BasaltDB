@@ -1,6 +1,6 @@
 //go:build unix
 
-package app
+package credfiles
 
 import (
 	"fmt"
@@ -25,9 +25,9 @@ func TestRootConfigDirWritesWhereItOpened(t *testing.T) {
 	require.NoError(t, err)
 	dir, elsewhere := filepath.Join(root, "basalt"), filepath.Join(root, "elsewhere")
 	require.NoError(t, os.Mkdir(elsewhere, 0o700))
-	trusted, err := rootTrustedOwner(dir)
+	trusted, err := RootTrustedOwner(dir)
 	require.NoError(t, err)
-	d, err := openRootConfigDir(setupHost{}, dir, trusted)
+	d, err := OpenRootConfigDir(osHost{}, dir, trusted)
 	require.NoError(t, err)
 	defer d.Close()
 
@@ -40,7 +40,7 @@ func TestRootConfigDirWritesWhereItOpened(t *testing.T) {
 	require.Empty(t, entries)
 	require.FileExists(t, filepath.Join(dir+".moved", "engine.json"))
 
-	_, err = openRootConfigDir(setupHost{}, dir, trusted)
+	_, err = OpenRootConfigDir(osHost{}, dir, trusted)
 	require.ErrorContains(t, err, "a symlink is refused")
 }
 
@@ -55,19 +55,19 @@ func TestRootEngineKeyNeedsTheConfigOwnersStateDirectory(t *testing.T) {
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 	dir := filepath.Join(root, "basalt")
-	trusted, err := rootTrustedOwner(dir)
+	trusted, err := RootTrustedOwner(dir)
 	require.NoError(t, err)
-	d, err := openRootConfigDir(setupHost{}, dir, trusted)
+	d, err := OpenRootConfigDir(osHost{}, dir, trusted)
 	require.NoError(t, err)
 	defer d.Close()
-	_, err = rootEngineKey(setupHost{}, "/usr", runtime.GOOS, d, time.Now)
+	_, err = RootEngineKey(osHost{}, "/usr", runtime.GOOS, d, time.Now, 0o700)
 	require.ErrorContains(t, err, fmt.Sprintf("the state directory /usr is owned by uid 0, not uid %d (the owner of the config directory %s)", os.Geteuid(), dir))
 	require.NoFileExists(t, "/usr/"+channel.KeyFileName)
 
 	// Its own state directory: the key is made there.
 	state := filepath.Join(dir, "state")
 	require.NoError(t, os.Mkdir(state, 0o700))
-	spki, err := rootEngineKey(setupHost{}, state, runtime.GOOS, d, time.Now)
+	spki, err := RootEngineKey(osHost{}, state, runtime.GOOS, d, time.Now, 0o700)
 	require.NoError(t, err)
 	require.NotEmpty(t, spki)
 }
@@ -77,8 +77,8 @@ func TestRootEngineKeyNeedsTheConfigOwnersStateDirectory(t *testing.T) {
 func TestMissingStateDirHint(t *testing.T) {
 	t.Parallel()
 	def := config.DefaultStateDir(runtime.GOOS)
-	require.ErrorContains(t, missingStateDir(def, runtime.GOOS, 998), "start the engine's service once")
-	err := missingStateDir("/srv/bot/state", runtime.GOOS, 998)
+	require.ErrorContains(t, missingStateDir(def, runtime.GOOS, 998, 0o700), "start the engine's service once")
+	err := missingStateDir("/srv/bot/state", runtime.GOOS, 998, 0o700)
 	require.ErrorContains(t, err, "sudo install -d -m 0700 -o 998 /srv/bot/state")
 	require.NotContains(t, err.Error(), "service once")
 }
@@ -92,9 +92,9 @@ func TestRootConfigDirUpsertStaysInTheOpenedDir(t *testing.T) {
 	require.NoError(t, err)
 	dir, elsewhere := filepath.Join(root, "basalt"), filepath.Join(root, "elsewhere")
 	require.NoError(t, os.Mkdir(elsewhere, 0o700))
-	trusted, err := rootTrustedOwner(dir)
+	trusted, err := RootTrustedOwner(dir)
 	require.NoError(t, err)
-	d, err := openRootConfigDir(setupHost{}, dir, trusted)
+	d, err := OpenRootConfigDir(osHost{}, dir, trusted)
 	require.NoError(t, err)
 	defer d.Close()
 	require.NoError(t, os.Rename(dir, dir+".moved"))
@@ -128,9 +128,9 @@ func TestRootKeyFileRefusals(t *testing.T) {
 	require.NoError(t, err)
 	state := filepath.Join(root, "state")
 	require.NoError(t, os.Mkdir(state, 0o700))
-	trusted, err := rootTrustedOwner(state)
+	trusted, err := RootTrustedOwner(state)
 	require.NoError(t, err)
-	d, err := setupHost{}.OSOpenTrustedDir(state, trusted, false)
+	d, err := osHost{}.OSOpenTrustedDir(state, trusted, false)
 	require.NoError(t, err)
 	defer d.Close()
 	key := filepath.Join(state, channel.KeyFileName)

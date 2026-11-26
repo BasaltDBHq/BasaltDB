@@ -3,6 +3,7 @@ package shim
 import (
 	"encoding/json"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
@@ -12,12 +13,12 @@ import (
 // else (write, run_start, the revert tools) may have run and is never sent
 // again.
 var readOnlyTools = map[string]bool{
-	"query":        true,
-	"describe":     true,
-	"list_pending": true,
-	"list_runs":    true,
-	"run_history":  true,
-	"status":       true,
+	guidance.ToolQuery:       true,
+	guidance.ToolDescribe:    true,
+	guidance.ToolListPending: true,
+	guidance.ToolListRuns:    true,
+	guidance.ToolRunHistory:  true,
+	guidance.ToolStatus:      true,
 }
 
 // retriable reports whether line can be sent again after the engine dropped

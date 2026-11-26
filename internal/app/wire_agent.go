@@ -18,6 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
@@ -29,6 +30,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
+	"github.com/basaltdbhq/basaltdb/internal/status/out/crashfile"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 )
 
@@ -48,6 +50,7 @@ func AgentHostDeps() Deps {
 	d.Delivery.VaultConflict = vault.IsConflict
 	d.Delivery.ErrVaultNotConnected = vault.ErrNotConnected
 	d.Status.CrashReports = agentCrashReports
+	d.Status.CrashFile = crashfile.Find
 	d.Status.LatestGuardVersion = guard.LatestVersion
 	d.Status.UpdateMessage = agentUpdateMessage
 	d.Status.StartHoldOffUntil = agentStartHoldOffUntil
@@ -79,7 +82,7 @@ func AgentErrors() guidance.ErrorMap {
 // agentEngineHost is what the status of an engine that is down reads from
 // the host.
 func agentEngineHost() status.EngineHost {
-	return status.EngineHost{LatestGuardVersion: guard.LatestVersion, ReadLastStop: engine.ReadLastStop, StartHoldOffUntil: agentStartHoldOffUntil}
+	return status.EngineHost{LatestGuardVersion: guard.LatestVersion, ReadLastStop: engine.LastStopReader(engineos.OS{}), StartHoldOffUntil: agentStartHoldOffUntil}
 }
 
 func agentStartHoldOffUntil(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool) {

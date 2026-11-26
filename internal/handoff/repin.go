@@ -2,6 +2,7 @@ package handoff
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -37,9 +38,10 @@ type RepinProber interface {
 type RepinFiles interface {
 	// PendingSetup is the agent's pending setup in engine.json now.
 	PendingSetup() (config.Setup, bool, error)
-	// ReplacePin replaces the engine's own pin for host with pin, under the
-	// config lock; it refuses when another profile covers host.
-	ReplacePin(host string, pin Pin) error
+	// ReplacePin replaces the engine's own pin for host with top's (caOnly:
+	// it verifies the chain alone), under the config lock; it refuses when
+	// another profile covers host.
+	ReplacePin(host string, top *x509.Certificate, caOnly bool) error
 }
 
 // RepinOptions build a Repin.
@@ -154,7 +156,7 @@ func (r *Repin) Step(ctx context.Context) bool {
 		r.mismatch(err)
 		return true
 	}
-	if err := r.o.Files.ReplacePin(addr.Host, pin); err != nil {
+	if err := r.o.Files.ReplacePin(addr.Host, pin.Top, pin.CAOnly); err != nil {
 		r.o.Log.Warn("replace the engine's pin", "setupId", r.o.Setup.SetupID, "err", err)
 		return true
 	}

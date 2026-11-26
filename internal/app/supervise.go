@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
@@ -23,7 +24,7 @@ const childStopWait = 30 * time.Second
 // because another engine holds the lock reports engine.ErrAnotherEngine.
 func childStarter(startedFrom, configPath, lockPath, stateDir string, io cli.Stdio, log *slog.Logger) func(context.Context, string) (func() error, error) {
 	return func(ctx context.Context, startedBy string) (func() error, error) {
-		exe, err := engine.ResolveSuperviseBinary(startedFrom)
+		exe, err := engine.ResolveSuperviseBinary(engineos.OS{}, startedFrom)
 		if err != nil {
 			return nil, err
 		}
@@ -35,7 +36,7 @@ func childStarter(startedFrom, configPath, lockPath, stateDir string, io cli.Std
 		if err := cmd.Start(); err != nil {
 			return nil, err
 		}
-		stable := time.AfterFunc(engine.FastCrash, func() { engine.ClearLastStop(stateDir, log) })
+		stable := time.AfterFunc(engine.FastCrash, func() { engine.ClearLastStop(engineos.OS{}, stateDir, log) })
 		return func() error {
 			err := cmd.Wait()
 			stable.Stop()

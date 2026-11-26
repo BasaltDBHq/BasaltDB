@@ -12,15 +12,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
-)
-
-// The files basalt init --remote keeps next to an agent's credential file
-// (CONTRACT.md, basalt init --remote): a rotated password waiting for the
-// person's setup, and the lock both init and the engine take.
-const (
-	PendingSuffix = ".pending"
-	LockSuffix    = ".lock"
 )
 
 // pendingLoginTimeout bounds the login with the .pending credential.
@@ -109,7 +102,7 @@ var errInvalidCredential = errors.New("the credential is not a valid Postgres UR
 // following a link and only when this process's user owns it with mode
 // 0600, when it names the same database and role as the engine's own.
 func (f *Finisher) PendingRecorded(ctx context.Context, id uuid.UUID) (recorded, has bool, err error) {
-	path := f.CredFile + PendingSuffix
+	path := f.CredFile + config.PendingSuffix
 	dsn, fi, err := f.Files.ReadPending(maxPendingBytes)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):

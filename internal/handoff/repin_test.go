@@ -3,6 +3,7 @@ package handoff
 import (
 	"context"
 	"crypto/rand"
+	"crypto/x509"
 	"log/slog"
 	"sync"
 	"testing"
@@ -57,10 +58,10 @@ type fakeRepinFiles struct {
 
 func (f *fakeRepinFiles) PendingSetup() (config.Setup, bool, error) { return f.setup, true, nil }
 
-func (f *fakeRepinFiles) ReplacePin(_ string, pin Pin) error {
+func (f *fakeRepinFiles) ReplacePin(_ string, top *x509.Certificate, caOnly bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.replaced = append(f.replaced, pin)
+	f.replaced = append(f.replaced, Pin{Top: top, CAOnly: caOnly})
 	return nil
 }
 

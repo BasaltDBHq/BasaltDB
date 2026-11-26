@@ -131,10 +131,9 @@ type Challenge struct {
 
 const (
 	keyLen          = 32
-	challengeLen    = 32
-	userIDLen       = 16
 	challengeExpiry = 15 * time.Minute
-	maxLabel        = 64
+	// maxLabel is the passkey registration's label limit.
+	maxLabel = passkey.MaxLabelLen
 	// macDomain separates this MAC from any other the key could make.
 	macDomain = "basalt-local-setup-challenge.1\n"
 )
@@ -163,7 +162,7 @@ type bound struct {
 // challenge makes a fresh challenge for req's job on b.
 func (s *LocalService) challenge(req Request, b bound) (Challenge, error) {
 	c := Challenge{
-		Challenge: make([]byte, challengeLen), UserID: make([]byte, userIDLen),
+		Challenge: make([]byte, passkey.ChallengeLen), UserID: make([]byte, passkey.UserIDLen),
 		UserName: "BasaltDB · " + req.Agent, DisplayName: "BasaltDB · " + b.database,
 		ExpiresAt: s.opts.Now().Add(challengeExpiry).UTC().Truncate(time.Second),
 	}

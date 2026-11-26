@@ -201,8 +201,8 @@ func TestTypedDetailsKeepTheirSentence(t *testing.T) {
 		// The sentence alone, as a guard before version 13 gave it, is a
 		// signature the guard did not accept: the words no longer matter.
 		{"no such revert words, untyped", revertInvalid("no such revert"), action.CodeRevertInvalid, "REVERT_INVALID: no such revert", action.ReasonBadSignature},
-		{"no such approval", approvalTyped("NO_SUCH_APPROVAL", "no such approval"), action.CodeApprovalInvalid, "APPROVAL_INVALID: no such approval", action.ReasonNotThisAgent},
-		{"no such approval, any hint", approvalTyped("NO_SUCH_APPROVAL", "x"), action.CodeApprovalInvalid, "APPROVAL_INVALID: x", action.ReasonNotThisAgent},
+		{"no such approval", noSuchApprovalErr("no such approval"), action.CodeApprovalInvalid, "APPROVAL_INVALID: no such approval", action.ReasonNotThisAgent},
+		{"no such approval, any hint", noSuchApprovalErr("x"), action.CodeApprovalInvalid, "APPROVAL_INVALID: x", action.ReasonNotThisAgent},
 		{"no such approval words, untyped", approvalInvalid("no such approval"), action.CodeApprovalInvalid, "APPROVAL_INVALID: no such approval", action.ReasonBadSignature},
 		// An untyped detail keeps its sentence, a hint said after it.
 		{"every row skipped", guardErr("BS009", "NOTHING_TO_REVERT", "x", "y"), action.CodeNothingToRevert, "NOTHING_TO_REVERT: x (hint: y)", ""},

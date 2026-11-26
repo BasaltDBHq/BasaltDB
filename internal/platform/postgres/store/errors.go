@@ -167,10 +167,10 @@ func guardReason(code, detail string) string {
 // and NOTHING_TO_REVERT READS_ONLY (version 11), and NO_SUCH_REVERT and
 // NO_SUCH_APPROVAL (version 13).
 func typedSentence(gc guard.Code, detail string) bool {
-	switch gc {
-	case guard.CodeNothingToRevert:
+	if gc == guard.CodeNothingToRevert {
 		return detail == guard.NothingReadsOnly
-	case guard.CodeApprovalInvalid:
+	}
+	if gc == guard.CodeApprovalInvalid {
 		return detail == guard.NoSuchApproval
 	}
 	_, typed := revertTypedReasons[detail]

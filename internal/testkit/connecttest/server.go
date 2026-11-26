@@ -55,9 +55,6 @@ const ChallengeLife = 15 * time.Minute
 // grace record_setup also allows).
 const OpenGrace = 30 * time.Minute
 
-// maxPasskeyLabel is the longest passkey picker label, in bytes.
-const maxPasskeyLabel = 64
-
 var b64 = base64.RawURLEncoding
 
 // Server is the service. Its zero value is not usable: use Start.
@@ -165,10 +162,7 @@ func (s *Server) DescribeSetup(_ context.Context, r *connect.Request[connectv1.D
 		label = d.Target.Database
 	}
 	ch.UserName = label
-	ch.DisplayName = "BasaltDB · " + label
-	if len(ch.DisplayName) > maxPasskeyLabel {
-		ch.DisplayName = label
-	}
+	ch.DisplayName = passkey.FitLabel("BasaltDB · " + label)
 	ch.ExpiresAt = s.Now().Add(ChallengeLife).UTC().Format(time.RFC3339)
 	ch.MAC = s.mac(ch, d.Fingerprint)
 	return connect.NewResponse(&connectv1.DescribeSetupResponse{Summary: summary(d), Challenge: ch.proto()}), nil

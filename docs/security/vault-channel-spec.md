@@ -246,23 +246,17 @@ A `reject` revokes the revert's link, so its session ends with `LINK_REFUSED` on
 
 The path's id must be the item of the session's link, and the request header `basalt-link-secret` must be that link's secret (its `sha256` and its `linkToken` both match); otherwise `404`. Request headers are lowercase; a request carries `basalt-link-secret` and `origin` (`https://portal.basaltvault.app`), and on `POST` `content-type: application/json`; any other header is answered `400`. The engine hands the request to the same handlers as on loopback, with the same checks and statuses. When a revert's scope is widened, its link is rotated inside the open session: later requests carry the new secret and the old one is answered `404`.
 
-**Limits** (enforced by the engine and the page; the relay must carry messages up to these sizes):
+**Limits** (enforced by the engine and the page). The limits the relay applies too (frame, `ROUTE` and control message sizes, sessions per link and per engine, handshakes per link, link expiry, the challenge's lifetime, live links per engine) are in [`api/mcp/vault/limits.json`](../../api/mcp/vault/limits.json), which the engine's tests check its constants against; the relay must carry messages up to those sizes. The others:
 
 ```constants vault
 message-1 = exactly 99 bytes
 message-2 = at most 1024 bytes
-frame = at most 32786 bytes
-route-message = at most 32804 bytes
-control-message = at most 4096 bytes
 request-body = at most 16384 bytes
 response-body = at most 16 MiB, checked by the page only
 handshake-time = 10 seconds
 idle-session = 5 minutes
 session-lifetime = 30 minutes
 requests-per-session = 64
-sessions-per-link = 4
-sessions-per-engine = 64
-handshakes-per-link = 20 per 10 minutes
 route-type = 0x10
 session-id-bytes = 16
 ```
@@ -274,11 +268,11 @@ Evidence: [contract, Frames](../../contract/vault-channel.md#frames), [Limits](.
 **The engine's socket.** `wss://relay.basaltvault.app/v1/engines/<engineId>`, compiled into the binary.
 
 1. The engine opens it with the header `basalt-engine-key: <signing key SPKI, base64url>`. The Vault refuses (`AUTH_FAILED`) a key that is not a valid P-256 SPKI or does not hash to the path's `engineId`.
-2. The Vault sends `CHALLENGE` with 32 random bytes: fresh per socket, single use, valid 30 seconds.
+2. The Vault sends `CHALLENGE` with 32 random bytes: fresh per socket, single use, valid for `CHALLENGE_TTL` ([`limits.json`](../../api/mcp/vault/limits.json)).
 3. The engine answers `AUTH` with `version` 1 and `sig` over `basalt-vault-engine.1\n` + the challenge (as sent, base64url text) + `\n` + the host, where the host is the engine's own Vault host, never one the Vault names. A bad or late answer: `AUTH_FAILED`.
 4. The Vault sends `READY`. One live socket per engine id: a newer authenticated socket replaces the older, which is closed with `REPLACED`. After every `READY` the engine registers every live link again.
 
-Control messages are text WebSocket messages of at most 4 KiB, JSON ([schema](../../api/mcp/vault/control-message.schema.json)). Session bytes are binary `ROUTE` messages: `0x01` `||` `0x10` `||` `sid` (16 bytes) `||` the page's message exactly as received, or the engine's message for the page.
+Control messages are text WebSocket messages of at most `MAX_CONTROL` ([`limits.json`](../../api/mcp/vault/limits.json)), JSON ([schema](../../api/mcp/vault/control-message.schema.json)). Session bytes are binary `ROUTE` messages: `0x01` `||` `0x10` `||` `sid` (16 bytes) `||` the page's message exactly as received, or the engine's message for the page.
 
 | Message | Direction | Fields | Meaning |
 |---|---|---|---|

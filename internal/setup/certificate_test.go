@@ -31,9 +31,10 @@ func TestCertificateOfTheConfirmStep(t *testing.T) {
 	require.Equal(t, trustprofile.ProviderName("supabase"), issuer)
 }
 
-// A connection verified against a public root or its own pinned certificate shows its kind and
-// the name of the authority at the top of the chain the server sent; the
-// same chain shows no issuer when it was not verified.
+// A connection verified against a public root, or against one this host
+// was given (OWN), shows its kind and the name of the authority at the top
+// of the chain the server sent; the same chain shows no issuer when it was
+// not verified.
 func TestCertificateOfNamesTheChainsAuthority(t *testing.T) {
 	t.Parallel()
 	state := &tls.ConnectionState{PeerCertificates: []*x509.Certificate{selfSigned(t, "Example Root CA")}}

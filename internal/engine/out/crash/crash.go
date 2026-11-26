@@ -134,7 +134,7 @@ func clip(s string, n int) string {
 
 // ErrNotPruned is Save's error when the report was written but older
 // reports past Keep could not all be deleted: the report's id is good.
-var ErrNotPruned = errors.New("older crash reports were not deleted")
+var ErrNotPruned = servicespec.ErrCrashNotPruned
 
 // Save builds the report for in, writes it to Dir and keeps the newest Keep.
 // An error wrapping ErrNotPruned means the report was saved.

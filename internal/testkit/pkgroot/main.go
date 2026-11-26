@@ -87,8 +87,8 @@ func useTrustpin() {
 func useTrustprofile() {
 	var c *x509.Certificate
 	set := trustprofile.NewSet(nil, nil, nil)
-	trustprofile.Trust(nil, set)
-	_ = trustprofile.Explain(nil, set)
+	trustprofile.TrustTLS("", nil, set)
+	_ = trustprofile.ExplainTLS("", nil, set)
 	_ = trustprofile.CertificateNotVerified(nil)
 	_, _ = trustprofile.NewPin("", c, false)
 	_, _ = trustprofile.SystemRoots()

@@ -13,11 +13,9 @@ import (
 
 // The domains whose imports TestStoreNeutralDomainsLinkNoStorePackage
 // follows at any depth, beside the store rules that also scan their source.
-// status imports pkg/trustprofile, so it skips the one
-// named edge of the driver-free rule, as plugin does.
 var storeDepRules = []storeRule{
 	{dir: filepath.Join("internal", "links"), allowedDeps: map[string]string{}},
-	{dir: filepath.Join("internal", "status"), allowedDeps: map[string]string{}, throughTrustprofile: true},
+	{dir: filepath.Join("internal", "status"), allowedDeps: map[string]string{}},
 	{dir: filepath.Join("internal", "ledger"), allowedDeps: map[string]string{}},
 }
 
@@ -45,13 +43,6 @@ func underAny(rel string, roots []string) bool {
 // pgxImports are the Postgres driver's packages: pgx (v4 and v5, with its
 // pgconn and pgtype) and the old standalone pgconn.
 var pgxImports = []string{"github.com/jackc/pgx", "github.com/jackc/pgconn"}
-
-// pgxAllowed are the files outside pgxRoots that import a pgx package, each
-// with its reason. Every entry is one file and one import.
-var pgxAllowed = map[string]string{
-	"pkg/trustprofile/pgconn.go: import github.com/jackc/pgx/v5/pgconn": "Trust and Explain take a *pgconn.Config as part of the public API " +
-		"(the same named edge the driver-free rule skips)",
-}
 
 // pgxFindings are the imports of a pgx package by a non-test file of a
 // package outside pgxRoots, as "rel/file.go: import path".
@@ -95,7 +86,7 @@ func TestNoPgxOutsideTheStoreAdapters(t *testing.T) {
 	if files == 0 {
 		t.Fatal("scanned no Go file: the rule checks nothing")
 	}
-	for _, p := range checkStoreNeutral(findings, pgxAllowed) {
+	for _, p := range checkStoreNeutral(findings, nil) {
 		t.Errorf("%s\n\tonly internal/platform/postgres, setup, handoff, internal/app and internal/testkit import pgx; "+
 			"reach the store through a port its adapter implements", p)
 	}

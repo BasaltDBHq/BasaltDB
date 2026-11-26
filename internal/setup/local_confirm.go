@@ -64,7 +64,7 @@ func (s *LocalService) readConfirm(ctx context.Context, tx Tx, conn Conn, dsn st
 }
 
 // certificateKind is what verifies dsn's certificate as the engine dials it
-// (trustprofile.Explain with the profiles in force): a built-in profile is
+// (trustprofile.ExplainTLS with the profiles in force): a built-in profile is
 // the provider's, an operator's profile (a pin among them) or the string's
 // sslrootcert is a root this host was given, and below verify-full nothing
 // verifies it.

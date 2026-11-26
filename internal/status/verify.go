@@ -6,16 +6,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"mime"
 	"net"
-	"net/http"
+	"net/textproto"
 	"net/url"
 	"path"
 	"slices"
 	"strings"
-	"time"
 )
 
 // Statuses of one path.
@@ -32,9 +30,12 @@ const (
 // far smaller, so a longer body is a different file.
 const maxBody = 4 << 20
 
+// The HTTP status codes the check reads.
 const (
-	requestTimeout = 20 * time.Second
-	maxRedirects   = 5
+	codeOK        = 200
+	codeForbidden = 403
+	codeNotFound  = 404
+	codeGone      = 410
 )
 
 // File is the result for one path, relative to the portal base.
@@ -66,15 +67,15 @@ type PortalverifyOptions struct {
 	Base string
 	// Files is the embedded copy; every regular file in it is checked.
 	Files fs.FS
-	// Client fetches; newClient(Base) when nil.
-	Client *http.Client
+	// Fetch fetches the portal's paths (out/portalfetch for Base); required.
+	Fetch PageFetcher
 	// Headers are the response headers every file must carry; only
 	// Content-Security-Policy is compared, plus the media type of .js.
-	Headers http.Header
+	Headers textproto.MIMEHeader
 	// FileHeaders replace Headers for one embedded file, by its path, and
 	// for every route to it: the connect page has its own policy. A
 	// Cache-Control in them must be served with each of its directives.
-	FileHeaders map[string]http.Header
+	FileHeaders map[string]textproto.MIMEHeader
 	// Routes are the paths people load a page at (the engine's PageRoutes,
 	// which the portal's _redirects rewrites to page files). Each is fetched
 	// and compared with its embedded File, so a rewrite to another page is
@@ -138,42 +139,6 @@ func isLoopback(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-var errOffOrigin = errors.New("redirected to another origin; not followed")
-
-// newClient returns a client that follows redirects only within base's
-// origin.
-func newClient(base string) *http.Client {
-	u, _ := url.Parse(base)
-	return &http.Client{
-		Timeout: requestTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if u == nil || !sameOrigin(req.URL, u) {
-				return errOffOrigin
-			}
-			if len(via) >= maxRedirects {
-				return errors.New("too many redirects")
-			}
-			return nil
-		},
-	}
-}
-
-// sameOrigin compares scheme, lower-cased host and port, the default port
-// being implied.
-func sameOrigin(a, b *url.URL) bool {
-	return a.Scheme == b.Scheme && strings.EqualFold(a.Hostname(), b.Hostname()) && port(a) == port(b)
-}
-
-func port(u *url.URL) string {
-	if p := u.Port(); p != "" {
-		return p
-	}
-	if u.Scheme == "https" {
-		return "443"
-	}
-	return "80"
-}
-
 // probes are paths the portal build never publishes (tests and Go files); a
 // host that serves one has more than the page files on it. A static host
 // has no listing, so these named paths are all that can be checked.
@@ -218,9 +183,9 @@ func Verify(ctx context.Context, o PortalverifyOptions) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
-	client := o.Client
+	client := o.Fetch
 	if client == nil {
-		client = newClient(o.Base)
+		return nil, errors.New("status: the portal check has no fetcher")
 	}
 	r := &Report{PortalURL: o.Base, Files: make([]File, 0, len(paths))}
 	for _, p := range paths {
@@ -232,7 +197,7 @@ func Verify(ctx context.Context, o PortalverifyOptions) (*Report, error) {
 			r.Files = append(r.Files, checkNotFound(ctx, client, o, want))
 			continue
 		}
-		r.Files = append(r.Files, checkFile(ctx, client, o, p, "/"+requestPath(p), want, o.headersFor(p)))
+		r.Files = append(r.Files, checkFile(ctx, client, p, "/"+requestPath(p), want, o.headersFor(p)))
 	}
 	for _, rt := range o.Routes {
 		want, err := fs.ReadFile(o.Files, rt.File)
@@ -243,10 +208,10 @@ func Verify(ctx context.Context, o PortalverifyOptions) (*Report, error) {
 		if rt.ID {
 			u += probeID
 		}
-		r.Files = append(r.Files, checkFile(ctx, client, o, u, u, want, o.headersFor(rt.File)))
+		r.Files = append(r.Files, checkFile(ctx, client, u, u, want, o.headersFor(rt.File)))
 	}
 	for _, p := range probes(paths) {
-		if f, bad := checkExtra(ctx, client, o.Base, p); bad {
+		if f, bad := checkExtra(ctx, client, p); bad {
 			r.Files = append(r.Files, f)
 		}
 	}
@@ -268,27 +233,18 @@ func Verify(ctx context.Context, o PortalverifyOptions) (*Report, error) {
 // answer is what one GET returned, with the body already read and closed.
 type answer struct {
 	status int
-	header http.Header
+	header textproto.MIMEHeader
 	body   []byte
 }
 
-func get(ctx context.Context, c *http.Client, base, urlPath string) (answer, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+urlPath, http.NoBody)
-	if err != nil {
-		return answer{}, err
-	}
-	req.Header.Set("Cache-Control", "no-cache")
-	resp, err := c.Do(req)
-	if err != nil {
-		return answer{}, err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
-	return answer{resp.StatusCode, resp.Header, body}, err
+// get fetches urlPath through c, reading at most maxBody+1 bytes of its body.
+func get(ctx context.Context, c PageFetcher, urlPath string) (answer, error) {
+	code, header, body, err := c.Get(ctx, urlPath, maxBody+1)
+	return answer{code, header, body}, err
 }
 
 // headersFor is the header set the embedded file p must be served with.
-func (o PortalverifyOptions) headersFor(p string) http.Header {
+func (o PortalverifyOptions) headersFor(p string) textproto.MIMEHeader {
 	if h, ok := o.FileHeaders[p]; ok {
 		return h
 	}
@@ -297,15 +253,15 @@ func (o PortalverifyOptions) headersFor(p string) http.Header {
 
 // checkFile fetches urlPath and compares it with want and its headers with
 // hdr; p names the result.
-func checkFile(ctx context.Context, c *http.Client, o PortalverifyOptions, p, urlPath string, want []byte, hdr http.Header) File {
-	a, err := get(ctx, c, o.Base, urlPath)
+func checkFile(ctx context.Context, c PageFetcher, p, urlPath string, want []byte, hdr textproto.MIMEHeader) File {
+	a, err := get(ctx, c, urlPath)
 	if err != nil {
-		return File{Path: p, Status: StatusError, Detail: errText(err)}
+		return File{Path: p, Status: StatusError, Detail: err.Error()}
 	}
 	switch {
-	case a.status == http.StatusNotFound:
+	case a.status == codeNotFound:
 		return File{Path: p, Status: StatusMissing}
-	case a.status != http.StatusOK:
+	case a.status != codeOK:
 		return File{Path: p, Status: StatusError, Detail: fmt.Sprintf("HTTP %d", a.status)}
 	}
 	return compare(p, a, want, hdr)
@@ -313,7 +269,7 @@ func checkFile(ctx context.Context, c *http.Client, o PortalverifyOptions, p, ur
 
 // compare checks a served answer's bytes against want, then its headers
 // against hdr.
-func compare(p string, a answer, want []byte, hdr http.Header) File {
+func compare(p string, a answer, want []byte, hdr textproto.MIMEHeader) File {
 	if len(a.body) > maxBody || sum(a.body) != sum(want) {
 		return File{Path: p, Status: StatusDiffers, Detail: fmt.Sprintf("served sha256 %s, embedded %s", short(a.body), short(want))}
 	}
@@ -328,15 +284,15 @@ func compare(p string, a answer, want []byte, hdr http.Header) File {
 // something else (a single-page fallback to the home page, say), which would
 // also hide the probes for files it must not serve; any other status is
 // reported as an error.
-func checkNotFound(ctx context.Context, c *http.Client, o PortalverifyOptions, want []byte) File {
-	a, err := get(ctx, c, o.Base, notFoundPath)
+func checkNotFound(ctx context.Context, c PageFetcher, o PortalverifyOptions, want []byte) File {
+	a, err := get(ctx, c, notFoundPath)
 	if err != nil {
-		return File{Path: notFoundFile, Status: StatusError, Detail: errText(err)}
+		return File{Path: notFoundFile, Status: StatusError, Detail: err.Error()}
 	}
 	switch {
-	case a.status == http.StatusOK:
+	case a.status == codeOK:
 		return File{Path: notFoundFile, Status: StatusDiffers, Detail: fmt.Sprintf("HTTP %d at %s, want 404 with this page", a.status, notFoundPath)}
-	case a.status != http.StatusNotFound:
+	case a.status != codeNotFound:
 		return File{Path: notFoundFile, Status: StatusError, Detail: fmt.Sprintf("HTTP %d at %s", a.status, notFoundPath)}
 	}
 	return compare(notFoundFile, a, want, o.headersFor(notFoundFile))
@@ -345,7 +301,7 @@ func checkNotFound(ctx context.Context, c *http.Client, o PortalverifyOptions, w
 // headerProblem names the first wrong header: the CSP must equal the
 // wanted one, a wanted Cache-Control's directives must all be served, and a
 // .js file must be text/javascript.
-func headerProblem(got, want http.Header, p string) string {
+func headerProblem(got, want textproto.MIMEHeader, p string) string {
 	if csp := want.Get("Content-Security-Policy"); csp != "" {
 		switch have := got.Get("Content-Security-Policy"); {
 		case have == "":
@@ -384,28 +340,17 @@ func directives(values []string) map[string]bool {
 	return out
 }
 
-func checkExtra(ctx context.Context, c *http.Client, base, p string) (File, bool) {
-	a, err := get(ctx, c, base, "/"+p)
+func checkExtra(ctx context.Context, c PageFetcher, p string) (File, bool) {
+	a, err := get(ctx, c, "/"+p)
 	switch {
 	case err != nil:
-		return File{Path: p, Status: StatusError, Detail: errText(err)}, true
-	case a.status == http.StatusOK:
+		return File{Path: p, Status: StatusError, Detail: err.Error()}, true
+	case a.status == codeOK:
 		return File{Path: p, Status: StatusUnexpected, Detail: "served, but the binary does not embed it"}, true
-	case a.status == http.StatusNotFound, a.status == http.StatusForbidden, a.status == http.StatusGone:
+	case a.status == codeNotFound, a.status == codeForbidden, a.status == codeGone:
 		return File{}, false
 	}
 	return File{Path: p, Status: StatusError, Detail: fmt.Sprintf("HTTP %d", a.status)}, true
-}
-
-func errText(err error) string {
-	if errors.Is(err, errOffOrigin) {
-		return errOffOrigin.Error()
-	}
-	var ue *url.Error
-	if errors.As(err, &ue) {
-		return ue.Err.Error()
-	}
-	return err.Error()
 }
 
 func sum(b []byte) [32]byte { return sha256.Sum256(b) }

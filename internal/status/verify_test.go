@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/status"
+	"github.com/basaltdbhq/basaltdb/internal/status/out/portalfetch"
 )
 
 // The files checked come from the embedded filesystem itself, so a file
@@ -25,13 +27,13 @@ func TestVerifyChecksEveryFileOfTheFS(t *testing.T) {
 	srv := httptest.NewServer(http.FileServer(http.FS(embedded)))
 	t.Cleanup(srv.Close)
 
-	r, err := status.Verify(context.Background(), status.PortalverifyOptions{Base: srv.URL, Files: embedded})
+	r, err := status.Verify(context.Background(), status.PortalverifyOptions{Base: srv.URL, Fetch: portalfetch.New(srv.URL), Files: embedded})
 	require.NoError(t, err)
 	require.True(t, r.OK)
 	require.Equal(t, 3, r.Checked)
 
 	embedded["lib/new.js"] = &fstest.MapFile{Data: []byte("export const n = 2")}
-	r, err = status.Verify(context.Background(), status.PortalverifyOptions{Base: srv.URL, Files: embedded})
+	r, err = status.Verify(context.Background(), status.PortalverifyOptions{Base: srv.URL, Fetch: portalfetch.New(srv.URL), Files: embedded})
 	require.NoError(t, err)
 	require.Equal(t, 4, r.Checked)
 	require.True(t, r.OK, "the new file is served too")
@@ -41,7 +43,7 @@ func TestVerifyChecksEveryFileOfTheFS(t *testing.T) {
 		"approve/index.html": embedded["approve/index.html"], "lib/a.js": embedded["lib/a.js"], "style.css": embedded["style.css"],
 	})))
 	t.Cleanup(srvOld.Close)
-	r, err = status.Verify(context.Background(), status.PortalverifyOptions{Base: srvOld.URL, Files: embedded})
+	r, err = status.Verify(context.Background(), status.PortalverifyOptions{Base: srvOld.URL, Fetch: portalfetch.New(srvOld.URL), Files: embedded})
 	require.NoError(t, err)
 	require.False(t, r.OK)
 	require.Contains(t, r.Files, status.File{Path: "lib/new.js", Status: status.StatusMissing})
@@ -78,9 +80,9 @@ func TestVerifyFileHeaders(t *testing.T) {
 	}
 	opts := func(base string) status.PortalverifyOptions {
 		return status.PortalverifyOptions{
-			Base: base, Files: embedded,
-			Headers:     http.Header{"Content-Security-Policy": {def}},
-			FileHeaders: map[string]http.Header{"connect/index.html": {"Content-Security-Policy": {own}, "Cache-Control": {"no-store"}}},
+			Base: base, Fetch: portalfetch.New(base), Files: embedded,
+			Headers:     textproto.MIMEHeader{"Content-Security-Policy": {def}},
+			FileHeaders: map[string]textproto.MIMEHeader{"connect/index.html": {"Content-Security-Policy": {own}, "Cache-Control": {"no-store"}}},
 			Routes:      []status.Route{{Path: "/connect", File: "connect/index.html"}},
 		}
 	}

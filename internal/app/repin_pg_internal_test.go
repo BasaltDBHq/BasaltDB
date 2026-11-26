@@ -33,6 +33,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/handoff/out/connectrpc"
 	"github.com/basaltdbhq/basaltdb/internal/handoff/out/handofffiles"
 	"github.com/basaltdbhq/basaltdb/internal/handoff/out/handoffnet"
 	"github.com/basaltdbhq/basaltdb/internal/lib/certroots"
@@ -156,7 +157,7 @@ func (f rotationFixture) engineRepin(t *testing.T) *handoff.Repin {
 	r, err := handoff.NewRepin(handoff.RepinOptions{
 		Setup:      f.setup,
 		Credential: setupcode.Address{Host: repinHost, Port: 5432, Database: f.d.Admin.Config().Database},
-		Collector:  handoff.NewClient(nil, f.base, f.keys, time.Now),
+		Collector:  handoff.NewClient(connectrpc.New(nil, f.base), f.keys, time.Now),
 		Prober: handoff.Prober{
 			Resolver:  staticResolver{netip.MustParseAddr("8.8.8.8")},
 			Dial:      f.newDial,

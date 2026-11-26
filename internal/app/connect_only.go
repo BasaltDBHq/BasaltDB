@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/handoff/out/connectrpc"
 	"github.com/basaltdbhq/basaltdb/internal/handoff/out/handofffiles"
 )
 
@@ -71,7 +72,7 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 		collector = handoff.RootCollector{}
 		log.Warn("the agent waits for its database's address, which an engine started as root does not collect: start the engine as the agent's OS user")
 	case env.keys != nil:
-		collector = handoff.NewClient(env.handoff.HTTP, env.handoff.serviceURL(), env.keys, env.handoff.now())
+		collector = handoff.NewClient(connectrpc.New(env.handoff.HTTP, env.handoff.serviceURL()), env.keys, env.handoff.now())
 	}
 	reload := env.reload
 	if reload == nil {
@@ -116,7 +117,7 @@ func newRepin(env agentEnv, a config.Agent, cc *pgx.ConnConfig, log *slog.Logger
 	t := setupcode.ConnTarget(cc.Host, int(cc.Port), cc.Database, cc.User)
 	r, err := handoff.NewRepin(handoff.RepinOptions{
 		Setup: *a.Setup, Credential: setupcode.Address(t),
-		Collector: handoff.NewClient(env.handoff.HTTP, env.handoff.serviceURL(), env.keys, env.handoff.now()),
+		Collector: handoff.NewClient(connectrpc.New(env.handoff.HTTP, env.handoff.serviceURL()), env.keys, env.handoff.now()),
 		Prober:    env.handoff.Prober,
 		Files:     handofffiles.RepinSetupFiles{SetupFiles: handofffiles.SetupFiles{ConfigPath: env.configPath, Agent: a.Name, CredFile: a.Store.CredentialFile, Pins: trustPins{}}},
 		Log:       log.With("component", "connect"), Now: env.handoff.now(),

@@ -62,13 +62,13 @@ func ConnTarget(dsn string) (TLSTarget, error) {
 }
 
 // ExplainWith is what verifies the certificate of dsn's first host with
-// set's profiles (trustprofile.Explain), dsn parsed as the driver parses it.
+// set's profiles (explainConfig), dsn parsed as the driver parses it.
 func ExplainWith(dsn string, set *trustprofile.Set) (trustprofile.Applied, error) {
 	cfg, err := pgconn.ParseConfig(dsn)
 	if err != nil {
 		return trustprofile.Applied{}, err
 	}
-	return trustprofile.Explain(cfg, set), nil
+	return explainConfig(cfg, set), nil
 }
 
 // ConnectPinned opens one connection to dsn that trusts only p's

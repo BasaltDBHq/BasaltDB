@@ -1,1 +1,0 @@
-collect.go imports net/http (a service reaches the database and the network through a port)

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/http"
+	"net/textproto"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -98,15 +98,15 @@ func resultOf(rep *Report, now time.Time) Result {
 const connectPageFile = "connect/index.html"
 
 // PortalcheckOptions is what the check compares and how it is run for base, the
-// portal's origin: the pages embedded in this binary, the routes people load
-// pages at and the headers they must carry. basalt portal verify uses the
-// same.
-func PortalcheckOptions(base string) PortalverifyOptions {
+// portal's origin, fetched through fetch: the pages embedded in this binary,
+// the routes people load pages at and the headers they must carry. basalt
+// portal verify uses the same.
+func PortalcheckOptions(base string, fetch PageFetcher) PortalverifyOptions {
 	o := PortalverifyOptions{
-		Base: base, Files: web.Files, Headers: httpsec.ExpectedPortal(),
+		Base: base, Fetch: fetch, Files: web.Files, Headers: textproto.MIMEHeader(httpsec.ExpectedPortal()),
 		// The connect page reaches the connect service (CONTRACT.md, The
 		// connect page): its own policy, never stored.
-		FileHeaders: map[string]http.Header{connectPageFile: httpsec.ExpectedConnectPage()},
+		FileHeaders: map[string]textproto.MIMEHeader{connectPageFile: textproto.MIMEHeader(httpsec.ExpectedConnectPage())},
 	}
 	for _, r := range web.PortalPages() {
 		o.Routes = append(o.Routes, Route{Path: r.Path, ID: r.ID, File: r.File})

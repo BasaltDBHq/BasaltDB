@@ -636,9 +636,10 @@ func bannedImport(p string) bool {
 
 // serviceBanned reports whether a service may not import p: a service reaches
 // Postgres and the network through a port, never through the driver itself.
+// net/http's sub-packages (httptest, httputil and the rest) count too.
 func serviceBanned(p string) bool {
 	return p == "github.com/jackc/pgx" || strings.HasPrefix(p, "github.com/jackc/pgx/") ||
-		p == "database/sql" || p == "net/http"
+		p == "database/sql" || p == "net/http" || strings.HasPrefix(p, "net/http/")
 }
 
 func checkServiceImports(v violations, rel string, f *goFile) {

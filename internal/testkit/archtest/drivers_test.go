@@ -16,18 +16,9 @@ func driverPkg(p string) bool {
 		strings.HasPrefix(p, "github.com/mattn/go-sqlite3")
 }
 
-// The one named exception to the driver-free rule: pkg/trustprofile's Trust
-// and Explain take *pgconn.Config (public API); moving them to pgdial is an
-// owner decision. Only that one import edge is skipped; every other import
-// of pkg/trustprofile is followed.
-const (
-	trustprofilePkg = modulePath + "/pkg/trustprofile"
-	pgconnPkg       = "github.com/jackc/pgx/v5/pgconn"
-)
-
 // driverChains returns, for the package root, every driver package a chain of
-// imports reaches other than through the exception, with one such chain
-// each. graph maps an import path to its imports.
+// imports reaches, with one such chain each. graph maps an import path to
+// its imports.
 func driverChains(graph map[string][]string, root string) []string {
 	var out []string
 	parent := map[string]string{root: ""}
@@ -36,9 +27,6 @@ func driverChains(graph map[string][]string, root string) []string {
 		p := queue[0]
 		queue = queue[1:]
 		for _, q := range graph[p] {
-			if p == trustprofilePkg && q == pgconnPkg {
-				continue
-			}
 			if _, seen := parent[q]; seen {
 				continue
 			}
@@ -58,40 +46,44 @@ func driverChains(graph map[string][]string, root string) []string {
 	return out
 }
 
-// TestDriverChainsFollowTheRule runs the rule on a small graph: the one
-// named edge passes, any other path to a driver fails, also one that goes
-// through pkg/trustprofile.
+// TestDriverChainsFollowTheRule runs the rule on a small graph: a package
+// with no driver among its imports passes, and any path to a driver fails,
+// also one through pkg/trustprofile or straight to pgconn.
 func TestDriverChainsFollowTheRule(t *testing.T) {
 	m := modulePath + "/"
+	pgconn := "github.com/jackc/pgx/v5/pgconn"
 	graph := map[string][]string{
 		m + "internal/a":        {m + "pkg/trustprofile", m + "internal/lib/x"},
-		m + "pkg/trustprofile":  {pgconnPkg},
+		m + "pkg/trustprofile":  {"crypto/tls", m + "internal/lib/x"},
 		m + "internal/lib/x":    {"fmt"},
 		m + "internal/b":        {m + "pkg/trustprofile", m + "internal/lib/y"},
 		m + "internal/lib/y":    {"github.com/lib/pq"},
 		m + "internal/c":        {m + "pkg/trustprofile2"},
-		m + "pkg/trustprofile2": {pgconnPkg},
-		m + "internal/d":        {m + "pkg/trustprofile"},
+		m + "pkg/trustprofile2": {pgconn},
+		m + "internal/d":        {m + "pkg/trustprofile3"},
+		m + "pkg/trustprofile3": {pgconn, m + "internal/lib/z"},
+		m + "internal/lib/z":    {"github.com/jackc/pgx/v5/pgxpool"},
 	}
 	if got := driverChains(graph, m+"internal/a"); len(got) != 0 {
-		t.Errorf("the named edge alone must pass; got %q", got)
+		t.Errorf("a graph with no driver must pass; got %q", got)
 	}
 	got := driverChains(graph, m+"internal/b")
 	want := "internal/b -> internal/lib/y -> github.com/lib/pq"
 	if len(got) != 1 || got[0] != want {
 		t.Errorf("got %q, want [%q]", got, want)
 	}
-	if got := driverChains(graph, m+"internal/c"); len(got) != 1 {
-		t.Errorf("another package's pgconn import must fail; got %q", got)
-	}
-
-	// The rest of pkg/trustprofile is still walked.
-	graph[m+"pkg/trustprofile"] = []string{pgconnPkg, m + "internal/lib/x"}
-	graph[m+"internal/lib/x"] = []string{"github.com/jackc/pgx/v5/pgxpool"}
-	got = driverChains(graph, m+"internal/d")
-	want = "internal/d -> pkg/trustprofile -> internal/lib/x -> github.com/jackc/pgx/v5/pgxpool"
+	got = driverChains(graph, m+"internal/c")
+	want = "internal/c -> pkg/trustprofile2 -> " + pgconn
 	if len(got) != 1 || got[0] != want {
-		t.Errorf("got %q, want [%q]", got, want)
+		t.Errorf("a pgconn import fails; got %q, want [%q]", got, want)
+	}
+	got = driverChains(graph, m+"internal/d")
+	wantBoth := []string{
+		"internal/d -> pkg/trustprofile3 -> " + pgconn,
+		"internal/d -> pkg/trustprofile3 -> internal/lib/z -> github.com/jackc/pgx/v5/pgxpool",
+	}
+	if !slices.Equal(got, wantBoth) {
+		t.Errorf("got %q, want %q", got, wantBoth)
 	}
 }
 
@@ -116,8 +108,7 @@ func listGraph(t *testing.T, root, goos, d string) map[string][]string {
 
 // TestServicesLinkNoDatabaseDriver fails when a service package (a domain
 // root, internal/<d>) has a database driver among its transitive imports on
-// linux or darwin, other than through the one named edge. A go list that
-// fails fails the test.
+// linux or darwin. A go list that fails fails the test.
 func TestServicesLinkNoDatabaseDriver(t *testing.T) {
 	root := moduleRoot(t)
 	checked := 0

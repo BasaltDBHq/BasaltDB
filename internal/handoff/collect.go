@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"net/http"
 	"time"
 
 	"connectrpc.com/connect"
@@ -19,7 +18,7 @@ import (
 // ServiceURL is the connect service the engine collects from.
 const ServiceURL = "https://" + channel.ConnectAudience
 
-// collectTimeout bounds one CollectAddress call.
+// collectTimeout bounds one CollectAddress or ReportReach call.
 const collectTimeout = 20 * time.Second
 
 // The refusals CollectAddress and ReportReach answer with (CONTRACT.md, Connect refusals).
@@ -52,17 +51,14 @@ type Client struct {
 	now    func() time.Time
 }
 
-// NewClient is a client of the service at baseURL (ServiceURL outside
-// tests), signing with signer. The signed audience is always the
-// contract's, whatever baseURL is.
-func NewClient(httpClient *http.Client, baseURL string, signer Signer, now func() time.Time) *Client {
+// NewClient is a client of the connect service that rpc calls
+// (out/connectrpc, at ServiceURL outside tests), signing with signer. The
+// signed audience is always the contract's, whatever address rpc calls.
+func NewClient(rpc connectv1connect.SetupServiceClient, signer Signer, now func() time.Time) *Client {
 	if signer == nil || now == nil {
 		panic("handoff: a client needs a signer and a clock")
 	}
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: collectTimeout}
-	}
-	return &Client{rpc: connectv1connect.NewSetupServiceClient(httpClient, baseURL), signer: signer, now: now}
+	return &Client{rpc: rpc, signer: signer, now: now}
 }
 
 var b64 = base64.RawURLEncoding

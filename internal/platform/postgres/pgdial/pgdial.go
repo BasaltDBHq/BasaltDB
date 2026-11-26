@@ -87,7 +87,7 @@ func connConfigTrusting(dsn string, set *trustprofile.Set) (*pgx.ConnConfig, err
 	if set == nil {
 		set = Trust()
 	}
-	trustprofile.Trust(&cfg.Config, set)
+	trustConfig(&cfg.Config, set)
 	return cfg, nil
 }
 
@@ -114,7 +114,7 @@ func ConnConfigPinned(dsn string, p *trustprofile.Profile) (*pgx.ConnConfig, err
 		}
 		t.RootCAs = nil // a root the string or the environment named is not the pin
 	}
-	trustprofile.Trust(&cfg.Config, trustprofile.NewSet(nil, []*trustprofile.Profile{p}, nil))
+	trustConfig(&cfg.Config, trustprofile.NewSet(nil, []*trustprofile.Profile{p}, nil))
 	if !p.VerifiesCA() {
 		for _, t := range tlsConfigs {
 			t.RootCAs = p.OwnPool()
@@ -143,7 +143,7 @@ func PoolConfig(dsn string) (*pgxpool.Config, error) {
 	}
 	apply(dsn, cfg.ConnConfig)
 	cfg.BeforeConnect = func(_ context.Context, cc *pgx.ConnConfig) error {
-		trustprofile.Trust(&cc.Config, Trust())
+		trustConfig(&cc.Config, Trust())
 		return nil
 	}
 	return cfg, nil
@@ -156,7 +156,7 @@ func PoolConfig(dsn string) (*pgxpool.Config, error) {
 // refused.
 func TrustOfConfig(cfg *pgconn.Config) (trustprofile.Applied, []trustprofile.Refused) {
 	set := Trust()
-	return trustprofile.Explain(cfg, set), set.Refused()
+	return explainConfig(cfg, set), set.Refused()
 }
 
 // Pinned is a database host a trust profile pins: its name as pinned, its
@@ -176,7 +176,7 @@ func PinnedHost(dsn string) (p Pinned, ok bool) {
 	if err != nil {
 		return Pinned{}, false
 	}
-	a := trustprofile.Explain(cfg, Trust())
+	a := explainConfig(cfg, Trust())
 	host := trustprofile.NormalizeHost(cfg.Host)
 	if a.Profile == nil || a.Profile.Name != trustprofile.PinName(host) {
 		return Pinned{}, false
@@ -209,7 +209,7 @@ func WithCertificateHint(dsn string, err error) error {
 	}
 	a := trustprofile.Applied{Host: "the database's host", Applies: trustprofile.AppliesSystem}
 	if cfg, perr := pgconn.ParseConfig(dsn); perr == nil && cfg.Host != "" {
-		a = trustprofile.Explain(cfg, Trust())
+		a = explainConfig(cfg, Trust())
 	}
 	switch a.Applies {
 	case trustprofile.AppliesRootCert:

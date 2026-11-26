@@ -150,12 +150,12 @@ type ScanResult struct {
 	Columns int
 	Rows    int64
 	Values  int64
-	// Skipped counts the relations left out of this cycle.
+	// Skipped counts the resources left out of this cycle.
 	Skipped int
 }
 
 // Cycle reads every IDENTIFIER column and commits a new base. On any error
-// but a relation it skips (gone, no longer readable, or too slow to read in
+// but a resource it skips (gone, no longer readable, or too slow to read in
 // one pass), the build is aborted and the previous base and the delta stay
 // (fail closed: a base missing values is never committed). When cycles keep
 // failing it warns: once the delta is full, reads of IDENTIFIER columns fail.
@@ -212,11 +212,11 @@ func (r *scanRun) source(ctx context.Context, src ScanSource) error {
 	if err != nil {
 		return fmt.Errorf("agent %s: %w", src.Agent, err)
 	}
-	for _, t := range byTable(cols) {
-		err := r.table(ctx, src, t)
+	for _, t := range byResource(cols) {
+		err := r.resource(ctx, src, t)
 		if why := skipReason(err); why != "" {
 			r.res.Skipped++
-			r.s.log.Warn("pii: skipped a relation in this scan: "+why, "agent", src.Agent,
+			r.s.log.Warn("pii: skipped a resource in this scan: "+why, "agent", src.Agent,
 				"resource", t.target.Namespace+"."+t.target.Name, "columns", len(t.cols))
 			continue
 		}
@@ -228,9 +228,9 @@ func (r *scanRun) source(ctx context.Context, src ScanSource) error {
 	return nil
 }
 
-// skipReason says why a relation's error skips it instead of failing the
-// cycle, or "" when it does not: the relation is gone or no longer readable,
-// or a relation without a keyset is too slow to read in one pass.
+// skipReason says why a resource's error skips it instead of failing the
+// cycle, or "" when it does not: the resource is gone or no longer readable,
+// or a resource without a keyset is too slow to read in one pass.
 func skipReason(err error) string {
 	switch {
 	case errors.Is(err, piistore.ErrTooSlow):
@@ -241,16 +241,16 @@ func skipReason(err error) string {
 	return ""
 }
 
-// scanTable is one resource's IDENTIFIER fields: the target the store reads,
+// scanResource is one resource's IDENTIFIER fields: the target the store reads,
 // and each field's class, in the same order.
-type scanTable struct {
+type scanResource struct {
 	target piistore.ScanTarget
 	cols   []Class
 }
 
-// byTable groups fields by resource, in a stable order: resources by printed
+// byResource groups fields by resource, in a stable order: resources by printed
 // name, fields by name.
-func byTable(cols []IdentifierColumn) []scanTable {
+func byResource(cols []IdentifierColumn) []scanResource {
 	idx := map[action.ResourceRef]int{}
 	var groups [][]IdentifierColumn
 	for _, c := range cols {
@@ -262,10 +262,10 @@ func byTable(cols []IdentifierColumn) []scanTable {
 		}
 		groups[i] = append(groups[i], c)
 	}
-	out := make([]scanTable, 0, len(groups))
+	out := make([]scanResource, 0, len(groups))
 	for _, g := range groups {
 		slices.SortFunc(g, func(a, b IdentifierColumn) int { return strings.Compare(a.Class.Field, b.Class.Field) })
-		t := scanTable{target: piistore.ScanTarget{Resource: g[0].Resource, Namespace: g[0].Class.Namespace, Name: g[0].Class.Resource}}
+		t := scanResource{target: piistore.ScanTarget{Resource: g[0].Resource, Namespace: g[0].Class.Namespace, Name: g[0].Class.Resource}}
 		for _, c := range g {
 			t.target.Fields = append(t.target.Fields, piistore.FieldClass{
 				Ref: c.Ref, Resource: c.Resource, Namespace: c.Class.Namespace, ResourceName: c.Class.Resource, Field: c.Class.Field,
@@ -275,16 +275,16 @@ func byTable(cols []IdentifierColumn) []scanTable {
 		}
 		out = append(out, t)
 	}
-	slices.SortFunc(out, func(a, b scanTable) int {
+	slices.SortFunc(out, func(a, b scanResource) int {
 		return strings.Compare(a.target.Namespace+"."+a.target.Name, b.target.Namespace+"."+b.target.Name)
 	})
 	return out
 }
 
-// table reads every page of one resource through the store's adapter,
+// resource reads every page of one resource through the store's adapter,
 // adding each value to the build and pausing after each page to keep the
 // scan under RowsPerSecond.
-func (r *scanRun) table(ctx context.Context, src ScanSource, t scanTable) error {
+func (r *scanRun) resource(ctx context.Context, src ScanSource, t scanResource) error {
 	return src.Fields.Read(ctx, t.target, r.s.opts.PageRows,
 		func(field int, v any) error { return r.add(t.cols[field], v) },
 		func(rows int) error {

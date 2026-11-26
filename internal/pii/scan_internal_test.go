@@ -163,7 +163,7 @@ func TestScanSkipsWhatTheStoreSkips(t *testing.T) {
 		require.Equal(t, ScanResult{Columns: 1, Rows: 1, Values: 1, Skipped: 1}, res)
 		require.True(t, hasEmail(dict, keys, "d@corp.ee"))
 		require.False(t, hasEmail(dict, keys, "a@corp.ee"))
-		require.Contains(t, out.String(), "pii: skipped a relation in this scan: "+c.why)
+		require.Contains(t, out.String(), "pii: skipped a resource in this scan: "+c.why)
 		require.Contains(t, out.String(), "resource=db.users")
 		require.Contains(t, out.String(), "columns=2")
 	}

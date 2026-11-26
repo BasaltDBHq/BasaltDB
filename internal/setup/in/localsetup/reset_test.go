@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
@@ -32,10 +31,10 @@ func TestNotMineIsOnlyAMarkForBasaltInit(t *testing.T) {
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix, Configured: true,
 		Now: func() time.Time { return f.now },
-		Dial: setupbackend.Dialer(func(context.Context, string) (*pgx.Conn, error) {
+		Dial: func(context.Context, string) (localsetup.Conn, error) {
 			t.Error("the engine check connected to a database")
 			return nil, errors.New("no connection")
-		}),
+		},
 	})
 	require.NoError(t, err)
 	got, err := svc.Engine(ctx)

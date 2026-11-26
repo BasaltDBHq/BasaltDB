@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
@@ -43,12 +44,9 @@ const (
 	unsupportedName = "unsupported name"
 )
 
-// plainName is a plain lowercase identifier, as a setup code's tables are.
-const plainName = `[a-z_][a-z0-9_]{0,62}`
-
 var (
-	plainSchema = regexp.MustCompile(`^` + plainName + `$`)
-	plainTable  = regexp.MustCompile(`^` + plainName + `\.` + plainName + `$`)
+	plainSchema = regexp.MustCompile(`^` + setupcode.PlainName + `$`)
+	plainTable  = regexp.MustCompile(`^` + setupcode.PlainName + `\.` + setupcode.PlainName + `$`)
 )
 
 // TablePick is one table the person gave the agent, and how.

@@ -373,19 +373,19 @@ func newTrustFixture(t *testing.T) *trustFixture {
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix, Configured: true,
 		Now:      func() time.Time { return f.now },
 		Profiles: func() *trustprofile.Set { return trustdir.Set(f.config) },
-		Dial: setupbackend.Dialer(func(ctx context.Context, dsn string) (*pgx.Conn, error) {
+		Dial: func(ctx context.Context, dsn string) (localsetup.Conn, error) {
 			if !strings.Contains(dsn, pinHost) {
-				return pgdial.Connect(ctx, dsn)
+				return setupbackend.Wrap(pgdial.Connect(ctx, dsn))
 			}
 			if !tf.pinHolds((*tf.chain.Load())[1]) {
 				return nil, x509.UnknownAuthorityError{}
 			}
-			return pgdial.Connect(ctx, agentURL)
-		}),
-		DialPinned: setupbackend.PinnedDialer(func(ctx context.Context, _ string, pin *trustprofile.Profile) (*pgx.Conn, error) {
+			return setupbackend.Wrap(pgdial.Connect(ctx, agentURL))
+		},
+		DialPinned: func(ctx context.Context, _ string, pin *trustprofile.Profile) (localsetup.Conn, error) {
 			tf.pinned = append(tf.pinned, pin)
-			return pgdial.Connect(ctx, f.db.URL)
-		}),
+			return setupbackend.Wrap(pgdial.Connect(ctx, f.db.URL))
+		},
 		Probe: func(_ context.Context, host string, _ int) ([]*x509.Certificate, error) {
 			require.Equal(t, pinHost, host)
 			return *tf.chain.Load(), nil

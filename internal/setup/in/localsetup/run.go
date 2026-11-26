@@ -556,8 +556,9 @@ func (s *Service) inTx(ctx context.Context, conn Conn, fn func(Tx) error) error 
 
 // beginFunc runs fn in a transaction on conn, as pgx.BeginFunc does:
 // committed when fn returns nil, rolled back when it returns an error,
-// which beginFunc returns; a failed commit is its error as it is, and a
-// rollback that fails after the transaction ended is the error.
+// which beginFunc returns; a failed commit is its error as it is. The
+// closing rollback of a transaction that already ended is not an error
+// (Tx.Rollback); any other failure of it is the error.
 func beginFunc(ctx context.Context, conn Conn, fn func(Tx) error) (err error) {
 	tx, err := conn.Begin(ctx)
 	if err != nil {

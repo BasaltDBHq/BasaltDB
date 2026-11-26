@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
@@ -27,10 +28,6 @@ type CatalogTable = struct {
 	Plain bool
 }
 
-// plainName is a plain lowercase identifier, as a setup code's tables are
-// (the setup's own plainName).
-const plainName = `[a-z_][a-z0-9_]{0,62}`
-
 // listSQL reads the ordinary and partitioned tables of the schemas $1 (one
 // more than the cap, so a longer list is known). Plain SQL: a catalog read
 // squirrel cannot express. Partitions are left out: the agent reaches their
@@ -39,7 +36,7 @@ const listSQL = `SELECT n.nspname || '.' || c.relname,
        r.rolname,
        r.rolname = current_user,
        EXISTS (SELECT 1 FROM pg_catalog.pg_constraint k WHERE k.conrelid = c.oid AND k.contype = 'p'),
-       c.relname ~ '^` + plainName + `$'
+       c.relname ~ '^` + setupcode.PlainName + `$'
   FROM pg_catalog.pg_class c
   JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
   JOIN pg_catalog.pg_roles r ON r.oid = c.relowner
@@ -50,7 +47,9 @@ const listSQL = `SELECT n.nspname || '.' || c.relname,
  LIMIT $2`
 
 // ListTables reads at most limit tables of schemas, in schema and table
-// order (listSQL).
+// order (listSQL). It stops reading once it has limit rows: what the
+// server sends after the last one is not read, as the listing's cap
+// answers "more" without it.
 func (Store) ListTables(ctx context.Context, q sqlport.Port, schemas []string, limit int) ([]CatalogTable, error) {
 	rows, err := q.Query(ctx, listSQL, schemas, limit)
 	if err != nil {
@@ -58,7 +57,7 @@ func (Store) ListTables(ctx context.Context, q sqlport.Port, schemas []string, l
 	}
 	defer rows.Close()
 	var out []CatalogTable
-	for rows.Next() {
+	for len(out) < limit && rows.Next() {
 		var t CatalogTable
 		if err := rows.Scan(&t.Name, &t.Owner, &t.Mine, &t.Keyed, &t.Plain); err != nil {
 			return nil, err

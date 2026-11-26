@@ -239,21 +239,6 @@ func Wrap(c *pgx.Conn, err error) (setup.Conn, error) {
 	return conn{c}, nil
 }
 
-// Dialer is dial as the setup's Options.Dial (tests: a dial of their own).
-func Dialer(dial func(ctx context.Context, dsn string) (*pgx.Conn, error)) func(ctx context.Context, dsn string) (setup.Conn, error) {
-	return func(ctx context.Context, dsn string) (setup.Conn, error) { return Wrap(dial(ctx, dsn)) }
-}
-
-// PinnedDialer is dial as the setup's Options.DialPinned.
-func PinnedDialer(dial func(ctx context.Context, dsn string, p *trustprofile.Profile) (*pgx.Conn, error)) func(ctx context.Context, dsn string, p *trustprofile.Profile) (setup.Conn, error) {
-	return func(ctx context.Context, dsn string, p *trustprofile.Profile) (setup.Conn, error) {
-		return Wrap(dial(ctx, dsn, p))
-	}
-}
-
-// Pgx is the pgx connection c wraps (tests: a sampler of their own).
-func Pgx(c setup.Conn) *pgx.Conn { return pgxConn(c) }
-
 func (c conn) Port() setup.Querier                         { return pgquerier.Neutralize(c.c) }
 func (c conn) Close(ctx context.Context) error             { return c.c.Close(ctx) }
 func (c conn) Begin(ctx context.Context) (setup.Tx, error) { return begin(ctx, c.c) }

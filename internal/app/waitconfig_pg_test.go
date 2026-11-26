@@ -17,8 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
@@ -390,10 +388,10 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 		Backend:    setupbackend.Backend{},
 		ConfigPath: configPath, Origin: origin, Users: agentUsers{}, Prefix: d.Names.Prefix, Configured: true,
 		Euid: func() int { return 4000 },
-		Dial: setupbackend.Dialer(func(context.Context, string) (*pgx.Conn, error) {
+		Dial: func(context.Context, string) (localsetup.Conn, error) {
 			dials.Add(1)
 			return nil, errors.New("down")
-		}),
+		},
 	})
 	require.NoError(t, err)
 	srv := pageserver.New(origin, slog.New(slog.DiscardHandler))

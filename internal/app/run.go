@@ -392,7 +392,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			// only, and nothing that reads a database.
 			out.agents = append(out.agents, engine.Agent{
 				Name: a.Name, UID: uids[a.Name], SocketPath: cfg.SocketPath(a.Name),
-				Server: mcpServer{mcpserver.NewServer(env.serverInfo(nil, log), rt.tools...)},
+				Server: mcpServer{mcpserver.NewServer(env.serverInfo(nil, log.With("agent", a.Name)), rt.tools...)},
 			})
 			continue
 		}
@@ -411,7 +411,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			Name:       a.Name,
 			UID:        uids[a.Name],
 			SocketPath: cfg.SocketPath(a.Name),
-			Server:     mcpServer{mcpserver.NewServer(env.serverInfo(rt.svc.UpdateNotice, log), AgentTools(rt.svc)...).WithMethods(env.requests.uploadMethods(a.Name, rt.svc.PluginUploadsServed))},
+			Server:     mcpServer{mcpserver.NewServer(env.serverInfo(rt.svc.UpdateNotice, log.With("agent", a.Name)), AgentTools(rt.svc)...).WithMethods(env.requests.uploadMethods(a.Name, rt.svc.PluginUploadsServed))},
 		})
 	}
 	return out, nil

@@ -744,7 +744,9 @@ func portForwardProblems(methods, notForward []string, list map[string]string) [
 //
 // Not covered: a method promoted from an embedded field (the embedded type's
 // own methods are checked only if that type is itself a port type of app),
-// and calls in a forward's arguments (return s.x.F(helper(v))).
+// calls in a forward's arguments (return s.x.F(helper(v))), a function
+// literal argument of one statement that is itself an if or a switch, and a
+// function-typed field set positionally in a struct literal (T{f, g}).
 func TestPortMethodsOnlyForward(t *testing.T) {
 	scan := scanApp(t)
 	require.Empty(t, portForwardProblems(scan.portMethods, scan.portNotForward, portLogic))

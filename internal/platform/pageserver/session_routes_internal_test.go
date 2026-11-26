@@ -10,7 +10,7 @@ import (
 // same API routes: these patterns, and no other.
 func TestSessionRoutePatterns(t *testing.T) {
 	t.Parallel()
-	var got []string
+	got := make([]string, 0, len(sessionRoutes))
 	for _, r := range sessionRoutes {
 		got = append(got, r.pattern())
 	}

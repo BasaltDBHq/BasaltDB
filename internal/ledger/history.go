@@ -44,6 +44,13 @@ func (r *Reads) History(ctx context.Context, p action.ChangeListParams) (History
 	return r.store.History(ctx, p)
 }
 
+// CheckRun answers whether id is one of the agent's runs, from its ledger:
+// nil for uuid.Nil or a run it holds, else FindRun's error.
+func CheckRun(ctx context.Context, store runFinder, id uuid.UUID) error {
+	_, err := FindRun(ctx, store, id)
+	return err
+}
+
 // FindRun looks up the agent's run in its ledger: the zero run for uuid.Nil, or
 // NOT_FOUND. Every domain that takes a runId goes through it.
 func FindRun(ctx context.Context, store runFinder, id uuid.UUID) (action.Run, error) {

@@ -521,16 +521,12 @@ func (s *Service) InATest() int { n := 1; return n }
 // still here. The list only shrinks: an entry whose method is gone, has
 // become a forward or no longer implements a port fails the test.
 var portLogic = map[string]string{
-	"runChecker.CheckRun":               "looks the run up in the ledger and drops the run it found",
-	"agentProbe.ReinstallNotice":        "reads the store's reinstalls and renders the ledger's person message",
 	"pgErrors.ServerMessage":            "the setup domain's DBErrors on pgx: unwraps a Postgres server error",
 	"rootConfigDir.Upsert":              "the setup domain's config writer as root: checks the directory's owner before it writes",
 	"rootFiles.ReadCredential":          "the setup domain's credential files as root: reads through the checked read",
 	"rootFiles.Promote":                 "the setup domain's credential files as root: checks the pending file before it renames it",
 	"rootFiles.ClearSetup":              "the setup domain's credential files as root: picks the owner before it clears the setup",
 	"rootFiles.Close":                   "the setup domain's credential files as root: closes both directories",
-	"EngineDownServer.Abandoned":        "basalt mcp with the engine down: answers each request line itself",
-	"gatedDispatcher.Dispatch":          "the pages API: refuses a request while the engine restarts",
 	"sessionDispatcher.Dispatch":        "the pages API: translates the channel's request and response to the pages' types",
 	"setupHost.ConnTarget":              "the setup host: parses the connection string's target",
 	"setupHost.OSInstallScript":         "the setup host: reads the binary's source, then builds the install script",

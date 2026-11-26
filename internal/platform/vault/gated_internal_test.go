@@ -1,4 +1,4 @@
-package app
+package vault
 
 import (
 	"context"
@@ -7,15 +7,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 )
 
 type countingDispatcher struct{ calls int }
 
-func (d *countingDispatcher) Dispatch(context.Context, vault.SessionLink, vault.Request) vault.Response {
+func (d *countingDispatcher) Dispatch(context.Context, SessionLink, Request) Response {
 	d.calls++
-	return vault.Response{Status: http.StatusOK}
+	return Response{Status: http.StatusOK}
 }
 
 // switchGate admits calls until it is closed and counts the running ones.
@@ -38,12 +36,12 @@ func TestAPageSessionRequestIsCountedAndRefusedOnceTheGateCloses(t *testing.T) {
 	t.Parallel()
 	g := &switchGate{}
 	next := &countingDispatcher{}
-	d := gatedDispatcher{gate: g, next: next}
-	require.Equal(t, http.StatusOK, d.Dispatch(context.Background(), vault.SessionLink{}, vault.Request{}).Status)
+	d := GatedDispatcher{Gate: g, Next: next}
+	require.Equal(t, http.StatusOK, d.Dispatch(context.Background(), SessionLink{}, Request{}).Status)
 	require.Zero(t, g.busy, "idle after the request")
 	g.closed = true
 
-	resp := d.Dispatch(context.Background(), vault.SessionLink{}, vault.Request{})
+	resp := d.Dispatch(context.Background(), SessionLink{}, Request{})
 	require.Equal(t, http.StatusServiceUnavailable, resp.Status)
 	var body map[string]string
 	require.NoError(t, json.Unmarshal(resp.Body, &body))

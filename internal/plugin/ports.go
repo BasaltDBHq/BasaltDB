@@ -80,6 +80,9 @@ type Ports struct {
 	ReadConfig func(euid int, path string) (config.Config, []byte, error)
 	// NewUnitHost is the plugin units an engine on host expects (HostFor).
 	NewUnitHost func(host servicespec.PluginHost) UnitHost
+	// WriteFeedCursor writes a feed cursor file whole: raw as name in dir,
+	// which it makes when missing, mode 0600, without syncing dir.
+	WriteFeedCursor func(dir, name string, raw []byte) error
 }
 
 // UnitHost is the plugin units a service engine expects: the OS service
@@ -121,6 +124,8 @@ func (p Ports) check() string {
 		return "NewUnitHost"
 	case p.ReadConfig == nil:
 		return "ReadConfig"
+	case p.WriteFeedCursor == nil:
+		return "WriteFeedCursor"
 	}
 	return ""
 }

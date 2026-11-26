@@ -687,7 +687,7 @@ func (ep *Plugins) Serve(ctx context.Context, cfg config.Config, configPath stri
 	}
 	// The notifier hooks follow what is served; they stop before the
 	// plugins drain.
-	f := newPluginFeed(ep.host, ep.servedEntries, ledgers, ep.o.stateDir, ep.senders, ep.o.clock, ep.log)
+	f := newPluginFeed(ep.host, ep.servedEntries, ledgers, ep.o.stateDir, ep.o.Ports.WriteFeedCursor, ep.senders, ep.o.clock, ep.log)
 	if ep.o.feedTiming != nil {
 		f.timing = *ep.o.feedTiming
 	}

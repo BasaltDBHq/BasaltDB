@@ -163,7 +163,6 @@ func TestConnectOnlyWaitingServesOnlyStatus(t *testing.T) {
 	require.Equal(t, "Waiting for the setup on the connect page. If you already approved it there, open the same link again and approve once more: your bot will connect.", p.Message)
 	require.Equal(t, toolresult.ActionOpenLink, p.NextSteps[0].Action)
 	require.True(t, strings.HasPrefix(p.NextSteps[0].URL, "https://portal.basaltvault.app/connect#basalt-setup.1."))
-	require.NotContains(t, p.PersonMessage, "basalt init --setup-code", "no laptop command for a connect-only code")
 	requireStatusSchema(t, statusToolContract(t), r)
 
 	for _, tool := range degradedTools(c.Call) {

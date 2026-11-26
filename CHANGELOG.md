@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- A setup code run against the wrong database (`TARGET_MISMATCH`) now tells the person to paste the admin connection string of the code's database on the page, or to ask the agent for a new code. It no longer says to run a command.
+
 ### Removed
 
 - The Go setup package (`pkg/setup`) drops `Request.ConnectPage` and the `CONNECT_ONLY` refusal (`CodeConnectOnly`), left from the removed laptop setup command. Every request is run the way the connect page runs it: a code without a target is accepted, `Check` always returns the column labels (and, for a code with a target, the passkeys), and `Run` refuses a code with ticks and no `Included` with `NO_TABLES`. The laptop's passkey step goes too: `RunInput.AskPasskey`, `RunInput.AddPasskey` and the `PASSKEY_NOT_REGISTERED` refusal (`CodePasskeyNotRegistered`). A run needs `RunInput.Passkey` whenever the database has no active portal passkey. The contract no longer promises OSC 8 terminal hyperlinks, which the CLI never printed.

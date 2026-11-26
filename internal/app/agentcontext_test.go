@@ -130,8 +130,7 @@ func TestAgentFacingTextIsAgentLed(t *testing.T) {
 			return err
 		}
 		// The setup code's own schema and fixtures describe the code's
-		// format, not text an agent is told to follow; they go with
-		// --setup-code.
+		// format, not text an agent is told to follow.
 		if filepath.Base(filepath.Dir(p)) == "setup" {
 			return nil
 		}

@@ -120,11 +120,11 @@ func TestASetupIsClearedOnlyWhenTheDatabaseShowsItRecorded(t *testing.T) {
 	}
 }
 
-// After the laptop init, status finds the setup recorded with the engine's
+// After the setup ran, status finds it recorded with the engine's
 // own credential: it clears it, reports DONE, and the tools are served
 // without a restart. A missing passkey is NO_PASSKEY, a usual problem, not
 // a setup that never finishes (RI-10).
-func TestAfterTheLaptopStatusClearsTheSetupAndTheToolsAreServed(t *testing.T) {
+func TestAfterTheSetupStatusClearsItAndTheToolsAreServed(t *testing.T) {
 	t.Parallel()
 	setup := pendingInstall()
 	probe := &fakeProbe{err: errNoRole, recordedErr: errNoRole}

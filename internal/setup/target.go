@@ -34,7 +34,7 @@ func CheckTarget(p setupcode.Payload, got setupcode.Target) error {
 	}
 	want := TargetWords(*p.Target)
 	msg := fmt.Sprintf("This setup code is for database %s of %s (the agent connects there). Your admin connection string points at database %s of %s. "+
-		"Either run this command with the admin connection string of %s, or ask %s for a new code for the database you meant",
+		"Paste the admin connection string of %s on the page instead, or ask %s for a new code for the database you meant",
 		p.Target.Database, want, got.Database, TargetWords(got), want, AgentWord(p))
 	return setuprunRefuse(SetuprunCodeTargetMismatch, msg+".")
 }

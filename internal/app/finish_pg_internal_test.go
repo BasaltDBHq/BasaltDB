@@ -99,7 +99,7 @@ func problemCodes(r guidance.StatusReport) []string {
 	return out
 }
 
-func TestALaptopInstallIsFinishedByStatusWithoutARestart(t *testing.T) {
+func TestAnInstallIsFinishedByStatusWithoutARestart(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	d := guardtest.New(t).WithDemo(t)
@@ -111,7 +111,7 @@ func TestALaptopInstallIsFinishedByStatusWithoutARestart(t *testing.T) {
 	r := newRemoteAgent(t, dsn, guardmodel.SetupInstall)
 	rt := r.start(t)
 
-	// Before the person's laptop: every tool but status is held.
+	// Before the setup runs: every tool but status is held.
 	var se *guidance.SetupError
 	require.ErrorAs(t, rt.svc.Admit(ctx), &se)
 	st, err := rt.svc.status.Status(ctx)
@@ -125,7 +125,7 @@ func TestALaptopInstallIsFinishedByStatusWithoutARestart(t *testing.T) {
 	require.ErrorAs(t, rt.svc.Admit(ctx), &se)
 	require.NotNil(t, r.configSetup(t))
 
-	// The laptop records the code in the install's transaction.
+	// The setup records the code in the install's transaction.
 	r.record(t, d, guardmodel.SetupInstall)
 	st, err = rt.svc.status.Status(ctx)
 	require.NoError(t, err)
@@ -158,7 +158,7 @@ func TestARotatedCredentialIsPromotedWhenItsSetupIsRecorded(t *testing.T) {
 	require.Equal(t, "PENDING", st.Setup.State)
 	require.Contains(t, problemCodes(st), "SETUP_CHANGE_PENDING")
 
-	// The laptop rotates the password to the one in .pending and records
+	// The setup rotates the password to the one in .pending and records
 	// the code: the engine's own password stops working.
 	d.Init(t, guardmodel.AgentSpec{Name: "bot", Verifier: verifierOf(t, pw2), Write: demoTables, Read: demoTables})
 	r.record(t, d, guardmodel.SetupAgent)

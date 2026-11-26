@@ -561,8 +561,7 @@ func TestAPendingInstallServesOnlyStatus(t *testing.T) {
 	t.Parallel()
 	probe := &fakeProbe{err: errNoRole, recordedErr: errNoRole}
 	srv, tools := degraded(t, probe, pendingSetup(guardmodel.SetupInstall, statusNow.Add(time.Hour)))
-	// The person runs the code on their own computer: basalt init
-	// --setup-code takes no --agent or --config, and the message names the
+	// The person runs the code on the connect page: the message names the
 	// fingerprint to check, not the code itself.
 	requireOnlyStatusServed(t, srv, tools, guidance.ReasonSetupPending, testFingerprint)
 

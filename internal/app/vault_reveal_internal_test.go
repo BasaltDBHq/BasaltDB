@@ -95,7 +95,7 @@ func newRevealEnv(t *testing.T) *revealEnv {
 		require.NoError(t, err)
 		_, err = store.SubmitApproval(ctx, id, as)
 		require.NoError(t, err)
-		_, err = store.WriteApproved(ctx, action.Intent(done), id, action.OpDelete, `DELETE FROM public.leads WHERE id = $1`, []any{json.Number("5")})
+		_, err = store.WriteApproved(ctx, action.Intent(done), id, action.OpDelete, `DELETE FROM public.leads WHERE id = $1`, []any{json.Number("5")}, ignoreReturned)
 		require.NoError(t, err)
 	})
 	e.revert, err = store.PrepareRevert(ctx, revertstore.Scope{Kind: revert.ScopeRun, ID: done.RunID}, "Undo it", guardmodel.MCPPrepareTimeout)

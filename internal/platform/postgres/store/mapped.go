@@ -356,16 +356,18 @@ func (s *Store) StartRun(ctx context.Context, in action.Intent) error {
 // engine session protocol): the time limit and the intent set
 // transaction-local, the statement as given with its parameters, then the
 // change stamped with statement, parameters and duration before COMMIT. Any
-// error rolls the whole action back.
-func (s *Store) Write(ctx context.Context, in action.Intent, op action.Op, sql string, params []any) (action.WriteResult, error) {
-	r0, err := s.writeRaw(ctx, in, op, sql, params)
+// error rolls the whole action back. The rows the write returns go to
+// returned before COMMIT. With a nil returned, a write that returns rows is
+// refused and rolled back.
+func (s *Store) Write(ctx context.Context, in action.Intent, op action.Op, sql string, params []any, returned Returned) (action.WriteResult, error) {
+	r0, err := s.writeRaw(ctx, in, op, sql, params, returned)
 	return r0, MapError(err)
 }
 
 // WriteApproved is Write under a signed approval (basalt.approval_id). The
 // guard commits it only if it is the write the person approved.
-func (s *Store) WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any) (action.WriteResult, error) {
-	r0, err := s.writeApprovedRaw(ctx, in, approvalID, op, sql, params)
+func (s *Store) WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any, returned Returned) (action.WriteResult, error) {
+	r0, err := s.writeApprovedRaw(ctx, in, approvalID, op, sql, params, returned)
 	return r0, MapError(err)
 }
 

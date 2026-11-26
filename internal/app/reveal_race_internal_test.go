@@ -24,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
@@ -36,6 +37,11 @@ import (
 // grants a row lock to its waiters in turn.
 
 const dropLeadSQL = `DELETE FROM public.leads WHERE id = $1`
+
+// ignoreReturned is a store-only test's Returned: no agent gets the rows.
+func ignoreReturned(context.Context, sqlport.Port, []action.Column, []map[string]any) error {
+	return nil
+}
 
 // raceEnv: bot may read and write leads only; its held deletes cascade to
 // notes it cannot read. Calls go through the engine's Postgres store.
@@ -92,7 +98,7 @@ func (e raceEnv) sign(h heldDelete, as passkey.Assertion) error {
 }
 
 func (e raceEnv) apply(h heldDelete) error {
-	_, err := e.store.WriteApproved(context.Background(), h.in, h.held.ApprovalID, action.OpDelete, dropLeadSQL, h.params)
+	_, err := e.store.WriteApproved(context.Background(), h.in, h.held.ApprovalID, action.OpDelete, dropLeadSQL, h.params, ignoreReturned)
 	return err
 }
 

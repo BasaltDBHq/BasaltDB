@@ -34,7 +34,7 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 	dict, _ := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	obs := NewObserver(classes, dict)
-	store := postgres.NewStore(pool, sqlguard.DefaultLimits(), time.Now).WithReturned(returned(obs))
+	store := postgres.NewStore(pool, sqlguard.DefaultLimits(), time.Now)
 	reader := postgres.NewReader(pool, sqlguard.DefaultLimits(), time.Now)
 	scan := NewScanner(dict, []ScanSource{{Agent: "bot", Map: classes, Classes: pgpii.Classes(pool), Fields: pgpii.Fields(pool, sqlguard.DefaultLimits(), DefaultLoadTimeout)}},
 		ScanOptions{}, slog.New(slog.DiscardHandler))
@@ -53,7 +53,7 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 			for range 4 {
 				// p.label comes from plain, a table with no classes.
 				_, err := store.Write(ctx, in, action.OpUpdate,
-					`UPDATE customers c SET note = 'n' FROM plain p WHERE c.id = $1 AND p.id = 1 RETURNING c.email, p.label`, []any{id})
+					`UPDATE customers c SET note = 'n' FROM plain p WHERE c.id = $1 AND p.id = 1 RETURNING c.email, p.label`, []any{id}, returned(obs))
 				report(err)
 			}
 		})

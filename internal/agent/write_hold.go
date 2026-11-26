@@ -103,9 +103,13 @@ func (wc *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutco
 	if err != nil {
 		return WriteOutcome{}, wc.refused(ctx, in, stmt, p.Request, start, err)
 	}
-	res, err := wc.store.Data.WriteApproved(ctx, in, a.ID, p.Request, stmt)
+	seen := wc.returnedPII()
+	res, err := wc.store.Data.WriteApproved(ctx, in, a.ID, p.Request, stmt, seen.observe)
 	if err != nil {
 		return WriteOutcome{}, wc.withApprovalLink(ctx, a, wc.refused(ctx, in, stmt, p.Request, start, err))
+	}
+	if err := seen.check(res); err != nil {
+		return WriteOutcome{}, err
 	}
 	return WriteOutcome{
 		WriteResult: res, RunID: run.ID, Op: op, ApprovalID: a.ID,

@@ -15,10 +15,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/basaltdbhq/basaltdb/internal/agent"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
-	"github.com/basaltdbhq/basaltdb/internal/pii"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
@@ -186,11 +186,6 @@ type memStore struct {
 	prepareLimits []time.Duration
 
 	pii memPII
-	// returned observes a write's returned documents before the write
-	// commits. It stands in for the Postgres adapter's returned-rows hook
-	// (returnedPII in internal/app): no port asks a store for it, and the
-	// agent service observes only a read's rows. A pinned gap, not a port.
-	returned func(ctx context.Context, c pii.Classes, cols []action.Column, rows []map[string]any) error
 	// slowReads makes every read run into the store's time limit.
 	slowReads bool
 	// asPostgres makes every refusal the one the Postgres adapter maps the
@@ -366,21 +361,21 @@ func (s *memStore) Read(_ context.Context, req agentstore.Request, stmt action.S
 	return action.ReadResult{Columns: cols, Rows: rows}, nil
 }
 
-func (s *memStore) Write(ctx context.Context, in action.Intent, req agentstore.Request, stmt action.Statement) (action.WriteResult, error) {
+func (s *memStore) Write(ctx context.Context, in action.Intent, req agentstore.Request, stmt action.Statement, returned agent.Returned) (action.WriteResult, error) {
 	s.saw("Write", req.Text)
-	return s.write(ctx, in, req, stmt, false)
+	return s.write(ctx, in, req, stmt, returned, false)
 }
 
-func (s *memStore) WriteApproved(ctx context.Context, in action.Intent, _ uuid.UUID, req agentstore.Request, stmt action.Statement) (action.WriteResult, error) {
+func (s *memStore) WriteApproved(ctx context.Context, in action.Intent, _ uuid.UUID, req agentstore.Request, stmt action.Statement, returned agent.Returned) (action.WriteResult, error) {
 	s.saw("WriteApproved", req.Text)
-	return s.write(ctx, in, req, stmt, true)
+	return s.write(ctx, in, req, stmt, returned, true)
 }
 
 // write applies an update, recording each document's change in the
-// agent's run, and hands the returned documents to the PII observer before
-// it commits; a write of more than memHeldOver documents is held unless
-// approved.
-func (s *memStore) write(ctx context.Context, in action.Intent, req agentstore.Request, stmt action.Statement, approved bool) (action.WriteResult, error) {
+// agent's run, and hands the returned documents to returned, the agent's
+// PII port, before it commits; a write of more than memHeldOver documents
+// is held unless approved.
+func (s *memStore) write(ctx context.Context, in action.Intent, req agentstore.Request, stmt action.Statement, returned agent.Returned, approved bool) (action.WriteResult, error) {
 	s.mu.Lock()
 	r := stmt.Handle.(memRequest)
 	docs := s.match(r, req.Params)
@@ -396,10 +391,10 @@ func (s *memStore) write(ctx context.Context, in action.Intent, req agentstore.R
 	}
 	cols, rows := result(r.Update, after)
 	s.mu.Unlock()
-	// The observer reads the class map alone, as inside the write's own
+	// The port reads the class map alone, as inside the write's own
 	// transaction (Shared false), before the write is kept.
-	if s.returned != nil {
-		if err := s.returned(ctx, txClasses{s}, cols, rows); err != nil {
+	if len(rows) > 0 {
+		if err := returned(ctx, txClasses{s}, cols, rows); err != nil {
 			return action.WriteResult{}, err
 		}
 	}

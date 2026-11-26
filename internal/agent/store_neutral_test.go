@@ -188,11 +188,11 @@ func (s *docStore) Read(_ context.Context, req agentstore.Request, stmt action.S
 	return res, nil
 }
 
-func (s *docStore) Write(ctx context.Context, in action.Intent, req agentstore.Request, stmt action.Statement) (action.WriteResult, error) {
+func (s *docStore) Write(_ context.Context, _ action.Intent, req agentstore.Request, stmt action.Statement, _ agent.Returned) (action.WriteResult, error) {
 	return s.write(req, stmt, false)
 }
 
-func (s *docStore) WriteApproved(_ context.Context, _ action.Intent, _ uuid.UUID, req agentstore.Request, stmt action.Statement) (action.WriteResult, error) {
+func (s *docStore) WriteApproved(_ context.Context, _ action.Intent, _ uuid.UUID, req agentstore.Request, stmt action.Statement, _ agent.Returned) (action.WriteResult, error) {
 	return s.write(req, stmt, true)
 }
 

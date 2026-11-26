@@ -4,17 +4,6 @@ All notable changes to BasaltDB are recorded in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Changed
-
-- `engine.json` must hold only its one JSON object. A file with anything after the closing brace, such as a second object, a `//` comment or stray characters, was accepted before. The engine now refuses to start with `config <path>: data after the JSON value`. To fix it, remove everything after the closing `}`.
-
-### Fixed
-
-- A refused action with a very long statement, intent, reason or parameters is now in the ledger. The guard used to refuse to record it, so the refusal was only in the engine's log; now it keeps the text cut to its limit (2000 bytes for an intent or reason, 64 KiB for a statement) and ending in `...`, and parameters over 64 KiB as `{"cut": true, "bytes": <size>}`. This is guard schema version 13 (breaking): it also refuses a revert or an approval the agent does not have, or one that does not exist, with the code `NO_SUCH_REVERT` or `NO_SUCH_APPROVAL`, which the engine reads in place of the words "no such revert" and "no such approval". The engine needs this version: run `basalt init` again and update the guard on the page it opens.
-- The setup page creates the passkey on the first try for an agent with a long name; before, it refused every passkey it made with "This passkey was made for another setup page". A long agent or database name in the name your password manager shows for the passkey is shortened to fit and ends with "…".
-
 ## [0.1.0-alpha] - 2026-11-24
 
 The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup moves from the terminal to a page: the agent runs `basalt init` and the person finishes on the page it links. The CLI only starts things. Expect bugs and breaking changes between alpha releases, and read "Breaking for alpha installs" before you upgrade.
@@ -71,6 +60,7 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 - The engine's warning "pii: a column the agent read is not classified" logs the column as `field` (the store's ref for it, for Postgres `<table oid>/<attnum>`) in place of `tableOid` and `attnum`. A log filter or alert that reads those two fields needs the new one.
 - The engine's warning "plugin feed paused" gives a database refusal's class as `STORE_CODE <code>` (was `SQLSTATE <code>`); for Postgres the code is still the SQLSTATE. A log filter or alert that matches the old class needs the new one.
 - `describe`'s search names what matched in words that fit any store: `matched` is `resource`, `namespace` or `field <name>` (was `table`, `schema` or `column <name>`); `comment` does not change. The approval and revert pages' request, served by the engine, carries `fields` (was `columns`), each resource to its field names in the store's order, for display only. `describe`'s messages and next steps, a revert's person message ("only resource <name>", was "only table <name>") and the plugin feed's revert headline, and the descriptions of `describe`, `preview_revert`, `run_history`, `run_start`, `status` and `write` say resource, namespace and field where they said table, schema and column. An agent or tool that reads `matched` needs the new values.
+- `engine.json` must hold only its one JSON object. A file with anything after the closing brace, such as a second object, a `//` comment or stray characters, was accepted before. The engine now refuses to start with `config <path>: data after the JSON value`. To fix it, remove everything after the closing `}`.
 
 ### Removed
 
@@ -114,6 +104,8 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 - A tool call that panics and could not save a crash report now answers `INTERNAL` with a `personMessage` that says so, as every `INTERNAL` error does; it had none.
 - A list cursor the engine did not return now gets `INVALID_ARGUMENT` reason `STALE_CURSOR` from every paged tool. A cursor whose id was not a valid id reached the database from `run_history` and `list_pending` and came back as `STORE_ERROR`, with steps to fix a statement the agent never wrote; `list_runs` already refused it.
 - The engine's key files (`channel.json`, `pii.key`) and a remote plugin entry's `auth.credentialFile` are refused when the file has a second hard link, as an agent's credential file already was: another link is another path to the same secret. Every key and credential file is now read with the same checks, and must belong to the user the engine runs as. A kept plugin approval, a trusted plugin key and `last-stop.json` now survive a crash right after they are written.
+- A refused action with a very long statement, intent, reason or parameters is now in the ledger. The guard used to refuse to record it, so the refusal was only in the engine's log; now it keeps the text cut to its limit (2000 bytes for an intent or reason, 64 KiB for a statement) and ending in `...`, and parameters over 64 KiB as `{"cut": true, "bytes": <size>}`. This is guard schema version 13 (breaking): it also refuses a revert or an approval the agent does not have, or one that does not exist, with the code `NO_SUCH_REVERT` or `NO_SUCH_APPROVAL`, which the engine reads in place of the words "no such revert" and "no such approval". The engine needs this version: run `basalt init` again and update the guard on the page it opens.
+- The setup page creates the passkey on the first try for an agent with a long name; before, it refused every passkey it made with "This passkey was made for another setup page". A long agent or database name in the name your password manager shows for the passkey is shortened to fit and ends with "…".
 
 ### Security
 

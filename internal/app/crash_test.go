@@ -57,9 +57,9 @@ func TestAPanicInACommandIsSavedAndScrubbed(t *testing.T) {
 
 func TestCommandNameIsOnlyAKnownCommand(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "init", commandName([]string{"init", "--agent", "x"}))
-	require.Empty(t, commandName([]string{"approve", "--agent", "x"}), "approve is removed")
-	require.Empty(t, commandName([]string{"log", "--agent", "x"}), "a removed command is no command")
-	require.Empty(t, commandName([]string{"post" + "gres://u" + ":p@h/db"}))
-	require.Empty(t, commandName(nil))
+	require.Equal(t, "init", engineCLIHost{}.CommandName([]string{"init", "--agent", "x"}))
+	require.Empty(t, engineCLIHost{}.CommandName([]string{"approve", "--agent", "x"}), "approve is removed")
+	require.Empty(t, engineCLIHost{}.CommandName([]string{"log", "--agent", "x"}), "a removed command is no command")
+	require.Empty(t, engineCLIHost{}.CommandName([]string{"post" + "gres://u" + ":p@h/db"}))
+	require.Empty(t, engineCLIHost{}.CommandName(nil))
 }

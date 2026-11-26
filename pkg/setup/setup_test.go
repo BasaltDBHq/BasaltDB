@@ -78,16 +78,18 @@ func personPasskey(t *testing.T) (*passkeytest.Authenticator, func(context.Conte
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	return person, func(context.Context) (setup.Passkey, error) {
-		req, err := setup.NewPasskeyRequest(rand.Reader, "db · bot", "db")
+		c := setup.PasskeyChallenge{Challenge: make([]byte, 32), UserID: make([]byte, 16), UserName: "db · bot", DisplayName: "BasaltDB · db"}
+		if _, err := rand.Read(c.Challenge); err != nil {
+			return setup.Passkey{}, err
+		}
+		if _, err := rand.Read(c.UserID); err != nil {
+			return setup.Passkey{}, err
+		}
+		req, err := setup.PasskeyRequestFor(c, "db · bot")
 		if err != nil {
 			return setup.Passkey{}, err
 		}
-		link, err := req.Link()
-		if err != nil {
-			return setup.Passkey{}, err
-		}
-		_, frag, _ := strings.Cut(link, "#")
-		page, err := passkeytest.ParseRegistrationRequest(frag)
+		page, err := passkey.RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
 		if err != nil {
 			return setup.Passkey{}, err
 		}
@@ -274,9 +276,9 @@ func TestRunRefusesByTheDatabasesState(t *testing.T) {
 
 	// A revoked engine is refused, after the role checks.
 	eng, der, id := engineKey(t)
-	_, err = guard.RecordEngine(ctx, d.Admin, der)
+	_, err = guardtest.RecordEngine(ctx, d.Admin, der)
 	require.NoError(t, err)
-	_, err = guard.RevokeEngine(ctx, d.Admin, id)
+	_, err = guardtest.RevokeEngine(ctx, d.Admin, id)
 	require.NoError(t, err)
 	install := newCode(t, d, func(p *setupcode.Payload) { p.Engine = eng })
 	_, err = setup.Run(ctx, d.Admin, request(install), setup.RunInput{})
@@ -314,7 +316,7 @@ func TestRunRecordsTheEngine(t *testing.T) {
 	_, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Passkey: verified(t, give)})
 	require.NoError(t, err)
 	_, oldDER, oldID := engineKey(t)
-	_, err = guard.RecordEngine(ctx, d.Admin, oldDER)
+	_, err = guardtest.RecordEngine(ctx, d.Admin, oldDER)
 	require.NoError(t, err)
 
 	eng, _, newID := engineKey(t)
@@ -343,7 +345,7 @@ func TestRunStopsWhenNotApproved(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	stop := errors.New("not now")
 	_, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Approve: func(setup.Plan) error { return stop }})
-	require.ErrorIs(t, err, stop)
+	require.Same(t, stop, err, "Approve's error comes back as it is, not as an *Error")
 	require.Zero(t, installedVersion(t, d))
 }
 

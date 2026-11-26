@@ -14,6 +14,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -21,7 +22,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
@@ -45,13 +45,25 @@ func zoned(t *testing.T, agentURL, zone string) string {
 
 func zonedPool(t *testing.T, agentURL, zone string) *pgxpool.Pool {
 	t.Helper()
-	pool, err := postgres.NewPool(context.Background(), zoned(t, agentURL, zone), 2)
+	pool, _, err := postgres.NewSwitchablePool(context.Background(), zoned(t, agentURL, zone), 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	var got string
 	require.NoError(t, pool.QueryRow(context.Background(), "SHOW TimeZone").Scan(&got))
 	require.Equal(t, zone, got, "the session starts in the client's zone")
 	return pool
+}
+
+// applyInPinnedTx applies revert id with the person's assertion as, in one
+// pinned transaction on conn.
+func applyInPinnedTx(ctx context.Context, conn *pgx.Conn, id uuid.UUID, as passkey.Assertion) (revertstore.AppliedRevert, error) {
+	var out revertstore.AppliedRevert
+	err := pgx.BeginTxFunc(ctx, guard.Pinned(conn), pgx.TxOptions{}, func(tx pgx.Tx) error {
+		var err error
+		out, err = guard.ApplyRevert(ctx, tx, id, as)
+		return err
+	})
+	return out, err
 }
 
 func zonedConn(t *testing.T, agentURL, zone string) *pgx.Conn {
@@ -122,20 +134,24 @@ func TestRevertDoesNotDependOnTheSessionZone(t *testing.T) {
 			require.NoError(t, err)
 			requireNoSkip(t, prep.Lines)
 
-			cli := ledger.NewPerson(zonedConn(t, a.URL, zones[1]), time.Now)
-			lines, err := cli.PreviewRevert(ctx, scope)
-			require.NoError(t, err)
+			person := guard.Pinned(zonedConn(t, a.URL, zones[1]))
+			var lines []string
+			require.NoError(t, pgx.BeginTxFunc(ctx, person, pgx.TxOptions{}, func(tx pgx.Tx) error {
+				var err error
+				lines, err = guard.PreviewRevert(ctx, tx, scope)
+				return err
+			}))
 			requireNoSkip(t, lines)
-			personPrep, err := cli.PrepareRevert(ctx, scope, "Undo")
+			personPrep, err := guard.PrepareRevertWithin(ctx, person, scope, "Undo", guardmodel.CLIPrepareTimeout)
 			require.NoError(t, err)
 			prep = personPrep
 			requireNoSkip(t, prep.Lines)
 
 			// Signed, and applied from the writer's zone: Postgres
 			// rebuilds the lines at apply and finds the same rowsHash.
-			as, err := signer.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+			as, err := signer.Sign(passkeytest.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 			require.NoError(t, err)
-			applied, err := ledger.NewPerson(zonedConn(t, a.URL, zones[0]), time.Now).ApplyRevert(ctx, prep.RevertID, as)
+			applied, err := applyInPinnedTx(ctx, zonedConn(t, a.URL, zones[0]), prep.RevertID, as)
 			require.NoError(t, err)
 			require.Equal(t, 2, applied.Rows)
 			require.Zero(t, applied.Skipped)
@@ -279,9 +295,9 @@ func TestAWriteThatSkipsTheEngineStoresTheEngineImages(t *testing.T) {
 	prep, err := engine.PrepareRevert(ctx, scope, "Undo", time.Minute)
 	require.NoError(t, err)
 	requireNoSkip(t, prep.Lines)
-	as, err := signer.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := signer.Sign(passkeytest.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	applied, err := ledger.NewPerson(zonedConn(t, a.URL, "UTC"), time.Now).ApplyRevert(ctx, prep.RevertID, as)
+	applied, err := applyInPinnedTx(ctx, zonedConn(t, a.URL, "UTC"), prep.RevertID, as)
 	require.NoError(t, err)
 	require.Equal(t, 2, applied.Rows)
 	require.Zero(t, applied.Skipped)
@@ -364,9 +380,9 @@ func TestAWriteThatSkipsTheEngineStoresByteaAsTheEngine(t *testing.T) {
 	prep, err := engine.PrepareRevert(ctx, scope, "Undo", time.Minute)
 	require.NoError(t, err)
 	requireNoSkip(t, prep.Lines)
-	as, err := signer.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := signer.Sign(passkeytest.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	applied, err := ledger.NewPerson(zonedConn(t, a.URL, "UTC"), time.Now).ApplyRevert(ctx, prep.RevertID, as)
+	applied, err := applyInPinnedTx(ctx, zonedConn(t, a.URL, "UTC"), prep.RevertID, as)
 	require.NoError(t, err)
 	require.Equal(t, 2, applied.Rows)
 	require.Zero(t, applied.Skipped)
@@ -391,7 +407,7 @@ func TestRevertFunctionsCalledByHandDoNotDependOnTheSession(t *testing.T) {
 	prep, err := guard.PrepareRevert(ctx, hand, scope, "Undo by hand")
 	require.NoError(t, err)
 	requireNoSkip(t, prep.Lines)
-	as, err := signer.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := signer.Sign(passkeytest.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	applied, err := guard.ApplyRevert(ctx, hand, prep.RevertID, as)
 	require.NoError(t, err)

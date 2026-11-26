@@ -23,8 +23,7 @@ import (
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgerrors"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 )
 
@@ -128,36 +127,17 @@ func withApprovals(a PluginApprovalStore) option {
 	return func(s *serviceSettings) { s.deps.Approvals = a }
 }
 
-func testManager() guidance.ServiceManager {
-	return guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
-}
-
-// testErrorMap is the error map the app fills with the adapters' errors.
-func testErrorMap() guidance.ErrorMap {
-	return guidance.ErrorMap{
-		InvalidParams: ledger.ErrInvalidParams,
-		InvalidIntent: guard.ErrInvalidIntent,
-		RowTooLarge: func(err error) (string, bool) {
-			var rl *resultsize.RowTooLargeError
-			if errors.As(err, &rl) {
-				return rl.Error(), true
-			}
-			return "", false
-		},
-	}
-}
-
 // newService builds the plugin use case on a real delivery use case, with the
 // settings a test sets after goos and configPath (the platform default config
 // when configPath is empty): a person-operated engine with local pages, one
 // passkey and the guard current.
 func newService(t *testing.T, goos, configPath string, opts ...option) *Service {
 	t.Helper()
-	cmds := guidance.NewCommands("bot", configPath, config.DefaultPath(goos), goos, testManager())
+	cmds := guidance.NewCommands("bot", configPath, config.DefaultPath(goos), goos, osservice.Manager())
 	now := func() time.Time { return time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC) }
 	st := serviceSettings{
 		core: Core{
-			Name: "bot", Now: now, Commands: cmds, Errors: testErrorMap(), PagesOrigin: "http://localhost:7878",
+			Name: "bot", Now: now, Commands: cmds, Errors: pgerrors.Map(), PagesOrigin: "http://localhost:7878",
 		},
 		deps:   Deps{ApprovalsVersion: guard.PluginApprovalsVersion},
 		status: &fakeStatus{vaultState: "OFF"},

@@ -12,6 +12,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
+	"github.com/basaltdbhq/basaltdb/internal/lib/ownerfile"
 )
 
 // The request file beside a hash link (CONTRACT.md, The request file and
@@ -218,7 +219,7 @@ func (f requestFiles) ownDir() error {
 	switch {
 	case !fi.IsDir():
 		return fmt.Errorf("request file dir %s is not a directory", f.dir)
-	case !ownedByMe(fi):
+	case ownerfile.CheckOwner(fi, ownerfile.Rules{}) != nil:
 		return fmt.Errorf("request file dir %s is not this user's", f.dir)
 	case fi.Mode().Perm()&^requestDirMode != 0:
 		return fmt.Errorf("request file dir %s is open to other users", f.dir)

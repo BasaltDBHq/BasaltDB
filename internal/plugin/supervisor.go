@@ -39,13 +39,6 @@ const (
 	killReserve = time.Second
 )
 
-// Clock is the time the supervisor waits on: the health interval and the
-// restart backoff. Each call keeps its own deadline on the real clock.
-type Clock interface {
-	// After returns a channel that receives once d has passed.
-	After(d time.Duration) <-chan time.Time
-}
-
 type realClock struct{}
 
 func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
@@ -57,13 +50,6 @@ func RealClock() Clock { return realClock{} }
 // transport. ctx bounds the start. Errors must hold no value a plugin or its
 // config gave: the supervisor logs nothing, but the caller may.
 type DialFunc func(ctx context.Context, e pluginmodel.Entry) (pluginmodel.Transport, error)
-
-// Exiter is a transport to a local process: Exited is closed once the
-// process has exited. The supervisor uses it to give a plugin that
-// answered shutdown the time to exit before its process group is killed.
-type Exiter interface {
-	Exited() <-chan struct{}
-}
 
 // Supervisor runs entries on a Host: it starts each one, registers it
 // (initialize), asks for health every HealthInterval, marks it UNAVAILABLE

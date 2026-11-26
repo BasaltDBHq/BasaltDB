@@ -2,6 +2,8 @@ package plugin
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"path/filepath"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
@@ -97,4 +99,49 @@ func PluginNetwork(goos string, egress []string) string {
 		return "ENFORCED"
 	}
 	return "DECLARED"
+}
+
+// ServiceUnits gives basalt service install the plugin units of a config:
+// every local entry whose installed copy verifies, read through Files.
+// TerminalText makes a verify failure safe to print.
+type ServiceUnits struct {
+	Files        Files
+	TerminalText func(string) string
+}
+
+// WithPluginUnits is spec with cfg's plugin units. An entry that fails is
+// left out with a line on warn: the engine refuses it too
+// (PLUGIN_NOT_TRUSTED).
+func (u ServiceUnits) WithPluginUnits(spec servicespec.Spec, cfg config.Config, warn io.Writer) servicespec.Spec {
+	h := HostFor(cfg, spec.GOOS, spec.ConfigPath, spec.User)
+	spec.StateDir, spec.SocketDir, spec.CredentialFiles = h.StateDir, h.SocketDir, h.CredentialFiles
+	spec.Plugins = u.entries(cfg, spec.GOOS, spec.ConfigPath, warn)
+	return spec
+}
+
+// entries are cfg's local entries whose installed copies verify.
+func (u ServiceUnits) entries(cfg config.Config, goos, configPath string, warn io.Writer) []servicespec.PluginEntry {
+	if len(cfg.Plugins) == 0 {
+		return nil
+	}
+	dir := filepath.Dir(configPath)
+	root, rootErr := Root(pluginmodel.ModeService, goos, dir)
+	trust, trustErr := NewTrustStore(u.Files, pluginmodel.ModeService, goos, dir)
+	var out []servicespec.PluginEntry
+	for _, p := range cfg.Plugins {
+		k := p.Key()
+		if rootErr != nil || trustErr != nil {
+			fmt.Fprintf(warn, "basalt: plugin %s: its service unit is left as it is: the plugin directory cannot be read\n", k)
+			continue
+		}
+		v, err := Verify(root, k, p.ManifestSHA256, trust, pluginmodel.ModeService)
+		if err != nil {
+			fmt.Fprintf(warn, "basalt: plugin %s: its service unit is left as it is: %s\n", k, u.TerminalText(BasaltVerifyFailure(err)))
+			continue
+		}
+		if e, ok := EntryFor(p, v); ok {
+			out = append(out, e)
+		}
+	}
+	return out
 }

@@ -10,6 +10,8 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // Reinstalls on the record (basalt_meta version 36, CONTRACT.md "Version 36:
@@ -91,7 +93,7 @@ const (
 // after the anchor, still holds head.Hash and recomputes to it, or head is
 // the anchor.
 func PinOnChain(ctx context.Context, q Querier, head ChainHead) (bool, error) {
-	sql, args, err := psql.Select().Column(sq.Expr("basalt_meta.pin_on_chain(?, ?)", head.Seq, head.Hash)).ToSql()
+	sql, args, err := sqlport.Builder.Select().Column(sq.Expr("basalt_meta.pin_on_chain(?, ?)", head.Seq, head.Hash)).ToSql()
 	if err != nil {
 		return false, err
 	}
@@ -135,7 +137,7 @@ func PinStillOnChain(ctx context.Context, q Querier, head ChainHead) (bool, erro
 // pin head, verified on install, is set aside. It returns false when this
 // role made the same report before. A guard older than version 36 fails.
 func RecordPinSetAside(ctx context.Context, q Querier, head ChainHead, install uuid.UUID) (bool, error) {
-	sql, args, err := psql.Select().
+	sql, args, err := sqlport.Builder.Select().
 		Column(sq.Expr("basalt_meta.record_pin_set_aside(?, ?, ?)", head.Seq, head.Hash, install)).ToSql()
 	if err != nil {
 		return false, err
@@ -169,7 +171,7 @@ type installRecord struct {
 // (older than version 36) adds nothing to kept.
 func ReadReinstalls(ctx context.Context, q Querier, kept []SetAside) (Reinstalls, error) {
 	var self string
-	sql, args, err := psql.Select("session_user::text").ToSql()
+	sql, args, err := sqlport.Builder.Select("session_user::text").ToSql()
 	if err != nil {
 		return Reinstalls{}, err
 	}
@@ -177,7 +179,7 @@ func ReadReinstalls(ctx context.Context, q Querier, kept []SetAside) (Reinstalls
 		return Reinstalls{}, err
 	}
 	var has bool
-	sql, args, err = psql.Select("to_regclass('basalt_meta.agent_reinstalls') IS NOT NULL").ToSql()
+	sql, args, err = sqlport.Builder.Select("to_regclass('basalt_meta.agent_reinstalls') IS NOT NULL").ToSql()
 	if err != nil {
 		return Reinstalls{}, err
 	}
@@ -201,7 +203,7 @@ func ReadReinstalls(ctx context.Context, q Querier, kept []SetAside) (Reinstalls
 // readReportRows is each agent's earliest report of each install. One row
 // per install and agent role, however many reports a role made.
 func readReportRows(ctx context.Context, q Querier) ([]reportRow, error) {
-	sql, args, err := psql.Select("r.install", "r.agent::text", "r.at", "r.pinned_seq", "r.pinned_hash",
+	sql, args, err := sqlport.Builder.Select("r.install", "r.agent::text", "r.at", "r.pinned_seq", "r.pinned_hash",
 		"(count(r.pinned_seq) OVER (PARTITION BY r.install, r.agent))::int").
 		Options("DISTINCT ON (r.install, r.agent)").
 		From("basalt_meta.agent_reinstalls r").
@@ -223,7 +225,7 @@ func readReportRows(ctx context.Context, q Querier) ([]reportRow, error) {
 // readInstallRecords is each install's row, from its earliest report that
 // copied one.
 func readInstallRecords(ctx context.Context, q Querier) (map[uuid.UUID]installRecord, error) {
-	sql, args, err := psql.Select("r.install", "r.installed_at", "coalesce(r.installed_by, '')", "coalesce(r.vault_user, '')").
+	sql, args, err := sqlport.Builder.Select("r.install", "r.installed_at", "coalesce(r.installed_by, '')", "coalesce(r.vault_user, '')").
 		Options("DISTINCT ON (r.install)").
 		From("basalt_meta.agent_reinstalls r").
 		Where(sq.NotEq{"r.installed_at": nil}).

@@ -34,7 +34,7 @@ func writes(t *testing.T, a *guardtest.Agent, in guard.Intent, from, n int) {
 
 func list(t *testing.T, a *guardtest.Agent, p action.ChangeListParams) pagination.Page[action.Change] {
 	t.Helper()
-	page, err := ledger.ListChanges(context.Background(), a.Conn, p)
+	page, err := ledger.ListChangesMarked(context.Background(), a.Conn, p)
 	require.NoError(t, err)
 	return page
 }
@@ -77,7 +77,7 @@ func TestListChangesPaginates(t *testing.T) {
 		{Params: pagination.Params{Limit: 10, Sort: "-at"}},
 		{Params: pagination.Params{Limit: 10, Cursor: "!!"}},
 	} {
-		_, err := ledger.ListChanges(ctx, a.Conn, bad)
+		_, err := ledger.ListChangesMarked(ctx, a.Conn, bad)
 		require.ErrorIs(t, err, ledger.ErrInvalidParams)
 	}
 }
@@ -118,7 +118,7 @@ func TestLedgerRedactsUnreadableTables(t *testing.T) {
 	require.Equal(t, 2, page.Items[0].Rows)
 	require.Equal(t, 1, page.Items[0].CascadedRows)
 
-	byChange, err := ledger.RowChanges(ctx, a.Conn, []uuid.UUID{page.Items[0].ID})
+	byChange, err := ledger.RowChangesMarked(ctx, a.Conn, []uuid.UUID{page.Items[0].ID})
 	require.NoError(t, err)
 	rows := byChange[page.Items[0].ID]
 	require.Len(t, rows, 2)
@@ -136,7 +136,7 @@ func TestLedgerRedactsUnreadableTables(t *testing.T) {
 
 	// Readable once the agent may SELECT the table.
 	d.Exec(t, `GRANT SELECT ON public.lead_owner TO `+a.Role)
-	byChange, err = ledger.RowChanges(ctx, a.Conn, []uuid.UUID{page.Items[0].ID})
+	byChange, err = ledger.RowChangesMarked(ctx, a.Conn, []uuid.UUID{page.Items[0].ID})
 	require.NoError(t, err)
 	owner := byChange[page.Items[0].ID][1]
 	require.False(t, owner.Redacted)
@@ -145,7 +145,7 @@ func TestLedgerRedactsUnreadableTables(t *testing.T) {
 
 	// Another agent sees nothing of it.
 	b := d.NewAgent(t, "other", leads, nil)
-	byChange, err = ledger.RowChanges(ctx, b.Conn, []uuid.UUID{page.Items[0].ID})
+	byChange, err = ledger.RowChangesMarked(ctx, b.Conn, []uuid.UUID{page.Items[0].ID})
 	require.NoError(t, err)
 	require.Empty(t, byChange)
 }

@@ -111,15 +111,14 @@ func buildFixtures(t *testing.T) fixtures {
 	f.Request.CredentialIDs = []string{passkey.Bytes(seq(16, 1)).String()}
 	f.Request.Fragment = frag
 	f.Request.RowsHash = approval.RowsHash(lines)
-	f.Request.Challenge = passkey.Bytes(approval.Challenge(binding)).String()
+	f.Request.Challenge = passkey.Bytes(passkeytest.Challenge(binding)).String()
 
-	resp := approval.Response{
-		ApprovalID:        approvalID,
+	resp := approval.Response{ApprovalID: approvalID, SignedAssertion: passkey.SignedAssertion{
 		CredentialID:      seq(16, 1),
 		AuthenticatorData: seq(37, 0x10),
 		ClientDataJSON:    []byte(`{"type":"webauthn.get","challenge":"` + f.Request.Challenge + `","origin":"https://basaltvault.app","crossOrigin":false}`),
 		Signature:         seq(70, 0x30),
-	}
+	}}
 	body, err := json.Marshal(resp)
 	require.NoError(t, err)
 	f.Response.ApprovalID = approvalID.String()
@@ -130,7 +129,7 @@ func buildFixtures(t *testing.T) fixtures {
 	f.Response.JSON = string(body)
 
 	rreq := passkey.RegistrationRequest{Challenge: seq(32, 0x40), UserID: seq(16, 0x80), UserName: "app", DisplayName: "BasaltDB · app"}
-	rfrag, err := rreq.Fragment()
+	rfrag, err := passkey.EncodeCode(passkey.RegistrationRequestPrefix, rreq)
 	require.NoError(t, err)
 	f.RegistrationRequest.Challenge = rreq.Challenge.String()
 	f.RegistrationRequest.UserID = rreq.UserID.String()
@@ -327,7 +326,7 @@ func TestVerify(t *testing.T) {
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 
-	as, err := person.Sign(approval.Challenge(binding), passkeytest.FlagsUPUV, nil)
+	as, err := person.Sign(passkeytest.Challenge(binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	body, err := json.Marshal(approvaltest.NewResponse(approvalID, as))
 	require.NoError(t, err)
@@ -353,7 +352,7 @@ func TestVerify(t *testing.T) {
 		agent, err := passkeytest.New(passkey.Production)
 		require.NoError(t, err)
 		agent.ID = person.ID
-		forged, err := agent.Sign(approval.Challenge(binding), passkeytest.FlagsUPUV, nil)
+		forged, err := agent.Sign(passkeytest.Challenge(binding), passkeytest.FlagsUPUV, nil)
 		require.NoError(t, err)
 		_, err = approvaltest.Verify(binding, person.Credential(), approvaltest.NewResponse(approvalID, forged))
 		require.ErrorContains(t, err, "bad passkey signature")
@@ -371,12 +370,15 @@ func TestDecodeResponseRefuses(t *testing.T) {
 		_, err := approval.DecodeResponse([]byte(body))
 		require.ErrorIs(t, err, approval.ErrInvalid, body)
 	}
+	// No approval id is a missing field, as the plugin approval's is.
+	_, err := approval.DecodeResponse([]byte(`{"credentialId":"AQ","authenticatorData":"AQ","clientDataJson":"AQ","signature":"AQ"}`))
+	require.EqualError(t, err, "approval code invalid: approval response is missing a field")
 }
 
 func TestChallengeHashesUTF8Bytes(t *testing.T) {
 	t.Parallel()
 	want := sha256.Sum256([]byte("é"))
-	require.True(t, bytes.Equal(want[:], approval.Challenge("é")))
+	require.True(t, bytes.Equal(want[:], passkeytest.Challenge("é")))
 }
 
 // The engine relays only texts that follow the text rules: Fragment, and

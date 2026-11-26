@@ -1,16 +1,7 @@
-// The passkey registration page `basalt init` opens: create an ES256 passkey
-// for this relying party and show the code `basalt init` reads, or, when
-// init serves the page itself, post the passkey back to init and show the
-// short pairing code the person types into init.
-import { ALG_ES256, encodeRegistrationResponse, parseRegistrationRequest, registrationResponseJson, relyingParty } from "./codec.js";
-import { postResponse } from "./local.js";
-import { $, fail, loadOrPaste, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
-import { pairingCode, pairingCoordinates } from "./pairing.js";
-import { sameOriginSession } from "./transport.js";
-
-// HAND_BACK_PATH is basalt init's hand-back route, on the pages init serves
-// itself: a request with a handBack secret came from there.
-export const HAND_BACK_PATH = "/api/v1/passkeys/register";
+// The passkey registration page: create an ES256 passkey for this relying
+// party and show the code to paste back.
+import { ALG_ES256, encodeRegistrationResponse, parseRegistrationRequest, relyingParty } from "./codec.js";
+import { $, fail, loadOrPaste, showCode, webauthnError } from "./page.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
 
@@ -54,44 +45,11 @@ async function register(rp, req) {
       publicKeyAlgorithm: r.getPublicKeyAlgorithm(),
       prfSupported: prfEnabled(cred),
     };
-    if (req.handBack !== "" && (await sendToInit(sameOriginSession(), req, fields))) return;
     showCode(encodeRegistrationResponse(fields));
   } catch (err) {
     $("register").disabled = false;
     $("status").textContent = webauthnError(err);
   }
-}
-
-// initEnded is a hand-back that found no basalt init waiting for this
-// link: nothing listens on the port any more (init finished or gave up), or
-// a newer init run there does not know this link's secret.
-function initEnded(err) {
-  return err?.status === 0 || err?.status === 404;
-}
-
-// sendToInit posts the passkey to basalt init, which keeps it until the
-// person types the pairing code this page then shows (CONTRACT.md, CLI).
-// The code appears only after init answered that it took the passkey. It
-// returns false when the person should paste the long code instead. The
-// hand-back always goes to basalt init on this page's own origin, never
-// through the engine or the Vault (registration stays a static page), so
-// the caller passes a same-origin session (transport.js).
-export async function sendToInit(session, req, fields) {
-  try {
-    await postResponse(session, HAND_BACK_PATH, req.handBack, registrationResponseJson(fields));
-  } catch (err) {
-    if (initEnded(err)) {
-      showDone("basalt init is no longer waiting; run it again, and register with the link it opens.");
-      return true;
-    }
-    showRelayFailed(`basalt init did not take the passkey (${err.message}). Paste the code below into its prompt instead.`);
-    return false;
-  }
-  const { x, y } = pairingCoordinates(fields.publicKey);
-  $("pairing-code").textContent = await pairingCode(req.challenge, fields.credentialId, x, y);
-  $("pairing").hidden = false;
-  showDone("Passkey created and sent to basalt init. Type or paste this code into basalt init, so it keeps this passkey and no other:");
-  return true;
 }
 
 const describe = (err) => `This registration link cannot be used: ${err.message}`;

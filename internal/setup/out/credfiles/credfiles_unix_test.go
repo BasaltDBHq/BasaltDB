@@ -14,7 +14,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/ownerfile"
-	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
@@ -28,11 +27,7 @@ const (
 type osHost struct{}
 
 func (osHost) OSOpenTrustedDir(dir string, owner int, create bool) (TrustedDir, error) {
-	d, err := osservice.OpenTrustedDir(dir, owner, create)
-	if err != nil {
-		return nil, err
-	}
-	return d, nil
+	return osservice.OpenTrustedDirPort(dir, owner, create)
 }
 
 func (osHost) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
@@ -61,7 +56,7 @@ func TestCredentialOwner(t *testing.T) {
 func TestRootCredFilesReadsRootOrTheDirOwner(t *testing.T) {
 	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "agents")
-	r, err := OpenRootCredFiles(osHost{}, dir, trustedOwnerOf(t, dir))
+	r, err := openRootFiles(dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
 	defer r.Close()
 	me := os.Geteuid()
@@ -102,7 +97,7 @@ func (s statInfo) Sys() any { return s.st }
 func TestRootCredFilesChecksTheOwnersCredential(t *testing.T) {
 	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "agents")
-	r, err := OpenRootCredFiles(osHost{}, dir, trustedOwnerOf(t, dir))
+	r, err := openRootFiles(dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
 	defer r.Close()
 	cred := filepath.Join(dir, "bot.url")
@@ -157,7 +152,7 @@ func TestRootCredFilesWriteHandsOver(t *testing.T) {
 		t.Skip("root may give a file away")
 	}
 	dir := filepath.Join(t.TempDir(), "agents")
-	r, err := OpenRootCredFiles(osHost{}, dir, trustedOwnerOf(t, dir))
+	r, err := openRootFiles(dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
 	defer r.Close()
 	r.owner = os.Geteuid() + 1
@@ -174,7 +169,7 @@ func TestRootCredFilesHandsTheFilesToTheDirOwner(t *testing.T) {
 	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "agents")
 	cred := filepath.Join(dir, "bot.url")
-	files, err := OpenRootCredFiles(osHost{}, dir, trustedOwnerOf(t, dir))
+	files, err := openRootFiles(dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
 	defer files.Close()
 	owner := files.owner
@@ -207,7 +202,7 @@ func TestRootCredFilesHandOverAsRoot(t *testing.T) {
 	dir := filepath.Join(base, "agents")
 	require.NoError(t, os.Mkdir(dir, 0o700))
 	require.NoError(t, os.Chown(dir, engineUID, -1))
-	files, err := OpenRootCredFiles(osHost{}, dir, trustedOwnerOf(t, dir))
+	files, err := openRootFiles(dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
 	defer files.Close()
 	cred := filepath.Join(dir, "bot.url")
@@ -232,11 +227,21 @@ func requireOwner(t *testing.T, path string, uid int) {
 	require.Equal(t, uint32(uid), st.Uid, path)
 }
 
-// trustedOwnerOf is init --remote's trusted owner (cli.ExistingOwner, as
-// rootTrustedOwner) for the agents directory dir.
+// trustedOwnerOf is init --remote's trusted owner (RootTrustedOwner) for
+// the agents directory dir.
 func trustedOwnerOf(t *testing.T, dir string) int {
 	t.Helper()
-	owner, err := cli.ExistingOwner(filepath.Dir(dir))
+	owner, err := RootTrustedOwner(filepath.Dir(dir))
 	require.NoError(t, err)
 	return owner
+}
+
+// openRootFiles is OpenRootCredFiles as the RootCredFiles it opens, for
+// the tests that read and set its fields.
+func openRootFiles(dir string, trusted int) (RootCredFiles, error) {
+	files, err := OpenRootCredFiles(osHost{}, dir, trusted)
+	if err != nil {
+		return RootCredFiles{}, err
+	}
+	return files.(RootCredFiles), nil
 }

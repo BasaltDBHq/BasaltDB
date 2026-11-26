@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 )
 
 var updateGolden = flag.Bool("update", false, "rewrite the golden files under testdata/")
@@ -85,7 +84,7 @@ func state(t *testing.T, d *guardtest.DB) map[string]any {
 		events = append(events, map[string]any{"kind": kind, "detail": detail})
 	}
 	require.NoError(t, rows.Err())
-	health, err := ledger.CheckHealth(context.Background(), d.Admin, time.Now(), ledger.HealthOptions{})
+	health, err := checkHealth(context.Background(), d.Admin, time.Now(), healthOptions{})
 	require.NoError(t, err)
 	return map[string]any{"events": events, "chain": health.Chain, "heartbeatStale": health.HeartbeatStale}
 }

@@ -220,15 +220,14 @@ func buildFixtures(t *testing.T) fixtures {
 	f.Request.CredentialIDs = []string{passkey.Bytes(seq(16, 1)).String()}
 	f.Request.Fragment = frag
 	f.Request.RowsHash = approval.RowsHash(lines)
-	f.Request.Challenge = passkey.Bytes(approval.Challenge(binding)).String()
+	f.Request.Challenge = passkey.Bytes(passkeytest.Challenge(binding)).String()
 
-	resp := revert.Response{
-		RevertID:          revertID,
+	resp := revert.Response{RevertID: revertID, SignedAssertion: passkey.SignedAssertion{
 		CredentialID:      seq(16, 1),
 		AuthenticatorData: seq(37, 0x10),
 		ClientDataJSON:    []byte(`{"type":"webauthn.get","challenge":"` + f.Request.Challenge + `","origin":"https://basaltvault.app","crossOrigin":false}`),
 		Signature:         seq(70, 0x30),
-	}
+	}}
 	body, err := json.Marshal(resp)
 	require.NoError(t, err)
 	f.Response.RevertID = revertID.String()
@@ -712,6 +711,9 @@ func TestDecodeResponseRefuses(t *testing.T) {
 		_, err := revert.DecodeResponse([]byte(body))
 		require.ErrorIs(t, err, approval.ErrInvalid, body)
 	}
+	// No revert id is a missing field, as the plugin approval's is.
+	_, err := revert.DecodeResponse([]byte(`{"credentialId":"AQ","authenticatorData":"AQ","clientDataJson":"AQ","signature":"AQ"}`))
+	require.EqualError(t, err, "approval code invalid: revert response is missing a field")
 }
 
 // TestDecodeResponseOfASignedRevert signs a revert's challenge with a
@@ -723,7 +725,7 @@ func TestDecodeResponseOfASignedRevert(t *testing.T) {
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 
-	as, err := person.Sign(approval.Challenge(binding), passkeytest.FlagsUPUV, nil)
+	as, err := person.Sign(passkeytest.Challenge(binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	body, err := json.Marshal(reverttest.NewResponse(revertID, as))
 	require.NoError(t, err)

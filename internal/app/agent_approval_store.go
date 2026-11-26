@@ -3,7 +3,11 @@ package app
 import (
 	"context"
 
+	"github.com/google/uuid"
+
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 )
 
@@ -37,11 +41,22 @@ func (s *Service) approvalStoreSet() approvalsvc.StoreSet {
 type noApprovalStore struct{ approvalsvc.Store }
 
 // approvalReads answers the delivery use case's reads of the approval
-// records: the passkeys and a held write from the approval's store, and the
-// resources' field order from the column-order adapter.
+// records, the four linksvc.ApprovalReads declares: the passkeys and a held
+// write from the approval's store, and the resources' field order from the
+// column-order adapter.
 type approvalReads struct {
-	approvalsvc.Records
+	records approvalsvc.Records
 	columns linksvc.ColumnOrder
+}
+
+var _ linksvc.ApprovalReads = approvalReads{}
+
+func (r approvalReads) Passkeys(ctx context.Context) ([]passkey.Credential, error) {
+	return r.records.Passkeys(ctx)
+}
+
+func (r approvalReads) FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error) {
+	return r.records.FindApproval(ctx, id)
 }
 
 func (r approvalReads) HasColumns() bool { return r.columns != nil }

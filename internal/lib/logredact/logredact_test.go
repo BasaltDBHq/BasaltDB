@@ -173,7 +173,7 @@ func TestEveryProductionHandlerIsRedacted(t *testing.T) {
 			return nil
 		}))
 	}
-	require.Empty(t, stray, "build slog handlers with logredact.NewTextHandler or NewJSONHandler")
+	require.Empty(t, stray, "build slog handlers with logredact.NewTextHandler")
 }
 
 // plainHandlers is every reference to slog.NewTextHandler or

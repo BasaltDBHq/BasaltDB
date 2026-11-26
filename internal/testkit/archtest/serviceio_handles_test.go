@@ -424,11 +424,9 @@ func TestServicesDoNoHandleIO(t *testing.T) {
 	if *update {
 		// -update only removes lines: a new finding is fixed, never listed.
 		base = shrinkBaseline(base, scan.lines)
-		if len(base) == 0 {
-			if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
-				t.Fatal(err)
-			}
-		} else if err := os.WriteFile(file, []byte(strings.Join(base, "\n")+"\n"), 0o644); err != nil {
+		// An emptied baseline stays as an empty file: scripts/baseline-shrink.sh
+		// fails a registered baseline that is gone.
+		if err := os.WriteFile(file, []byte(strings.Join(base, "\n")+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}

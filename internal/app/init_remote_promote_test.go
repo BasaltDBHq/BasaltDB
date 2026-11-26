@@ -37,11 +37,11 @@ type recordedHost struct {
 	recorded bool
 }
 
-func (h recordedHost) GuardAgentVersion(context.Context, pgquerier.Querier) (int, error) {
+func (h recordedHost) GuardAgentVersion(context.Context, setup.Querier) (int, error) {
 	return h.GuardLatestVersion(), nil
 }
 
-func (h recordedHost) GuardSetupRecorded(context.Context, pgquerier.Querier, uuid.UUID) (bool, error) {
+func (h recordedHost) GuardSetupRecorded(context.Context, setup.Querier, uuid.UUID) (bool, error) {
 	return h.recorded, nil
 }
 
@@ -172,4 +172,32 @@ func TestInitRemoteChangedCertificateOnThePendingLogin(t *testing.T) {
 	got, err := os.ReadFile(credFile + config.PendingSuffix)
 	require.NoError(t, err)
 	require.Equal(t, pending+"\n", string(got), ".pending is left as it is")
+}
+
+// carrierHost is recordedHost that reads, as setupHost does, the driver
+// connection the guard's query port carries (pgquerier.Of).
+type carrierHost struct {
+	recordedHost
+	got *pgquerier.Querier
+}
+
+func (h carrierHost) GuardAgentVersion(ctx context.Context, q setup.Querier) (int, error) {
+	*h.got = pgquerier.Of(q)
+	return h.recordedHost.GuardAgentVersion(ctx, q)
+}
+
+// The agent's login init --remote hands the guard's reads carries the
+// connection the CLI logged in with, which setupHost reads back through
+// pgquerier.Of: the real setupcli carrier, not a test double of it.
+func TestInitRemoteHandsTheGuardTheAgentsOwnConnection(t *testing.T) {
+	t.Parallel()
+	// A pointer: the guard gets this connection, the same one, not just a
+	// connection of its type.
+	conn := &loggedInConn{}
+	cfg, _ := pendingAgent(t)
+	var got pgquerier.Querier
+	_, err := runRemote(t, carrierHost{recordedHost: recordedHost{recorded: false}, got: &got}, cfg,
+		func(context.Context, string) (cli.AgentConn, error) { return conn, nil })
+	require.NoError(t, err)
+	require.Same(t, conn, got)
 }

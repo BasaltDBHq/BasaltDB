@@ -5,13 +5,12 @@ package engineos
 import (
 	"encoding/json"
 	"io"
-	"os"
 	"strings"
-	"syscall"
 	"unicode"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
+	"github.com/basaltdbhq/basaltdb/internal/lib/ownerfile"
 )
 
 // maxLastStopBytes bounds what is read of it; maxReasonRunes what is shown.
@@ -25,8 +24,10 @@ const (
 // usable record. It is read as text and shown, never trusted for anything
 // else.
 func (OS) ReadLastStop(path string) (guidance.LastStop, bool) {
-	// Not a symlink, and never blocking on a pipe someone left there.
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	// Not a symlink, and never blocking on a pipe someone left there. The
+	// record is not owner-only (the supervisor writes it, and it holds no
+	// secret), so only the open is ownerfile's, not its owner and mode rules.
+	f, err := ownerfile.OpenNoFollow(path)
 	if err != nil {
 		return guidance.LastStop{}, false
 	}

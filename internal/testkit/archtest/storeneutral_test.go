@@ -178,7 +178,7 @@ var pluginStoreRule = storeRule{
 	},
 	allowed: map[string]string{
 		`manifest.go: text "resources.memoryMB must be a whole number from 64 to 65536"`: "a memory bound in MB, not a store code",
-		`plugin_feed_events.go: text "2006-01-02T15:04:05.999999Z"`:                      "Go's time layout for the feed's RFC 3339 times, not a store code",
+		`feed_events.go: text "2006-01-02T15:04:05.999999Z"`:                             "Go's time layout for the feed's RFC 3339 times, not a store code",
 	},
 	allowedDeps: map[string]string{},
 	// The plugin host reaches pkg/trustprofile through internal/status.

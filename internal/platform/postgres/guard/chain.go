@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // ChainStatus is the result of VerifyChain.
@@ -36,7 +37,7 @@ func Genesis() ChainHead { return ChainHead{Seq: 0, Hash: make([]byte, hashBytes
 // of basalt_meta keeps. A chain pin carries it, so a pin of an earlier
 // install is set aside instead of checked against a new ledger.
 func InstallID(ctx context.Context, q Querier) (uuid.UUID, error) {
-	sql, args, err := psql.Select("basalt_meta.install_id()").ToSql()
+	sql, args, err := sqlport.Builder.Select("basalt_meta.install_id()").ToSql()
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -52,7 +53,7 @@ func InstallID(ctx context.Context, q Querier) (uuid.UUID, error) {
 
 // VerifyChain recomputes the ledger hash chain from its anchor (D8).
 func VerifyChain(ctx context.Context, q Querier) (ChainStatus, error) {
-	sql, args, err := psql.Select("basalt_meta.verify_chain()").ToSql()
+	sql, args, err := sqlport.Builder.Select("basalt_meta.verify_chain()").ToSql()
 	if err != nil {
 		return ChainStatus{}, err
 	}
@@ -73,7 +74,7 @@ func VerifyChain(ctx context.Context, q Querier) (ChainStatus, error) {
 // are not recomputed (VerifyChain does that), but a consistent rewrite of
 // them changes the pinned row's hash and is caught here.
 func VerifyChainFrom(ctx context.Context, q Querier, from ChainHead) (ChainStatus, ChainHead, error) {
-	sql, args, err := psql.Select("broken_at", "seq", "hash").
+	sql, args, err := sqlport.Builder.Select("broken_at", "seq", "hash").
 		From("basalt_meta.verify_chain_from($1, $2)").ToSql()
 	if err != nil {
 		return ChainStatus{}, ChainHead{}, err
@@ -94,7 +95,7 @@ func VerifyChainFrom(ctx context.Context, q Querier, from ChainHead) (ChainStatu
 // seen earlier: the row at that seq changed, or the chain got shorter. A
 // consistent rewrite of the whole chain passes VerifyChain but not this.
 func CheckHead(ctx context.Context, q Querier, last ChainHead) (bool, error) {
-	sql, args, err := psql.Select().Column(sq.Expr("basalt_meta.check_head(?, ?)", last.Seq, last.Hash)).ToSql()
+	sql, args, err := sqlport.Builder.Select().Column(sq.Expr("basalt_meta.check_head(?, ?)", last.Seq, last.Hash)).ToSql()
 	if err != nil {
 		return false, err
 	}
@@ -106,7 +107,7 @@ func CheckHead(ctx context.Context, q Querier, last ChainHead) (bool, error) {
 // UncoveredTables lists agent-writable tables and cascade targets that do
 // not carry the guard (new since the last basalt init).
 func UncoveredTables(ctx context.Context, q Querier) ([]guardmodel.Uncovered, error) {
-	sql, args, err := psql.Select("table_oid::text", "why").From("basalt_meta.uncovered_tables()").OrderBy("1").ToSql()
+	sql, args, err := sqlport.Builder.Select("table_oid::text", "why").From("basalt_meta.uncovered_tables()").OrderBy("1").ToSql()
 	if err != nil {
 		return nil, err
 	}

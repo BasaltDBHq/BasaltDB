@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	ledgersvc "github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
+	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
 )
 
 // RunInfo is a started run.
@@ -188,5 +189,5 @@ func truncate(s string, n int) string {
 }
 
 func newID() uuid.UUID {
-	return uuid.Must(uuid.NewV7()) //nolint:forbidigo // baseline: move to internal/lib/uniqueid
+	return uuid.Must(uniqueid.NewUUID())
 }

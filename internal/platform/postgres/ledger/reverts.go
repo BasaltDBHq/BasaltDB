@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pglargevalue"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // ErrRevertNotFound is a revert id the calling role did not prepare.
@@ -32,7 +33,7 @@ const (
 )
 
 func revertSelect(ctx context.Context) sq.SelectBuilder {
-	return withRequest(ctx, psql.Select(colRevertID, "status", "scope", "scope_id", "intent", "rows", "skipped", "expires_at",
+	return withRequest(ctx, sqlport.Builder.Select(colRevertID, "status", "scope", "scope_id", "intent", "rows", "skipped", "expires_at",
 		"coalesce(binding_text, '')", "batched", "signed_at", "apply_by", "batches",
 		"coalesce(restored, 0)", "coalesce(skipped_now, 0)", "coalesce(pending, 0)", "change_id", "widened",
 		"rejected_at", "coalesce(reject_note, '')", "created_at").
@@ -85,16 +86,6 @@ func ListOpenReverts(ctx context.Context, q guard.Querier, p action.RevertListPa
 	return l.page(ctx, q, p.Params, p.Status)
 }
 
-// ListRevertLines returns one page of the lines of a batched plan the
-// calling role prepared, keyset on the line number.
-func ListRevertLines(ctx context.Context, q guard.Querier, p revertstore.RevertLineParams) (pagination.Page[revertstore.RevertLine], error) {
-	sql, args, err := revertLinePage(p)
-	if err != nil {
-		return pagination.Page[revertstore.RevertLine]{}, err
-	}
-	return collectRevertLines(ctx, q, p, sql, args)
-}
-
 // ListRevertLinesMarked is ListRevertLines for an agent (revert_plan): each
 // line's values and images too large for the agent are left out and named
 // in its largeValues, and its changeIds cut to the first
@@ -125,7 +116,7 @@ func revertLinePage(p revertstore.RevertLineParams) (string, []any, error) {
 	if p.Sort != "" {
 		return "", nil, fmt.Errorf("%w: plan lines come in execution order; no sort", ErrInvalidParams)
 	}
-	b := psql.Select("line_no", "coalesce(line, '') AS line", "outcome", "coalesce(conflict, '') AS conflict",
+	b := sqlport.Builder.Select("line_no", "coalesce(line, '') AS line", "outcome", "coalesce(conflict, '') AS conflict",
 		"coalesce(sql_state, '') AS sql_state", "batch").
 		From("basalt_meta.agent_revert_lines").Where(sq.Eq{"revert_id": p.RevertID.String()}).
 		OrderBy("line_no").Limit(uint64(p.Limit) + 1)

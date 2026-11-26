@@ -10,7 +10,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"testing"
 	"time"
@@ -18,10 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/core/links"
-	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
 )
@@ -45,15 +41,10 @@ func caExpiring(t *testing.T, notAfter time.Time) *x509.Certificate {
 
 func trustLocal(t *testing.T, probe *fakeProbe, rep TrustReporter) guidance.StatusReport {
 	t.Helper()
-	cmds := commandsAt("")
-	r, err := localStatus{
-		Errors: testErrors(), LatestGuardVersion: guard.LatestVersion,
-		Name: "bot", Commands: cmds.Foreground(), EngineRunning: true, Trust: rep, Probe: probe,
-		Passkeys: func(context.Context) ([]passkey.Credential, error) {
-			return []passkey.Credential{{Relying: passkey.Relying{Origin: links.DefaultLocal}}}, nil
-		},
-		Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
-	}.report(context.Background())
+	r, err := newService(func(s *settings) {
+		s.core.Commands = commandsAt("").Foreground()
+		s.deps.SameUser, s.deps.Trust, s.deps.Probe = true, rep, probe
+	}).Status(context.Background())
 	require.NoError(t, err)
 	return r
 }

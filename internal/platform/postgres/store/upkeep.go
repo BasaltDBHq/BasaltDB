@@ -8,9 +8,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // Upkeep is the store side of the engine's timer (ledger.Store) on one
@@ -72,7 +72,7 @@ func pinFate(f ledger.PinFate) action.PinFate {
 
 // LastHeartbeat is the agent's latest HEARTBEAT, zero when none.
 func (u *Upkeep) LastHeartbeat(ctx context.Context) (time.Time, error) {
-	q, args, err := psql.Select("max(at)").From("basalt_meta.agent_ledger").
+	q, args, err := sqlport.Builder.Select("max(at)").From("basalt_meta.agent_ledger").
 		Where(sq.Eq{"kind": string(guard.EventHeartbeat)}).ToSql()
 	if err != nil {
 		return time.Time{}, err
@@ -104,11 +104,7 @@ func (u *Upkeep) RecordUncovered(ctx context.Context, detail map[string]any) err
 
 // UncoveredTables lists the agent-writable tables without the guard.
 func (u *Upkeep) UncoveredTables(ctx context.Context) ([]action.Uncovered, error) {
-	tables, err := guard.UncoveredTables(ctx, u.db)
-	if err != nil {
-		return nil, err
-	}
-	return mapSlice(tables, func(t guardmodel.Uncovered) action.Uncovered { return action.Uncovered(t) }), nil
+	return guard.UncoveredTables(ctx, u.db)
 }
 
 // RLSBlindTables lists the tables the agent can SELECT where row-level

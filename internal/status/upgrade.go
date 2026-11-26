@@ -7,13 +7,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
-// UpgradeChecker says whether the guard misses only non-breaking migrations,
-// so everything works and the setup page's update adds them. The default asks the
-// service's Probe.
-type UpgradeChecker interface {
-	UpgradeAvailable(ctx context.Context) (bool, error)
-}
-
 // UpgradeWarnings is the GUARD_UPGRADE_AVAILABLE warning of run_start, when
 // only non-breaking guard migrations are missing.
 func (sc *Service) UpgradeWarnings(ctx context.Context) []toolresult.Warning {

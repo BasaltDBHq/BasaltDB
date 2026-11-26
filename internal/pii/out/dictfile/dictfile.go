@@ -136,9 +136,10 @@ func createDictionaryDir(stateDir, dir string) error {
 // only when the dictionary is opened (before any build can start) and right
 // after a build's WriteBase, in that build, and one build runs at a time
 // (pii.FuseDictionary.StartBuild); one engine holds a state directory (the
-// engine lock). A mapping made before a rename keeps the old file, which
-// keeps its one link until it is unmapped, so a hard error here is never a
-// race with the rebuild.
+// engine lock). A mapping made before a rename keeps the old inode, which
+// has 0 links after the rename; the checks run only at open, so a mapping
+// held across a rebuild is never checked again, and a hard error here is
+// never a race with the rebuild.
 func openBaseFile(path string) ([]byte, func() error, error) {
 	f, fi, err := ownerfile.Open(path, ownerfile.Rules{})
 	if err != nil {
@@ -162,23 +163,6 @@ func writeStatusFile(dir string, st pii.DictionaryStatus) error {
 		return err
 	}
 	return atomicfile.Write(filepath.Join(dir, pii.StatusFileName), data, atomicfile.Options{Mode: statusFileMode, SyncDir: true})
-}
-
-// ReadStatus reads <stateDir>/pii/status.json, as basalt log does. It
-// reports false when the file is missing, cannot be read (permissions, an
-// unreadable stateDir) or does not parse. It holds counts and times only.
-func ReadStatus(stateDir string) (pii.DictionaryStatus, bool) {
-	var st pii.DictionaryStatus
-	f, err := ownerfile.OpenNoFollow(filepath.Join(stateDir, pii.DictionaryDirName, pii.StatusFileName))
-	if err != nil {
-		return st, false
-	}
-	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, maxStatusFileSize))
-	if err != nil || json.Unmarshal(data, &st) != nil {
-		return pii.DictionaryStatus{}, false
-	}
-	return st, true
 }
 
 // readStatusFile reads status.json back (the last scan survives a restart).

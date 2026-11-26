@@ -26,19 +26,13 @@ package setup
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
 	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 )
@@ -155,46 +149,36 @@ type Description struct {
 // is the second composition root, for a program that calls it directly.
 var store = setupstore.New()
 
+// contract is the setup service's contract use case on store.
+var contract = setuprun.NewContract(store)
+
 // Describe decodes the code and applies the checks that need no database,
 // in the contract's order: the codec
 // (NOT_A_SETUP_CODE, UNSUPPORTED_FORMAT, DAMAGED, INVALID), the clock
 // (EXPIRED, SETUP_ID_IN_FUTURE, EXPIRY_TOO_FAR), this build's guard
 // (BINARY_TOO_OLD, GUARD_TOO_OLD). A refusal is an *Error.
 func Describe(req Request) (Description, error) {
-	s, err := setuprun.NewSetuprun(store, req.Code, req.Now, req.ConnectPage)
-	if err != nil {
-		return Description{}, asError(err)
-	}
-	return describe(s), nil
+	return described(contract.Describe(contractRequest(req)))
 }
 
-func describe(s *setuprun.Setup) Description {
-	p := s.P
-	d := Description{
-		SetupID: p.SetupID, Kind: Kind(p.Kind), AgentWord: setuprun.AgentWord(p), AgentRole: p.Role(), Prefix: p.Prefix,
-		GuardFrom: p.Guard.From, GuardTo: p.Guard.To, ExpiresAt: s.Expires, Fingerprint: p.Fingerprint(),
-		Summary:  setupcode.Summary(p, setupcode.SummaryState{GuardVersion: p.Guard.From}),
-		TrustPin: p.TrustPin,
+// described is the service's description of a code, or its refusal.
+func described(d setuprun.ContractDescription, err error) (Description, error) {
+	return description(d), asError(err)
+}
+
+// contractRequest is req as the setup service takes it.
+func contractRequest(req Request) setuprun.ContractRequest {
+	return setuprun.ContractRequest{Code: req.Code, Now: req.Now, ConnectPage: req.ConnectPage, Included: (*setuprun.ContractIncluded)(req.Included)}
+}
+
+// description is the service's description of a code.
+func description(d setuprun.ContractDescription) Description {
+	return Description{
+		SetupID: d.SetupID, Kind: Kind(d.Kind), Agent: d.Agent, AgentWord: d.AgentWord, AgentRole: d.AgentRole, Prefix: d.Prefix,
+		Target: (*Target)(d.Target), GuardFrom: d.GuardFrom, GuardTo: d.GuardTo, Write: d.Write, Read: d.Read, AllTablesSchemas: d.AllTablesSchemas,
+		KeepsGrants: d.KeepsGrants, StatementTimeoutMs: d.StatementTimeoutMs, ExpiresAt: d.ExpiresAt, Fingerprint: d.Fingerprint,
+		EngineFingerprint: d.EngineFingerprint, EngineKey: d.EngineKey, TrustPin: d.TrustPin, Summary: d.Summary,
 	}
-	if t := p.Target; t != nil {
-		d.Target = &Target{Host: t.Host, Port: t.Port, Database: t.Database, SupabaseRef: t.SupabaseRef}
-	}
-	if a := p.Agent; a != nil {
-		d.Agent, d.StatementTimeoutMs = a.Name, a.StatementTimeoutMs
-		d.Write, d.Read = slices.Clone(a.Write), slices.Clone(a.Read)
-		if a.AllTables != nil {
-			d.AllTablesSchemas = slices.Clone(a.AllTables.Schemas)
-		}
-		d.KeepsGrants = p.KeepsGrants()
-	}
-	if p.Engine != nil {
-		d.EngineKey = p.Engine.PublicKey
-		// Decode checked the key: it parses.
-		if key, err := p.Engine.Key(); err == nil {
-			d.EngineFingerprint = channel.FingerprintOf(channel.EngineIDOf(key))
-		}
-	}
-	return d
 }
 
 // Checked is a setup code checked against the database.
@@ -320,66 +304,6 @@ type RowSecurityQuestion struct {
 	Text string
 }
 
-// rollbackTimeout bounds the rollback of a failed setup, which runs even
-// when the caller's context is done.
-const rollbackTimeout = 5 * time.Second
-
-// adminTx runs the setup's transaction on the admin connection conn. A
-// commit that fails without the database's answer is a
-// setuprun.UnconfirmedError; one the database answered (an error of its
-// own, or a commit that became a rollback), one never sent, and fn's
-// error are known failures. The transaction rolls back on any of them, and
-// on a panic in fn.
-func adminTx(conn *pgx.Conn) setuprun.TxRunner {
-	return func(ctx context.Context, fn func(setuprun.Querier) error) error {
-		tx, err := conn.Begin(ctx)
-		if err != nil {
-			return err
-		}
-		defer rollback(ctx, tx) // after a commit, a no-op
-		if err := fn(pgquerier.Neutralize(tx)); err != nil {
-			return err
-		}
-		return commitOutcome(tx.Commit(ctx))
-	}
-}
-
-// rollback rolls tx back, within rollbackTimeout of now whatever ctx says.
-func rollback(ctx context.Context, tx pgx.Tx) {
-	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
-	defer cancel()
-	_ = tx.Rollback(rctx)
-}
-
-// commitOutcome is err from a commit, as a setuprun.UnconfirmedError when
-// the database may have applied it without answering: not one it
-// answered, not one that became a rollback, and not one the driver never
-// sent (pgconn.SafeToRetry).
-func commitOutcome(err error) error {
-	var pg *pgconn.PgError
-	switch {
-	case err == nil, errors.As(err, &pg), errors.Is(err, pgx.ErrTxCommitRollback), pgconn.SafeToRetry(err):
-		return err
-	}
-	return &setuprun.UnconfirmedError{Err: err}
-}
-
-// sameTx runs the setup's statements in tx, the transaction Run already
-// opened: no transaction of their own.
-func sameTx(tx setuprun.Querier) setuprun.TxRunner {
-	return func(_ context.Context, fn func(setuprun.Querier) error) error { return fn(tx) }
-}
-
-// pgxTx is the transaction adminTx handed the setup, for the writes in it
-// that run on the driver itself (labels, the trust pin, the passkey).
-func pgxTx(q setuprun.Querier) pgx.Tx {
-	tx, ok := pgquerier.Unwrap(q).(pgx.Tx)
-	if !ok {
-		panic("setup: the setup's transaction did not come from adminTx")
-	}
-	return tx
-}
-
 // adminAt is where the admin connection conn points, for the setup's
 // target check.
 func adminAt(conn *pgx.Conn) setuprun.ConnConfig {
@@ -397,96 +321,32 @@ func adminAt(conn *pgx.Conn) setuprun.ConnConfig {
 // ROLE_MISSING and ENGINE_REVOKED, then a missing table (TABLES_MISSING).
 // It changes nothing. A refusal is an *Error.
 func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
-	s, err := newSetup(req)
+	c, err := contract.Check(ctx, setupstore.Port(conn), adminAt(conn), contractRequest(req))
 	if err != nil {
 		return Checked{}, asError(err)
 	}
-	p, err := s.Prepare(ctx, pgquerier.Neutralize(conn), adminAt(conn))
-	if err != nil {
-		return Checked{}, asError(err)
+	out := Checked{
+		Description: description(c.Description), Database: ConnDatabase(conn.Config()), Connected: Connected(c.Connected),
+		RunsAsInstall: c.RunsAsInstall, Ticked: c.Ticked,
 	}
-	out := Checked{Description: describe(s), Database: ConnDatabase(conn.Config()), RunsAsInstall: s.RunsAsInstall(), Ticked: s.Ticked()}
-	if out.Connected, err = ConnectedAs(ctx, conn); err != nil {
-		return Checked{}, asError(err)
-	}
-	if p.NothingToDo {
-		out.NothingToDo = nothingToDo(p)
+	if c.NothingToDo != nil {
+		out.NothingToDo = (*NothingToDo)(c.NothingToDo)
 		return out, nil
 	}
-	out.Summary, out.EngineLines = p.Summary(), p.EngineLines()
-	out.Questions = questions(p)
-	tables := s.Tables()
-	out.Tables = append(slices.Clone(tables.Write), tables.ReadOnly...)
-	slices.Sort(out.Tables)
-	out.ReadOnly = slices.Clone(tables.ReadOnly)
-	for _, e := range tables.Excluded {
+	out.Summary, out.EngineLines, out.PasskeyNeeded = c.Summary, c.EngineLines, c.PasskeyNeeded
+	for _, q := range c.Questions.RowSecurity {
+		out.Questions.RowSecurity = append(out.Questions.RowSecurity, RowSecurityQuestion(q))
+	}
+	out.Questions.OutsidePublic = c.Questions.OutsidePublic
+	out.Tables, out.ReadOnly = c.Tables, c.ReadOnly
+	for _, e := range c.Excluded {
 		out.Excluded = append(out.Excluded, ExcludedTable(e))
 	}
-	if out.PasskeyNeeded, err = setuprun.PasskeyNeeded(ctx, store, pgquerier.Neutralize(conn), false); err != nil {
-		return Checked{}, asError(err)
-	}
-	if !req.ConnectPage { // the laptop command shows no labels and no passkeys
-		return out, nil
-	}
-	labels, err := checkLabels(ctx, conn, s)
-	if err != nil {
-		return Checked{}, asError(err)
-	}
-	for _, l := range labels {
+	for _, l := range c.Columns {
 		out.Columns = append(out.Columns, ColumnLabel{Table: l.Table, Column: l.Column, Label: Label(l.Label)})
 	}
-	if s.P.Target != nil {
-		if out.Passkeys, err = activePasskeys(ctx, conn); err != nil {
-			return Checked{}, asError(err)
-		}
-	}
+	out.Passkeys = activePasskeys(c.Passkeys)
 	return out, nil
-}
-
-// checkLabels are the columns Check shows: the agent's tables', or, for an
-// UPGRADE code, every readable column's table.
-func checkLabels(ctx context.Context, conn *pgx.Conn, s *setuprun.Setup) ([]guardmodel.ColumnLabel, error) {
-	if s.P.Agent == nil {
-		return guard.ReadReadableLabels(ctx, conn, s.Names)
-	}
-	return guard.ReadLabels(ctx, conn, s.Names, agentTables(s))
-}
-
-// agentTables are the tables the agent gets, in name order: for an AGENT
-// code that keeps the role's grants, the ones it holds.
-func agentTables(s *setuprun.Setup) []string { return s.AgentTables() }
-
-// newSetup is setuprun.NewSetuprun for req, with its ticked tables.
-func newSetup(req Request) (*setuprun.Setup, error) {
-	s, err := setuprun.NewSetuprun(store, req.Code, req.Now, req.ConnectPage)
-	if err != nil {
-		return nil, err
-	}
-	if req.Included != nil {
-		s.Include(req.Included.Tables)
-	}
-	return s, nil
-}
-
-func nothingToDo(p *setuprun.Prepared) *NothingToDo {
-	return &NothingToDo{Installed: p.State.GuardVersion, To: p.P.Guard.To}
-}
-
-func questions(p *setuprun.Prepared) Questions {
-	var q Questions
-	for _, b := range p.Blind {
-		q.RowSecurity = append(q.RowSecurity, RowSecurityQuestion{
-			Table: b.Table, Rows: b.Rows, Write: b.Write, Text: setuprun.RLSQuestion(b, p.P.Agent.Name),
-		})
-	}
-	if a := p.P.Agent; a != nil {
-		for _, t := range append(slices.Clone(a.Write), a.Read...) {
-			if schema, _, _ := strings.Cut(t, "."); schema != "public" {
-				q.OutsidePublic = append(q.OutsidePublic, t)
-			}
-		}
-	}
-	return q
 }
 
 // Answers are the person's answers to Check's questions.
@@ -562,57 +422,6 @@ type TrustPin struct {
 	SHA256 string
 }
 
-// maxColumnClasses bounds RunInput.ColumnClasses.
-const maxColumnClasses = 500
-
-// checkColumnNames refuses, before any read, a column label whose column
-// name is not a plain one (setuprun.PlainColumn: empty, longer than 63
-// bytes, or with a control character), as the local setup page does.
-func checkColumnNames(in RunInput) error {
-	for _, c := range in.ColumnClasses {
-		if !setuprun.PlainColumn(c.Column) {
-			return asError(&setuprun.SetuprunRefusalError{Code: CodeAnswersInvalid, Message: "the column labels: a class, entity type or phone region the page does not set; nothing changed"})
-		}
-	}
-	return nil
-}
-
-// checkColumnClasses applies the rules of ColumnClasses and RestPublic
-// that need no database (ANSWERS_INVALID): at most 500, each on a table the
-// agent gets, at most once per column, with a class the page may set and a
-// Was a column can have. An UPGRADE code names no agent: its columns are
-// the readable ones, checked in the setup's transaction (a column outside
-// them is CLASSES_CHANGED there).
-func checkColumnClasses(s *setuprun.Setup, in RunInput) error {
-	if len(in.ColumnClasses) == 0 && !in.RestPublic {
-		return nil
-	}
-	invalid := func(why string) error {
-		return asError(&setuprun.SetuprunRefusalError{Code: CodeAnswersInvalid, Message: "the column labels: " + why + "; nothing changed"})
-	}
-	if len(in.ColumnClasses) > maxColumnClasses {
-		return invalid(fmt.Sprintf("more than %d columns", maxColumnClasses))
-	}
-	var tables []string
-	if s.P.Agent != nil {
-		tables = agentTables(s)
-	}
-	seen := map[[2]string]bool{}
-	for _, c := range in.ColumnClasses {
-		key := [2]string{c.Table, c.Column}
-		switch {
-		case s.P.Agent != nil && !slices.Contains(tables, c.Table):
-			return invalid("a column of a table the agent does not get")
-		case seen[key]:
-			return invalid("a column given twice")
-		case c.Column == "" || !guardmodel.ValidLabel(guardmodel.Label(c.Label)) || !guardmodel.ValidWas(guardmodel.Label(c.Was)):
-			return invalid("a class, entity type or phone region the page does not set")
-		}
-		seen[key] = true
-	}
-	return nil
-}
-
 // Result is what a run did.
 type Result struct {
 	SetupID string
@@ -647,169 +456,46 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	if in.Passkey != nil && in.AskPasskey != nil {
 		return Result{}, errors.New("setup: RunInput.Passkey and RunInput.AskPasskey are both set")
 	}
-	if req.ConnectPage && req.Included == nil {
-		req.Included = &Included{} // the page always sends its ticks: none is NO_TABLES
+	// Approve's error is Run's as it is, never an *Error.
+	var approveErr error
+	cin := setuprun.ContractRunInput{AllRows: in.Answers.AllRows, AddPasskey: in.AddPasskey, RestPublic: in.RestPublic}
+	if in.Passkey != nil {
+		cin.Passkey = &in.Passkey.p
 	}
-	s, err := newSetup(req)
-	if err != nil {
-		return Result{}, asError(err)
+	if in.AskPasskey != nil {
+		cin.AskPasskey = func(ctx context.Context) (setuprun.ContractPasskey, error) {
+			pk, err := in.AskPasskey(ctx)
+			return pk.p, err
+		}
 	}
-	if in.Passkey != nil && !in.Passkey.verified() {
-		return Result{}, asError(&setuprun.SetuprunRefusalError{Code: CodePasskeyInvalid, Message: "the passkey was not verified; nothing changed"})
-	}
-	if err := checkColumnNames(in); err != nil {
-		return Result{}, err
-	}
-	var (
-		res        Result
-		registered *RegisteredPasskey
-		// refused is a refusal before the setup's script runs (Prepare, the
-		// labels' rules, Plan, Approve): returned as it is, not through
-		// Refused.
-		refused error
-	)
-	err = adminTx(conn)(ctx, func(tx setuprun.Querier) error {
-		// The setup is checked and planned in its own transaction: nothing
-		// changes between the reads the plan rests on and its statements.
-		p, err := s.Prepare(ctx, tx, adminAt(conn))
-		if err != nil {
-			refused = asError(err)
-			return refused
+	if in.Approve != nil {
+		cin.Approve = func(p setuprun.ContractPlan) error {
+			approveErr = in.Approve(Plan(p))
+			return approveErr
 		}
-		if err := checkColumnClasses(s, in); err != nil {
-			refused = err
-			return refused
-		}
-		if p.NothingToDo {
-			if err := setuprun.RefuseAnswers(in.Answers.AllRows); err != nil {
-				refused = asError(err)
-				return refused
-			}
-			if len(in.ColumnClasses) > 0 || in.RestPublic {
-				// Nothing runs, so nothing would carry them: refused, not dropped.
-				refused = asError(&setuprun.SetuprunRefusalError{Code: CodeAnswersInvalid, Message: "this setup has nothing to do, so it writes no label; nothing changed"})
-				return refused
-			}
-			res = Result{SetupID: s.P.SetupID, NothingToDo: nothingToDo(p)}
-			// The certificate the login was verified against is still
-			// recorded (the changed-certificate code of an agent saved with
-			// every table in public).
-			return recordTrustPin(ctx, pgxTx(tx), in.TrustPin)
-		}
-		script, err := p.Plan(ctx, in.Answers.AllRows)
-		if err != nil {
-			refused = asError(err)
-			return refused
-		}
-		if in.Approve != nil {
-			if err := in.Approve(Plan{SQL: script.SQL(), Warnings: slices.Clone(script.Warnings)}); err != nil {
-				refused = err
-				return refused
-			}
-		}
-		res = Result{SetupID: s.P.SetupID, Ran: true, EngineRecorded: p.Engine.Key != nil}
-		// The tables the grants cover, read again before the grants name
-		// them. A table dropped between this read and the grants still
-		// fails the grant itself: SETUP_FAILED, nothing changed.
-		first := func(ctx context.Context, q setuprun.Querier) error {
-			if err := s.RecheckTables(ctx, q); err != nil {
-				return err
-			}
-			if in.Passkey == nil && in.AskPasskey == nil {
-				// Refused before the script runs, not after it: nothing was
-				// changed to roll back.
-				return requirePasskey(ctx, q, in.AddPasskey)
-			}
-			return nil
-		}
-		inTx := func(ctx context.Context, q setuprun.Querier) error {
-			tx := pgxTx(q)
-			if err := writeLabels(ctx, tx, s, in, req.Now); err != nil {
-				return err
-			}
-			// The certificate the caller logged in against, recorded in the
-			// ledger (CONTRACT.md, Pinning on first use, Audit).
-			if err := recordTrustPin(ctx, tx, in.TrustPin); err != nil {
-				return err
-			}
-			if in.Passkey != nil {
-				var err error
-				registered, err = registerInTx(ctx, tx, in.Passkey)
-				return err
-			}
-			return nil // none needed (checked first), or the laptop asks after the commit
-		}
-		return setuprun.ApplySetupWith(ctx, store, sameTx(tx), script, first, inTx)
-	})
-	if refused != nil {
-		return Result{}, refused
-	}
-	if err != nil {
-		return Result{}, asError(setuprun.Refused(ctx, store, pgquerier.Neutralize(conn), s.P, err))
-	}
-	if res.NothingToDo != nil {
-		return res, nil
-	}
-	res.Passkey = registered
-	if s.P.Agent != nil {
-		res.Warnings = setuprun.RLSBlindWarnings(ctx, store, pgquerier.Neutralize(conn), s.P.Role(), s.Spec())
 	}
 	if in.Committed != nil {
-		in.Committed(res)
+		cin.Committed = func(r setuprun.ContractResult) { in.Committed(result(r)) }
 	}
-	if in.AskPasskey == nil {
-		return res, nil
-	}
-	asked, err := askPasskey(ctx, conn, in)
-	if err != nil {
-		return res, asError(setuprun.PasskeyFailed(s.P, err))
-	}
-	res.Passkey = asked
-	return res, nil
-}
-
-// recordTrustPin records t, when set, in the setup's transaction tx.
-func recordTrustPin(ctx context.Context, tx pgx.Tx, t *TrustPin) error {
-	if t == nil {
-		return nil
-	}
-	return guard.RecordTrustPin(ctx, tx, t.Host, t.Port, t.SHA256)
-}
-
-// writeLabels writes in.ColumnClasses and in.RestPublic in the setup's
-// transaction. Its tables are the agent role's (setuprun.Setup.AgentTables): for an
-// AGENT code that keeps the role's grants, the grants it holds, since such
-// a code names no tables; otherwise the code's tables. An UPGRADE code
-// names no agent, so its tables are the readable ones, read after the
-// migrations. The local setup page takes the person's picks instead.
-func writeLabels(ctx context.Context, tx pgx.Tx, s *setuprun.Setup, in RunInput, now time.Time) error {
-	if len(in.ColumnClasses) == 0 && !in.RestPublic {
-		return nil
-	}
-	changes := make([]guardmodel.LabelChange, 0, len(in.ColumnClasses))
 	for _, c := range in.ColumnClasses {
-		changes = append(changes, guardmodel.LabelChange{Table: c.Table, Column: c.Column, Label: guardmodel.Label(c.Label), Was: guardmodel.Label(c.Was)})
+		cin.ColumnClasses = append(cin.ColumnClasses, setuprun.ContractColumnClass{Table: c.Table, Column: c.Column, Label: guardmodel.Label(c.Label), Was: guardmodel.Label(c.Was)})
 	}
-	var tables []string
-	switch {
-	case s.P.Agent != nil:
-		tables = agentTables(s)
-	default:
-		// An UPGRADE code: every readable column's table, read after the
-		// migrations in this transaction.
-		var err error
-		if tables, err = guard.ReadableTables(ctx, tx, s.Names); err != nil {
-			return err
-		}
+	if in.TrustPin != nil {
+		cin.TrustPin = (*setuprun.ContractTrustPin)(in.TrustPin)
 	}
-	_, err := guard.WriteLabels(ctx, tx, s.Names, tables, changes, in.RestPublic, now)
-	if errors.Is(err, guardmodel.ErrClassesChanged) {
-		return &setuprun.SetuprunRefusalError{
-			Code: CodeClassesChanged, Err: err,
-			Message: "a column's label changed since the page showed it (someone classified it, or the column is gone), so the setup did not run and nothing changed: read the labels again",
-		}
+	res, err := contract.Run(ctx, setupstore.Port(conn), adminAt(conn), contractRequest(req), cin)
+	if approveErr != nil {
+		return Result{}, approveErr
 	}
-	return err
+	return result(res), asError(err)
+}
+
+// result is the service's account of a run.
+func result(r setuprun.ContractResult) Result {
+	return Result{
+		SetupID: r.SetupID, NothingToDo: (*NothingToDo)(r.NothingToDo), Ran: r.Ran, EngineRecorded: r.EngineRecorded,
+		Warnings: r.Warnings, Passkey: (*RegisteredPasskey)(r.Passkey),
+	}
 }
 
 // Error is a refused or failed step. Message is what the person reads:

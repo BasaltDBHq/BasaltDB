@@ -22,12 +22,6 @@ const ServiceURL = "https://" + channel.ConnectAudience
 // collectTimeout bounds one CollectAddress call.
 const collectTimeout = 20 * time.Second
 
-// Signer signs with the engine's signing key: *channel.EngineKeys.
-type Signer interface {
-	Sign(context channel.SigningContext, body []byte) ([]byte, error)
-	PublicKeySPKI() []byte
-}
-
 // The refusals CollectAddress and ReportReach answer with (CONTRACT.md, Connect refusals).
 const (
 	reasonHandoffUnknown = "HANDOFF_UNKNOWN"

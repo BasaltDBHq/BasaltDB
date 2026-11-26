@@ -13,7 +13,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/demo"
@@ -25,15 +24,17 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/enginefiles"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/osusers"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
-	psetup "github.com/basaltdbhq/basaltdb/pkg/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
-// Backend implements localsetup's Backend: the setup store (which is also
-// internal/setup's backend) and the connection, trust and passkey calls localsetup
-// makes itself.
+// Backend implements the setup service's LocalBackend: the setup store
+// (which is also the shared run's SetuprunBackend, and holds the label,
+// trust pin and passkey calls the setup contract shares), the engine's
+// files, and the connection, trust, classifier and passkey calls the local
+// setup page's jobs make.
 type Backend struct {
 	setupstore.Store
 	enginefiles.Files
@@ -71,8 +72,7 @@ func (Backend) ConnHost(c setup.Conn) (string, int) {
 }
 
 func (Backend) ConnCertificate(c setup.Conn, kind, provider string) (string, string) {
-	cert := psetup.CertificateOf(pgxConn(c), psetup.CertificateKind(kind), provider)
-	return string(cert.Kind), cert.Issuer
+	return setup.CertificateOf(setupstore.TLSState(pgxConn(c)), kind, provider)
 }
 
 // ReadCredential reads the agent's connection string and refuses one with
@@ -118,10 +118,6 @@ func (Backend) AgentConnString(adminURL, role, password string) (string, error) 
 
 // Trust pins recorded in the database.
 
-func (Backend) RecordTrustPin(ctx context.Context, q setup.Querier, host string, port int, sha256 string) error {
-	return guard.RecordTrustPin(ctx, pgquerier.Unwrap(q), host, port, sha256)
-}
-
 func (Backend) RecordedTrustPin(ctx context.Context, q setup.Querier, host string, port int) (string, bool, error) {
 	return guard.RecordedTrustPin(ctx, pgquerier.Unwrap(q), host, port)
 }
@@ -138,22 +134,6 @@ func (Backend) RecordedTrustPinTx(ctx context.Context, q setup.Querier, n guardm
 
 func (Backend) PIIUnclassified(ctx context.Context, q setup.Querier) ([]guardmodel.UnclassifiedColumn, error) {
 	return guard.PIIUnclassified(ctx, pgquerier.Unwrap(q))
-}
-
-func (Backend) ReadLabels(ctx context.Context, q setup.Querier, n guardmodel.Names, tables []string) ([]guardmodel.ColumnLabel, error) {
-	conn, err := pgxConnOf(q)
-	if err != nil {
-		return nil, err
-	}
-	return guard.ReadLabels(ctx, conn, n, tables)
-}
-
-func (Backend) WriteLabels(ctx context.Context, q setup.Querier, n guardmodel.Names, tables []string, changes []guardmodel.LabelChange, restPublic bool, at time.Time) (int, error) {
-	tx, err := pgxTx(q)
-	if err != nil {
-		return 0, err
-	}
-	return guard.WriteLabels(ctx, tx, n, tables, changes, restPublic, at)
 }
 
 func (Backend) AgentUnlabeled(ctx context.Context, q setup.Querier, n guardmodel.Names, role string) ([]guardmodel.AgentColumn, error) {
@@ -188,18 +168,6 @@ func (Backend) PIISampler(q setup.Querier, timeout time.Duration, maxChars int) 
 
 // Passkeys.
 
-func (Backend) ActivePasskeys(ctx context.Context, q setup.Querier) ([]guardmodel.RegisteredPasskey, error) {
-	return guard.ActivePasskeys(ctx, pgquerier.Unwrap(q))
-}
-
-func (Backend) RegisterPasskey(ctx context.Context, q setup.Querier, cred passkey.Credential, label string) error {
-	return guard.RegisterPasskey(ctx, pgquerier.Unwrap(q), cred, label)
-}
-
-func (Backend) RevokePasskey(ctx context.Context, q setup.Querier, credentialID []byte, force bool) (int, error) {
-	return guard.RevokePasskey(ctx, pgquerier.Unwrap(q), credentialID, force)
-}
-
 func (Backend) ListPasskeys(ctx context.Context, q setup.Querier) ([]setup.ActivePasskey, error) {
 	keys, err := ledger.ListPasskeys(ctx, pgquerier.Unwrap(q))
 	if err != nil {
@@ -212,6 +180,9 @@ func (Backend) ListPasskeys(ctx context.Context, q setup.Querier) ([]setup.Activ
 	return out, nil
 }
 
+// OSUsers looks the computer's OS users up.
+func (Backend) OSUsers() setup.Users { return osusers.Users{} }
+
 // FetchChain reads the chain host:port presents with the TLS handshake alone.
 func (Backend) FetchChain(ctx context.Context, host string, port int) ([]*x509.Certificate, error) {
 	return trustpin.Fetch(ctx, nil, host, port)
@@ -220,7 +191,7 @@ func (Backend) FetchChain(ctx context.Context, host string, port int) ([]*x509.C
 // SuggestColumns runs the PII classifier over cols with its default
 // options, keeping no value.
 func (Backend) SuggestColumns(ctx context.Context, cols []piistore.Column, sample setup.SampleFunc) ([]setup.ColumnSuggestion, error) {
-	results, err := pii.SuggestAll(ctx, cols, pii.SampleFunc(sample), pii.Options{}, func(pii.Column, pii.Suggestion) bool { return false })
+	results, err := pii.SuggestAll(ctx, cols, pii.SampleFunc(sample), pii.Options{})
 	if err != nil {
 		return nil, err
 	}

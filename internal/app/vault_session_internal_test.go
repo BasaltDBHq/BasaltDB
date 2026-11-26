@@ -242,7 +242,7 @@ func (s *vaultSession) approvalPath() string { return "/api/v1/approvals/" + s.a
 // over the binding the page was shown.
 func signed(t *testing.T, signer *passkeytest.Authenticator, req approval.Request) string {
 	t.Helper()
-	as, err := signer.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
+	as, err := signer.Sign(passkeytest.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	body, err := json.Marshal(approvaltest.NewResponse(req.ApprovalID, as))
 	require.NoError(t, err)

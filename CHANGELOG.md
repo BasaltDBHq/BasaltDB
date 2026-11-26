@@ -25,9 +25,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The engine's warning "plugin feed paused" gives a database refusal's class as `STORE_CODE <code>` (was `SQLSTATE <code>`); for Postgres the code is still the SQLSTATE. A log filter or alert that matches the old class needs the new one.
 - `describe`'s search names what matched in words that fit any store: `matched` is `resource`, `namespace` or `field <name>` (was `table`, `schema` or `column <name>`); `comment` does not change. The approval and revert pages' request, served by the engine, carries `fields` (was `columns`), each resource to its field names in the store's order, for display only. `describe`'s messages and next steps, a revert's person message ("only resource <name>", was "only table <name>") and the plugin feed's revert headline, and the descriptions of `describe`, `preview_revert`, `run_history`, `run_start`, `status` and `write` say resource, namespace and field where they said table, schema and column. An agent or tool that reads `matched` needs the new values.
 
+### Removed
+
+- The passkey registration request no longer takes `handBack` (`api/mcp/approval/registration-request.schema.json`), and the registration page no longer shows a pairing code; the shared pairing-code vectors are gone. Both went with the terminal setup's hand-back to `basalt init`; the page shows the code to paste, as before.
+- The plugin person schema (`api/plugin/approval/person.schema.json`) no longer lists `PLUGIN_APPROVE` or its params and result: a plugin approval is signed on its page, which relays the signature.
+
 ### Fixed
 
-- A tool call that panics names its saved crash report even when older reports could not be deleted; it said no report could be saved.
+- A tool call that panics names its saved crash report even when older reports could not be deleted; it said no report could be saved. A `basalt` command that panics now names its saved report in that case too.
 - A read and a refused action are recorded with qualified resource names, as a write is: the agent's `leads` is `public.leads` in `run_history` and the ledger, resolved with the agent's own `search_path`. A read recorded the name as the agent wrote it, and a refused action recorded no resource at all. The guard gets schema version 12 (breaking): run `basalt init` again and update the guard on the page it opens.
 - The next step of `APPROVAL_INVALID` `DIFFERENT_WRITE` now repeats the held write's large integer params exactly. They were rounded through a float, so sending the step as it was refused the write again.
 - A tool call that panics and could not save a crash report now answers `INTERNAL` with a `personMessage` that says so, as every `INTERNAL` error does; it had none.

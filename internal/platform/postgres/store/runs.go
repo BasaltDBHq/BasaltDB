@@ -10,6 +10,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // MaxRunResources is how many resources a run summary names (list_runs); a
@@ -59,7 +60,7 @@ func (s *Store) listRunsRaw(ctx context.Context, p action.RunListParams) (pagina
 	if sort.Desc {
 		order += " DESC"
 	}
-	b := psql.Select(runIDColumn, "r.task_id", "r.intent", "r.started_at", "a.last_change_at",
+	b := sqlport.Builder.Select(runIDColumn, "r.task_id", "r.intent", "r.started_at", "a.last_change_at",
 		"a.applied", "a.held", "a.refused", "a.reverted", "a.reads", "a.rows_written", "a.resources").
 		From("basalt_meta.agent_runs r").
 		JoinClause(runAggregate.Prefix("CROSS JOIN LATERAL (").Suffix(") a")).

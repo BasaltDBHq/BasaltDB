@@ -2,21 +2,28 @@ package app
 
 import (
 	"context"
-	"errors"
+	"io"
 	"os"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/platform/keyfile"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/credfiles"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/enginefiles"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -41,26 +48,27 @@ func (shell) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
 	return osservice.OpenTrustedFile(path, owner)
 }
 
-// setupHost is basalt init --remote's real host: the adapters, reached
-// through this package's own functions.
-type setupHost struct{}
+// setupHost is the setup commands' real host: each method forwards to the
+// adapter that does it, and its engine files (by path) are the setup page's
+// adapter's (UpsertAgentVault for init --remote).
+type setupHost struct{ enginefiles.Files }
 
 func (setupHost) GuardAgentConnString(adminURL, role, password string) (string, error) {
 	return guard.AgentConnString(adminURL, role, password)
 }
 
-func (setupHost) GuardAgentVersion(ctx context.Context, q pgquerier.Querier) (int, error) {
-	return guard.AgentVersion(ctx, q)
+func (setupHost) GuardAgentVersion(ctx context.Context, q setup.Querier) (int, error) {
+	return guard.AgentVersion(ctx, pgquerier.Of(q))
 }
 
 func (setupHost) GuardLatestVersion() int { return guard.LatestVersion() }
 
-func (setupHost) GuardSetupRecorded(ctx context.Context, q pgquerier.Querier, id uuid.UUID) (bool, error) {
-	return guard.SetupRecorded(ctx, q, id)
+func (setupHost) GuardSetupRecorded(ctx context.Context, q setup.Querier, id uuid.UUID) (bool, error) {
+	return guard.SetupRecorded(ctx, pgquerier.Of(q), id)
 }
 
 func (setupHost) LoadOrCreateEngineKeys(path string, now func() time.Time) (*channel.EngineKeys, error) {
-	return loadOrCreateEngineKeys(path, now)
+	return keyfile.LoadOrCreateKeys(path, now)
 }
 
 func (setupHost) TrustProfileFor(configPath, host string) *trustprofile.Profile {
@@ -68,11 +76,7 @@ func (setupHost) TrustProfileFor(configPath, host string) *trustprofile.Profile 
 }
 
 func (setupHost) OSOpenTrustedDir(dir string, owner int, create bool) (trustedDir, error) {
-	d, err := osservice.OpenTrustedDir(dir, owner, create)
-	if err != nil {
-		return nil, err
-	}
-	return d, nil
+	return osservice.OpenTrustedDirPort(dir, owner, create)
 }
 
 func (setupHost) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
@@ -82,11 +86,7 @@ func (setupHost) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
 func (setupHost) OSLookupUID(name string) int { return osservice.LookupUID(name) }
 
 func (setupHost) OSInstallScript(goos, binary string) (string, error) {
-	src, err := osservice.ReadSource(binary)
-	if err != nil {
-		return "", err
-	}
-	return osservice.InstallScript(goos, src)
+	return osservice.InstallScriptFor(goos, binary)
 }
 
 func (setupHost) OSRemoveScript(goos string) (string, error) { return osservice.RemoveScript(goos) }
@@ -94,11 +94,7 @@ func (setupHost) OSRemoveScript(goos string) (string, error) { return osservice.
 func (setupHost) OSResetScript(goos string) (string, error) { return osservice.ResetScript(goos) }
 
 func (setupHost) OSRestartScript(goos, binary string) (string, error) {
-	src, err := osservice.ReadSource(binary)
-	if err != nil {
-		return "", err
-	}
-	return osservice.RestartScript(goos, src)
+	return osservice.RestartScriptFor(goos, binary)
 }
 
 func (setupHost) OSServiceBinary(goos string) string { return osservice.ServiceBinary(goos) }
@@ -107,51 +103,24 @@ func (setupHost) OSDefaultUser(goos string) string { return osservice.DefaultUse
 
 func (setupHost) OSUnitPath(goos string) string { return osservice.UnitPath(goos) }
 
-func (setupHost) ConnTarget(dsn string) (setup.ConnTarget, error) {
-	cfg, err := pgconn.ParseConfig(dsn)
-	if err != nil {
-		return setup.ConnTarget{}, err
-	}
-	return setup.ConnTarget{Host: cfg.Host, Port: int(cfg.Port), SystemRoots: cfg.TLSConfig != nil && cfg.TLSConfig.RootCAs == nil}, nil
-}
+func (setupHost) ConnTarget(dsn string) (setup.ConnTarget, error) { return pgdial.ConnTarget(dsn) }
 
-func (setupHost) ServerMessage(err error) (string, bool) { return pgErrors{}.ServerMessage(err) }
+func (setupHost) ServerMessage(err error) (string, bool) { return pgdial.ServerMessage(err) }
 
 func (setupHost) PathCredFiles() setup.CredFiles { return pathCredFiles{} }
 
 func (h setupHost) OpenRootCredFiles(dir string, trusted int) (setup.CredFiles, error) {
-	return openRootCredFiles(h, dir, trusted)
+	return credfiles.OpenRootCredFiles(h, dir, trusted)
 }
 
-func (setupHost) RootTrustedOwner(dir string) (int, error) { return rootTrustedOwner(dir) }
+func (setupHost) RootTrustedOwner(dir string) (int, error) { return credfiles.RootTrustedOwner(dir) }
 
 func (h setupHost) OpenRootConfigDir(dir string, trusted int) (setup.RootConfigDir, error) {
-	d, err := openRootConfigDir(h, dir, trusted)
-	if err != nil {
-		return nil, err
-	}
-	return d, nil
+	return credfiles.OpenRootConfigDir(h, dir, trusted)
 }
 
 func (h setupHost) RootEngineKey(stateDir, goos string, cfg setup.RootConfigDir, now func() time.Time) ([]byte, error) {
-	d, _ := cfg.(*rootConfigDir)
-	return rootEngineKey(h, stateDir, goos, d, now)
-}
-
-// setupFilesHost is how setup reaches the files root reads and writes for
-// the engine's user: directories and files opened from / without following
-// a link anyone but root or their owner controls, and OS user ids.
-type setupFilesHost interface {
-	// OSOpenTrustedDir opens dir for root, refusing a directory on the way
-	// that someone other than root or owner could swap; create makes it
-	// when missing.
-	OSOpenTrustedDir(dir string, owner int, create bool) (trustedDir, error)
-	// OSOpenTrustedFile opens path read-only for root: its directory as
-	// OSOpenTrustedDir does, the file itself never through a symlink.
-	OSOpenTrustedFile(path string, owner int) (*os.File, error)
-	// OSLookupUID is the uid of the OS user name, or -1 when there is no
-	// such user.
-	OSLookupUID(name string) int
+	return credfiles.RootEngineKey(h, stateDir, goos, cfg, now, engine.StateDirMode)
 }
 
 // probeLogin tries a login with dsn and closes it: the error says how far
@@ -171,10 +140,41 @@ func probeLogin(c *cli.IO) func(context.Context, string) error {
 // pgErrors is setup.DBErrors on pgx's server errors.
 type pgErrors struct{}
 
-func (pgErrors) ServerMessage(err error) (string, bool) {
-	var pg *pgconn.PgError
-	if !errors.As(err, &pg) {
-		return "", false
-	}
-	return pg.Message, true
+func (pgErrors) ServerMessage(err error) (string, bool) { return pgdial.ServerMessage(err) }
+
+// The service install's host (setup.ServiceHost): each method is the
+// adapter call it is named after.
+
+func (setupHost) LoadConfigNoFollow(path string) (config.Config, error) {
+	return config.LoadNoFollow(path)
+}
+
+func (setupHost) LoadEngineConfigAsSelf(path string) (config.Config, error) {
+	return cli.LoadEngineConfigAs(shell{}, os.Geteuid(), path)
+}
+
+func (setupHost) LockConfigAs(path string, uid int) (config.HeldLock, error) {
+	return config.LockConfigAs(path, uid)
+}
+
+func (h setupHost) ReadKeptCredential(path, engineUser string) (string, error) {
+	return credfiles.ReadKeptCredential(h, path, engineUser)
+}
+
+func (h setupHost) UpsertedVault(configPath, engineUser string, s config.Settings, a config.Agent) ([]byte, config.VaultWritten, error) {
+	return credfiles.UpsertedVault(h, configPath, engineUser, s, a)
+}
+
+func (setupHost) CredentialMissing(path string) bool { return credfiles.CredentialMissing(path) }
+
+func (setupHost) CheckAgentOSUser(osUser, engineUser string) error {
+	return setupcli.CheckAgentOSUser(osUser, engineUser)
+}
+
+func (setupHost) WithPluginUnits(spec servicespec.Spec, cfg config.Config, warn io.Writer) servicespec.Spec {
+	return plugin.ServiceUnits{Files: pluginPorts.Files, TerminalText: cli.TerminalText}.WithPluginUnits(spec, cfg, warn)
+}
+
+func (setupHost) InstallUnits(ctx context.Context, spec servicespec.Spec, dryRun bool, out, errw io.Writer) error {
+	return osservice.InstallService(ctx, spec, dryRun, out, errw)
 }

@@ -16,12 +16,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
-// Resolver looks up a host name. *net.Resolver's LookupNetIP is one, and
-// lib/sysdns's outside tests.
-type Resolver interface {
-	LookupNetIP(ctx context.Context, network, host string) ([]netip.Addr, error)
-}
-
 // refusedPrefixes are the ranges the engine never connects a collected
 // address to, IPv4 and IPv6: the connect service's own (CONTRACT.md,
 // Connect, Where the runner connects). An address must also be global

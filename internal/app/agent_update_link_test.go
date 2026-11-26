@@ -8,6 +8,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
 const testUpdateLink = "http://localhost:8787/setup/#1.eyJqb2IiOiJVUERBVEUifQ"
@@ -41,7 +42,7 @@ func hasStep(steps []toolresult.NextStep, actor, action, value string) bool {
 
 func TestGuardStepsHandThePersonTheUpdateLink(t *testing.T) {
 	t.Parallel()
-	cmds, err := newCommands("bot", "", "darwin", testManager())
+	cmds, err := newCommands("bot", "", "darwin", osservice.Manager())
 	require.NoError(t, err)
 	with := cmds.UpdateLink(testUpdateLink)
 
@@ -73,7 +74,7 @@ func TestGuardStepsHandThePersonTheUpdateLink(t *testing.T) {
 // agent runs basalt init once, which removes the engine service.
 func TestRemovedEngineStepsFinishTheRemoval(t *testing.T) {
 	t.Parallel()
-	cmds, err := newCommands("bot", "", "darwin", testManager())
+	cmds, err := newCommands("bot", "", "darwin", osservice.Manager())
 	require.NoError(t, err)
 	gone := false
 	removed := cmds.UpdateLink(testUpdateLink).Removed(func() bool { return gone })

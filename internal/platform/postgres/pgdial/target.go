@@ -42,6 +42,25 @@ func ParseTarget(dsn string) (Target, error) {
 	return t, nil
 }
 
+// TLSTarget is where a connection string connects: its first host and
+// port, and SystemRoots, TLS on with the system's roots. It is an alias of
+// the struct itself, the same type as the setup service's ConnTarget.
+type TLSTarget = struct {
+	Host        string
+	Port        int
+	SystemRoots bool
+}
+
+// ConnTarget is dsn's TLSTarget, as the driver parses dsn (no root
+// certificate given: the system's roots). The error is the driver's own.
+func ConnTarget(dsn string) (TLSTarget, error) {
+	cfg, err := pgconn.ParseConfig(dsn)
+	if err != nil {
+		return TLSTarget{}, err
+	}
+	return TLSTarget{Host: cfg.Host, Port: int(cfg.Port), SystemRoots: cfg.TLSConfig != nil && cfg.TLSConfig.RootCAs == nil}, nil
+}
+
 // ExplainWith is what verifies the certificate of dsn's first host with
 // set's profiles (trustprofile.Explain), dsn parsed as the driver parses it.
 func ExplainWith(dsn string, set *trustprofile.Set) (trustprofile.Applied, error) {

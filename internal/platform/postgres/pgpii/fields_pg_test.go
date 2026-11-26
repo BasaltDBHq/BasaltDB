@@ -3,7 +3,10 @@ package pgpii
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -76,8 +79,10 @@ func TestScanRebuildsFromEveryKindOfRelation(t *testing.T) {
 	require.Contains(t, out.String(), "pii: dictionary scan")
 	require.NotContains(t, out.String(), "corp.ee", "the log carries counts, never values")
 
-	st, ok := dictfile.ReadStatus(dir)
-	require.True(t, ok)
+	raw, err := os.ReadFile(filepath.Join(dir, corepii.DictionaryDirName, corepii.StatusFileName))
+	require.NoError(t, err)
+	var st corepii.DictionaryStatus
+	require.NoError(t, json.Unmarshal(raw, &st))
 	require.EqualValues(t, 16, st.LastScanRows)
 
 	// A deleted value drops out at the next cycle (M51-8).
@@ -135,7 +140,7 @@ func TestScanWarnsWhenBuildsKeepFailing(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	f.classify(t, time.Now())
-	pool, err := postgres.NewPool(context.Background(), f.agent.URL, 1)
+	pool, _, err := postgres.NewSwitchablePool(context.Background(), f.agent.URL, 1)
 	require.NoError(t, err)
 	pool.Close() // every cycle fails
 	dict, _, _ := scanDict(t, nil)

@@ -17,20 +17,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 )
 
-// SetupFinisher finishes an agent's pending setup on the engine's machine.
-type SetupFinisher interface {
-	// PendingRecorded logs in with the agent's .pending credential, when
-	// there is one for the same database and role as the engine's, and
-	// reports whether setup id is recorded. has is false when there is no
-	// such credential or the database refuses its login.
-	PendingRecorded(ctx context.Context, id uuid.UUID) (recorded, has bool, err error)
-	// Finish clears setup id from the agent's entry in engine.json under the
-	// agent's lock, after moving the .pending credential PendingRecorded
-	// logged in with over the credential file when promote is set. A config
-	// whose pending setup is no longer id is left as it is.
-	Finish(ctx context.Context, id string, promote bool) error
-}
-
 // NoFinisher has no .pending credential and no config to clear.
 type NoFinisher struct{}
 
@@ -91,16 +77,6 @@ func (k *SetupKeeper) Watch(database string, probe setupProbe, finisher SetupFin
 		setup: k.pending(), database: database, probe: probe, finisher: finisher,
 		finished: k.finished, notRecorded: &k.notRecorded, lockTrouble: &k.lockTrouble,
 		log: log, now: now,
-	}
-}
-
-// NewLocalWatch is the pending setup as basalt status reads it for an engine
-// run as the person: the running engine finishes the setup, so nothing here
-// does.
-func NewLocalWatch(setup *config.Setup, probe setupProbe, log *slog.Logger, now func() time.Time) SetupWatch {
-	return SetupWatch{
-		setup: setup, probe: probe, finisher: NoFinisher{}, finished: func(string) {},
-		notRecorded: &setupCache{}, lockTrouble: &lockTrouble{}, log: log, now: now,
 	}
 }
 

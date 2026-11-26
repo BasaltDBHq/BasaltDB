@@ -667,7 +667,7 @@ func runCode(t *testing.T, d *guardtest.DB, p setupcode.Payload) {
 				return err
 			}
 		}
-		_, err := guard.RecordSetup(ctx, tx, d.Names, guardmodel.Setup{
+		_, err := guardtest.RecordSetup(ctx, tx, d.Names, guardmodel.Setup{
 			ID: id, Kind: string(p.Kind), Agent: agentName,
 			GuardVersion: p.Guard.To, ExpiresAt: expires,
 		})

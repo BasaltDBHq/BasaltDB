@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 )
@@ -38,8 +38,8 @@ func newFakeClasses(fields ...piistore.FieldClass) *fakeClasses {
 
 func fakeField(resource, field, class string) piistore.FieldClass {
 	return piistore.FieldClass{
-		Ref:       agentstore.FieldRef(resource + "#" + field),
-		Resource:  agentstore.ResourceRef(resource),
+		Ref:       action.FieldRef(resource + "#" + field),
+		Resource:  action.ResourceRef(resource),
 		Namespace: "db", ResourceName: resource, Field: field, Class: class,
 	}
 }
@@ -69,9 +69,9 @@ func (f *fakeClasses) Unclassified(context.Context) ([]piistore.Unclassified, er
 	return f.unclas, f.err
 }
 
-func (f *fakeClasses) ResourceOf(ref agentstore.FieldRef) agentstore.ResourceRef {
+func (f *fakeClasses) ResourceOf(ref action.FieldRef) action.ResourceRef {
 	res, _, _ := strings.Cut(string(ref), "#")
-	return agentstore.ResourceRef(res)
+	return action.ResourceRef(res)
 }
 
 func (f *fakeClasses) Shared() bool { return !f.private }
@@ -93,7 +93,7 @@ func TestConcurrentSharedLoadsAreOneFlight(t *testing.T) {
 	errs := make(chan error, 8)
 	for range 8 {
 		wg.Go(func() {
-			_, err := m.Resolve(ctx, store, []agentstore.FieldRef{"users#email"})
+			_, err := m.Resolve(ctx, store, []action.FieldRef{"users#email"})
 			errs <- err
 		})
 	}
@@ -121,14 +121,14 @@ func TestPrivateLoadNeverJoinsTheFlight(t *testing.T) {
 	m := NewMap(slog.New(slog.DiscardHandler))
 	poolDone := make(chan error, 1)
 	go func() {
-		_, err := m.Resolve(ctx, pool, []agentstore.FieldRef{"users#email"})
+		_, err := m.Resolve(ctx, pool, []action.FieldRef{"users#email"})
 		poolDone <- err
 	}()
 	<-pool.entered
 
 	tx := newFakeClasses(fakeField("users", "email", guardmodel.ClassIdentifier))
 	tx.private = true
-	got, err := m.Resolve(ctx, tx, []agentstore.FieldRef{"users#email"})
+	got, err := m.Resolve(ctx, tx, []action.FieldRef{"users#email"})
 	require.NoError(t, err, "the private load does not wait for the stuck flight")
 	require.Equal(t, guardmodel.ClassIdentifier, got[0].Class)
 	require.EqualValues(t, 1, tx.reads.Load())
@@ -152,14 +152,14 @@ func TestUnknownResourceReloadsOncePerTick(t *testing.T) {
 	// reloads, and the map then knows its class.
 	store.set(fakeField("users", "email", guardmodel.ClassIdentifier),
 		fakeField("orders", "contact.email", guardmodel.ClassIdentifier))
-	got, err := m.Resolve(ctx, store, []agentstore.FieldRef{"orders#contact.email"})
+	got, err := m.Resolve(ctx, store, []action.FieldRef{"orders#contact.email"})
 	require.NoError(t, err)
 	require.Equal(t, guardmodel.ClassIdentifier, got[0].Class)
 	require.EqualValues(t, 2, m.loads.Load(), "an unknown resource reloads the map")
 
 	// A resource with no classes reloads once per tick, not on every read.
 	for range 5 {
-		got, err = m.Resolve(ctx, store, []agentstore.FieldRef{"plain#label"})
+		got, err = m.Resolve(ctx, store, []action.FieldRef{"plain#label"})
 		require.NoError(t, err)
 		require.Equal(t, Unclassified, got[0])
 	}
@@ -171,14 +171,14 @@ func TestUnknownResourceReloadsOncePerTick(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, reloaded, "the marks did not move")
 	for range 2 {
-		_, err = m.Resolve(ctx, store, []agentstore.FieldRef{"plain#label"})
+		_, err = m.Resolve(ctx, store, []action.FieldRef{"plain#label"})
 		require.NoError(t, err)
 	}
 	require.EqualValues(t, 4, m.loads.Load(), "the next tick lets it reload once more")
 	require.Equal(t, 2, strings.Count(out.String(), "UNCLASSIFIED"), "warned again on the next tick")
 
 	// A computed value has no source: no reload, no class.
-	got, err = m.Resolve(ctx, store, []agentstore.FieldRef{""})
+	got, err = m.Resolve(ctx, store, []action.FieldRef{""})
 	require.NoError(t, err)
 	require.Equal(t, Class{}, got[0])
 	require.EqualValues(t, 4, m.loads.Load())
@@ -210,7 +210,7 @@ func TestTickReloadsWhenTheMarksMove(t *testing.T) {
 	require.Equal(t, "01", fp)
 
 	store.err = errors.New("store down")
-	_, err = m.Resolve(ctx, store, []agentstore.FieldRef{"gone#x"})
+	_, err = m.Resolve(ctx, store, []action.FieldRef{"gone#x"})
 	require.ErrorIs(t, err, store.err)
 	m.mu.Lock()
 	require.Empty(t, m.tried, "a failed reload is tried again")
@@ -231,13 +231,13 @@ func TestSecretsAndIdentifiersKeepTheStoreOrder(t *testing.T) {
 	m := NewMap(slog.New(slog.DiscardHandler))
 	secrets, err := m.Secrets(ctx, store)
 	require.NoError(t, err)
-	require.Equal(t, []agentstore.FieldRef{"b#token", "a#pin"}, secrets)
+	require.Equal(t, []action.FieldRef{"b#token", "a#pin"}, secrets)
 	ids, err := m.Identifiers(ctx, store)
 	require.NoError(t, err)
 	require.Len(t, ids, 2)
-	require.Equal(t, []any{agentstore.FieldRef("a#email"), agentstore.ResourceRef("a"), "db.a.email"},
+	require.Equal(t, []any{action.FieldRef("a#email"), action.ResourceRef("a"), "db.a.email"},
 		[]any{ids[0].Ref, ids[0].Resource, ids[0].Class.Name()})
-	require.Equal(t, agentstore.FieldRef("b#phone"), ids[1].Ref)
+	require.Equal(t, action.FieldRef("b#phone"), ids[1].Ref)
 }
 
 // More unknown resources than the bound, in one result: one reload covers
@@ -249,9 +249,9 @@ func TestMapBoundsReloadsAndWarnings(t *testing.T) {
 	m := NewMap(slog.New(slog.DiscardHandler))
 	require.NoError(t, m.Load(ctx, store))
 
-	refs := make([]agentstore.FieldRef, 0, maxReloadResources+100)
+	refs := make([]action.FieldRef, 0, maxReloadResources+100)
 	for i := range maxReloadResources + 100 {
-		refs = append(refs, agentstore.FieldRef("r"+strconv.Itoa(i)+"#x"))
+		refs = append(refs, action.FieldRef("r"+strconv.Itoa(i)+"#x"))
 	}
 	_, err := m.Resolve(ctx, store, refs)
 	require.NoError(t, err)
@@ -262,7 +262,7 @@ func TestMapBoundsReloadsAndWarnings(t *testing.T) {
 	m.mu.Unlock()
 
 	// More unknown resources past the bound: no reload until the next tick.
-	_, err = m.Resolve(ctx, store, []agentstore.FieldRef{"later#x"})
+	_, err = m.Resolve(ctx, store, []action.FieldRef{"later#x"})
 	require.NoError(t, err)
 	require.EqualValues(t, 2, m.loads.Load())
 }
@@ -276,8 +276,16 @@ func TestWatchLogsTheStoresUnclassifiedFields(t *testing.T) {
 		{Name: "db.users.contact.email", DataType: "string"},
 		{Name: "db.users.age", DataType: "int", Changed: true},
 	}
-	require.NoError(t, NewWatch("bot", NewMap(log), store, log).Tick(context.Background()))
+	require.NoError(t, NewWatch("bot", NewMap(log), StoreSet{Classes: store}, log).Tick(context.Background()))
 	require.Contains(t, out.String(), "pii: 1 columns unclassified: db.users.contact.email")
 	require.Contains(t, out.String(), "pii: 1 columns changed type since they were labeled: db.users.age")
 	require.Contains(t, out.String(), "pii: classification loaded")
+}
+
+func TestNewWatchRefusesAStoreSetWithANilPort(t *testing.T) {
+	t.Parallel()
+	log := slog.New(slog.DiscardHandler)
+	require.PanicsWithValue(t, "piidict: store set missing ports: Classes", func() {
+		NewWatch("bot", NewMap(log), StoreSet{}, log)
+	})
 }

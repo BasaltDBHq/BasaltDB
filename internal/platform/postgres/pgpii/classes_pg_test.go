@@ -58,7 +58,7 @@ func newFixture(t *testing.T) fixture {
 	d.Exec(t, fixtureSQL)
 	a := d.NewAgent(t, "bot", []string{"public.customers"},
 		[]string{"public.nokey", "public.orders", "public.emails_v", "public.plain"})
-	pool, err := postgres.NewPool(context.Background(), a.URL, 4)
+	pool, _, err := postgres.NewSwitchablePool(context.Background(), a.URL, 4)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	return fixture{db: d, agent: a, pool: pool}
@@ -270,7 +270,7 @@ func TestWatchWarnsAboutUnclassifiedColumns(t *testing.T) {
 	f.classify(t, time.Now())
 	ctx := context.Background()
 	log, out := newLog()
-	w := pii.NewWatch("bot", pii.NewMap(log), Classes(f.pool), log)
+	w := pii.NewWatch("bot", pii.NewMap(log), pii.StoreSet{Classes: Classes(f.pool)}, log)
 	require.NoError(t, w.Tick(ctx))
 	require.Contains(t, out.String(), "pii: 2 columns unclassified: public.plain.id, public.plain.label")
 	require.Contains(t, out.String(), "pii: classification loaded")
@@ -392,7 +392,7 @@ func TestFullPoolDoesNotWedgeReloads(t *testing.T) {
 	f.classify(t, time.Now())
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	pool, err := postgres.NewPool(ctx, f.agent.URL, 2)
+	pool, _, err := postgres.NewSwitchablePool(ctx, f.agent.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	dir := t.TempDir()

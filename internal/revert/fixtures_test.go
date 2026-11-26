@@ -14,11 +14,9 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/textrule/textruletest"
-	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
 const (
@@ -130,8 +128,4 @@ func caseRevertWith(t *testing.T, status string) action.Revert {
 	r := caseRevert(false)
 	r.Status, r.Rows, r.Skipped, r.BindingText = status, 3, 1, caseBindingText(t, false)
 	return r
-}
-
-func testManager() guidance.ServiceManager {
-	return guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
 }

@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -81,7 +80,7 @@ func TestVaultSessionOnAnUnsafeGuardAnswersAsLoopback(t *testing.T) {
 
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
-	as, err := person.Sign(approval.Challenge("{}"), passkeytest.FlagsUPUV, nil)
+	as, err := person.Sign(passkeytest.Challenge("{}"), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	approveBody, err := json.Marshal(approvaltest.NewResponse(id, as))
 	require.NoError(t, err)

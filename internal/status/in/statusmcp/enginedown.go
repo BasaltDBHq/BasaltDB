@@ -71,25 +71,17 @@ func (d EngineDown) gaveUpMessage() string {
 	return status.EngineGaveUpMessage(d.Host, stop, d.ConfigPath, d.Now())
 }
 
-// Tools are the tools of every IMPLEMENTED contract, and status, each
-// answering as above.
-func (d EngineDown) Tools() []mcpserver.Tool {
+// Call is how tool answers while the engine is down, as above: status
+// reports, every other tool is UNAVAILABLE. internal/app serves it for every
+// IMPLEMENTED contract, and status, and wraps each once.
+func (d EngineDown) Call(tool string) func(context.Context, json.RawMessage) (any, error) {
 	if d.Log == nil || d.Now == nil {
 		panic("statusmcp: engine-down tools need a logger and a clock")
 	}
-	contracts := mcpcontract.MustLoad()
-	out := make([]mcpserver.Tool, 0, len(contracts))
-	for _, c := range contracts {
-		if c.Status != mcpcontract.StatusImplemented && c.Name != guidance.ToolStatus {
-			continue
-		}
-		call := d.unreachable(c.Name)
-		if c.Name == guidance.ToolStatus {
-			call = d.status
-		}
-		out = append(out, mcpserver.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: mcpserver.RefuseAdminCredential(c.Name, call)})
+	if tool == guidance.ToolStatus {
+		return d.status
 	}
-	return out
+	return d.unreachable(tool)
 }
 
 func (d EngineDown) status(_ context.Context, raw json.RawMessage) (any, error) {
@@ -144,6 +136,55 @@ func (d EngineDown) Abandoned(tool string) *toolresult.ToolError {
 		return te
 	}
 	return nil
+}
+
+// fallbackAgentName names the agent in commands when basalt mcp was given a
+// socket whose name is not an agent name.
+const fallbackAgentName = "agent"
+
+// LoadEngineDown is what basalt mcp answers with while the engine is down,
+// for agent name, with the config at configPath it could read as the
+// agent's own user (the shim never runs as root): commands for manager, and
+// host's reads of the engine's files.
+func LoadEngineDown(name, configPath string, manager guidance.ServiceManager, host status.EngineHost, log *slog.Logger) (EngineDown, error) {
+	var cfg *config.Config
+	c, cfgErr := config.Load(configPath)
+	if cfgErr == nil {
+		cfg = &c
+	}
+	cmdName := name
+	if !config.ValidAgentName(cmdName) {
+		cmdName = fallbackAgentName
+	}
+	cmds, err := config.AgentCommands(cmdName, configPath, runtime.GOOS, manager)
+	if err != nil {
+		return EngineDown{}, err
+	}
+	if cfg != nil && !cfg.Service() {
+		cmds = cmds.Foreground()
+	}
+	return EngineDown{Name: name, Commands: cmds, Config: cfg, ConfigErr: cfgErr, Log: log, Now: time.Now, ConfigPath: configPath, Host: host}, nil
+}
+
+// Server is what basalt mcp answers with itself while the engine is down:
+// the engine-down tools, and the answer to a request the engine took but
+// closed the connection without answering.
+type Server struct {
+	*mcpserver.Server
+	down EngineDown
+}
+
+// NewServer serves tools, the engine-down tools of down that internal/app
+// built from down.Call, as an agent's MCP server with instructions.
+func NewServer(down EngineDown, instructions string, tools []mcpserver.Tool) Server {
+	info := mcpserver.Info{Name: "basalt", Version: buildinfo.Version, Instructions: instructions}
+	return Server{Server: mcpserver.NewServer(info, tools...), down: down}
+}
+
+// Abandoned answers a request the engine took and never answered
+// (AnswerAbandoned).
+func (s Server) Abandoned(_ context.Context, out io.Writer, line []byte) error {
+	return s.down.AnswerAbandoned(out, line)
 }
 
 // AnswerAbandoned answers on out a request line the engine took and never

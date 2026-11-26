@@ -48,7 +48,7 @@ func events(t *testing.T, c *pgx.Conn, kind string) []event {
 func heartbeats(t *testing.T, c *pgx.Conn) []event { return events(t, c, "HEARTBEAT") }
 
 func newUpkeep(c *pgx.Conn, now func() time.Time) *ledger.Upkeep {
-	return ledger.New("bot", "test", store.NewUpkeep(c), slog.New(slog.DiscardHandler), now)
+	return ledger.New("bot", "test", ledger.StoreSet{Store: store.NewUpkeep(c)}, slog.New(slog.DiscardHandler), now)
 }
 
 // rewriteHistory changes row 1 and re-hashes the whole chain: the full
@@ -83,7 +83,7 @@ func TestTickChecksIn(t *testing.T) {
 	require.True(t, pinned)
 
 	// basalt log sees a fresh heartbeat.
-	health, err := pgledger.CheckHealth(ctx, a.Conn, time.Now(), pgledger.HealthOptions{})
+	health, err := checkHealth(ctx, a.Conn, time.Now(), healthOptions{})
 	require.NoError(t, err)
 	require.False(t, health.HeartbeatStale)
 	require.True(t, health.Chain.Intact)
@@ -119,7 +119,7 @@ func TestTickAfterSilenceWritesTheDeadManRow(t *testing.T) {
 	require.GreaterOrEqual(t, dm[0].detail["silentHours"], float64(7*24))
 
 	// basalt log shows the dead-man row.
-	health, err := pgledger.CheckHealth(ctx, a.Conn, time.Now(), pgledger.HealthOptions{})
+	health, err := checkHealth(ctx, a.Conn, time.Now(), healthOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, health.DeadMan)
 	require.GreaterOrEqual(t, health.DeadMan.SilentHours, int64(7*24))
@@ -167,7 +167,7 @@ func TestPinnedHeadSurvivesARestart(t *testing.T) {
 	// While the engine is stopped, history is rewritten consistently: the
 	// full check passes, the saved pin does not.
 	d.Exec(t, rewriteHistory)
-	st, err := pgledger.CheckHealth(ctx, a.Conn, time.Now(), pgledger.HealthOptions{Full: true})
+	st, err := checkHealth(ctx, a.Conn, time.Now(), healthOptions{Full: true})
 	require.NoError(t, err)
 	require.True(t, st.Chain.Intact, "a consistent rewrite passes the full check")
 
@@ -241,7 +241,7 @@ func TestRunStopsWithTheContext(t *testing.T) {
 
 func TestNewPanicsWithoutDeps(t *testing.T) {
 	t.Parallel()
-	require.Panics(t, func() { ledger.New("", "v", nil, slog.New(slog.DiscardHandler), time.Now) })
+	require.Panics(t, func() { ledger.New("", "v", ledger.StoreSet{}, slog.New(slog.DiscardHandler), time.Now) })
 }
 
 func TestTickWarnsAboutTablesRLSHides(t *testing.T) {
@@ -250,7 +250,7 @@ func TestTickWarnsAboutTablesRLSHides(t *testing.T) {
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 	d.Exec(t, `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY`)
 	var buf bytes.Buffer
-	u := ledger.New("bot", "test", store.NewUpkeep(a.Conn), slog.New(slog.NewTextHandler(&buf, nil)), time.Now)
+	u := ledger.New("bot", "test", ledger.StoreSet{Store: store.NewUpkeep(a.Conn)}, slog.New(slog.NewTextHandler(&buf, nil)), time.Now)
 	require.NoError(t, u.Tick(context.Background()))
 	require.Contains(t, buf.String(), "row-level security hides every row")
 	require.Contains(t, buf.String(), "table=public.leads")
@@ -284,7 +284,7 @@ func reinstall(t *testing.T, d *guardtest.DB, a *guardtest.Agent) *guardtest.Age
 	t.Helper()
 	ctx := context.Background()
 	require.NoError(t, a.Conn.Close(ctx))
-	require.NoError(t, guard.Uninstall(ctx, d.Admin, d.Names))
+	require.NoError(t, guardtest.Uninstall(ctx, d.Admin, d.Names))
 	return d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 }
 
@@ -311,7 +311,7 @@ func TestReinstallOverAKeptPinIsRecorded(t *testing.T) {
 
 	b := reinstall(t, d, a)
 	var logs bytes.Buffer
-	again := ledger.New("bot", "test", store.NewUpkeep(b.Conn), slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
+	again := ledger.New("bot", "test", ledger.StoreSet{Store: store.NewUpkeep(b.Conn)}, slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
 	require.NoError(t, again.Tick(ctx))
 	require.NoError(t, again.Tick(ctx))
 	for _, hb := range heartbeats(t, b.Conn) {
@@ -357,7 +357,7 @@ func TestReinstallWhileRunningIsRecorded(t *testing.T) {
 	ctx := context.Background()
 	pins := pinfile.File{Dir: t.TempDir()}
 	sw := &switchDB{q: a.Conn}
-	u := ledger.New("bot", "test", store.NewUpkeep(sw), slog.New(slog.DiscardHandler), time.Now).WithPins(pins)
+	u := ledger.New("bot", "test", ledger.StoreSet{Store: store.NewUpkeep(sw)}, slog.New(slog.DiscardHandler), time.Now).WithPins(pins)
 	// Twice: the second pins the first heartbeat, past the genesis.
 	require.NoError(t, u.Tick(ctx))
 	require.NoError(t, u.Tick(ctx))
@@ -414,7 +414,7 @@ func TestSameLedgerUnderANewInstallMovesThePin(t *testing.T) {
 	require.Positive(t, moved.Head.Seq, "a pinned row, not the genesis")
 
 	var logs bytes.Buffer
-	u := ledger.New("bot", "test", store.NewUpkeep(a.Conn), slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
+	u := ledger.New("bot", "test", ledger.StoreSet{Store: store.NewUpkeep(a.Conn)}, slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
 	require.NoError(t, u.Tick(ctx))
 	require.Empty(t, events(t, a.Conn, "PIN_SET_ASIDE"), "nothing recorded")
 	for _, hb := range heartbeats(t, a.Conn) {
@@ -512,7 +512,7 @@ func TestUnreportedPinIsKeptAndReportedBroken(t *testing.T) {
 			noReport(t, d, kind)
 
 			var logs bytes.Buffer
-			u := ledger.New("bot", "test", store.NewUpkeep(a.Conn), slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
+			u := ledger.New("bot", "test", ledger.StoreSet{Store: store.NewUpkeep(a.Conn)}, slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
 			for range 2 {
 				require.NoError(t, u.Tick(ctx))
 				hb := heartbeats(t, a.Conn)
@@ -554,7 +554,7 @@ func TestCheckHealthKeepsAnUnreportedPin(t *testing.T) {
 		Head    guard.ChainHead
 		Install uuid.UUID
 	}{guard.ChainHead(kept.Head), kept.Install}
-	h, err := pgledger.CheckHealth(ctx, a.Conn, time.Now(), pgledger.HealthOptions{Pin: &pin.Head, PinInstall: pin.Install})
+	h, err := checkHealth(ctx, a.Conn, time.Now(), healthOptions{Pin: &pin.Head, PinInstall: pin.Install})
 	require.NoError(t, err)
 	require.False(t, h.Chain.Intact)
 	require.Equal(t, pin.Head.Seq, h.Chain.BrokenAt)
@@ -572,30 +572,30 @@ func TestCheckHealthSettlesAPinOfAnotherInstall(t *testing.T) {
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 	ctx := context.Background()
 	require.NoError(t, newUpkeep(a.Conn, time.Now).Tick(ctx))
-	first, err := pgledger.CheckHealth(ctx, a.Conn, time.Now(), pgledger.HealthOptions{})
+	first, err := checkHealth(ctx, a.Conn, time.Now(), healthOptions{})
 	require.NoError(t, err)
 	require.NotZero(t, first.Install)
 	require.Empty(t, first.Reinstalls.List)
 
 	pin := first.Head
-	same, err := pgledger.CheckHealth(ctx, a.Conn, time.Now(), pgledger.HealthOptions{Pin: &pin, PinInstall: first.Install})
+	same, err := checkHealth(ctx, a.Conn, time.Now(), healthOptions{Pin: &pin, PinInstall: first.Install})
 	require.NoError(t, err)
 	require.False(t, same.PinSetAside)
 	require.False(t, same.PinMoved)
 
 	far := guard.ChainHead{Seq: first.Head.Seq + 100, Hash: first.Head.Hash}
-	broken, err := pgledger.CheckHealth(ctx, a.Conn, time.Now(), pgledger.HealthOptions{Pin: &far, PinInstall: first.Install})
+	broken, err := checkHealth(ctx, a.Conn, time.Now(), healthOptions{Pin: &far, PinInstall: first.Install})
 	require.NoError(t, err)
 	require.False(t, broken.Chain.Intact, "a pin of this install still catches a ledger that went backwards")
 
 	another := uuid.New()
-	moved, err := pgledger.CheckHealth(ctx, a.Conn, time.Now(), pgledger.HealthOptions{Pin: &pin, PinInstall: another})
+	moved, err := checkHealth(ctx, a.Conn, time.Now(), healthOptions{Pin: &pin, PinInstall: another})
 	require.NoError(t, err)
 	require.True(t, moved.PinMoved, "the same chain under another install")
 	require.True(t, moved.Chain.Intact)
 	require.Empty(t, moved.Reinstalls.List)
 
-	other, err := pgledger.CheckHealth(ctx, a.Conn, time.Now(), pgledger.HealthOptions{Pin: &far, PinInstall: another})
+	other, err := checkHealth(ctx, a.Conn, time.Now(), healthOptions{Pin: &far, PinInstall: another})
 	require.NoError(t, err)
 	require.True(t, other.PinSetAside)
 	require.True(t, other.Chain.Intact, "the new ledger is checked from its start")
@@ -605,7 +605,7 @@ func TestCheckHealthSettlesAPinOfAnotherInstall(t *testing.T) {
 	// The rows deleted: the kept copy still shows the notice.
 	d.Exec(t, `DELETE FROM basalt_meta.ledger WHERE kind = 'PIN_SET_ASIDE'`)
 	kept := []guard.SetAside{{PinnedSeq: far.Seq, PinnedHash: far.Hash, PinnedInstall: another, Install: first.Install, At: time.Now()}}
-	h, err := pgledger.CheckHealth(ctx, a.Conn, time.Now(), pgledger.HealthOptions{SetAside: kept})
+	h, err := checkHealth(ctx, a.Conn, time.Now(), healthOptions{SetAside: kept})
 	require.NoError(t, err)
 	require.Len(t, h.Reinstalls.List, 1)
 	require.Contains(t, pgledger.ReinstallNotices(h.Reinstalls)[0], "(no install record)")
@@ -659,15 +659,15 @@ func TestCheckHealthAfterARecreatedDatabase(t *testing.T) {
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 	ctx := context.Background()
 	require.NoError(t, guard.Heartbeat(ctx, a.Conn, nil))
-	first, err := pgledger.CheckHealth(ctx, a.Conn, time.Now(), pgledger.HealthOptions{})
+	first, err := checkHealth(ctx, a.Conn, time.Now(), healthOptions{})
 	require.NoError(t, err)
 	require.Positive(t, first.Head.Seq)
 
 	d.Recreate(t)
 	d.WithDemo(t)
 	b := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
-	opts := pgledger.HealthOptions{Pin: &first.Head, PinInstall: first.Install}
-	h, err := pgledger.CheckHealth(ctx, b.Conn, time.Now(), opts)
+	opts := healthOptions{Pin: &first.Head, PinInstall: first.Install}
+	h, err := checkHealth(ctx, b.Conn, time.Now(), opts)
 	require.NoError(t, err)
 	require.True(t, h.Chain.Intact, "not a broken chain")
 	require.True(t, h.PinSetAside)

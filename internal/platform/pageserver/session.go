@@ -31,6 +31,16 @@ type sessionRoute struct {
 	handler func(*Server) http.HandlerFunc
 }
 
+// pattern is the route's pattern on the loopback mux, such as
+// "POST /api/v1/approvals/{approvalId}/approve".
+func (r sessionRoute) pattern() string {
+	p := r.method + " /api/v1/" + r.resource + "/{" + r.param + "}"
+	if r.action != "" {
+		p += "/" + r.action
+	}
+	return p
+}
+
 // sessionRoutes are the only routes a session dispatches: never the links
 // issuing routes, /healthz, the pages or their files.
 var sessionRoutes = []sessionRoute{

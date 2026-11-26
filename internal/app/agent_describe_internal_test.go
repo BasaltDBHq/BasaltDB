@@ -25,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/agentcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
@@ -165,7 +166,7 @@ func ordersDetail() pgcatalog.Detail {
 func describeService(t *testing.T, cat agentcatalog.Postgres, classes fakeClasses, operatedBy string) *Service {
 	t.Helper()
 	d := deps()
-	cmds, err := newCommands("bot", "", "linux", testManager())
+	cmds, err := newCommands("bot", "", "linux", osservice.Manager())
 	require.NoError(t, err)
 	d.Core.Commands = cmds
 	d.Status.OperatedBy = operatedBy

@@ -361,7 +361,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 // page was shown.
 func pluginSigned(t *testing.T, signer *passkeytest.Authenticator, req approval.PluginRequest) string {
 	t.Helper()
-	as, err := signer.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
+	as, err := signer.Sign(passkeytest.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	body, err := json.Marshal(approvaltest.NewResponse(req.ApprovalID, as))
 	require.NoError(t, err)

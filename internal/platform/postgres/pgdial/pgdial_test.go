@@ -44,12 +44,18 @@ func TestDefaultModeUnlessTheStringSetsOne(t *testing.T) {
 // trusts reports whether pool verifies every one of the named built-in
 // profile's own roots.
 func trusts(pool *x509.CertPool, profile string) bool {
-	for _, root := range trustprofile.BuiltInSet().Named(profile).Certificates() {
-		if _, err := root.Verify(x509.VerifyOptions{Roots: pool}); err != nil {
-			return false
+	for _, p := range trustprofile.BuiltIns() {
+		if p.Name != profile {
+			continue
 		}
+		for _, root := range p.Certificates() {
+			if _, err := root.Verify(x509.VerifyOptions{Roots: pool}); err != nil {
+				return false
+			}
+		}
+		return true
 	}
-	return true
+	return false
 }
 
 // poolTLS is the TLS config a new connection of pool gets.

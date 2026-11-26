@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgerrors"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
@@ -65,7 +66,7 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err = svc.RequestRevert(ctx, RequestRevertParams{Scope: revertstore.Scope{Kind: revert.ScopeRun, ID: run}, Intent: "Undo"})
-	require.Equal(t, guidance.CodeUnavailable, testErrors().ToolError(err).Code)
+	require.Equal(t, guidance.CodeUnavailable, pgerrors.Map().ToolError(err).Code)
 }
 
 // A preview that runs out names the agent's statement timeout it ran
@@ -76,18 +77,18 @@ func TestPreviewRevertTimeLimitNamesTheStatementTimeout(t *testing.T) {
 	// A fixed id: a UUIDv7 starts with the clock, which can contain "100".
 	scope := revertstore.Scope{Kind: revert.ScopeRun, ID: uuid.MustParse("0190a2b3-4c5d-7e6f-8a9b-0c1d2e3f4a5b")}
 
-	preview := testErrors().ToolError(s.prepareTimeout(guidance.ToolPreviewRevert, scope, "57014"))
+	preview := pgerrors.Map().ToolError(s.prepareTimeout(guidance.ToolPreviewRevert, scope, "57014"))
 	require.Equal(t, guidance.CodeQueryTimeout, preview.Code)
 	require.Equal(t, guidance.ReasonTimeLimit, preview.Reason)
 	require.Equal(t, "previewing the revert of run "+scope.ID.String()+" took longer than the agent's statement timeout of 5 seconds; "+
 		"nothing was previewed. A narrower revert, with runs or resources, may fit.", preview.Message)
 	require.NotContains(t, preview.Message, "100 seconds")
 
-	request := testErrors().ToolError(s.prepareTimeout(guidance.ToolRequestRevert, scope, "57014"))
+	request := pgerrors.Map().ToolError(s.prepareTimeout(guidance.ToolRequestRevert, scope, "57014"))
 	require.Contains(t, request.Message, "took longer than the 100 seconds an MCP call may take")
 
 	s = newService(t, "linux", "", withStatementTimeout(1500*time.Millisecond))
-	require.Contains(t, testErrors().ToolError(s.prepareTimeout(guidance.ToolPreviewRevert, scope, "57014")).Message, "the agent's statement timeout of 1.5s;")
+	require.Contains(t, pgerrors.Map().ToolError(s.prepareTimeout(guidance.ToolPreviewRevert, scope, "57014")).Message, "the agent's statement timeout of 1.5s;")
 }
 
 // countedReverts owns nothing and counts the guard calls it receives.
@@ -122,11 +123,11 @@ func TestNotOwnScopeBeforeAnyGuardCall(t *testing.T) {
 	} {
 		scope := revertstore.Scope{Kind: kind, ID: uuid.Must(uuid.NewV7())}
 		_, err := svc.PreviewRevert(ctx, PreviewRevertParams{Scope: scope})
-		require.Equal(t, guidance.CodeNotFound, testErrors().ToolError(err).Code, "%v", err)
-		require.Equal(t, reason, testErrors().ToolError(err).Reason)
+		require.Equal(t, guidance.CodeNotFound, pgerrors.Map().ToolError(err).Code, "%v", err)
+		require.Equal(t, reason, pgerrors.Map().ToolError(err).Reason)
 		_, err = svc.RequestRevert(ctx, RequestRevertParams{Scope: scope, Intent: "Undo"})
-		require.Equal(t, guidance.CodeNotFound, testErrors().ToolError(err).Code, "%v", err)
-		require.Equal(t, reason, testErrors().ToolError(err).Reason)
+		require.Equal(t, guidance.CodeNotFound, pgerrors.Map().ToolError(err).Code, "%v", err)
+		require.Equal(t, reason, pgerrors.Map().ToolError(err).Reason)
 	}
 	require.Zero(t, calls, "no guard call for a scope that is not the agent's")
 }

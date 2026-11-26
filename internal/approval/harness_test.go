@@ -3,7 +3,6 @@ package approval
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"log/slog"
 	"runtime"
 	"testing"
@@ -22,9 +21,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgerrors"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 )
 
@@ -65,25 +63,6 @@ func withNow(now time.Time) option {
 	return func(s *settings) { s.core.Now = func() time.Time { return now } }
 }
 
-func testManager() guidance.ServiceManager {
-	return guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
-}
-
-// testErrors is the error map the app fills with the adapters' errors.
-func testErrors() guidance.ErrorMap {
-	return guidance.ErrorMap{
-		InvalidParams: ledger.ErrInvalidParams,
-		InvalidIntent: guard.ErrInvalidIntent,
-		RowTooLarge: func(err error) (string, bool) {
-			var rl *resultsize.RowTooLargeError
-			if errors.As(err, &rl) {
-				return rl.Error(), true
-			}
-			return "", false
-		},
-	}
-}
-
 // newService builds the approval use case on a real delivery use case, with
 // the settings a test sets after goos and configPath (the platform default
 // config when configPath is empty).
@@ -92,10 +71,10 @@ func newService(t *testing.T, goos, configPath string, opts ...option) *Service 
 	if goos == "" {
 		goos = runtime.GOOS
 	}
-	cmds := guidance.NewCommands("bot", configPath, config.DefaultPath(goos), goos, testManager())
+	cmds := guidance.NewCommands("bot", configPath, config.DefaultPath(goos), goos, osservice.Manager())
 	st := settings{
 		core: Core{
-			Name: "bot", Log: slog.New(slog.DiscardHandler), Now: time.Now, Commands: cmds, Errors: testErrors(),
+			Name: "bot", Log: slog.New(slog.DiscardHandler), Now: time.Now, Commands: cmds, Errors: pgerrors.Map(),
 			PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget,
 		},
 		store: catalogStore{},

@@ -14,35 +14,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
-
-// RecordSetup records s with the admin connection, in the transaction that
-// applies the code, and returns the seq of its AGENT_SETUP ledger row. Kept
-// for tests, which run record_setup through it and read the seq back; the
-// setup shows RecordSetupStatement, the SQL the person reads.
-// Postgres refuses a used, superseded, expired or forged-time code with
-// SETUP_REFUSED (see SetupRefusal).
-func RecordSetup(ctx context.Context, q Querier, n guardmodel.Names, s guardmodel.Setup) (int64, error) {
-	if err := n.Validate(); err != nil {
-		return 0, err
-	}
-	var agent any // NULL for UPGRADE
-	if s.Agent != "" {
-		role, err := n.Agent(s.Agent)
-		if err != nil {
-			return 0, err
-		}
-		agent = role
-	}
-	sql, args, err := psql.Select().Column(sq.Expr("basalt_meta.record_setup(?::uuid, ?::text, ?::name, ?::int, ?::timestamptz)",
-		s.ID, s.Kind, agent, s.GuardVersion, s.ExpiresAt)).ToSql()
-	if err != nil {
-		return 0, err
-	}
-	var seq int64
-	err = q.QueryRow(ctx, sql, args...).Scan(&seq)
-	return seq, err
-}
 
 // RecordSetupStatement is record_setup as one statement with its values
 // written in, so the SQL a person reads before saying yes shows it. Every
@@ -102,7 +75,7 @@ func SetupRecorded(ctx context.Context, q Querier, id uuid.UUID) (bool, error) {
 	if err != nil || !readable {
 		return false, err
 	}
-	sql, args, err := psql.Select("1").From("basalt_meta.agent_setups").Where(sq.Eq{"setup_id": id}).Prefix("SELECT EXISTS (").Suffix(")").ToSql()
+	sql, args, err := sqlport.Builder.Select("1").From("basalt_meta.agent_setups").Where(sq.Eq{"setup_id": id}).Prefix("SELECT EXISTS (").Suffix(")").ToSql()
 	if err != nil {
 		return false, err
 	}
@@ -121,7 +94,7 @@ func LatestAgentSetup(ctx context.Context, q Querier) (s guardmodel.AgentSetup, 
 	if err != nil || !readable {
 		return guardmodel.AgentSetup{}, false, err
 	}
-	sql, args, err := psql.Select("setup_id", "kind").From("basalt_meta.agent_setups").
+	sql, args, err := sqlport.Builder.Select("setup_id", "kind").From("basalt_meta.agent_setups").
 		OrderBy("used_at DESC", "setup_id DESC").Limit(1).ToSql()
 	if err != nil {
 		return guardmodel.AgentSetup{}, false, err
@@ -166,7 +139,7 @@ func SetupsFor(ctx context.Context, q Querier, id uuid.UUID, role string) ([]set
 	if role != "" {
 		where = append(where, sq.Eq{"agent_role": role})
 	}
-	sql, args, err := psql.Select("setup_id::text", "coalesce(agent_role::text, '')", "used_at").
+	sql, args, err := sqlport.Builder.Select("setup_id::text", "coalesce(agent_role::text, '')", "used_at").
 		From("basalt_meta.setups").Where(where).OrderBy("setup_id").ToSql()
 	if err != nil {
 		return nil, err

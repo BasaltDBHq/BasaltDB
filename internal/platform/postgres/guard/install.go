@@ -700,25 +700,6 @@ func isHex(s string) bool {
 	return err == nil
 }
 
-// Uninstall drops the guard's and agents' RLS policies and basalt_meta (and with it
-// every guard trigger), then the agent roles, the group and the owner.
-// Roles are cluster objects that
-// DROP SCHEMA leaves behind; DROP OWNED BY revokes their grants in this
-// database. A role with privileges in another database fails to drop.
-// It runs what PlanUninstall plans, in order.
-func Uninstall(ctx context.Context, q Querier, n guardmodel.Names) error {
-	drops, err := PlanUninstall(ctx, q, n)
-	if err != nil {
-		return err
-	}
-	for _, sql := range drops {
-		if _, err := q.Exec(ctx, sql); err != nil {
-			return fmt.Errorf("uninstall: %w", err)
-		}
-	}
-	return nil
-}
-
 // PlanUninstall is the SQL Uninstall runs, read from the catalog and
 // changing nothing: the DROP POLICY of each policy named after an agent
 // role or the guard role, the DROP SCHEMA of basalt_meta, and for each of

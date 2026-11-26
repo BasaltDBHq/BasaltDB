@@ -28,6 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgerrors"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pluginledger"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginstate"
@@ -67,7 +68,7 @@ type pgAgent struct {
 // in the store and reader, with the default limits and the real clock.
 func newPGAgent(t *testing.T, url string, conns int32) pgAgent {
 	t.Helper()
-	pool, err := postgres.NewPool(context.Background(), url, conns)
+	pool, _, err := postgres.NewSwitchablePool(context.Background(), url, conns)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	limits := sqlguard.DefaultLimits()
@@ -91,14 +92,14 @@ func problemCodes(r guidance.StatusReport) []string {
 // agent by.
 func runtimeOf(t *testing.T, a *guardtest.Agent, ep *Plugins) (*status.Service, map[string]AgentLedger) {
 	t.Helper()
-	pool, err := postgres.NewPool(context.Background(), a.URL, 2)
+	pool, _, err := postgres.NewSwitchablePool(context.Background(), a.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	pg := newPGAgent(t, a.URL, 2)
 	core := status.Core{
-		Name: "bot", Log: quietLog(), Now: time.Now, Errors: testErrorMap(), PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget,
+		Name: "bot", Log: quietLog(), Now: time.Now, Errors: pgerrors.Map(), PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget,
 		Commands: guidance.NewCommands("bot", "", config.DefaultPath(runtime.GOOS), runtime.GOOS,
-			guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}),
+			osservice.Manager()),
 	}
 	deps := status.Deps{
 		Passkeys: pg.store, LatestGuardVersion: guard.LatestVersion,

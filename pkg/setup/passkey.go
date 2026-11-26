@@ -1,37 +1,13 @@
 package setup
 
 import (
-	"context"
-	"errors"
-	"fmt"
-	"io"
-	"unicode/utf8"
-
-	"github.com/jackc/pgx/v5"
-
-	"github.com/basaltdbhq/basaltdb/internal/core/links"
-	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
 	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // PasskeyRequest is one registration of the person's portal passkey: the
 // link they open, and the request their answer is verified against.
 type PasskeyRequest struct {
-	req   passkey.RegistrationRequest
-	label string
-}
-
-// NewPasskeyRequest draws a registration request from random
-// (crypto/rand.Reader, or a source the caller can draw again) for a
-// passkey named label on database. The label is at most 64 bytes.
-func NewPasskeyRequest(random io.Reader, label, database string) (PasskeyRequest, error) {
-	req, err := setuprun.NewRegistrationRequest(random, label, database)
-	if err != nil {
-		return PasskeyRequest{}, err
-	}
-	return PasskeyRequest{req: req, label: label}, nil
+	r setuprun.ContractPasskeyRequest
 }
 
 // PasskeyChallenge is a registration request a caller made and showed the
@@ -55,42 +31,30 @@ type PasskeyChallenge struct {
 // checks the browser's answer against that challenge and user id. The
 // request copies the challenge's bytes.
 func PasskeyRequestFor(c PasskeyChallenge, label string) (PasskeyRequest, error) {
-	if label == "" || len(label) > setuprun.MaxPasskeyLabel || !utf8.ValidString(label) {
-		return PasskeyRequest{}, fmt.Errorf("the passkey label must be 1 to %d bytes of UTF-8", setuprun.MaxPasskeyLabel)
-	}
-	req, err := setuprun.RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
-	if err != nil {
-		return PasskeyRequest{}, err
-	}
-	return PasskeyRequest{req: req, label: label}, nil
+	return passkeyRequest(setuprun.ContractPasskeyRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName, label))
 }
 
-// Link is the portal's registration page for the request
-// (https://portal.basaltvault.app/passkeys/register#1.<request>).
-func (r PasskeyRequest) Link() (string, error) {
-	frag, err := r.req.Fragment()
-	if err != nil {
-		return "", err
-	}
-	return links.Register(passkey.Production.Origin) + "#" + frag, nil
+// passkeyRequest is the service's registration request, or its error.
+func passkeyRequest(r setuprun.ContractPasskeyRequest, err error) (PasskeyRequest, error) {
+	return PasskeyRequest{r: r}, err
 }
 
 // Verify checks the code the registration page shows
 // (basalt-passkey.1....) against the request and the portal, and returns
 // the passkey Run registers.
 func (r PasskeyRequest) Verify(code string) (Passkey, error) {
-	cred, err := setuprun.VerifyRegistrationCode(code, r.req, passkey.Production)
-	if err != nil {
-		return Passkey{}, err
-	}
-	return Passkey{cred: cred, label: r.label}, nil
+	return verifiedPasskey(r.r.Verify(code))
+}
+
+// verifiedPasskey is the service's verified passkey, or its error.
+func verifiedPasskey(p setuprun.ContractPasskey, err error) (Passkey, error) {
+	return Passkey{p: p}, err
 }
 
 // Passkey is a verified portal passkey registration. Only
 // PasskeyRequest.Verify makes one.
 type Passkey struct {
-	cred  passkey.Credential
-	label string
+	p setuprun.ContractPasskey
 }
 
 // RegisteredPasskey is a passkey a run stored.
@@ -99,54 +63,4 @@ type RegisteredPasskey struct {
 	RPID         string
 	Origin       string
 	Label        string
-}
-
-func (p *Passkey) verified() bool { return p.cred.PublicKey != nil }
-
-func (p *Passkey) registered() *RegisteredPasskey {
-	return &RegisteredPasskey{CredentialID: append([]byte(nil), p.cred.ID...), RPID: p.cred.Relying.RPID, Origin: p.cred.Relying.Origin, Label: p.label}
-}
-
-// registerInTx registers the person's verified passkey in the setup's
-// transaction.
-func registerInTx(ctx context.Context, tx pgx.Tx, pk *Passkey) (*RegisteredPasskey, error) {
-	if err := guard.RegisterPasskey(ctx, tx, pk.cred, pk.label); err != nil {
-		return nil, err
-	}
-	return pk.registered(), nil
-}
-
-// requirePasskey refuses PASSKEY_REQUIRED, in the setup's transaction
-// before its script runs, when the database needs the person's passkey and
-// none was given: nothing changed.
-func requirePasskey(ctx context.Context, tx setuprun.Querier, add bool) error {
-	need, err := setuprun.PasskeyNeeded(ctx, store, tx, add)
-	if err != nil {
-		return err
-	}
-	if need {
-		return &setuprun.SetuprunRefusalError{Code: CodePasskeyRequired, Message: "this setup needs the person's portal passkey, and none was given"}
-	}
-	return nil
-}
-
-// askPasskey is the laptop's passkey step, after the setup committed (step
-// 7): it asks for the person's passkey and stores it when the database has
-// no active portal passkey, or in.AddPasskey asks for another.
-func askPasskey(ctx context.Context, conn *pgx.Conn, in RunInput) (*RegisteredPasskey, error) {
-	need, err := setuprun.PasskeyNeeded(ctx, store, pgquerier.Neutralize(conn), in.AddPasskey)
-	if err != nil || !need {
-		return nil, err
-	}
-	pk, err := in.AskPasskey(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if !pk.verified() {
-		return nil, errors.New("the passkey was not verified")
-	}
-	if err := guard.RegisterPasskey(ctx, conn, pk.cred, pk.label); err != nil {
-		return nil, err
-	}
-	return pk.registered(), nil
 }

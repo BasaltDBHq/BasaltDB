@@ -48,7 +48,7 @@ func TestRequestRevertWaitCancelled(t *testing.T) {
 
 	// The revert use case as the engine runs its wait: the agent's store,
 	// and the delivery's poll loop.
-	pool, err := postgres.NewPool(ctx, a.URL, 2)
+	pool, _, err := postgres.NewSwitchablePool(ctx, a.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	finds := &countedFinds{Store: postgres.NewStore(resultsize.Pool(pool), sqlguard.DefaultLimits(), time.Now)}

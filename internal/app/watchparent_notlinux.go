@@ -7,10 +7,12 @@ import (
 	"os"
 	"strconv"
 	"syscall"
+
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 )
 
 func watchSupervisedParent(ctx context.Context) {
-	want, err := strconv.Atoi(os.Getenv(watchParentEnv))
+	want, err := strconv.Atoi(os.Getenv(engineos.WatchParentEnv))
 	if err != nil || want <= 1 {
 		return
 	}

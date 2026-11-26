@@ -69,9 +69,3 @@ func loadEngineKeys(stateDir string, now func() time.Time) (*channel.EngineKeys,
 	}
 	return keyfile.LoadOrCreateKeys(filepath.Join(stateDir, channel.KeyFileName), now)
 }
-
-// loadOrCreateEngineKeys is keyfile.LoadOrCreateKeys, for the CLI, which
-// does not import the stores.
-func loadOrCreateEngineKeys(path string, now func() time.Time) (*channel.EngineKeys, error) {
-	return keyfile.LoadOrCreateKeys(path, now)
-}

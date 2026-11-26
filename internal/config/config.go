@@ -21,6 +21,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/lib/ownerfile"
 )
 
@@ -146,7 +147,7 @@ type PII struct {
 
 // PII defaults (CONTRACT.md, PII classification, Engine config).
 const (
-	DefaultPIIMaxMemoryMB       = 512
+	DefaultPIIMaxMemoryMB       = pii.DefaultMaxMemoryMB
 	DefaultPIIScanRowsPerSecond = 20_000
 	// MaxPIIMemoryMB is the largest pii.maxMemoryMB (64 GiB); the validate
 	// tag on PII.MaxMemoryMB holds the same number.
@@ -165,11 +166,8 @@ func (c Config) PIIOrDefault() PII {
 	return p
 }
 
-// bytesPerMB converts pii.maxMemoryMB.
-const bytesPerMB = 1 << 20
-
 // MaxMemoryBytes is MaxMemoryMB in bytes.
-func (p PII) MaxMemoryBytes() int64 { return int64(p.MaxMemoryMB) * bytesPerMB }
+func (p PII) MaxMemoryBytes() int64 { return int64(p.MaxMemoryMB) * pii.BytesPerMB }
 
 // Mode is how the engine runs (owner decision SM-3).
 type Mode string
@@ -373,14 +371,9 @@ func LoadNoFollow(path string) (Config, error) {
 	return load(path, openNoFollow)
 }
 
-// LoadOpen is Load with the file opened by open: a root process opens it
-// without following links (service.OpenTrustedFile) and checks the open
-// file before it is read.
-func LoadOpen(path string, open func(string) (*os.File, error)) (Config, error) {
-	return load(path, open)
-}
-
-// LoadOpenRaw is LoadOpen that also returns the bytes it read, so a caller
+// LoadOpenRaw is Load with the file opened by open (a root process opens it
+// without following links and checks the open file before it is read), and
+// it also returns the bytes it read, so a caller
 // that watches the file for changes compares what it parsed and never reads
 // the file a second time. The bytes are nil when the file could not be
 // opened or read (open refused it, or it is over 1 MiB); a file that was

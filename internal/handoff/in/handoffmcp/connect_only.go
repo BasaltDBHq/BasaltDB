@@ -7,13 +7,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
 
-	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
@@ -65,33 +61,24 @@ func (c ConnectOnly) guide() Failures {
 	return c.Guide(c)
 }
 
-// Tools are every IMPLEMENTED tool of the contracts: status and
-// confirm_database answer, every other tool is refused.
-func (c ConnectOnly) Tools() []mcpserver.Tool {
+// Call is how tool answers while the setup waits: status and
+// confirm_database answer, every other tool is refused. internal/app serves
+// it for every IMPLEMENTED contract and wraps each once.
+func (c ConnectOnly) Call(tool string) func(context.Context, json.RawMessage) (any, error) {
 	if c.Handoff == nil || c.Log == nil || c.Now == nil || c.LatestGuardVersion == nil {
 		panic("agent: a connect-only agent needs its hand-off, a logger, a clock and the guard version")
 	}
 	if c.Guide == nil {
 		panic("agent: a connect-only agent needs its error guide")
 	}
-	contracts := mcpcontract.MustLoad()
-	out := make([]mcpserver.Tool, 0, len(contracts))
-	for _, ct := range contracts {
-		if ct.Status != mcpcontract.StatusImplemented {
-			continue
-		}
-		var call func(context.Context, json.RawMessage) (any, error)
-		switch ct.Name {
-		case guidance.ToolStatus:
-			call = c.status
-		case guidance.ToolConfirmDatabase:
-			call = c.confirm
-		default:
-			call = c.refused(ct.Name)
-		}
-		out = append(out, mcpserver.Tool{Name: ct.Name, Description: ct.Description, InputSchema: ct.InputSchema, Call: mcpserver.RefuseAdminCredential(ct.Name, call)})
+	switch tool {
+	case guidance.ToolStatus:
+		return c.status
+	case guidance.ToolConfirmDatabase:
+		return c.confirm
+	default:
+		return c.refused(tool)
 	}
-	return out
 }
 
 func (c ConnectOnly) status(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -135,27 +122,8 @@ func (c ConnectOnly) confirm(ctx context.Context, raw json.RawMessage) (any, err
 // collects.
 func (c ConnectOnly) Status(ctx context.Context) (guidance.StatusReport, error) {
 	st := c.Handoff.StatusCollect(ctx)
-	cmds := c.Commands.OperatedBy(c.OperatedBy)
-	base := c.PagesBase
-	if base == "" {
-		base = links.DefaultLocal
-	}
-	r := guidance.StatusReport{
-		Agent: c.Name, OperatedBy: statussvc.OperatedBy(c.OperatedBy), Enforcement: statussvc.Enforcement(c.OperatedBy, c.SameUser),
-		Engine: guidance.EngineStatus{Reachable: true, Build: buildinfo.Version, StartedBy: statussvc.StartedByEnum(c.StartedBy)},
-		Guard:  guidance.GuardStatus{State: guardmodel.GuardUnknown, Build: c.LatestGuardVersion()},
-		Pages:  guidance.PagesStatus{Served: c.PagesOrigin != "", URL: base},
-	}
-	if c.Vault != nil {
-		v := c.Vault.VaultStatus()
-		r.Vault = &v
-	}
-	ps := guidance.Problems{Cmds: cmds, ConnectBudget: c.ConnectBudget}
-	r.Setup = handoff.ConnectOnlyProblems(st, &ps, c.Now())
-	list, err := ps.Sorted()
-	if err != nil {
-		return guidance.StatusReport{}, err
-	}
-	r.Problems, r.Ready = list, statussvc.Ready(list)
-	return r, nil
+	return statussvc.ConnectOnly(statussvc.Head{
+		Agent: c.Name, OperatedBy: c.OperatedBy, SameUser: c.SameUser, Build: buildinfo.Version, StartedBy: c.StartedBy,
+		PagesBase: c.PagesBase, PagesOrigin: c.PagesOrigin, Vault: c.Vault,
+	}, c.Commands.OperatedBy(c.OperatedBy), c.ConnectBudget, c.LatestGuardVersion(), st, c.Now())
 }

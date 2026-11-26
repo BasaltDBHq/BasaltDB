@@ -55,11 +55,6 @@ func PluginApproval(base string, id uuid.UUID) string {
 	return trim(base) + PluginsPath + id.String()
 }
 
-// Register is the passkey registration page: <base>/passkeys/register.
-func Register(base string) string {
-	return trim(base) + RegisterPath
-}
-
 func trim(base string) string {
 	return strings.TrimSuffix(base, "/")
 }

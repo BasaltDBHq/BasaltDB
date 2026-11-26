@@ -5,7 +5,7 @@
 // key or a token redact themselves (channel.LinkToken, channel.PSK and the
 // link values that carry them), but a URL is a plain string, logged as is or
 // inside an error's text. Every slog handler the engine builds comes from
-// here (NewTextHandler, NewJSONHandler), and its ReplaceAttr scrubs those
+// here (NewTextHandler), and its ReplaceAttr scrubs those
 // forms from every string, error and other value before it is written.
 package logredact
 
@@ -76,12 +76,11 @@ func options(o *slog.HandlerOptions) *slog.HandlerOptions {
 	return &out
 }
 
+// NewTextLogger is the engine's and basalt mcp's log on w: a text handler
+// that scrubs link secrets from what it writes.
+func NewTextLogger(w io.Writer) *slog.Logger { return slog.New(NewTextHandler(w, nil)) }
+
 // NewTextHandler is slog.NewTextHandler with ReplaceAttr.
 func NewTextHandler(w io.Writer, o *slog.HandlerOptions) *slog.TextHandler {
 	return slog.NewTextHandler(w, options(o))
-}
-
-// NewJSONHandler is slog.NewJSONHandler with ReplaceAttr.
-func NewJSONHandler(w io.Writer, o *slog.HandlerOptions) *slog.JSONHandler {
-	return slog.NewJSONHandler(w, options(o))
 }

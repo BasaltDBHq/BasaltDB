@@ -234,7 +234,7 @@ var personTimeAllowed = map[string]string{
 	`internal/setup/in/setupcli/remote.go: layout "2006-01-02 15:04" (2 times)`: "the remote setup's two messages format the expiry themselves",
 	`internal/setup/setuprun.go: layout "2006-01-02 15:04"`:                     "the expired-code refusal formats the expiry itself",
 	`internal/setup/engine.go: layout "2006-01-02 15:04"`:                       "UTCMinute, a copy of guidance.PersonTime",
-	`internal/plugin/plugin_approvals.go: layout "2006-01-02 15:04" (2 times)`:  "the plugin approval messages format the deadline themselves",
+	`internal/plugin/approvals.go: layout "2006-01-02 15:04" (2 times)`:         "the plugin approval messages format the deadline themselves",
 }
 
 func TestPersonTimesUseOneLayout(t *testing.T) {
@@ -284,14 +284,9 @@ func statementTimeoutFindings(pkgs map[string]*goPkg) ([]string, int) {
 }
 
 // statementTimeoutAllowed are the files that set the timeout beside the
-// one that may. When they share one helper, this list is empty.
-var statementTimeoutAllowed = map[string]string{
-	"internal/platform/postgres/guard/revert.go":  "sets the revert transaction's timeout itself",
-	"internal/platform/postgres/store/revert.go":  "sets the revert transaction's timeout itself",
-	"internal/platform/postgres/store/reader.go":  "sets the read's timeout itself",
-	"internal/platform/postgres/pgpii/fields.go":  "sets the field scan's timeout itself",
-	"internal/platform/postgres/pgpii/sampler.go": "sets the sample's timeout itself",
-}
+// one that may. Every adapter calls sqlport.StatementTimeout, so it is
+// empty.
+var statementTimeoutAllowed = map[string]string{}
 
 // tallyCount is how many sites a tally entry stands for.
 var tallyTimes = regexp.MustCompile(` \(([0-9]+) times\)$`)
@@ -390,7 +385,6 @@ const parsesOnly = "parses the connection string only to read its target; it ope
 var directDialsAllowed = map[string]string{
 	"internal/platform/postgres/store/password.go: pgxpool.NewWithConfig": "opens the pool from pgdial.PoolConfig, " +
 		"adding the password refresh",
-	"internal/app/setuphost.go: pgconn.ParseConfig":      parsesOnly,
 	"internal/platform/cli/trust.go: pgconn.ParseConfig": parsesOnly,
 }
 

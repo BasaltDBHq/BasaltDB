@@ -21,7 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgerrors"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
@@ -58,22 +58,11 @@ func piiWriteService(t *testing.T, returned postgres.ReturnedFunc) (*agent.Servi
 	require.NoError(t, pgx.BeginFunc(context.Background(), d.Admin, func(tx pgx.Tx) error {
 		return guard.WriteClassification(context.Background(), tx, d.Names, guardmodel.Classification{Columns: cols, At: time.Now()})
 	}))
-	pool, err := postgres.NewPool(context.Background(), a.URL, 2)
+	pool, _, err := postgres.NewSwitchablePool(context.Background(), a.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	store := postgres.NewStore(resultsize.Pool(pool), sqlguard.DefaultLimits(), time.Now).WithReturned(returned)
-	errs := guidance.ErrorMap{
-		InvalidParams: ledger.ErrInvalidParams,
-		InvalidIntent: guard.ErrInvalidIntent,
-		RowTooLarge: func(err error) (string, bool) {
-			var rl *resultsize.RowTooLargeError
-			if errors.As(err, &rl) {
-				return rl.Error(), true
-			}
-			return "", false
-		},
-	}
-	core := agent.Core{Name: "bot", Log: slog.New(slog.DiscardHandler), Now: time.Now, Errors: errs}
+	core := agent.Core{Name: "bot", Log: slog.New(slog.DiscardHandler), Now: time.Now, Errors: pgerrors.Map()}
 	set := agent.StoreSet{
 		Kind: store.Kind(), Family: agentstore.FamilySQL, Capabilities: store.Capabilities(),
 		Language: sqllang.New(store), Data: pgData{store}, Ledger: store,

@@ -204,3 +204,7 @@ func dropIgnorable(r rune) rune {
 	}
 	return r
 }
+
+// iddPrefix is the international dialing prefix most of the world writes
+// instead of "+" ("0044 7700 900123").
+const iddPrefix = "00"

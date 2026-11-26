@@ -264,7 +264,7 @@ func TestOpenRevealRefused(t *testing.T) {
 		"a guessed key":              {valid, revealKeyOf(t, "guess")},
 		"a proof of the REVERT kind": {signed(revealChallenge(t, approval.KindRevert, id, nonce, key, hash)), key},
 		"another nonce":              {signed(revealChallenge(t, approval.KindApprove, id, make([]byte, 16), key, hash)), key},
-		"the approval signature":     {signed(approval.Challenge(e.held.BindingText)), key},
+		"the approval signature":     {signed(passkeytest.Challenge(e.held.BindingText)), key},
 		"a widen proof":              {signed(reverttest.RescopeChallenge(id, nonce, widenKey, `{}`)), widenKey},
 		"a broken DER signature":     {withSig(valid, []byte{0x30, 0x00}), key},
 	}

@@ -194,17 +194,6 @@ func TestDarwinPluginInstallMakesTheLogBeforeTheDaemon(t *testing.T) {
 	require.Equal(t, rule, sys.written[rulePath])
 }
 
-func TestDarwinPluginDisableKeepsTheLog(t *testing.T) {
-	t.Parallel()
-	steps, err := osservice.PluginStopSteps("darwin", "acme-ner", "default")
-	require.NoError(t, err)
-	for _, st := range steps {
-		require.NotEqual(t, osservice.StepRemove, st.Kind, st.String())
-		require.NotContains(t, st.String(), "/Library/Logs")
-		require.NotContains(t, st.String(), "newsyslog")
-	}
-}
-
 func TestPluginNetwork(t *testing.T) {
 	t.Parallel()
 	none, err := osservice.SystemdPluginUnit(linuxHost(), entry("linux", "default"))
@@ -507,76 +496,6 @@ func TestDarwinDisabledPluginStaysUnloaded(t *testing.T) {
 		"launchctl disable system/dev.basaltdb.plugin-acme-ner-default",
 	}, sys.ran[len(sys.ran)-2:], "a plist in LaunchDaemons would load at boot unless disabled")
 	require.Contains(t, sys.ran, "dscl . -create /Users/_basalt-plugin-acme-ner-default RealName BasaltDB plugin acme-ner default")
-}
-
-func TestPluginRemoveDeletesWhatInstallMade(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		goos    string
-		want    []string
-		removed []string
-	}{
-		{"linux", []string{
-			"systemctl disable --now basalt-plugin-acme-ner-default.service",
-			"systemctl daemon-reload",
-			"rm -rf /opt/basalt/run/basalt-plugin-acme-ner-default",
-			"userdel basalt-plugin-acme-ner-default",
-		}, []string{"/etc/systemd/system/basalt-plugin-acme-ner-default.service"}},
-		{"darwin", []string{
-			"launchctl bootout system/dev.basaltdb.plugin-acme-ner-default",
-			"rm -rf /Library/Basalt/run/_basalt-plugin-acme-ner-default",
-			"dscl . -delete /Users/_basalt-plugin-acme-ner-default",
-			"dscl . -delete /Groups/_basalt-plugin-acme-ner-default",
-		}, []string{
-			"/Library/LaunchDaemons/dev.basaltdb.plugin-acme-ner-default.plist",
-			"/etc/newsyslog.d/basalt-plugin-acme-ner-default.conf",
-			"/Library/Logs/Basalt/plugins/_basalt-plugin-acme-ner-default.log",
-			"/Library/Logs/Basalt/plugins/_basalt-plugin-acme-ner-default.log.0",
-		}},
-	} {
-		sys := newFake()
-		n, err := osservice.NamesFor(tc.goos, "acme-ner", "default")
-		require.NoError(t, err)
-		sys.users[n.User] = true
-		sys.exists[n.UnitPath] = true
-		steps, err := osservice.PluginRemoveSteps(sys, tc.goos, "acme-ner", "default")
-		require.NoError(t, err)
-		var out strings.Builder
-		require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &out))
-		require.Equal(t, tc.want, sys.ran, tc.goos)
-		require.Equal(t, tc.removed, sys.removed, tc.goos)
-
-		// Another instance's user, unit and directory are not touched.
-		other, err := osservice.NamesFor(tc.goos, "acme-ner", "client_x")
-		require.NoError(t, err)
-		for _, r := range append(sys.ran, sys.removed...) {
-			require.NotContains(t, r, other.User)
-			require.NotContains(t, r, other.Unit)
-		}
-
-		// Run again with nothing left: nothing fails, no user is deleted.
-		sys = newFake()
-		steps, err = osservice.PluginRemoveSteps(sys, tc.goos, "acme-ner", "default")
-		require.NoError(t, err)
-		require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &out))
-		require.NotContains(t, strings.Join(sys.ran, "\n"), "userdel")
-		require.NotContains(t, strings.Join(sys.ran, "\n"), "-delete")
-	}
-
-	// A macOS entry whose unit, user and directory are gone but whose log
-	// is left still has the log removed.
-	for _, left := range []string{
-		"/Library/Logs/Basalt/plugins/_basalt-plugin-acme-ner-default.log",
-		"/Library/Logs/Basalt/plugins/_basalt-plugin-acme-ner-default.log.0",
-		"/etc/newsyslog.d/basalt-plugin-acme-ner-default.conf",
-	} {
-		sys := newFake()
-		sys.exists[left] = true
-		steps, err := osservice.PluginRemoveSteps(sys, "darwin", "acme-ner", "default")
-		require.NoError(t, err)
-		require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
-		require.Contains(t, sys.removed, left)
-	}
 }
 
 func TestPluginBaseThatCannotBeMadeFailsTheInstall(t *testing.T) {

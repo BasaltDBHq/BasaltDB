@@ -13,7 +13,7 @@ const (
 	SetupUpgrade = "UPGRADE"
 )
 
-// Setup is one setup code to record with RecordSetup.
+// Setup is one setup code to record (guard.RecordSetupStatement).
 type Setup struct {
 	// ID is the code's setupId (a UUIDv7).
 	ID   uuid.UUID

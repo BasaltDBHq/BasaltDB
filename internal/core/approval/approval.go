@@ -150,13 +150,6 @@ func CheckBasaltFields(text string, integers ...string) error {
 	return nil
 }
 
-// Challenge is the WebAuthn challenge for a binding: sha256 of its UTF-8
-// bytes.
-func Challenge(bindingText string) []byte {
-	sum := sha256.Sum256([]byte(bindingText))
-	return sum[:]
-}
-
 // RowsHash is the lowercase hex sha256 of the preview lines joined by "\n",
 // the binding's rowsHash.
 func RowsHash(lines []string) string {
@@ -264,32 +257,35 @@ func CheckTexts(binding string, lines ...string) error {
 
 // Response is what the approval page outputs after the person signs.
 type Response struct {
-	ApprovalID        uuid.UUID     `json:"approvalId"`
-	CredentialID      passkey.Bytes `json:"credentialId"`
-	AuthenticatorData passkey.Bytes `json:"authenticatorData"`
-	ClientDataJSON    passkey.Bytes `json:"clientDataJson"`
-	Signature         passkey.Bytes `json:"signature"`
+	ApprovalID uuid.UUID `json:"approvalId"`
+	passkey.SignedAssertion
 }
 
-// Assertion returns the WebAuthn assertion the response carries.
-func (r Response) Assertion() passkey.Assertion {
-	return passkey.Assertion{
-		CredentialID:      r.CredentialID,
-		AuthenticatorData: r.AuthenticatorData,
-		ClientDataJSON:    r.ClientDataJSON,
-		Signature:         r.Signature,
-	}
+// Signed returns the approval id and the assertion.
+func (r Response) Signed() (uuid.UUID, passkey.SignedAssertion) {
+	return r.ApprovalID, r.SignedAssertion
 }
 
 // DecodeResponse decodes the signed response the approval page posts (its
 // JSON), strictly: an unknown field or a missing one is refused.
 func DecodeResponse(raw []byte) (Response, error) {
 	var r Response
-	if err := passkey.DecodeStrict(raw, &r); err != nil {
-		return Response{}, Invalid("%v", err)
-	}
-	if len(r.CredentialID) == 0 || len(r.AuthenticatorData) == 0 || len(r.ClientDataJSON) == 0 || len(r.Signature) == 0 {
-		return Response{}, Invalid("approval response is missing a field")
+	if err := DecodeSigned(raw, &r, "approval response is missing a field"); err != nil {
+		return Response{}, err
 	}
 	return r, nil
+}
+
+// DecodeSigned is passkey.DecodeSigned with its refusals as Invalid, and
+// a missing field refused as missing: the approval, plugin approval and
+// revert pages' signed responses are decoded through it.
+func DecodeSigned(raw []byte, r passkey.SignedResponse, missing string) error {
+	err := passkey.DecodeSigned(raw, r)
+	switch {
+	case errors.Is(err, passkey.ErrIncomplete):
+		return Invalid("%s", missing)
+	case err != nil:
+		return Invalid("%v", err)
+	}
+	return nil
 }

@@ -14,12 +14,10 @@ import (
 	"strings"
 	"time"
 
-	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgproto3"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
@@ -62,18 +60,10 @@ func NewReader(pool Pool, limits sqlguard.Limits, now func() time.Time) *Reader 
 	return &Reader{pool: guard.PinnedBeginner{TxBeginner: pool}, limits: limits, now: now}
 }
 
-// psql builds the engine's own statements with Postgres placeholders.
-var psql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
-
 // setTimeout sets the time limit for the current transaction only:
 // transaction-local, so it cannot leak through a transaction pooler.
 func setTimeout(ctx context.Context, tx pgx.Tx, limits sqlguard.Limits) error {
-	q, args, err := psql.Select().Column(sq.Expr("pg_catalog.set_config('statement_timeout', ?, true)", limits.StatementTimeoutSetting())).ToSql()
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec(ctx, q, args...)
-	return err
+	return setStatementTimeout(ctx, tx, limits.StatementTimeout)
 }
 
 // readRaw is Read before MapError.
@@ -315,11 +305,4 @@ func textValue(oid uint32, raw []byte) any {
 		return json.RawMessage(bytes.Clone(raw)) // pgx reuses raw for the next read on the connection
 	}
 	return s
-}
-
-// NewPool opens a lazy pool on an agent's credential: no connection is made
-// until the first statement, so the engine starts while the database is down.
-func NewPool(ctx context.Context, url string, maxConns int32) (*pgxpool.Pool, error) {
-	pool, _, err := NewSwitchablePool(ctx, url, maxConns)
-	return pool, err
 }

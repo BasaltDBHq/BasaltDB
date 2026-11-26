@@ -2,14 +2,10 @@ package setup
 
 import (
 	"context"
-	"slices"
-	"strings"
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/demo"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
 	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
@@ -59,20 +55,12 @@ type Removed struct {
 // *Error: PREFIX_MISMATCH for a basalt_meta not owned by a guard role
 // (<prefix>_guard), else SETUP_FAILED.
 func CheckRemove(ctx context.Context, conn *pgx.Conn) (Removal, error) {
-	tx, err := conn.Begin(ctx)
-	if err != nil {
-		return Removal{}, asError(err)
-	}
-	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	prefix, err := removalPrefix(ctx, tx)
-	if err != nil {
-		return Removal{}, asError(err)
-	}
-	p, err := setuprun.PlanRemove(ctx, store, pgquerier.Neutralize(tx), prefix)
-	if err != nil {
-		return Removal{}, asError(err)
-	}
-	return Removal{Database: p.Database, Bots: slices.Clone(p.Agents), Lines: p.Lines(), SQL: p.SQL(), NothingToRemove: p.Nothing(), SampleSchema: len(p.DemoDrops) > 0}, nil
+	return removal(contract.CheckRemove(ctx, setupstore.Port(conn)))
+}
+
+// removal is the service's removal plan, or its refusal.
+func removal(r setuprun.ContractRemoval, err error) (Removal, error) {
+	return Removal(r), asError(err)
 }
 
 // RunRemove removes BasaltDB from conn's database in one transaction:
@@ -82,41 +70,10 @@ func CheckRemove(ctx context.Context, conn *pgx.Conn) (Removal, error) {
 // differ from what CheckRemove showed. A failed drop is SETUP_FAILED and
 // changes nothing.
 func RunRemove(ctx context.Context, conn *pgx.Conn, confirmName string) (Removed, error) {
-	if err := setuprun.CheckDatabaseName(confirmName); err != nil {
-		return Removed{}, asError(err)
-	}
-	var out Removed
-	err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
-		// The typed name first: a wrong one learns nothing of the guard.
-		if err := setuprun.CheckTypedName(ctx, store, pgquerier.Neutralize(tx), confirmName); err != nil {
-			return err
-		}
-		prefix, err := removalPrefix(ctx, tx)
-		if err != nil {
-			return err
-		}
-		p, kept, err := setuprun.RunRemove(ctx, store, pgquerier.Neutralize(tx), prefix, confirmName)
-		if err != nil {
-			return err
-		}
-		out = Removed{Database: p.Database, Bots: slices.Clone(p.Agents), Warnings: []string{}}
-		out.Lines = []string{"BasaltDB removed from the database " + p.Database}
-		if len(p.Agents) > 0 {
-			out.Lines = append(out.Lines, "bots that lost their access: "+strings.Join(p.Agents, ", "))
-		}
-		if kept {
-			out.Warnings = append(out.Warnings, "the sample schema "+demo.Schema+" stays: another object depends on it")
-		}
-		return nil
-	})
-	if err != nil {
-		return Removed{}, asError(err)
-	}
-	return out, nil
+	return removed(contract.RunRemove(ctx, setupstore.Port(conn), confirmName))
 }
 
-// removalPrefix is the installed guard's prefix, or the default; a
-// basalt_meta whose owner is not a guard role is refused PREFIX_MISMATCH.
-func removalPrefix(ctx context.Context, tx pgx.Tx) (string, error) {
-	return setuprun.InstalledRemovalPrefix(ctx, store, pgquerier.Neutralize(tx), guardmodel.DefaultPrefix)
+// removed is the service's finished removal, or its refusal.
+func removed(r setuprun.ContractRemoved, err error) (Removed, error) {
+	return Removed(r), asError(err)
 }

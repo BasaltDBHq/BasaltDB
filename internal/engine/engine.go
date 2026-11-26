@@ -28,27 +28,6 @@ type Agent struct {
 	Server     Server
 }
 
-// Gate admits the calls a server runs: Begin before each call, false when
-// the call is answered as restarting and not run; End after each admitted
-// call is answered.
-type Gate interface {
-	Begin() bool
-	End()
-}
-
-// Server is an agent's MCP server: it serves one connection, each call
-// admitted by gate.
-type Server interface {
-	ServeGated(ctx context.Context, in io.Reader, out io.Writer, gate Gate) error
-}
-
-// MCP writes the engine's lines in the MCP wire format.
-type MCP interface {
-	// WritePeerRefused writes the one line that refuses a peer of another
-	// OS user.
-	WritePeerRefused(w io.Writer, message string) error
-}
-
 // PeerUIDFunc reads the uid of a connection's peer.
 type PeerUIDFunc func(*net.UnixConn) (uint32, error)
 
@@ -96,19 +75,6 @@ func (e *Engine) WithRefusedDrains(n int) *Engine {
 	for _, a := range e.agents {
 		e.drains[a.Name] = make(chan struct{}, n)
 	}
-	return e
-}
-
-// WithRefuseDrain sets how long a refused connection is drained before it
-// is closed (tests).
-func (e *Engine) WithRefuseDrain(d time.Duration) *Engine {
-	e.drainFor = d
-	return e
-}
-
-// WithPeerUID replaces how the peer uid is read (tests).
-func (e *Engine) WithPeerUID(f PeerUIDFunc) *Engine {
-	e.peerUID = f
 	return e
 }
 

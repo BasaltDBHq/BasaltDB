@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"regexp"
-	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/textrule"
 )
@@ -108,10 +107,4 @@ func IsAgentName(s string) bool {
 // AgentName is the agent named name as every text names it: agent:<name>.
 func AgentName(name string) string {
 	return AgentPrefix + name
-}
-
-// AgentShown is the agent's name as a page or a message shows it: the name
-// without agent:.
-func AgentShown(text string) string {
-	return strings.TrimPrefix(text, AgentPrefix)
 }

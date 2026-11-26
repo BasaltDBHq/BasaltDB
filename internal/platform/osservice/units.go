@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
@@ -40,7 +41,7 @@ const (
 )
 
 // pluginHostOf is what s's plugin units hide and who reaches their
-// sockets. It is plugin.HostFor's, from the fields withPluginUnits copied out
+// sockets. It is plugin.HostFor's, from the fields plugin.ServiceUnits copied out
 // of it.
 func pluginHostOf(s servicespec.Spec) servicespec.PluginHost {
 	h := servicespec.PluginHost{
@@ -67,8 +68,11 @@ func pluginHostOf(s servicespec.Spec) servicespec.PluginHost {
 const (
 	memoryHighFactor = 3
 	memoryMaxFactor  = 4
-	bytesPerMB       = 1 << 20
 )
+
+// bytesPerMB converts the units' MiB limits, which pii.maxMemoryMB sets
+// for the engine, as pii converts its budget.
+const bytesPerMB = pii.BytesPerMB
 
 // memoryLimitsMB are the soft and hard limits for s, in MiB.
 func memoryLimitsMB(s servicespec.Spec) (high, hard int) {
@@ -237,4 +241,24 @@ func xmlEscape(s string) string {
 	// EscapeText only fails when the writer fails; a bytes.Buffer does not.
 	_ = xml.EscapeText(&b, []byte(s))
 	return b.String()
+}
+
+// InstallScriptFor is InstallScript for the binary at path, read with
+// ReadSource.
+func InstallScriptFor(goos, path string) (string, error) {
+	src, err := ReadSource(path)
+	if err != nil {
+		return "", err
+	}
+	return InstallScript(goos, src)
+}
+
+// RestartScriptFor is RestartScript for the binary at path, read with
+// ReadSource.
+func RestartScriptFor(goos, path string) (string, error) {
+	src, err := ReadSource(path)
+	if err != nil {
+		return "", err
+	}
+	return RestartScript(goos, src)
 }

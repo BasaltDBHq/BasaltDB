@@ -18,35 +18,25 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/pluginsign"
 )
 
-// TestKeysRoundTrip: a generated key's files parse back to the same key, and
-// its id is computed from the key.
+// TestKeysRoundTrip: a public key file parses back to the same key, and its
+// id is computed from the key.
 func TestKeysRoundTrip(t *testing.T) {
 	t.Parallel()
-	priv, err := GenerateKey()
+	priv, err := pluginsign.GenerateKey()
 	require.NoError(t, err)
 	pubPEM, err := MarshalPublicKey(&priv.PublicKey)
-	require.NoError(t, err)
-	privPEM, err := MarshalPrivateKey(priv)
 	require.NoError(t, err)
 
 	pub, id, err := ParsePublicKey(pubPEM)
 	require.NoError(t, err)
 	require.True(t, pub.Equal(&priv.PublicKey))
-	want, err := KeyID(&priv.PublicKey)
+	want, err := pluginsign.KeyID(&priv.PublicKey)
 	require.NoError(t, err)
 	require.Equal(t, want, id)
 	require.Len(t, id, 22)
-
-	back, err := ParsePrivateKey(privPEM)
-	require.NoError(t, err)
-	require.True(t, back.Equal(priv))
-
-	_, _, err = ParsePublicKey(privPEM)
-	require.Error(t, err, "a private key is not a public key file")
-	_, err = ParsePrivateKey(pubPEM)
-	require.Error(t, err)
 }
 
 // TestSignatureVectorKeyID: the contract vector's key id is the one computed
@@ -64,7 +54,7 @@ func TestSignatureVectorKeyID(t *testing.T) {
 // P-256 key in canonical DER is refused, and the error quotes nothing.
 func TestParsePublicKeyStrict(t *testing.T) {
 	t.Parallel()
-	priv, err := GenerateKey()
+	priv, err := pluginsign.GenerateKey()
 	require.NoError(t, err)
 	good, err := MarshalPublicKey(&priv.PublicKey)
 	require.NoError(t, err)
@@ -99,7 +89,7 @@ func TestParsePublicKeyStrict(t *testing.T) {
 func TestTrustAdd(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	priv, err := GenerateKey()
+	priv, err := pluginsign.GenerateKey()
 	require.NoError(t, err)
 	pemBytes, err := MarshalPublicKey(&priv.PublicKey)
 	require.NoError(t, err)
@@ -133,9 +123,9 @@ func TestTrustStoreKeyFiles(t *testing.T) {
 	// The signer's key stored under another key's id: the signature names
 	// that id, the file holds a key with a different one.
 	f := newFixture(t)
-	signerID, err := KeyID(&f.signer.PublicKey)
+	signerID, err := pluginsign.KeyID(&f.signer.PublicKey)
 	require.NoError(t, err)
-	impostor, err := GenerateKey()
+	impostor, err := pluginsign.GenerateKey()
 	require.NoError(t, err)
 	impostorPEM, err := MarshalPublicKey(&impostor.PublicKey)
 	require.NoError(t, err)
@@ -181,9 +171,9 @@ func TestEmbeddedKeys(t *testing.T) {
 	require.Empty(t, keys, "the publisher key is added when it is generated")
 
 	f := newFixture(t)
-	publisher, err := GenerateKey()
+	publisher, err := pluginsign.GenerateKey()
 	require.NoError(t, err)
-	id, err := KeyID(&publisher.PublicKey)
+	id, err := pluginsign.KeyID(&publisher.PublicKey)
 	require.NoError(t, err)
 	trust := f.trust
 	trust.embedded = map[string]*ecdsa.PublicKey{id: &publisher.PublicKey}
@@ -273,10 +263,10 @@ func swapCase(s string) string {
 // the exact bytes; a signature of the bare manifest does not verify.
 func TestSignVerifiesContextLine(t *testing.T) {
 	t.Parallel()
-	priv, err := GenerateKey()
+	priv, err := pluginsign.GenerateKey()
 	require.NoError(t, err)
 	m := localManifest()
-	raw, err := SignManifest(m, priv)
+	raw, err := pluginsign.SignManifest(m, priv)
 	require.NoError(t, err)
 	_, sig, err := parseSignatureFile(raw)
 	require.NoError(t, err)
@@ -284,7 +274,7 @@ func TestSignVerifiesContextLine(t *testing.T) {
 	require.False(t, verifyManifestSig(&priv.PublicKey, append(append([]byte{}, m...), ' '), sig))
 	require.False(t, verifyManifestSig(&priv.PublicKey, append([]byte(ManifestSigContext), m...), sig))
 
-	other, err := GenerateKey()
+	other, err := pluginsign.GenerateKey()
 	require.NoError(t, err)
 	require.False(t, verifyManifestSig(&other.PublicKey, m, sig))
 

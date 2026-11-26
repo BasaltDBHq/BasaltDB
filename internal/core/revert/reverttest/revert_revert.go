@@ -5,8 +5,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
+	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec/linkcodectest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
 
@@ -46,7 +47,7 @@ func fromCompact(binding string, lines []string, ids []passkey.Bytes) revert.Req
 // checks it (Check). A format 2 link carries only texts and credential
 // ids, never the engine's rescopeNonce, revealNonce or columns.
 func ParseRequest(fragment string) (revert.Request, revert.Binding, error) {
-	r, err := linkcodec.DecodeRequest(fragment, revert.MaxLines, fromCompact)
+	r, err := linkcodectest.DecodeRequest(fragment, revert.MaxLines, fromCompact)
 	if err != nil {
 		return revert.Request{}, revert.Binding{}, revert.Invalid("revert request %v", err)
 	}
@@ -59,11 +60,5 @@ func ParseRequest(fragment string) (revert.Request, revert.Binding, error) {
 
 // NewResponse wraps an assertion for revertID.
 func NewResponse(revertID uuid.UUID, a passkey.Assertion) revert.Response {
-	return revert.Response{
-		RevertID:          revertID,
-		CredentialID:      a.CredentialID,
-		AuthenticatorData: a.AuthenticatorData,
-		ClientDataJSON:    a.ClientDataJSON,
-		Signature:         a.Signature,
-	}
+	return revert.Response{RevertID: revertID, SignedAssertion: passkeytest.Signed(a)}
 }

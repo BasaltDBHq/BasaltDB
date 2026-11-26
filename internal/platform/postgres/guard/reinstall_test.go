@@ -65,7 +65,7 @@ func TestInstallsRecordsEachInstall(t *testing.T) {
 	require.True(t, first.At.Equal(again.At), "running the install again keeps the row")
 	require.Equal(t, 1, count(t, d.Admin, `SELECT count(install)::int FROM basalt_meta.installs`))
 
-	require.NoError(t, guard.Uninstall(ctx, d.Admin, d.Names))
+	require.NoError(t, guardtest.Uninstall(ctx, d.Admin, d.Names))
 	d.NewAgent(t, "bot", leads, nil)
 	next, err := guard.InstallID(ctx, d.Admin)
 	require.NoError(t, err)

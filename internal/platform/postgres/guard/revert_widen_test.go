@@ -14,7 +14,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -183,7 +182,7 @@ func TestRescopeWidenWithProof(t *testing.T) {
 	require.NotContains(t, raw, secret)
 	require.NotContains(t, raw, out.ScopeToken.String())
 
-	sig, err := e.p.Sign(approval.Challenge(out.BindingText), passkeytest.FlagsUPUV, nil)
+	sig, err := e.p.Sign(passkeytest.Challenge(out.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	applied, err := guard.ApplyRevert(ctx, e.bot.Conn, e.prep.RevertID, sig)
 	require.NoError(t, err)
@@ -241,7 +240,7 @@ func TestRescopeWidenRefused(t *testing.T) {
 	require.NoError(t, err)
 	overBoth, bothKey := e.proof(t, id, both, "secret")
 	otherRevert, otherRevertKey := e.proof(t, other.RevertID, e.every(), "secret")
-	revertSig, err := e.p.Sign(approval.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, zeroCounter)
+	revertSig, err := e.p.Sign(passkeytest.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, zeroCounter)
 	require.NoError(t, err)
 	cases := map[string]revertstore.RescopeRequest{
 		"no proof":                           {Select: e.every()},
@@ -536,7 +535,7 @@ func TestRescopeInvalidatesEarlierSignature(t *testing.T) {
 	t.Parallel()
 	e := newWidenEnv(t)
 	ctx := context.Background()
-	sig, err := e.p.Sign(approval.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, nil)
+	sig, err := e.p.Sign(passkeytest.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	leadsOnly := e.own()
 	leadsOnly.Resources = []string{"public.leads"}
@@ -556,7 +555,7 @@ func TestUndoWidenedRevertRefused(t *testing.T) {
 	e := newWidenEnv(t)
 	ctx := context.Background()
 	out := e.widen(t, e.every())
-	sig, err := e.p.Sign(approval.Challenge(out.BindingText), passkeytest.FlagsUPUV, nil)
+	sig, err := e.p.Sign(passkeytest.Challenge(out.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	applied, err := guard.ApplyRevert(ctx, e.bot.Conn, e.prep.RevertID, sig)
 	require.NoError(t, err)
@@ -731,7 +730,7 @@ func TestWidenedBatchedLedgerRedacted(t *testing.T) {
 	require.True(t, b.Batched)
 	require.Equal(t, 1, b.Skipped, "the helper's row 500 the person changed")
 
-	sig, err := e.p.Sign(approval.Challenge(out.BindingText), passkeytest.FlagsUPUV, nil)
+	sig, err := e.p.Sign(passkeytest.Challenge(out.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	signed, err := guard.ApplyRevert(ctx, e.bot.Conn, e.prep.RevertID, sig)
 	require.NoError(t, err)
@@ -781,7 +780,7 @@ func TestAgentLedgerRevertLookups(t *testing.T) {
 	e := newWidenEnv(t)
 	ctx := context.Background()
 	out := e.widen(t, e.every())
-	sig, err := e.p.Sign(approval.Challenge(out.BindingText), passkeytest.FlagsUPUV, nil)
+	sig, err := e.p.Sign(passkeytest.Challenge(out.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, e.bot.Conn, e.prep.RevertID, sig)
 	require.NoError(t, err)

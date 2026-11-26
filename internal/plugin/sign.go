@@ -4,11 +4,9 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"math/big"
@@ -37,11 +35,8 @@ const (
 	MaxKeyFileBytes = 16 << 10
 )
 
-// PEM block types of key files.
-const (
-	pemPublicKey  = "PUBLIC KEY"
-	pemPrivateKey = "PRIVATE KEY"
-)
+// pemPublicKey is the PEM block type of a public key file.
+const pemPublicKey = "PUBLIC KEY"
 
 var (
 	keyIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`)
@@ -54,25 +49,6 @@ var (
 	errKeyNotP256   = errors.New("the key is not a P-256 key")
 	errKeyEncoding  = errors.New("the key is not a valid key of its PEM type")
 )
-
-// GenerateKey makes a new P-256 signing key.
-func GenerateKey() (*ecdsa.PrivateKey, error) {
-	return ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-}
-
-// KeyID is a public key's id: base64url, without padding, of the first 16
-// bytes of sha256 of its DER SubjectPublicKeyInfo. It is always computed
-// from the key, never read from a file name or label.
-func KeyID(pub *ecdsa.PublicKey) (string, error) {
-	if pub == nil || pub.Curve != elliptic.P256() {
-		return "", errKeyNotP256
-	}
-	der, err := x509.MarshalPKIXPublicKey(pub)
-	if err != nil {
-		return "", errKeyEncoding
-	}
-	return keyIDOfDER(der), nil
-}
 
 func keyIDOfDER(der []byte) string {
 	sum := sha256.Sum256(der)
@@ -90,19 +66,6 @@ func MarshalPublicKey(pub *ecdsa.PublicKey) ([]byte, error) {
 		return nil, errKeyEncoding
 	}
 	return pem.EncodeToMemory(&pem.Block{Type: pemPublicKey, Bytes: der}), nil
-}
-
-// MarshalPrivateKey writes a private key file: PEM PRIVATE KEY (PKCS#8).
-// The caller writes it with mode 0600 and never prints it.
-func MarshalPrivateKey(priv *ecdsa.PrivateKey) ([]byte, error) {
-	if priv == nil || priv.Curve != elliptic.P256() {
-		return nil, errKeyNotP256
-	}
-	der, err := x509.MarshalPKCS8PrivateKey(priv)
-	if err != nil {
-		return nil, errKeyEncoding
-	}
-	return pem.EncodeToMemory(&pem.Block{Type: pemPrivateKey, Bytes: der}), nil
 }
 
 // ParsePublicKey reads a public key file: exactly one PEM PUBLIC KEY block
@@ -129,24 +92,6 @@ func ParsePublicKey(b []byte) (*ecdsa.PublicKey, string, error) {
 	return pub, keyIDOfDER(der), nil
 }
 
-// ParsePrivateKey reads a private key file: exactly one PEM PRIVATE KEY
-// block holding a PKCS#8 P-256 key. Errors never quote the file.
-func ParsePrivateKey(b []byte) (*ecdsa.PrivateKey, error) {
-	block, err := onePEMBlock(b, pemPrivateKey)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-	if err != nil {
-		return nil, errKeyEncoding
-	}
-	priv, ok := parsed.(*ecdsa.PrivateKey)
-	if !ok || priv.Curve != elliptic.P256() {
-		return nil, errKeyNotP256
-	}
-	return priv, nil
-}
-
 // pemBegin starts a PEM block.
 const pemBegin = "-----BEGIN "
 
@@ -170,32 +115,6 @@ type signatureFile struct {
 	KeyID string `json:"keyId"`
 	Alg   string `json:"alg"`
 	Sig   string `json:"sig"`
-}
-
-// SignManifest signs a manifest's exact bytes and returns the contents of its
-// basalt-plugin.json.sig. It does not check the manifest; the sign command
-// does that first.
-func SignManifest(manifest []byte, priv *ecdsa.PrivateKey) ([]byte, error) {
-	if priv == nil || priv.Curve != elliptic.P256() {
-		return nil, errKeyNotP256
-	}
-	id, err := KeyID(&priv.PublicKey)
-	if err != nil {
-		return nil, err
-	}
-	digest := manifestDigest(manifest)
-	r, s, err := ecdsa.Sign(rand.Reader, priv, digest[:])
-	if err != nil {
-		return nil, err
-	}
-	sig := make([]byte, sigBytes)
-	r.FillBytes(sig[:scalarBytes])
-	s.FillBytes(sig[scalarBytes:])
-	out, err := json.MarshalIndent(signatureFile{KeyID: id, Alg: SigAlg, Sig: base64.RawURLEncoding.EncodeToString(sig)}, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	return append(out, '\n'), nil
 }
 
 func manifestDigest(manifest []byte) [sha256.Size]byte {

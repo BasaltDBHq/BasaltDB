@@ -155,7 +155,7 @@ func TestMemoryStoreSuggestsByKind(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	cols := h.store.columns()
-	results, err := pii.SuggestAll(context.Background(), cols, h.store.sample, pii.Options{}, func(pii.Column, pii.Suggestion) bool { return false })
+	results, err := pii.SuggestAll(context.Background(), cols, h.store.sample, pii.Options{})
 	require.NoError(t, err)
 	byName := map[string]pii.Result{}
 	for _, r := range results {
@@ -177,7 +177,7 @@ func TestMemoryStoreSuggestsByKind(t *testing.T) {
 func TestMemoryStoreWatchLogsAnUnclassifiedField(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	w := pii.NewWatch(memAgent, pii.NewMap(h.logger), h.store, h.logger)
+	w := pii.NewWatch(memAgent, pii.NewMap(h.logger), pii.StoreSet{Classes: h.store}, h.logger)
 	require.NoError(t, w.Tick(context.Background()))
 	require.Contains(t, h.log.String(), "1 columns unclassified: shop.customers.note")
 }

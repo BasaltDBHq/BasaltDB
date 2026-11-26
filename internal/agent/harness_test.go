@@ -42,10 +42,6 @@ func withOperatedBy(by string) option {
 // withRLS sets the row-level security check.
 func withRLS(c Visibility) option { return func(s *settings) { s.store.Visibility = c } }
 
-func testManager() guidance.ServiceManager {
-	return guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
-}
-
 // newTestService builds the service the tests run on: configPath "" is the
 // platform default config.
 func newTestService(t *testing.T, goos, configPath string, opts ...option) *Service {
@@ -53,7 +49,7 @@ func newTestService(t *testing.T, goos, configPath string, opts ...option) *Serv
 	st := settings{
 		core: Core{
 			Name: "bot", Log: slog.New(slog.DiscardHandler), Now: time.Now,
-			Commands: guidance.NewCommands("bot", configPath, config.DefaultPath(goos), goos, testManager()),
+			Commands: guidance.NewCommands("bot", configPath, config.DefaultPath(goos), goos, osservice.Manager()),
 		},
 		store: StoreSet{Kind: action.StorePostgres, Family: agentstore.FamilySQL, Language: sqllang.New(noChecker{})},
 	}

@@ -1,7 +1,6 @@
 package app
 
 import (
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgerrors"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/crashfile"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
@@ -31,8 +30,8 @@ import (
 // the app does, with the real adapters. A test sets the rest.
 func testDeps() Deps {
 	var d Deps
-	d.Core.ServiceManager = testManager()
-	d.Core.Errors = testErrors()
+	d.Core.ServiceManager = osservice.Manager()
+	d.Core.Errors = pgerrors.Map()
 	d.Agent.Record = func(ch action.Change, rows []action.RowChange) any { return ledger.RecordFromDomain(ch, rows) }
 	d.Approval.SortSpec = ledger.ApprovalSortSpec
 	d.Revert.AfterAnswer = vault.AfterAnswer
@@ -63,24 +62,6 @@ func testDeps() Deps {
 // useStore binds every port of d that reads the agent's store to s.
 func useStore(d *Deps, s SQLStore) {
 	d.Core.Store, d.Agent.Data, d.Approval.Store, d.Revert.Store, d.Status.Passkeys = s, s, s, s, s
-}
-
-func testManager() guidance.ServiceManager {
-	return guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
-}
-
-func testErrors() guidance.ErrorMap {
-	return guidance.ErrorMap{
-		InvalidParams: ledger.ErrInvalidParams,
-		InvalidIntent: guard.ErrInvalidIntent,
-		RowTooLarge: func(err error) (string, bool) {
-			var rl *resultsize.RowTooLargeError
-			if errors.As(err, &rl) {
-				return rl.Error(), true
-			}
-			return "", false
-		},
-	}
 }
 
 func testEngineHost() statussvc.EngineHost {

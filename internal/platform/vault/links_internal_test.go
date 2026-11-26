@@ -113,3 +113,10 @@ func TestRegisterSendsExpiryInWholeSecondsRoundedDown(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, keys.EngineID(), owner)
 }
+
+// pendingLen is how many requests wait for an answer.
+func (cn *conn) pendingLen() int {
+	cn.mu.Lock()
+	defer cn.mu.Unlock()
+	return len(cn.pending)
+}

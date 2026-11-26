@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // Approval statuses (basalt_meta.agent_approvals).
@@ -41,7 +42,7 @@ const colApprovalID = "approval_id"
 const requestKind = "coalesce(binding_text::jsonb #>> '{request,kind}', '') AS request_kind"
 
 func approvalSelect(ctx context.Context) sq.SelectBuilder {
-	return withRequest(ctx, psql.Select(colApprovalID, colRunID, "task_id", "intent", requestKind, "coalesce(statement, '') AS statement", "params",
+	return withRequest(ctx, sqlport.Builder.Select(colApprovalID, colRunID, "task_id", "intent", requestKind, "coalesce(statement, '') AS statement", "params",
 		"assigned_columns", "rows", "status", "created_at", "expires_at", "approved_at",
 		"coalesce(binding_text, '') AS binding_text").
 		From("basalt_meta.agent_approvals"))
@@ -139,19 +140,9 @@ type Passkey struct {
 	LastUsedAt *time.Time
 }
 
-// Unused reports whether no approval or revert was signed with the passkey
-// for PasskeyUnusedAfter (counted from registration when never used).
-func (k Passkey) Unused(now time.Time) bool {
-	last := k.CreatedAt
-	if k.LastUsedAt != nil {
-		last = *k.LastUsedAt
-	}
-	return now.Sub(last) >= PasskeyUnusedAfter
-}
-
 // ListPasskeys returns the active passkeys (at most 100), oldest first.
 func ListPasskeys(ctx context.Context, q guard.Querier) ([]Passkey, error) {
-	sql, args, err := psql.Select("credential_id", "public_key_x", "public_key_y", "rp_id", "origin", "sign_count",
+	sql, args, err := sqlport.Builder.Select("credential_id", "public_key_x", "public_key_y", "rp_id", "origin", "sign_count",
 		"label", "created_at", "last_used_at").
 		From("basalt_meta.agent_passkeys").OrderBy("created_at", "credential_id").Limit(maxPasskeys).ToSql()
 	if err != nil {

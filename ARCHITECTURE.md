@@ -63,13 +63,13 @@ Every package under `internal/` sits in one of the layers above. A new domain, o
 These rules sit beside the layer table. The last two are review rules; the others are checked by the goldens, the contract tests or depguard.
 
 - **Services may depend on services, one way.** Today: `agent` → `approval`, `ledger`, `links`, `pii`, `revert`; `approval` → `links`, `revert`; `revert` → `links`; `handoff` → `setup` (the login proof); `plugin` → `links`, `status`; `status` → `handoff`. Go refuses a cycle, and archtest compares this list with the imports, so a new edge is a change here. Before adding an edge, check whether what you need is shared wording for the agent, which belongs in `core/guidance`.
-- **A service gets every port in its constructor, named `New`.** No service is handed a dependency after it is built: archtest fails an exported `Set*` method on a domain's `Service`. A use case that only reads another domain's data reads it through the store's adapter, which `internal/app` passes in, not through that domain's service: delivery reads the approval records and the column order from the store, and revert reads the statement timeout from the store's limits. So no two services ask each other, and `internal/app` builds `links`, `revert`, `approval` and `agent` in that order. A loop that is truly two-way gets one named late connection, written here; there is none today.
-- **The consumer declares the port.** The package that calls a port defines the interface, with one method per question it asks. Where `internal/app` implements a port, the method is a one-line forward.
-- **An inbound adapter only translates.** It decodes a request, calls one service and encodes the answer. A domain's MCP package exports `Tools(port, mount)`; `internal/app` composes every domain's tools in a fixed order and wraps each one once with the admin-credential refusal.
+- **A service gets every port in its constructor, named `New`.** No service is handed a dependency after it is built: archtest fails an exported `Set*` method on a domain's `Service`. A use case that only reads another domain's data reads it through the store's adapter, which `internal/app` passes in, not through that domain's service: delivery reads the approval records and the column order from the store, and revert reads the statement timeout from the store's limits. So no two services ask each other, and `internal/app` builds them in one order: `status` → `links` → `revert` → `approval` → `agent` → `plugin`. A loop that is truly two-way gets one named late connection, written here; there is none today.
+- **The consumer declares the port.** The package that calls a port defines the interface, with one method per question it asks. A domain declares its ports in `ports.go`; a store-neutral domain's store ports may stay in `store.go`. In a domain's root no file, test files included, is named after the domain (`<domain>_test.go` excepted), the `Service` type is in `service.go` and `Core` and `Deps` are in `deps.go` (archtest `TestShapes`). Where `internal/app` implements a port, the method is a one-line forward.
+- **An inbound adapter only translates.** It decodes a request, calls one service and encodes the answer. A domain's MCP package exports `Tools(port, mount)`; `internal/app` composes every domain's tools in a fixed order and wraps each one once with the admin-credential refusal. The degraded tool sets (`statusmcp.EngineDown` while the engine is down, `handoffmcp.ConnectOnly` while a connect-only setup waits) give app a `Call(tool)`, and app serves and wraps them the same way.
 - **Code lives with its callers and its data,** not with the topic in its name. A builder that only the status report uses stays in `internal/status`, even if it talks about setup.
 - **Type names that reach output never change.** The validator prints an argument struct's Go type name in MCP errors (`Key: 'confirmArgs.Database' …`), and the served goldens pin it. Never rename, export or alias an args or DTO struct, and look for `%T` and reflection before renaming any type.
 - **Export only what production code outside the package calls.** No test-only exports; a test that needs internals lives in the package.
-- **Tests set options before construction.** A test helper takes a `func(*Deps)` applied before the service is built; no test wires a service twice or swaps a dependency on a built service.
+- **Tests set options before construction.** A test harness takes `opts ...option`, with `type option func(*settings)`, applied before the service is built; no test wires a service twice or swaps a dependency on a built service.
 
 ## Guards beyond the layer rules
 
@@ -231,7 +231,9 @@ A codec function is a function of a decision package that only encodes, decodes,
 
 ## Known violations
 
-The code does not meet every rule yet. `internal/testkit/archtest/baseline/` lists what is left, one file per importing package. A violation that is not listed fails the test, and so does a listed one that no longer exists: remove the line when you fix it, or run `go test ./internal/testkit/archtest -update`, which removes the fixed lines and never adds one. The baseline only shrinks: CI fails a pull request that adds a line to a baseline its base branch already has (`scripts/baseline-shrink.sh`, which reads the baselines from `scripts/shrink-only.txt`). A change that moves a package lists the move in `scripts/baseline-renames.txt` (`old/pkg<TAB>new/pkg`); the check rewrites the base's baseline paths, file names and lines through it before comparing, and refuses a move unless the old package is gone and the new one is new. The file is empty once its moves are on master.
+The code does not meet every rule yet. `internal/testkit/archtest/baseline/` lists what is left, one file per importing package. A violation that is not listed fails the test, and so does a listed one that no longer exists: remove the line when you fix it, or run `go test ./internal/testkit/archtest -update`, which removes the fixed lines and never adds one. The baseline only shrinks: CI fails a pull request that adds a line to a baseline its base branch already has (`scripts/baseline-shrink.sh`, which reads the baselines from `scripts/shrink-only.txt`). A change that moves a package lists the move in `scripts/baseline-renames.txt` (`old/pkg<TAB>new/pkg`); the check rewrites the base's baseline paths, file names and lines through it before comparing, and refuses a move unless the old package is gone and the new one is new. The package moves are removed once they are on master.
+
+A baseline that `scripts/shrink-only.txt` registers is never deleted, only emptied: an emptied file stays as an empty file, and a registered directory keeps an empty `.gitkeep` (`-update` never removes it), so the check fails when a registered baseline is gone. Lines are weighed by their `(N times)` count (N of 2 or more; any other count fails), so lowering a count passes and raising one fails. A new baseline may not hold a line that a registered baseline already has, with or without its declaration and count, unless `scripts/baseline-renames.txt` declares it new with `new<TAB>path/to/baseline.txt` so a reviewer sees it; even then, each such line must keep its full weight in the registered baselines, so a check that overlaps another passes and moving an emptied baseline's lines into a declared one fails. An archtest baseline or allowlist must be named `*baseline*.txt` or `*allowlist*.txt`, or live in a `*baseline*` or `*allowlist*` directory, and every such file under `internal/testkit/archtest` must be registered in `scripts/shrink-only.txt`. Lines are compared as archtest reads them, trimmed at both ends. To rename or merge baseline files, list each one in `scripts/baseline-renames.txt` as a file pair, `old/path.txt<TAB>new/path.txt`. Each old file may appear in one pair only and must be gone, and the new file must be new and registered. Each new line must match a line of the old files, either as it is or with its declaration removed when the old line has no declaration, and it may not count for more than the old lines it matches. A file pair that is on the base is skipped, so it can stay in the file. It becomes stale once its new file is renamed again; delete it then.
 
 ## Where is a feature
 
@@ -239,8 +241,8 @@ The code does not meet every rule yet. `internal/testkit/archtest/baseline/` lis
 
 | Step | Where |
 |---|---|
-| MCP tools `request_revert`, `preview_revert`, `revert_plan`, `apply_revert_batch` | `internal/revert/in/revertmcp/tools.go`; the use case in `internal/revert/revert_service.go`, `revert_rescope.go` |
-| Next steps for the agent | `internal/revert/revert_steps.go` |
+| MCP tools `request_revert`, `preview_revert`, `revert_plan`, `apply_revert_batch` | `internal/revert/in/revertmcp/tools.go`; the use case in `internal/revert/service.go`, `rescope.go` |
+| Next steps for the agent | `internal/revert/steps.go` |
 | Revert code and authorisation line | `internal/core/revert` |
 | Passkey signature check | `internal/core/passkey` |
 | Revert SQL, verified inside Postgres | `internal/platform/postgres/guard/revert.go`, `rescope.go`, `schema/006_reverts.sql` |
@@ -251,11 +253,11 @@ The code does not meet every rule yet. `internal/testkit/archtest/baseline/` lis
 
 | Step | Where |
 |---|---|
-| A write is held; the agent is told how to wait | `internal/agent/write_hold.go`, `internal/approval/approval_flow.go`, `approval_pending.go`, `internal/links/delivery_deliver.go` |
+| A write is held; the agent is told how to wait | `internal/agent/write_hold.go`, `internal/approval/flow.go`, `pending.go`, `internal/links/deliver.go` |
 | MCP tool `list_pending` | `internal/approval/in/approvalmcp/tools.go` |
 | Approval code and the line the person signs | `internal/core/approval` |
 | Passkey signature check | `internal/core/passkey` |
 | Approval SQL, verified inside Postgres | `internal/platform/postgres/guard/approval.go`, `schema/005_approvals.sql` |
 | Ledger side | `internal/platform/postgres/ledger/approvals.go` |
 | The person's page | `internal/platform/pageserver/pages.go`, `internal/approval/in/approvalpage` |
-| Plugin approvals | `internal/plugin/plugin_approvals.go`, `internal/core/approval/plugin.go` |
+| Plugin approvals | `internal/plugin/approvals.go`, `internal/core/approval/plugin.go` |

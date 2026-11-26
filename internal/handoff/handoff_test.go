@@ -827,8 +827,13 @@ func TestSavedConnStringVerifiesSupabaseHost(t *testing.T) {
 	require.NoError(t, err)
 	cc := pool.ConnConfig.Copy()
 	require.NoError(t, pool.BeforeConnect(context.Background(), cc))
-	for _, root := range trustprofile.BuiltInSet().Named("supabase").Certificates() {
-		_, err = root.Verify(x509.VerifyOptions{Roots: cc.TLSConfig.RootCAs})
-		require.NoError(t, err)
+	for _, p := range trustprofile.BuiltIns() {
+		if p.Name != "supabase" {
+			continue
+		}
+		for _, root := range p.Certificates() {
+			_, err = root.Verify(x509.VerifyOptions{Roots: cc.TLSConfig.RootCAs})
+			require.NoError(t, err)
+		}
 	}
 }

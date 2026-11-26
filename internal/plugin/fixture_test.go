@@ -15,6 +15,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginfs"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/pluginsign"
 )
 
 // testFiles is the file system adapter the app builds the host on.
@@ -51,7 +52,7 @@ func newFixture(t *testing.T) *fixture {
 	require.NoError(t, err)
 	f.trust, err = NewTrustStore(testFiles, pluginmodel.ModeSameUser, runtime.GOOS, f.configDir)
 	require.NoError(t, err)
-	f.signer, err = GenerateKey()
+	f.signer, err = pluginsign.GenerateKey()
 	require.NoError(t, err)
 	f.trustKey(&f.signer.PublicKey)
 	f.writeLocal(f.src, f.signer)
@@ -114,7 +115,7 @@ func (f *fixture) writeSigned(dir string, manifest []byte, signer *ecdsa.Private
 	f.t.Helper()
 	require.NoError(f.t, os.MkdirAll(dir, 0o755))
 	require.NoError(f.t, os.WriteFile(filepath.Join(dir, ManifestFile), manifest, 0o644))
-	sig, err := SignManifest(manifest, signer)
+	sig, err := pluginsign.SignManifest(manifest, signer)
 	require.NoError(f.t, err)
 	require.NoError(f.t, os.WriteFile(filepath.Join(dir, SignatureFile), sig, 0o644))
 }

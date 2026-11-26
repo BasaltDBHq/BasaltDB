@@ -83,12 +83,13 @@ func fileFinisher(t *testing.T, id uuid.UUID) (*Finisher, *recordingPassword, *b
 	dir := t.TempDir()
 	cfgPath, credFile := filepath.Join(dir, "engine.json"), filepath.Join(dir, "bot.url")
 	require.NoError(t, config.WriteFile(credFile, []byte("postgres://bt_agent_bot:old@db:5432/app\n")))
-	require.NoError(t, config.UpsertAgent(cfgPath, config.Settings{SocketDir: "/run/basalt"}, config.Agent{
+	_, err := config.UpsertAgentVault(cfgPath, config.Settings{SocketDir: "/run/basalt"}, config.Agent{
 		Name: "bot", OSUser: "bot", Store: config.PostgresStore(credFile), Setup: &config.Setup{
 			SetupID: id.String(), Kind: guardmodel.SetupAgent,
 			GuardVersion: 1, ExpiresAt: "2026-11-13T10:00:00Z", Code: "basalt-setup.1.abc.def", Fingerprint: "a1b2",
 		},
-	}))
+	})
+	require.NoError(t, err)
 	pw, logs := &recordingPassword{}, &bytes.Buffer{}
 	f := &Finisher{
 		ConfigPath: cfgPath, Agent: "bot", CredFile: credFile,

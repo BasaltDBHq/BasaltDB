@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/agent/in/agentmcp"
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
@@ -27,6 +26,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgerrors"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
@@ -127,7 +127,7 @@ func TestToolErrorMapping(t *testing.T) {
 		{errors.New("password=hunter2 something broke"), guidance.CodeInternal, "", ""},
 	}
 	for _, c := range cases {
-		te := testErrors().ToolError(c.err)
+		te := pgerrors.Map().ToolError(c.err)
 		require.Equal(t, c.code, te.Code, c.err.Error())
 		require.Equal(t, c.reason, te.Reason, c.err.Error())
 		require.Equal(t, c.storeCode, te.StoreCode, c.err.Error())
@@ -207,7 +207,7 @@ func TestErrorIDIsInTheBodyAndTheLogLine(t *testing.T) {
 		var logged strings.Builder
 		d := deps()
 		d.Core.Log = slog.New(slog.NewTextHandler(&logged, nil))
-		call := agentmcp.Wrap(NewService(d), "query", func(context.Context, json.RawMessage) (any, error) { return nil, cause })
+		call := gate{svc: NewService(d)}.wrap("query", func(context.Context, json.RawMessage) (any, error) { return nil, cause })
 
 		_, err := call(context.Background(), nil)
 		var te *toolresult.ToolError
@@ -226,7 +226,7 @@ func TestErrorIDIsInTheBodyAndTheLogLine(t *testing.T) {
 
 func TestErrorIDOnlyOnInternalAndUnavailable(t *testing.T) {
 	t.Parallel()
-	call := agentmcp.Wrap(NewService(deps()), "query", func(context.Context, json.RawMessage) (any, error) {
+	call := gate{svc: NewService(deps())}.wrap("query", func(context.Context, json.RawMessage) (any, error) {
 		return nil, &guidance.ArgumentError{Message: "bad"}
 	})
 	_, err := call(context.Background(), nil)

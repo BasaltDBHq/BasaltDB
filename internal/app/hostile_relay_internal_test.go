@@ -109,7 +109,7 @@ func (e *relayEnv) loopbackApproval(t *testing.T, item heldItem) approval.Reques
 // binding.
 func approveBody(t *testing.T, signer *passkeytest.Authenticator, id string, binding string) string {
 	t.Helper()
-	as, err := signer.Sign(approval.Challenge(binding), passkeytest.FlagsUPUV, nil)
+	as, err := signer.Sign(passkeytest.Challenge(binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	b, err := json.Marshal(approvaltest.NewResponse(uuid.MustParse(id), as))
 	require.NoError(t, err)
@@ -143,7 +143,7 @@ func TestRelayChannelCannotSignWithoutThePerson(t *testing.T) {
 		return r
 	}
 	// The person's signature for A, posted for B through B's session.
-	asA, err := e.person.Sign(approval.Challenge(reqA.Binding), passkeytest.FlagsUPUV, nil)
+	asA, err := e.person.Sign(passkeytest.Challenge(reqA.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	forB, err := json.Marshal(approvaltest.NewResponse(uuid.MustParse(b.id), asA))
 	require.NoError(t, err)
@@ -170,7 +170,7 @@ func TestRelayChannelCannotSignWithoutThePerson(t *testing.T) {
 	require.NoError(t, err)
 	var rreq revert.Request
 	require.NoError(t, json.Unmarshal([]byte(rr.Body), &rreq))
-	asR, err := forger.Sign(approval.Challenge(rreq.Binding), passkeytest.FlagsUPUV, nil)
+	asR, err := forger.Sign(passkeytest.Challenge(rreq.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	apply, err := json.Marshal(reverttest.NewResponse(uuid.MustParse(revertID), asR))
 	require.NoError(t, err)

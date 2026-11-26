@@ -2,13 +2,10 @@ package app
 
 import (
 	"context"
-	"errors"
-	"io"
 	"time"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
 	"github.com/basaltdbhq/basaltdb/internal/status"
-	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 
@@ -19,14 +16,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
-	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
-	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/agentcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgcatalog"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgerrors"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/crashfile"
@@ -59,24 +54,10 @@ func AgentHostDeps() Deps {
 
 // AgentServiceManager is the host's service manager, for the agent's
 // commands.
-func AgentServiceManager() guidance.ServiceManager {
-	return guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
-}
+func AgentServiceManager() guidance.ServiceManager { return osservice.Manager() }
 
 // AgentErrors are the adapters' error values the agent maps to tool errors.
-func AgentErrors() guidance.ErrorMap {
-	return guidance.ErrorMap{
-		InvalidParams: ledger.ErrInvalidParams,
-		InvalidIntent: guard.ErrInvalidIntent,
-		RowTooLarge: func(err error) (string, bool) {
-			var rl *resultsize.RowTooLargeError
-			if errors.As(err, &rl) {
-				return rl.Error(), true
-			}
-			return "", false
-		},
-	}
-}
+func AgentErrors() guidance.ErrorMap { return pgerrors.Map() }
 
 // agentEngineHost is what the status of an engine that is down reads from
 // the host.
@@ -102,30 +83,6 @@ func agentCrashReports(dirs ...string) []status.CrashReport {
 
 func agentUpdateMessage(n status.ReleaseNotice, exe string) string {
 	return updatecheck.Notice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}.AgentMessage(exe)
-}
-
-// EngineDownServer is what basalt mcp answers with itself while the engine
-// is down: the engine-down tools, and the answer to a request the engine
-// took but closed the connection without answering.
-type EngineDownServer struct {
-	*mcpserver.Server
-	down statusmcp.EngineDown
-}
-
-// NewEngineDownServer is the engine-down tools of down, served as an
-// agent's MCP server.
-func NewEngineDownServer(down statusmcp.EngineDown) EngineDownServer {
-	info := mcpserver.Info{Name: "basalt", Version: buildinfo.Version, Instructions: Instructions}
-	return EngineDownServer{Server: mcpserver.NewServer(info, down.Tools()...), down: down}
-}
-
-// Abandoned answers a request the engine took and never answered (it
-// closed the connection: it stopped, or it refused the peer), always with
-// an error and never by running the call again: a tools/call gets UNAVAILABLE
-// ENGINE_UNREACHABLE with its steps, any other request a JSON-RPC error. A
-// notification gets nothing.
-func (s EngineDownServer) Abandoned(_ context.Context, out io.Writer, line []byte) error {
-	return s.down.AnswerAbandoned(out, line)
 }
 
 // agentProbe is the store's probe as the agent reads it: the reinstall

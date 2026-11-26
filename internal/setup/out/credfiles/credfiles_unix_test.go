@@ -27,11 +27,7 @@ const (
 type osHost struct{}
 
 func (osHost) OSOpenTrustedDir(dir string, owner int, create bool) (TrustedDir, error) {
-	d, err := osservice.OpenTrustedDir(dir, owner, create)
-	if err != nil {
-		return nil, err
-	}
-	return d, nil
+	return osservice.OpenTrustedDirPort(dir, owner, create)
 }
 
 func (osHost) OSOpenTrustedFile(path string, owner int) (*os.File, error) {

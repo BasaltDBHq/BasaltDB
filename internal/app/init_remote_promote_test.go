@@ -200,5 +200,4 @@ func TestInitRemoteHandsTheGuardTheAgentsOwnConnection(t *testing.T) {
 		func(context.Context, string) (cli.AgentConn, error) { return conn, nil })
 	require.NoError(t, err)
 	require.Same(t, conn, got)
-	require.NotSame(t, &loggedInConn{}, got, "a connection of the same type is not the same one")
 }

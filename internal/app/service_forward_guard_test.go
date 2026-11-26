@@ -192,13 +192,17 @@ func forwardsIntoApp(files []*ast.File, pkg *types.Package, info *types.Info, ch
 
 // funcValues maps each function-typed field or variable that files assign,
 // in a composite literal's key, on an assignment's left side or in a var
-// declaration, to the values assigned to it. A field or variable files never
+// declaration, to the values assigned to it; a multi-value assignment
+// (a.f, err = g()) assigns it the call, which landing cannot follow. A field or variable files never
 // assign has no entry: forwardsIntoApp counts a call through one that pkg
 // declares as logic, and one another package declares and app never sets as
 // a forward.
 func funcValues(files []*ast.File, info *types.Info) map[*types.Var][]ast.Expr {
 	values := map[*types.Var][]ast.Expr{}
 	add := func(target ast.Expr, value ast.Expr) {
+		if value == nil {
+			return
+		}
 		var obj types.Object
 		switch x := ast.Unparen(target).(type) {
 		case *ast.Ident:
@@ -230,22 +234,31 @@ func funcValues(files []*ast.File, info *types.Info) map[*types.Var][]ast.Expr {
 					}
 				}
 			case *ast.AssignStmt:
-				if len(n.Lhs) == len(n.Rhs) {
-					for i := range n.Lhs {
-						add(n.Lhs[i], n.Rhs[i])
-					}
+				for i := range n.Lhs {
+					add(n.Lhs[i], valueAt(n.Rhs, i))
 				}
 			case *ast.ValueSpec:
-				if len(n.Names) == len(n.Values) {
-					for i := range n.Names {
-						add(n.Names[i], n.Values[i])
-					}
+				for i := range n.Names {
+					add(n.Names[i], valueAt(n.Values, i))
 				}
 			}
 			return true
 		})
 	}
 	return values
+}
+
+// valueAt is the value assigned to the i-th name: values[i], or, for a
+// multi-value assignment (a, b = f()), the one call, whose results the scan
+// cannot follow. A declaration without values (var f func()) assigns none.
+func valueAt(values []ast.Expr, i int) ast.Expr {
+	switch {
+	case i < len(values):
+		return values[i]
+	case len(values) == 1:
+		return values[0]
+	}
+	return nil
 }
 
 // landing is where a call through a function value lands: the function or
@@ -873,8 +886,10 @@ func (*listed) Ask() int {
 }
 
 type fields struct {
-	helperFn, forwardFn, litFn, paramFn, methodFn, unsetFn func() int
+	helperFn, forwardFn, litFn, paramFn, methodFn, unsetFn, pairFn func() int
 }
+
+func pair() (func() int, error) { return helper, nil }
 
 var varFn = helper
 
@@ -882,6 +897,9 @@ func wire(p port, c checked, fn func() int) fields {
 	f := fields{helperFn: helper, forwardFn: func() int { return p.Ask() }, methodFn: c.Ask}
 	f.litFn = func() int { n := 1; return n }
 	f.paramFn = fn
+	var err error
+	f.pairFn, err = pair()
+	_ = err
 	return f
 }
 
@@ -892,6 +910,7 @@ func (f fields) ViaParam() int   { return f.paramFn() }
 func (f fields) ViaMethod() int  { return f.methodFn() }
 func (f fields) ViaUnset() int   { return f.unsetFn() }
 func (f fields) ViaVar() int     { return varFn() }
+func (f fields) ViaPair() int    { return f.pairFn() }
 
 type Service struct{ u uses }
 
@@ -907,12 +926,12 @@ func (s *Service) Helper() int  { return helper() }
 		"checked.Ask", "uses.Interface", "uses.Checked", "uses.Helper", "uses.Discard", "uses.Unchecked",
 		"uses.ViaHelper", "uses.Listed", "uses.InArgument", "listed.Ask", "Service.Forward", "Service.Helper",
 		"fields.ViaHelper", "fields.ViaForward", "fields.ViaLiteral", "fields.ViaParam", "fields.ViaMethod",
-		"fields.ViaUnset", "fields.ViaVar",
+		"fields.ViaUnset", "fields.ViaVar", "fields.ViaPair",
 	} {
 		checked[key] = true
 	}
 	require.Equal(t, []string{
-		"Service.Helper", "fields.ViaHelper", "fields.ViaLiteral", "fields.ViaParam", "fields.ViaUnset", "fields.ViaVar",
+		"Service.Helper", "fields.ViaHelper", "fields.ViaLiteral", "fields.ViaPair", "fields.ViaParam", "fields.ViaUnset", "fields.ViaVar",
 		"uses.Discard", "uses.Helper", "uses.Listed", "uses.Unchecked", "uses.ViaHelper",
 	}, forwardsIntoApp([]*ast.File{f}, pkg, info, checked))
 }

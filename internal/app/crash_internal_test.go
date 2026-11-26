@@ -56,3 +56,22 @@ func TestOnPanicWithAnUnwritableStateDirReturnsNoReportID(t *testing.T) {
 	require.Contains(t, logged.String(), `"error_id":"`+errorID+`"`)
 	require.NotContains(t, logged.String(), "secret-value")
 }
+
+// A report saved in a directory whose older reports cannot be pruned still
+// gives its id.
+func TestOnPanicThatCannotPruneReturnsTheReportID(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a directory without its read bit")
+	}
+	state := t.TempDir()
+	dir := filepath.Join(state, servicespec.CrashDirName)
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	require.NoError(t, os.Chmod(dir, 0o300))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	var logged bytes.Buffer
+	errorID, id := agentEnv{stateDir: state}.onPanic(slog.New(slog.NewJSONHandler(&logged, nil)))("write", "x", nil)
+	require.NotEmpty(t, errorID)
+	require.NotEmpty(t, id)
+	require.Contains(t, logged.String(), `"report_id":"`+id+`"`)
+	require.NotContains(t, logged.String(), "no crash report saved")
+}

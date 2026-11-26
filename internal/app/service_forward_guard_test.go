@@ -541,7 +541,6 @@ var portLogic = map[string]string{
 	"setupHost.OSOpenTrustedDir":       "the setup host: returns a nil interface on an error",
 	"setupHost.OpenRootConfigDir":      "the setup host: returns a nil interface on an error",
 	"setupHost.RootEngineKey":          "the setup host: unwraps the config directory before it reads the key",
-	"engineCLIHost.ChildStarter":       "forwards to app's childStarter, which starts the engine as a child",
 	"engineCLIHost.RunServiceAt":       "forwards to app's runServiceAt, the whole basalt service install command",
 	"rootFiles.ReadPending":            "forwards to rootFiles.read, the checked credential read",
 	"setupHost.LoadOrCreateEngineKeys": "forwards to app's loadOrCreateEngineKeys, which reads or creates the channel keys",

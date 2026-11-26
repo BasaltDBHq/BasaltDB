@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"time"
 )
@@ -109,4 +110,44 @@ func runChild(ctx context.Context, o SuperviseOptions, startedBy string) error {
 		return err
 	}
 	return wait()
+}
+
+// ChildDeps is what ChildStarter starts a supervised engine with: the
+// machine its binary is looked up on, the terminal that tells whether
+// another engine holds the lock, and Start, which runs a process and
+// returns the wait for its exit.
+type ChildDeps struct {
+	Machine  Machine
+	Terminal Terminal
+	Start    func(ctx context.Context, exe string, args []string, out, errw io.Writer) (wait func() error, err error)
+}
+
+// ChildStarter runs the engine as startedFrom engine --config ...
+// --started-by ... with out and errw, after resolving startedFrom again. A
+// child that stays up for FastCrash clears the last give-up in stateDir;
+// one that fails because another engine holds lockPath reports
+// ErrAnotherEngine.
+func ChildStarter(d ChildDeps, startedFrom, configPath, lockPath, stateDir string, out, errw io.Writer, log *slog.Logger) func(context.Context, string) (func() error, error) {
+	return func(ctx context.Context, startedBy string) (func() error, error) {
+		exe, err := ResolveSuperviseBinary(d.Machine, startedFrom)
+		if err != nil {
+			return nil, err
+		}
+		wait, err := d.Start(ctx, exe, []string{"engine", "--config", configPath, "--started-by", startedBy}, out, errw)
+		if err != nil {
+			return nil, err
+		}
+		stable := time.AfterFunc(FastCrash, func() { ClearLastStop(d.Machine, stateDir, log) })
+		return func() error {
+			err := wait()
+			stable.Stop()
+			if err != nil && ctx.Err() == nil {
+				// The child has exited, so a live holder is another engine.
+				if AnotherEngineRuns(d.Terminal, lockPath) {
+					return ErrAnotherEngine
+				}
+			}
+			return err
+		}, nil
+	}
 }

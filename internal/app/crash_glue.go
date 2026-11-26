@@ -37,7 +37,7 @@ func (engineCLIHost) CommandName(args []string) string { return cli.CommandName(
 func (engineCLIHost) Fail(w io.Writer, name string, err error) int { return cli.Fail(w, name, err) }
 
 func (engineCLIHost) ChildStarter(startedFrom, configPath, lockPath, stateDir string, io cli.Stdio, log *slog.Logger) func(context.Context, string) (func() error, error) {
-	return childStarter(startedFrom, configPath, lockPath, stateDir, io, log)
+	return engine.ChildStarter(engine.ChildDeps{Machine: engineos.OS{}, Terminal: engineTerminal{}, Start: engineos.StartChild}, startedFrom, configPath, lockPath, stateDir, io.Out, io.Err, log)
 }
 
 func (engineCLIHost) RunServiceAt(ctx context.Context, args []string, io cli.Stdio, configPath string) int {

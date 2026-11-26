@@ -151,9 +151,6 @@ func TestLaptopFixtures(t *testing.T) {
 
 func laptopCheck(t *testing.T, p setupcode.Payload, l laptopFixture, now time.Time) error {
 	t.Helper()
-	if err := setupcode.CheckNotConnectOnly(p); err != nil {
-		return err
-	}
 	if err := setupcode.CheckLocal(p, now, l.BinaryGuardVersion); err != nil {
 		return err
 	}

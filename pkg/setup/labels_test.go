@@ -154,7 +154,7 @@ func TestRestPublicKeepsStoredClasses(t *testing.T) {
 	second := newCode(t, d, func(p *setupcode.Payload) {
 		p.Agent.Name, p.Agent.Write = "helper", []string{"public.leads"}
 	})
-	_, err = setup.Run(ctx, d.Admin, setup.Request{Code: second, Now: time.Now(), ConnectPage: true}, setup.RunInput{RestPublic: true})
+	_, err = setup.Run(ctx, d.Admin, setup.Request{Code: second, Now: time.Now()}, setup.RunInput{RestPublic: true})
 	require.NoError(t, err)
 	got := labelsOf(t, d, "public.leads")
 	require.Equal(t, secret, got["name"], "a stored class is never lowered")

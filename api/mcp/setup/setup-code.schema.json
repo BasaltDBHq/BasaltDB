@@ -100,7 +100,7 @@
     "target": {
       "type": "object",
       "additionalProperties": false,
-      "description": "The database the bot's engine connects to, from its password-less connection string. The laptop and the connect service compare it with the admin connection string by database identity and refuse a mismatch (CO-17). Absent in a connect-only code (INSTALL, or AGENT with a verifier, both with engine), which only the connect service runs; the laptop command refuses it (CONNECT_ONLY).",
+      "description": "The database the bot's engine connects to, from its password-less connection string. The laptop and the connect service compare it with the admin connection string by database identity and refuse a mismatch (CO-17). Absent in a connect-only code (INSTALL, or AGENT with a verifier, both with engine), which only the connect service runs.",
       "required": ["host", "port", "database"],
       "properties": {
         "host": {

@@ -395,33 +395,6 @@
       ]
     },
     {
-      "name": "refused: a connect-only code is for the connect page",
-      "code": "basalt-setup.1.PJBdb6JAFIb_y0nvlmlnrKJO4sUUtFXESou2uNmYAQecOjB0gPrR-N837G72XJ3kPDlvnvcbUm1yXgMlFlSibsrpDihgwknaHySo14kHqJ_cczRMMUb4_wgCFhxk0dLTxWvI5nOwoDQilSegEPOKqxosyBpudkC_ITU6B4otqDVQYl8tiBup_oTd9m4xWMAzUdQtWvBcAAUl-G4b6_YLVyrksRJVe66Svch5BfQnlE2sZAK_rhZ8CSNTKQxQeHVemI9enxjq9OybLh7alAVT94GtHh-O2czJKt8NussxG41uzt33U3R3Kcovd_nj7TDTy_eJDPjjnVfNVPg514P95lE5jX4ejGjWU5FbzLpv2jddW77tz59RkXB395Lovn_5IpNz9vR81vu78QgsqGpei1wUdShzoZvar4Det-VdLRCnUhpRsRoodHDHRoSgDg6xTUmHErIBC0SRyUK0xn81PXEGCv7kcBwfoydPb6aXD-ywIJr-210WJG6QsfFqfRzGpvhQ5jDG276XknB4CS4P9kZsF-TeW61NUFbPmJHhZGG69mrpR2ibqxdycLScBB4aLNbI8Vf9ue-o-JRuULhmcL3-DgAA__8.mvDCHA",
-      "now": "2026-11-20T06:07:11Z",
-      "database": {
-        "guardVersion": 0,
-        "roles": [],
-        "setups": []
-      },
-      "binaryGuardVersion": 16,
-      "refusal": "CONNECT_ONLY"
-    },
-    {
-      "name": "refused: connect-only before the clock checks",
-      "code": "basalt-setup.1.PJBdb6JAFIb_y0nvlmlnUFEn8WKW4kcpWhRIdLMxAw50ZPhYGKq18b9v2N3suTrJeXLePO8XpFVTcA2UGNAK3dWrE1DAhJN0PEnQyIwnaJwMOJqmGCP8f8QADMhl2dNs4awDMKBuRCqvQCHmLVcaDMg63pyAfkHaVAVQbICugBLrbkDcSfUn6nH0iMEAnolS92jJCwEUlOCnY1z1X7hSAY-VaPtzm7yLgrdAf0DdxUom8PNuwIdoZCpFAxR29pZ5aLdkyBxZD0M8tagfvjxvnWixxe8vu1x7QTh6C9ls9lC6n4vzdDkyr69WNBxMUiXiTXSbs9d9bi0Pev1LVpeTmdXdfkaHt-ypTIPE2W2VYw82alOsvhVe9HRN35V27OFJMsIn3uLjMgMDWs21KESpA1mIqtNeC3TQV3c3QFxr2YiWaaBgYtNChCATB9iixKSEHMAAUWayFL3xX01XfAIFb55fnMt-6VaH1e2MbebvV__2Z-Ynz37GnDC6TOOmPKsmd_Bx7KYkmN7823frII5rMnDDqPHrdoMZmc7XzdAK37w9OhZqS3K7knPfRZN1hGwvHL96toqv6QEFEYP7_XcAAAD__w.phy-0Q",
-      "now": "2026-11-22T07:00:00Z",
-      "database": {
-        "prefix": "basalt",
-        "guardVersion": 16,
-        "roles": [
-          "basalt_agent_lead_bot"
-        ],
-        "setups": []
-      },
-      "binaryGuardVersion": 16,
-      "refusal": "CONNECT_ONLY"
-    },
-    {
       "name": "all tables with a target runs on the laptop",
       "code": "basalt-setup.1.PFHdbuI8EH2XUe8-m8YhBGqJixRaCh9s-VtRulqtnGSSeHHiYDsUWvHuqyDtzu2ZOXN-viDTphQOOCNg0TX1NAUOHhMs6w8S2vPjAe0nXUEfMs-j3r_BAAgcZNVuT79tttF8DgRqg5k8A4dYWKEcEHDC5OiAf0GhrQMO4sNSj2JDE6ycEYqyTq21QtOxTS1iYbGT6LLl0sYBD3tBl0Aq3A0CDrW2LjdogcDfgzVmLXGcpJjlhfx9UGWl66OxDq4E8kaYtBWQGV0C9wg4DZyFVwJxI9XNbqfX8YCAyLG6aa1E2f5SKNJfsW59CKW2IlZoW9gmBZbCAv8BdRMrmcDPK4ETGplJNMBhM1pHC7p5iajfC-8C7yHk0Wo6foy-Tx4_8tkot4vxKlg-RcPh3SV4O-_vP6v6NF7-tzvM9PLtWa7E5P5_O1Pb41wPiveJGjX6dTDkeU_tx9Us2OmFCUK5Ky7HfZWIcbpOdH_xeWLPl_zl9aKL-6dhm5ATDkus3FaWqBu3sMC7bX1XAniupUEbtaX4nh9Sxqjvbb2QM58z9g7XPwEAAP__.8IxXqQ",
       "now": "2026-11-20T06:07:11Z",

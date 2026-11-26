@@ -133,12 +133,6 @@ func (s *Setup) listedSchemas() []string {
 // publicSchema is the schema a dropped role's tables are ticked in.
 const publicSchema = "public"
 
-// errTicksRequired refuses to grant a listing the person did not tick: an
-// AGENT code whose role does not exist and that names no tables.
-func errTicksRequired(agent string) error {
-	return setuprunRefuse(SetuprunCodeNoTables, fmt.Sprintf("%s has no tables in this database: tick the tables to give %s on the connect page. Nothing changed", agent, agent))
-}
-
 // Include gives Prepare the tables the person left ticked on the connect
 // page. Prepare checks them after the database's own refusals (so a code
 // that already ran is USED, whatever the ticks): for a code without ticks
@@ -185,19 +179,12 @@ func errTablesChanged() error {
 }
 
 // NewSetuprun decodes code and applies the checks that need no database, in the
-// contract's order (step 1): the codec, CONNECT_ONLY unless connectPage
-// (the laptop command refuses a code without target before the clock
-// checks; the connect service runs it), then this clock and this binary's
-// guard (setupcode.CheckLocal).
-func NewSetuprun(b SetuprunBackend, code string, now time.Time, connectPage bool) (*Setup, error) {
+// contract's order (step 1): the codec (a code without target is
+// accepted), then this clock and this binary's guard (setupcode.CheckLocal).
+func NewSetuprun(b SetuprunBackend, code string, now time.Time) (*Setup, error) {
 	p, err := setupcode.Decode(code)
 	if err != nil {
 		return nil, err
-	}
-	if !connectPage {
-		if err := setupcode.CheckNotConnectOnly(p); err != nil {
-			return nil, err
-		}
 	}
 	if err := setupcode.CheckLocal(p, now, b.LatestVersion()); err != nil {
 		return nil, err
@@ -605,10 +592,6 @@ func (p *Prepared) Plan(ctx context.Context, allRows []string) (guardmodel.Scrip
 }
 
 func (p *Prepared) plan(ctx context.Context, policies []guardmodel.BlindTable) (guardmodel.Script, error) {
-	if (p.asInstall || p.noGrants) && p.Ticked() && !p.ticks {
-		// Never every table in public: only the ones the person ticked.
-		return guardmodel.Script{}, errTicksRequired(p.P.Agent.Name)
-	}
 	opts := guardmodel.InitOptions{Names: p.Names, UpTo: p.P.Guard.To}
 	agent := ""
 	if p.P.Agent != nil {

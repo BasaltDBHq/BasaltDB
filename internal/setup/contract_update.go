@@ -33,7 +33,7 @@ const msgPasskeyNotActive = "This passkey is not active any more. Nothing change
 // INVALID. Then, in one transaction, revoke_passkey(credentialID, true). A
 // credentialID that is not an active passkey is ANSWERS_INVALID.
 func (c Contract) RevokePasskey(ctx context.Context, conn Querier, at ConnConfig, req ContractRequest, credentialID []byte) (ContractRevoked, error) {
-	s, err := NewSetuprun(c.be, req.Code, req.Now, true)
+	s, err := NewSetuprun(c.be, req.Code, req.Now)
 	if err != nil {
 		return ContractRevoked{}, err
 	}

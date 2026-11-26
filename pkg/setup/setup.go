@@ -44,20 +44,15 @@ type Request struct {
 	Code string
 	// Now is the clock the code's times are checked against.
 	Now time.Time
-	// ConnectPage accepts a connect-only code (no target), which only the
-	// connect service runs, with the database of the connection it opened.
-	// Unset, such a code is refused CONNECT_ONLY first, as the laptop
-	// command refuses it.
-	ConnectPage bool
 	// Included are the tables the person left ticked on the connect page
 	// (CONTRACT.md, Connect, Tables on the connect page); nil is no ticks
-	// (the laptop command, and CheckSetup, which lists every table). The
-	// connect page ticks tables of an INSTALL code with agent.allTables:
-	// Check and Run then cover exactly the included tables (their
-	// questions, columns and grants), an entry the listing lacks is
-	// TABLES_CHANGED, and none at all is NO_TABLES. For any other code its
-	// Tables must be empty (ANSWERS_INVALID). Run with ConnectPage refuses
-	// such a code without Included, NO_TABLES.
+	// (CheckSetup, which lists every table). The connect page ticks tables
+	// of an INSTALL code with agent.allTables: Check and Run then cover
+	// exactly the included tables (their questions, columns and grants), an
+	// entry the listing lacks is TABLES_CHANGED, and none at all is
+	// NO_TABLES. For any other code its Tables must be empty
+	// (ANSWERS_INVALID). Run refuses such a code without Included,
+	// NO_TABLES.
 	Included *Included
 }
 
@@ -168,7 +163,7 @@ func described(d setuprun.ContractDescription, err error) (Description, error) {
 
 // contractRequest is req as the setup service takes it.
 func contractRequest(req Request) setuprun.ContractRequest {
-	return setuprun.ContractRequest{Code: req.Code, Now: req.Now, ConnectPage: req.ConnectPage, Included: (*setuprun.ContractIncluded)(req.Included)}
+	return setuprun.ContractRequest{Code: req.Code, Now: req.Now, Included: (*setuprun.ContractIncluded)(req.Included)}
 }
 
 // description is the service's description of a code.
@@ -223,12 +218,11 @@ type Checked struct {
 	// order and then column order, with its class in the database now
 	// (UNCLASSIFIED with none stored, and in a database with no guard
 	// yet); for an UPGRADE code, which names no agent, the columns of every
-	// table with a readable column (pii_readable_columns()). Only with
-	// Request.ConnectPage.
+	// table with a readable column (pii_readable_columns()).
 	Columns []ColumnLabel
 	// Passkeys are the database's active passkeys, for a code with a
 	// target (the connect page's passkey list, CONTRACT.md, Update on the
-	// connect page). Only with Request.ConnectPage.
+	// connect page).
 	Passkeys []ActivePasskey
 }
 
@@ -544,9 +538,6 @@ const (
 	// CodeClassesChanged is a column label whose class stored now is not
 	// the one the page showed, or whose column is gone: nothing changed.
 	CodeClassesChanged = setuprun.SetuprunCodeClassesChanged
-	// CodeConnectOnly is a connect-only code given without
-	// Request.ConnectPage: only the connect page runs it.
-	CodeConnectOnly = string(setupcode.RefusalConnectOnly)
 	// CodeGuardUnusable is a database with an older BasaltDB install this
 	// version can neither install over nor update: remove it first, as the
 	// message's link says. Nothing changed.
@@ -569,7 +560,7 @@ var codes = []string{
 	string(setupcode.RefusalRoleExists), string(setupcode.RefusalRoleMissing),
 	CodeEngineRevoked, CodeTargetMismatch, CodeTablesMissing,
 	CodeAnswersInvalid, CodePasskeyRequired, CodePasskeyInvalid, CodePasskeyNotRegistered, CodeSetupFailed,
-	CodeNoTables, CodeConnectOnly, CodeTablesChanged, CodeClassesChanged, CodeGuardUnusable,
+	CodeNoTables, CodeTablesChanged, CodeClassesChanged, CodeGuardUnusable,
 	CodeSetupUnconfirmed,
 }
 

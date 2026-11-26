@@ -28,10 +28,9 @@ func NewContract(be ContractBackend) Contract { return Contract{be: be} }
 
 // ContractRequest is what every step is given (pkg/setup's Request).
 type ContractRequest struct {
-	Code        string
-	Now         time.Time
-	ConnectPage bool
-	Included    *ContractIncluded
+	Code     string
+	Now      time.Time
+	Included *ContractIncluded
 }
 
 // ContractIncluded are the tables ticked on the connect page.
@@ -221,7 +220,7 @@ type ContractResult struct {
 
 // Describe decodes the code and applies the checks that need no database.
 func (c Contract) Describe(req ContractRequest) (ContractDescription, error) {
-	s, err := NewSetuprun(c.be, req.Code, req.Now, req.ConnectPage)
+	s, err := NewSetuprun(c.be, req.Code, req.Now)
 	if err != nil {
 		return ContractDescription{}, err
 	}
@@ -286,9 +285,6 @@ func (c Contract) Check(ctx context.Context, conn Querier, at ConnConfig, req Co
 	if out.PasskeyNeeded, err = PasskeyNeeded(ctx, c.be, conn, false); err != nil {
 		return ContractChecked{}, err
 	}
-	if !req.ConnectPage { // the laptop command shows no labels and no passkeys
-		return out, nil
-	}
 	if out.Columns, err = c.checkLabels(ctx, conn, s); err != nil {
 		return ContractChecked{}, err
 	}
@@ -331,7 +327,7 @@ func (c Contract) activePasskeys(ctx context.Context, q Querier) ([]guardmodel.R
 
 // newSetup is NewSetuprun for req, with its ticked tables.
 func (c Contract) newSetup(req ContractRequest) (*Setup, error) {
-	s, err := NewSetuprun(c.be, req.Code, req.Now, req.ConnectPage)
+	s, err := NewSetuprun(c.be, req.Code, req.Now)
 	if err != nil {
 		return nil, err
 	}
@@ -467,7 +463,7 @@ func checkColumnClasses(s *Setup, in ContractRunInput) error {
 // Its refusals come in pkg/setup's Run order. Approve's error is returned
 // as it is.
 func (c Contract) Run(ctx context.Context, conn Querier, at ConnConfig, req ContractRequest, in ContractRunInput) (ContractResult, error) {
-	if req.ConnectPage && req.Included == nil {
+	if req.Included == nil {
 		req.Included = &ContractIncluded{} // the page always sends its ticks: none is NO_TABLES
 	}
 	s, err := c.newSetup(req)

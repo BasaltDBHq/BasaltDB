@@ -8,7 +8,7 @@ import (
 
 // urlChars are the characters the URL rule allows besides letters and
 // digits (RFC 3986 unreserved, reserved and the percent sign). Every one is
-// between 0x21 and 0x7E (CONTRACT.md, Terminal hyperlinks).
+// between 0x21 and 0x7E (CONTRACT.md, Links in the terminal).
 const urlChars = "-._~:/?#[]@!$&'()*+,;=%"
 
 // BadURLError says which character of a URL breaks the URL rule. It holds

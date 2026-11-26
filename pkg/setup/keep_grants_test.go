@@ -79,7 +79,7 @@ func TestAgentCodeWithNoTablesKeepsTheRoleGrants(t *testing.T) {
 	require.Empty(t, desc.Write)
 	require.Empty(t, desc.Read)
 	require.Nil(t, desc.AllTablesSchemas)
-	checked, err := setup.Check(ctx, d.Admin, connectPage(code))
+	checked, err := setup.Check(ctx, d.Admin, request(code))
 	require.NoError(t, err)
 	require.False(t, checked.RunsAsInstall)
 	require.False(t, checked.Ticked)
@@ -103,7 +103,7 @@ func TestAgentCodeWithNoTablesKeepsTheRoleGrants(t *testing.T) {
 	// it and names no tables. The grants stay exactly as they were.
 	d.Exec(t, `ALTER ROLE `+pgx.Identifier{role}.Sanitize()+` PASSWORD 'not-the-bots'`)
 	rotate := newCode(t, d, keepGrants(true))
-	checked, err = setup.Check(ctx, d.Admin, connectPage(rotate))
+	checked, err = setup.Check(ctx, d.Admin, request(rotate))
 	require.NoError(t, err)
 	require.Contains(t, checked.Summary[0], "This replaces the password of the existing agent bot")
 	require.False(t, checked.Ticked)
@@ -149,18 +149,16 @@ func TestAgentCodeWithNoTablesForADroppedRoleIsAnInstallWithTicks(t *testing.T) 
 	d.Exec(t, `DROP OWNED BY `+role+`; DROP ROLE `+role)
 
 	code := newCode(t, d, keepGrants(true))
-	checked, err := setup.Check(ctx, d.Admin, connectPage(code))
+	checked, err := setup.Check(ctx, d.Admin, request(code))
 	require.NoError(t, err)
 	require.True(t, checked.RunsAsInstall)
 	require.True(t, checked.Ticked, "the person ticks the tables")
 	require.Equal(t, []string{"public.lead_notes", "public.lead_owner", "public.leads", "public.note_tags", "public.payroll"}, checked.Tables)
 	require.Contains(t, checked.Summary[0], "This creates the agent bot")
 
-	// No ticks: refused, nothing changed, on the page and without it.
-	_, err = setup.Run(ctx, d.Admin, connectPage(code), setup.RunInput{})
-	require.Equal(t, setup.CodeNoTables, codeOf(t, err))
+	// No ticks: refused, nothing changed, never every table in public.
 	_, err = setup.Run(ctx, d.Admin, request(code), setup.RunInput{})
-	require.Equal(t, setup.CodeNoTables, codeOf(t, err), "never every table in public unticked")
+	require.Equal(t, setup.CodeNoTables, codeOf(t, err))
 	require.False(t, roleExists(t, d, d.Names.Prefix+"_agent_bot"), "nothing changed")
 
 	res, err := setup.Run(ctx, d.Admin, ticked(code, "public.leads"), setup.RunInput{})
@@ -187,14 +185,12 @@ func TestAgentCodeWithNoTablesForARoleWithNoGrantsNeedsTicks(t *testing.T) {
 
 	for _, verifier := range []bool{false, true} {
 		code := newCode(t, d, keepGrants(verifier))
-		checked, err := setup.Check(ctx, d.Admin, connectPage(code))
+		checked, err := setup.Check(ctx, d.Admin, request(code))
 		require.NoError(t, err)
 		require.False(t, checked.RunsAsInstall, "the role exists")
 		require.True(t, checked.Ticked, "the person ticks the tables")
 		require.Equal(t, []string{"public.lead_notes", "public.lead_owner", "public.leads", "public.note_tags", "public.payroll"}, checked.Tables)
 
-		_, err = setup.Run(ctx, d.Admin, connectPage(code), setup.RunInput{})
-		require.Equal(t, setup.CodeNoTables, codeOf(t, err), "no ticks on the page")
 		_, err = setup.Run(ctx, d.Admin, request(code), setup.RunInput{})
 		require.Equal(t, setup.CodeNoTables, codeOf(t, err), "never every table in public unticked")
 		require.Empty(t, grantedOn(roleACL(t, d, role)), "nothing changed")

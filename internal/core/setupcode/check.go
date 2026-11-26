@@ -55,16 +55,6 @@ func CheckLocal(p Payload, now time.Time, binaryGuardVersion int) error {
 	return nil
 }
 
-// CheckNotConnectOnly refuses a connect-only code (no target) on the laptop
-// path (removed), before the clock checks: only the connect
-// page runs it (CONNECT_ONLY).
-func CheckNotConnectOnly(p Payload) error {
-	if !p.ConnectOnly() {
-		return nil
-	}
-	return refuseWith(RefusalConnectOnly, "This setup code is for the connect page: open the link "+p.agentWord()+" sent.")
-}
-
 // HasVerifier reports whether p sets the agent's password: an INSTALL
 // code, or an AGENT code that rotates it.
 func (p Payload) HasVerifier() bool { return p.Agent != nil && p.Agent.Verifier != "" }

@@ -336,7 +336,7 @@ func TestSetupLaptopFixtures(t *testing.T) {
 			}
 		})
 	}
-	for _, r := range []string{"", "CONNECT_ONLY", "EXPIRED", "SETUP_ID_IN_FUTURE", "BINARY_TOO_OLD", "PREFIX_MISMATCH", "USED", "SUPERSEDED", "ROLE_EXISTS", "ROLE_MISSING"} {
+	for _, r := range []string{"", "EXPIRED", "SETUP_ID_IN_FUTURE", "BINARY_TOO_OLD", "PREFIX_MISMATCH", "USED", "SUPERSEDED", "ROLE_EXISTS", "ROLE_MISSING"} {
 		require.True(t, refusals[r], "a laptop fixture for %q", r)
 	}
 }
@@ -346,9 +346,6 @@ func laptopDecision(t *testing.T, p map[string]any, l laptopFixture, now time.Ti
 	id, kind, prefix := p["setupId"].(string), p["kind"].(string), p["prefix"].(string)
 	to := int(p["guard"].(map[string]any)["to"].(float64))
 	db := l.Database
-	if _, ok := p["target"]; !ok {
-		return "CONNECT_ONLY", "" // before the clock checks
-	}
 	switch {
 	case !now.Before(expires):
 		return "EXPIRED", ""

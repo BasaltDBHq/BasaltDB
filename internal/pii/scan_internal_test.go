@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
@@ -21,8 +21,8 @@ import (
 // fakeFields is a store's reader in memory: each resource's rows, one value
 // per field of the target (nil for none), or an error.
 type fakeFields struct {
-	rows    map[agentstore.ResourceRef][][]any
-	errs    map[agentstore.ResourceRef]error
+	rows    map[action.ResourceRef][][]any
+	errs    map[action.ResourceRef]error
 	targets []piistore.ScanTarget
 	pages   []int
 }
@@ -59,7 +59,7 @@ func (f *fakeFields) Read(_ context.Context, t piistore.ScanTarget, pageRows int
 // identifier is an IDENTIFIER email field of resource.
 func identifier(resource, name, field string) piistore.FieldClass {
 	return piistore.FieldClass{
-		Ref: agentstore.FieldRef(resource + "#" + field), Resource: agentstore.ResourceRef(resource),
+		Ref: action.FieldRef(resource + "#" + field), Resource: action.ResourceRef(resource),
 		Namespace: "db", ResourceName: name, Field: field,
 		Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityEmail,
 	}
@@ -73,11 +73,11 @@ func scanFixture() (*fakeClasses, *fakeFields) {
 		identifier("r1", "accounts", "owner"),
 		piistore.FieldClass{Ref: "r2#note", Resource: "r2", Namespace: "db", ResourceName: "users", Field: "note", Class: guardmodel.ClassPublic},
 	)
-	fields := &fakeFields{rows: map[agentstore.ResourceRef][][]any{
+	fields := &fakeFields{rows: map[action.ResourceRef][][]any{
 		// home, work
 		"r2": {{"a@corp.ee", json.RawMessage(`"b@corp.ee"`)}, {nil, ""}, {"c@corp.ee", nil}},
 		"r1": {{"d@corp.ee"}},
-	}, errs: map[agentstore.ResourceRef]error{}}
+	}, errs: map[action.ResourceRef]error{}}
 	return classes, fields
 }
 

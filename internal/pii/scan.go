@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 )
@@ -275,7 +275,7 @@ type scanTable struct {
 // byTable groups fields by resource, in a stable order: resources by printed
 // name, fields by name.
 func byTable(cols []IdentifierColumn) []scanTable {
-	idx := map[agentstore.ResourceRef]int{}
+	idx := map[action.ResourceRef]int{}
 	var groups [][]IdentifierColumn
 	for _, c := range cols {
 		i, ok := idx[c.Resource]

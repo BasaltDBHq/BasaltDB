@@ -8,7 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 )
@@ -38,7 +38,7 @@ type Classes interface {
 	Unclassified(ctx context.Context) ([]piistore.Unclassified, error)
 	// ResourceOf is the resource that holds ref, for a ref the map does not
 	// know. ref is never empty.
-	ResourceOf(ref agentstore.FieldRef) agentstore.ResourceRef
+	ResourceOf(ref action.FieldRef) action.ResourceRef
 	// Shared is true for a source others may share a load with (a pool),
 	// false inside a caller's transaction (a write's RETURNING), which
 	// reads alone, on its own connection.
@@ -75,15 +75,15 @@ func marksEqual(m, o piistore.Marks) bool {
 
 // fieldClass is one field of a snapshot.
 type fieldClass struct {
-	ref      agentstore.FieldRef
-	resource agentstore.ResourceRef
+	ref      action.FieldRef
+	resource action.ResourceRef
 	class    Class
 }
 
 // snapshot is one load of the map; it is never changed after the load.
 type snapshot struct {
-	cols      map[agentstore.FieldRef]Class
-	resources map[agentstore.ResourceRef]struct{}
+	cols      map[action.FieldRef]Class
+	resources map[action.ResourceRef]struct{}
 	// fields are the classes in the store's order.
 	fields []fieldClass
 	marks  piistore.Marks
@@ -92,8 +92,8 @@ type snapshot struct {
 // newSnapshot keys a store's snapshot by field and resource.
 func newSnapshot(s piistore.Snapshot) *snapshot {
 	out := &snapshot{
-		cols:      make(map[agentstore.FieldRef]Class, len(s.Fields)),
-		resources: map[agentstore.ResourceRef]struct{}{},
+		cols:      make(map[action.FieldRef]Class, len(s.Fields)),
+		resources: map[action.ResourceRef]struct{}{},
 		fields:    make([]fieldClass, 0, len(s.Fields)),
 		marks:     s.Marks,
 	}
@@ -125,8 +125,8 @@ type Map struct {
 	joins atomic.Int64
 
 	mu        sync.Mutex // guards the fields below; never held during I/O
-	tried     map[agentstore.ResourceRef]struct{}
-	warned    map[agentstore.FieldRef]struct{}
+	tried     map[action.ResourceRef]struct{}
+	warned    map[action.FieldRef]struct{}
 	flight    *flight // the shared load running now, or nil
 	nextSeq   uint64  // the sequence number of the next load
 	storedSeq uint64  // the sequence number of the stored snapshot
@@ -146,7 +146,7 @@ func NewMap(log *slog.Logger) *Map {
 		panic("piidict: logger required")
 	}
 	return &Map{
-		log: log, tried: map[agentstore.ResourceRef]struct{}{}, warned: map[agentstore.FieldRef]struct{}{},
+		log: log, tried: map[action.ResourceRef]struct{}{}, warned: map[action.FieldRef]struct{}{},
 		nextSeq: 1,
 	}
 }
@@ -270,13 +270,13 @@ func (m *Map) Tick(ctx context.Context, c Classes) (reloaded bool, err error) {
 // computed value (an empty ref) has no class: its zero Class. A load that
 // fails is an error, so the caller does not return values it cannot
 // classify.
-func (m *Map) Resolve(ctx context.Context, c Classes, refs []agentstore.FieldRef) ([]Class, error) {
+func (m *Map) Resolve(ctx context.Context, c Classes, refs []action.FieldRef) ([]Class, error) {
 	s, err := m.current(ctx, c, refs)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]Class, len(refs))
-	var missing []agentstore.FieldRef
+	var missing []action.FieldRef
 	for i, r := range refs {
 		if r == "" {
 			continue
@@ -295,7 +295,7 @@ func (m *Map) Resolve(ctx context.Context, c Classes, refs []agentstore.FieldRef
 // current is the snapshot to resolve refs against, loading it first when
 // none is loaded or a resource of refs is unknown and not yet tried this
 // tick.
-func (m *Map) current(ctx context.Context, c Classes, refs []agentstore.FieldRef) (*snapshot, error) {
+func (m *Map) current(ctx context.Context, c Classes, refs []action.FieldRef) (*snapshot, error) {
 	s := m.snap.Load()
 	if s != nil && !s.unknown(c, refs) {
 		return s, nil
@@ -326,8 +326,8 @@ func (m *Map) current(ctx context.Context, c Classes, refs []agentstore.FieldRef
 
 // tryUnknownLocked marks the unknown resources of refs as tried for this
 // tick and returns the ones not tried before (one reload covers them all).
-func (m *Map) tryUnknownLocked(c Classes, s *snapshot, refs []agentstore.FieldRef) []agentstore.ResourceRef {
-	var fresh []agentstore.ResourceRef
+func (m *Map) tryUnknownLocked(c Classes, s *snapshot, refs []action.FieldRef) []action.ResourceRef {
+	var fresh []action.ResourceRef
 	for _, r := range refs {
 		if r == "" {
 			continue
@@ -345,7 +345,7 @@ func (m *Map) tryUnknownLocked(c Classes, s *snapshot, refs []agentstore.FieldRe
 	return fresh
 }
 
-func (s *snapshot) unknown(c Classes, refs []agentstore.FieldRef) bool {
+func (s *snapshot) unknown(c Classes, refs []action.FieldRef) bool {
 	for _, r := range refs {
 		if r == "" {
 			continue
@@ -359,7 +359,7 @@ func (s *snapshot) unknown(c Classes, refs []agentstore.FieldRef) bool {
 
 // warnMissing logs each unclassified field once per tick, by its ref (no
 // value, no name the agent did not already see).
-func (m *Map) warnMissing(refs []agentstore.FieldRef) {
+func (m *Map) warnMissing(refs []action.FieldRef) {
 	if len(refs) == 0 {
 		return
 	}
@@ -393,7 +393,7 @@ func (m *Map) Identifiers(ctx context.Context, c Classes) ([]IdentifierColumn, e
 
 // IdentifierColumn is one IDENTIFIER field to scan.
 type IdentifierColumn struct {
-	Ref      agentstore.FieldRef
-	Resource agentstore.ResourceRef
+	Ref      action.FieldRef
+	Resource action.ResourceRef
 	Class    Class
 }

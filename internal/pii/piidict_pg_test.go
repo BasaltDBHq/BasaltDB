@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
@@ -277,7 +276,7 @@ func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 					err = obs.Observe(ctx, resultFields(res.Columns), res.Rows)
 				}
 				if err == nil {
-					_, err = classes.Resolve(ctx, pgpii.Classes(f.pool), []agentstore.FieldRef{plain})
+					_, err = classes.Resolve(ctx, pgpii.Classes(f.pool), []action.FieldRef{plain})
 				}
 				if err != nil {
 					errs <- err

@@ -89,7 +89,9 @@ var pkgForwards = map[string][]string{
 // Check and Approved because another program's service runs the same pin
 // check as the engine's. Any other call from pkg/ to a decision fails, and
 // so does a listed one the package no longer makes
-// (TestPkgDecisionForwardsAreListed).
+// (TestPkgDecisionForwardsAreListed). The forwards, of the same names, are
+// for other modules: no package of this one but pkg/ and the dead code
+// root calls them (TestDecisionForwardsOnlyForOtherModules).
 var pkgDecisionForwards = map[string]map[string][]string{
 	"pkg/trustpin": {"trustpin": {"Check", "Approved"}},
 }

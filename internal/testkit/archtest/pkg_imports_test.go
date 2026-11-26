@@ -195,3 +195,82 @@ func TestPkgDecisionForwardsCatchOtherCalls(t *testing.T) {
 		t.Errorf("stale decision forwards = %q, want %q", got, want)
 	}
 }
+
+// pkgDecisionForwardRoot is the dead code check's root, which calls every
+// function of the public API.
+const pkgDecisionForwardRoot = "internal/testkit/pkgroot"
+
+// decisionForwardCallers returns each call, from a package of the module
+// outside pkg/ and the dead code root, of a pkg/ function that forwards to
+// a decision (pkgDecisionForwards), as "<package> <file>: <pkg>.<function>".
+// The forwards are for other modules: the engine calls the decision in
+// internal/core itself, where the decision rule sees it.
+func decisionForwardCallers(pkgs map[string]*goPkg, allow map[string]map[string][]string) []string {
+	var out []string
+	for rel, pk := range pkgs {
+		if rel == lPkg || strings.HasPrefix(rel, lPkg+"/") || rel == pkgDecisionForwardRoot {
+			continue
+		}
+		for _, f := range pk.files {
+			names := localNames(f.ast)
+			ast.Inspect(f.ast, func(n ast.Node) bool {
+				sel, ok := n.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				id, ok := sel.X.(*ast.Ident)
+				if !ok {
+					return true
+				}
+				fwd := strings.TrimPrefix(names[id.Name], modulePath+"/")
+				for _, fns := range allow[fwd] {
+					if in(fns, sel.Sel.Name) {
+						out = append(out, rel+" "+f.name+": "+fwd+"."+sel.Sel.Name)
+					}
+				}
+				return true
+			})
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// TestDecisionForwardsOnlyForOtherModules fails on a call from inside the
+// module to a pkg/ forward of a decision (pkg/trustpin's Check and
+// Approved): engine code calls internal/core/trustpin.
+func TestDecisionForwardsOnlyForOtherModules(t *testing.T) {
+	_, pkgs := loadModule(t)
+	for _, c := range decisionForwardCallers(pkgs, pkgDecisionForwards) {
+		t.Errorf("%s\n\tcall internal/core/trustpin; the pkg/ forward is for other modules", c)
+	}
+}
+
+// The ban on a probe: a service, an adapter and a package under pkg/
+// calling pkg/trustpin's forwards; only the first two fail, and the dead
+// code root and the other functions of pkg/trustpin pass.
+func TestDecisionForwardsCatchAnEngineCaller(t *testing.T) {
+	m := modulePath + "/"
+	src := func(pkg string, calls ...string) string {
+		s := "package " + pkg + "\n\nimport \"" + m + "pkg/trustpin\"\n\n"
+		for _, c := range calls {
+			s += "var _ = trustpin." + c + "\n"
+		}
+		return s
+	}
+	pkgs := parsePkgs(t, map[string]string{
+		"internal/setup/s.go":           src("setup", "Check", "Name"),
+		"internal/handoff/out/net/n.go": src("net", "Approved", "Fetch"),
+		"pkg/setup/p.go":                src("setup", "Check"),
+		"internal/testkit/pkgroot/m.go": src("main", "Check", "Approved"),
+		"internal/status/x.go":          src("status", "ValidSHA256"),
+	})
+	got := decisionForwardCallers(pkgs, pkgDecisionForwards)
+	want := []string{
+		"internal/handoff/out/net n.go: pkg/trustpin.Approved",
+		"internal/setup s.go: pkg/trustpin.Check",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("callers = %q, want %q", got, want)
+	}
+}

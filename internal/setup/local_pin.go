@@ -11,7 +11,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/trustpin"
 	"github.com/basaltdbhq/basaltdb/internal/core/trustprofile"
-	"github.com/basaltdbhq/basaltdb/internal/lib/certroots"
 )
 
 // The database certificate of an install of a real database (CONTRACT.md,
@@ -100,7 +99,7 @@ func (s *LocalService) readPin(ctx context.Context, req Request) (*pin, error) {
 		return nil, notVerified()
 	}
 	now := s.opts.Now()
-	seen := trustpin.Check(chain, host, now, certroots.Store{})
+	seen := trustpin.Check(chain, host, now, s.opts.PinRoots)
 	if seen.Public || !seen.Pinnable() {
 		return nil, notVerified()
 	}
@@ -109,7 +108,7 @@ func (s *LocalService) readPin(ctx context.Context, req Request) (*pin, error) {
 		r.TrustRoot = &TrustRoot{Subject: seen.Subject(), SHA256: seen.SHA256, ExpiresAt: seen.Top.NotAfter.UTC().Format(time.RFC3339)}
 		return nil, r
 	}
-	_, prof, err := trustpin.Approved(chain, host, now, req.TrustRoot, certroots.Store{})
+	_, prof, err := trustpin.Approved(chain, host, now, req.TrustRoot, s.opts.PinRoots)
 	switch {
 	case errors.Is(err, trustpin.ErrPublic):
 		return nil, notVerified()

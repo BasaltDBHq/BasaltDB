@@ -6,6 +6,8 @@ import (
 	"errors"
 	"os/user"
 
+	coretrust "github.com/basaltdbhq/basaltdb/internal/core/trustprofile"
+	"github.com/basaltdbhq/basaltdb/internal/lib/certroots"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
@@ -55,3 +57,5 @@ func (testBackend) ConnectPinned(context.Context, string, *trustprofile.Profile)
 func (testBackend) FetchChain(context.Context, string, int) ([]*x509.Certificate, error) {
 	return nil, errNoConnection
 }
+
+func (testBackend) PinRoots() coretrust.Roots { return certroots.Store{} }

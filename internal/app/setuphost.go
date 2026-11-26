@@ -12,7 +12,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
+	coretrust "github.com/basaltdbhq/basaltdb/internal/core/trustprofile"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/lib/certroots"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/keyfile"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
@@ -74,6 +76,10 @@ func (setupHost) LoadOrCreateEngineKeys(path string, now func() time.Time) (*cha
 func (setupHost) TrustProfileFor(configPath, host string) *trustprofile.Profile {
 	return trustdir.Set(configPath).For(host)
 }
+
+// PinRoots are the system's and the public roots the check of an unknown
+// authority reads.
+func (setupHost) PinRoots() coretrust.Roots { return certroots.Store{} }
 
 func (setupHost) OSOpenTrustedDir(dir string, owner int, create bool) (trustedDir, error) {
 	return osservice.OpenTrustedDirPort(dir, owner, create)

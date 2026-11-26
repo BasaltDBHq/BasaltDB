@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/handoff/out/handoffnet"
+	"github.com/basaltdbhq/basaltdb/internal/lib/certroots"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
@@ -45,6 +46,7 @@ func newTrustServer(t *testing.T, certHost string, operator ...*trustprofile.Pro
 			return dial(ctx, network, addr)
 		},
 		ReadChain: handoffnet.ReadChain,
+		PinRoots:  certroots.Store{},
 		Profiles:  trustprofiletest.Set(t, nil, operator...),
 		Login:     pgdial.Login,
 	}

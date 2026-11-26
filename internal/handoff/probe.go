@@ -15,11 +15,10 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
-	"github.com/basaltdbhq/basaltdb/internal/setup"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/trustpin"
-	"github.com/basaltdbhq/basaltdb/internal/lib/certroots"
+	coretrust "github.com/basaltdbhq/basaltdb/internal/core/trustprofile"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgtls"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -139,6 +138,9 @@ type Prober struct {
 	// verified against; nil uses the system's, plus the roots of the trust
 	// profile that matches the host (Supabase, Amazon RDS, the operator's).
 	Roots *x509.CertPool
+	// PinRoots are the system's and the public roots Approve's pin check
+	// reads; it is required to approve. internal/app gives certroots.Store.
+	PinRoots coretrust.Roots
 	// Profiles are the trust profiles the probe uses (package
 	// trustprofile); nil is Trust's. Tests give test CAs.
 	Profiles *trustprofile.Set
@@ -192,6 +194,9 @@ func (p Prober) Approve(ctx context.Context, a setupcode.Address, ip netip.Addr,
 	if p.ReadChain == nil {
 		return Pin{}, errors.New("handoff: the prober has no chain reader")
 	}
+	if p.PinRoots == nil {
+		return Pin{}, errors.New("handoff: the prober has no pin roots")
+	}
 	chain, err := p.ReadChain(ctx, p.Dial, ip, a.Host, a.Port)
 	switch {
 	case errors.Is(err, pgtls.ErrNoTLS):
@@ -199,7 +204,7 @@ func (p Prober) Approve(ctx context.Context, a setupcode.Address, ip netip.Addr,
 	case err != nil:
 		return Pin{}, &ReachError{Reason: reasonOf(err)}
 	}
-	seen, prof, err := trustpin.Approved(chain, a.Host, p.now(), approved, certroots.Store{})
+	seen, prof, err := trustpin.Approved(chain, a.Host, p.now(), approved, p.PinRoots)
 	switch {
 	case seen.System:
 		return Pin{}, nil

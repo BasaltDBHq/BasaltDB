@@ -107,9 +107,13 @@ func serviceIOName(path, name string) bool {
 	return in(serviceIOBanned[path], name)
 }
 
-// serviceIO returns one line per service package, file and banned name:
-// "<package> <file>: <name>". The lines carry no line numbers, so moving code
-// inside a file keeps them, and each move out of a service removes one.
+// serviceIO returns one line per service package, file, declaration and
+// banned name: "<package> <file>: <declaration>: <name>", with "(N times)"
+// when the declaration uses the name more than once, so a second use where
+// one is listed is a new line. A banned import is one line per file:
+// "<package> <file>: imports <path>". The lines carry no line numbers, so
+// moving code inside a declaration keeps them, and each move out of a
+// service removes one.
 func serviceIO(root string) ([]string, error) {
 	pkgs, err := load(root)
 	if err != nil {
@@ -131,61 +135,69 @@ func serviceIO(root string) ([]string, error) {
 					out = append(out, rel+" "+f.name+": dot-imports "+ip)
 				}
 			}
-			ast.Inspect(f.ast, func(n ast.Node) bool {
-				sel, ok := n.(*ast.SelectorExpr)
-				if !ok {
+			var uses []string
+			for _, d := range f.ast.Decls {
+				ast.Inspect(d, func(n ast.Node) bool {
+					sel, ok := n.(*ast.SelectorExpr)
+					if !ok {
+						return true
+					}
+					id, ok := sel.X.(*ast.Ident)
+					if !ok {
+						return true
+					}
+					if ip, ok := names[id.Name]; ok && serviceIOName(ip, sel.Sel.Name) {
+						uses = append(uses, rel+" "+f.name+": "+declName(d, sel)+": "+strings.TrimPrefix(ip, modulePath+"/")+"."+sel.Sel.Name)
+					}
 					return true
-				}
-				id, ok := sel.X.(*ast.Ident)
-				if !ok {
-					return true
-				}
-				if ip, ok := names[id.Name]; ok && serviceIOName(ip, sel.Sel.Name) {
-					out = append(out, rel+" "+f.name+": "+strings.TrimPrefix(ip, modulePath+"/")+"."+sel.Sel.Name)
-				}
-				return true
-			})
+				})
+			}
+			out = append(out, counted(uses)...)
 		}
 	}
 	slices.Sort(out)
 	return slices.Compact(out), nil
 }
 
-// serviceIOBaselines list the service I/O the check still lets through. The
-// second holds the calls banned after the first was written (ownerfile's
-// opens and reads, os/user lookups), so neither file ever gains a line.
-var serviceIOBaselines = []string{"serviceio_baseline.txt", "serviceio_lookups_baseline.txt"}
+// serviceIOBaseline lists the service I/O the check still lets through.
+const serviceIOBaseline = "serviceio_calls_baseline.txt"
 
+// TestServicesDoNoIO fails a file, process or socket call in a service that
+// the baseline does not list, and a baseline line that is no longer true. The
+// baseline only shrinks: move the I/O behind a port with an out/ adapter.
+// -update drops the lines no longer true and never adds one.
 func TestServicesDoNoIO(t *testing.T) {
 	root := moduleRoot(t)
 	got, err := serviceIO(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var base []string
-	for _, name := range serviceIOBaselines {
-		file := filepath.Join(root, "internal", "testkit", "archtest", name)
-		lines := readLines(t, file)
-		if *update {
-			lines = shrinkBaseline(lines, got)
-			if err := os.WriteFile(file, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
+	file := filepath.Join(root, "internal", "testkit", "archtest", serviceIOBaseline)
+	base := readLines(t, file)
+	if *update {
+		kept := shrinkBaseline(base, got)
+		if err := os.WriteFile(file, []byte(strings.Join(kept, "\n")+"\n"), 0o644); err != nil {
+			t.Fatal(err)
 		}
-		base = append(base, lines...)
+		if len(kept) < len(got) {
+			t.Errorf("%d new I/O lines in services were not added to %s; put them behind a port", len(got)-len(kept), serviceIOBaseline)
+		}
+		return
 	}
 	for _, l := range got {
 		if !slices.Contains(base, l) {
-			t.Errorf("%s\n\tnew I/O in a service; put it behind a port with an out/ adapter (do not add it to a baseline)", l)
+			t.Errorf("%s\n\tnew I/O in a service; put it behind a port with an out/ adapter (do not add it to %s)", l, serviceIOBaseline)
 		}
 	}
 	for _, l := range base {
 		if !slices.Contains(got, l) {
-			t.Errorf("%s\n\tno longer true; remove it from its baseline (%s)", l, strings.Join(serviceIOBaselines, " or "))
+			t.Errorf("%s\n\tno longer true; remove it from %s (or lower its count)", l, serviceIOBaseline)
 		}
 	}
 }
 
+// shrinkBaseline returns the lines of base that are still in got: an update
+// removes what was fixed and never adds what is new.
 func shrinkBaseline(base, got []string) []string {
 	var kept []string
 	for _, l := range base {
@@ -220,6 +232,7 @@ func TestServiceIOCatchesViolations(t *testing.T) {
 		"internal/ledger/sub/syslog.go":  "package sub\n\n" + imp("log/syslog"),
 		"internal/ledger/alias.go":       "package ledger\n\nimport (\n\tdisk \"os\"\n\tsock \"net\"\n)\n\nvar _ = disk.MkdirAll\nvar _ = sock.Listen\nvar _ = sock.DefaultResolver\n",
 		"internal/ledger/dot.go":         "package ledger\n\nimport . \"os\"\n\nvar _ = Remove\n",
+		"internal/ledger/twice.go":       "package ledger\n\nimport \"os/user\"\n\nfunc Once() { _, _ = user.Lookup(\"a\") }\n\nfunc Twice() {\n\t_, _ = user.Lookup(\"a\")\n\t_, _ = user.Lookup(\"b\")\n}\n",
 		"internal/ledger/resolve.go":     "package ledger\n\nimport \"net\"\n\nvar _ = net.ResolveTCPAddr\n",
 		"internal/ledger/tls.go":         "package ledger\n\nimport \"crypto/tls\"\n\nvar _ = tls.Dial\nvar _ = tls.NewListener\nvar _ tls.Config\n",
 		"internal/ledger/helpers.go":     "package ledger\n\nimport (\n\t\"" + m + "internal/config\"\n\t\"" + m + "internal/lib/atomicfile\"\n\t\"" + m + "internal/lib/pidlock\"\n\t\"" + m + "internal/lib/browser\"\n\t\"" + m + "internal/lib/sysdns\"\n\t\"" + m + "internal/lib/ownerfile\"\n\t\"" + m + "pkg/trustpin\"\n)\n\nvar _ = ownerfile.OpenNoFollow\nvar _ = ownerfile.Check\nvar _ = sysdns.Resolver{}\nvar _ = atomicfile.Write\nvar _ = pidlock.AcquireLock\nvar _ = config.Load\nvar _ = config.SocketPath\nvar _ = browser.Open\nvar _ = browser.Command\nvar _ = trustpin.Fetch\nvar _ = trustpin.Check\nvar _ atomicfile.Options\n",
@@ -235,24 +248,26 @@ func TestServiceIOCatchesViolations(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		"internal/ledger alias.go: net.DefaultResolver",
-		"internal/ledger alias.go: net.Listen",
-		"internal/ledger alias.go: os.MkdirAll",
-		"internal/ledger clean.go: os/user.Current",
+		"internal/ledger alias.go: _: net.DefaultResolver",
+		"internal/ledger alias.go: _: net.Listen",
+		"internal/ledger alias.go: _: os.MkdirAll",
+		"internal/ledger clean.go: _: os/user.Current",
 		"internal/ledger dot.go: dot-imports os",
-		"internal/ledger helpers.go: internal/config.Load",
-		"internal/ledger helpers.go: internal/lib/atomicfile.Write",
-		"internal/ledger helpers.go: internal/lib/browser.Open",
-		"internal/ledger helpers.go: internal/lib/ownerfile.OpenNoFollow",
-		"internal/ledger helpers.go: internal/lib/pidlock.AcquireLock",
-		"internal/ledger helpers.go: internal/lib/sysdns.Resolver",
-		"internal/ledger helpers.go: pkg/trustpin.Fetch",
-		"internal/ledger io.go: net.Dialer",
-		"internal/ledger io.go: os.ReadFile",
-		"internal/ledger io.go: path/filepath.WalkDir",
-		"internal/ledger resolve.go: net.ResolveTCPAddr",
-		"internal/ledger tls.go: crypto/tls.Dial",
-		"internal/ledger tls.go: crypto/tls.NewListener",
+		"internal/ledger helpers.go: _: internal/config.Load",
+		"internal/ledger helpers.go: _: internal/lib/atomicfile.Write",
+		"internal/ledger helpers.go: _: internal/lib/browser.Open",
+		"internal/ledger helpers.go: _: internal/lib/ownerfile.OpenNoFollow",
+		"internal/ledger helpers.go: _: internal/lib/pidlock.AcquireLock",
+		"internal/ledger helpers.go: _: internal/lib/sysdns.Resolver",
+		"internal/ledger helpers.go: _: pkg/trustpin.Fetch",
+		"internal/ledger io.go: _: net.Dialer",
+		"internal/ledger io.go: _: os.ReadFile",
+		"internal/ledger io.go: _: path/filepath.WalkDir",
+		"internal/ledger resolve.go: _: net.ResolveTCPAddr",
+		"internal/ledger tls.go: _: crypto/tls.Dial",
+		"internal/ledger tls.go: _: crypto/tls.NewListener",
+		"internal/ledger twice.go: Once: os/user.Lookup",
+		"internal/ledger twice.go: Twice: os/user.Lookup (2 times)",
 		"internal/ledger/sub proc.go: imports os/exec",
 		"internal/ledger/sub proc.go: imports syscall",
 		"internal/ledger/sub rpc.go: imports net/rpc",
@@ -261,5 +276,10 @@ func TestServiceIOCatchesViolations(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("serviceIO:\n got %q\nwant %q", got, want)
+	}
+	// A second call in a declaration the baseline lists changes its line,
+	// so the listed one-call line is stale and the counted line is new.
+	if slices.Contains(got, "internal/ledger twice.go: Twice: os/user.Lookup") {
+		t.Error("a declaration with two banned calls kept its one-call line; a second call would pass a listed declaration")
 	}
 }

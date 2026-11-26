@@ -59,6 +59,10 @@ printf 'a\nb\nc\n' >"$work/r/$bl/internal_one.txt"
 check 1 "an added line fails"
 
 setup
+printf '# why these stay\na\nb\n' >"$work/r/$bl/internal_one.txt"
+check 0 "an added comment line passes"
+
+setup
 printf 'y\n' >"$work/r/$bl/internal_two.txt"
 check 1 "a new file in the archtest baseline directory fails"
 

@@ -30,6 +30,7 @@ linters:
     - errname
     - errorlint
     - exhaustive
+    - forbidigo
     - gocheckcompilerdirectives
     - goconst
     - gocritic
@@ -73,6 +74,11 @@ linters:
           - revive
           - testifylint
           - errcheck
+          - forbidigo
+
+      - path: internal/lib/uniqueid/
+        linters:
+          - forbidigo
 
       - path: cmd/
         linters:
@@ -103,7 +109,6 @@ linters:
     - paralleltest
     - funlen
     - cyclop
-    - forbidigo
     - godox
     - nonamedreturns
     - testifylint
@@ -192,6 +197,13 @@ linters:
             - github.com/basaltdbhq/basaltdb/internal/core/largevalue
             - github.com/basaltdbhq/basaltdb/internal/core/passkey
             - github.com/basaltdbhq/basaltdb/internal/core/revert
+    # Every id BasaltDB generates is a UUIDv7 from internal/lib/uniqueid.
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^uuid\.New
+          pkg: ^github\.com/google/uuid$
+          msg: generate ids with internal/lib/uniqueid
     errcheck:
       check-type-assertions: true
       check-blank: false

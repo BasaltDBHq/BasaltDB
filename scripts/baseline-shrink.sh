@@ -4,8 +4,8 @@
 # scripts/shrink-only.txt, at the base and here; a path the base does not
 # have is a new baseline and is not checked. A directory's files are each a
 # baseline: a line that moves to another of its files, or a new file in it,
-# adds lines. Blank lines, trailing spaces and the order of lines do not
-# count.
+# adds lines. Blank lines, comment lines (#), trailing spaces and the order
+# of lines do not count.
 #
 # A change that moves a package renames its baseline lines and files:
 # scripts/baseline-renames.txt lists the moves, one "old/pkg<TAB>new/pkg"
@@ -38,9 +38,10 @@ entries() {
 	sed -e 's/#.*//' -e 's/[[:space:]]*$//' | grep -v '^$' || true
 }
 
-# tagged prints each non-blank line of stdin as "file<TAB>line".
+# tagged prints each line of stdin as "file<TAB>line", leaving out blank
+# lines and comment lines (starting with #).
 tagged() {
-	sed -e 's/[[:space:]]*$//' | grep -v '^$' | sed "s|^|$1	|" || true
+	sed -e 's/[[:space:]]*$//' -e '/^#/d' | grep -v '^$' | sed "s|^|$1	|" || true
 }
 
 renames=scripts/baseline-renames.txt

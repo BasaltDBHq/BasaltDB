@@ -24,6 +24,12 @@ bin/golangci-lint: bin
 	@ GOBIN=$(CURDIR)/bin go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(VERSION)
 	@ echo "done."
 
+bin/deadcode: VERSION := v0.39.0
+bin/deadcode: bin
+	@ printf "Install deadcode... "
+	@ GOBIN=$(CURDIR)/bin go install golang.org/x/tools/cmd/deadcode@$(VERSION)
+	@ echo "done."
+
 bin/gotestsum: VERSION := v1.13.0
 bin/gotestsum: bin
 	@ printf "Install gotestsum... "

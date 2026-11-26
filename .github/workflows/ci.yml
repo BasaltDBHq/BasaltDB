@@ -30,6 +30,9 @@ jobs:
       # Setting GOTOOLCHAIN in the workflow would make setup-go use the go line.
       - uses: ./.github/actions/go
       - run: make lint
+      # Dead code for linux and darwin against scripts/deadcode-allowlist.txt,
+      # which may only shrink.
+      - run: make deadcode
 
   vet:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false

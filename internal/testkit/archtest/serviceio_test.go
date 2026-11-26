@@ -66,8 +66,10 @@ var serviceIOBanned = map[string][]string{
 	// fetching a server's certificates dials it and runs a TLS handshake
 	modulePath + "/pkg/trustpin": {"Fetch"},
 	// the pid file lock and its reader
-	modulePath + "/internal/lib/pidlock": {"AcquireLock", "Running"},
-	modulePath + "/internal/lib/sysdns":  {"Resolver"},
+	modulePath + "/internal/lib/pidlock":   {"AcquireLock", "Running"},
+	modulePath + "/internal/lib/sysdns":    {"Resolver"},
+	modulePath + "/internal/lib/ownerfile": {"Open", "OpenNoFollow", "Read", "ReadOrCreate"},
+	"os/user":                              {"Lookup", "LookupId", "LookupGroup", "LookupGroupId", "Current"},
 	// the config functions that open, stat, lock, read or write a file; the
 	// path builders, validators and methods on a loaded Config are pure
 	modulePath + "/internal/config": {
@@ -149,44 +151,41 @@ func serviceIO(root string) ([]string, error) {
 	return slices.Compact(out), nil
 }
 
-const serviceIOBaseline = "serviceio_baseline.txt"
+// serviceIOBaselines list the service I/O the check still lets through. The
+// second holds the calls banned after the first was written (ownerfile's
+// opens and reads, os/user lookups), so neither file ever gains a line.
+var serviceIOBaselines = []string{"serviceio_baseline.txt", "serviceio_lookups_baseline.txt"}
 
-// TestServicesDoNoIO fails a file, process or socket call in a service that
-// the baseline does not list, and a baseline line that is no longer true. The
-// baseline only shrinks: move the I/O behind a port with an out/ adapter.
-// -update drops the lines no longer true and never adds one.
 func TestServicesDoNoIO(t *testing.T) {
 	root := moduleRoot(t)
 	got, err := serviceIO(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	file := filepath.Join(root, "internal", "testkit", "archtest", serviceIOBaseline)
-	base := readLines(t, file)
-	if *update {
-		kept := shrinkBaseline(base, got)
-		if err := os.WriteFile(file, []byte(strings.Join(kept, "\n")+"\n"), 0o644); err != nil {
-			t.Fatal(err)
+	var base []string
+	for _, name := range serviceIOBaselines {
+		file := filepath.Join(root, "internal", "testkit", "archtest", name)
+		lines := readLines(t, file)
+		if *update {
+			lines = shrinkBaseline(lines, got)
+			if err := os.WriteFile(file, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
 		}
-		if len(kept) < len(got) {
-			t.Errorf("%d new I/O lines in services were not added to %s; put them behind a port", len(got)-len(kept), serviceIOBaseline)
-		}
-		return
+		base = append(base, lines...)
 	}
 	for _, l := range got {
 		if !slices.Contains(base, l) {
-			t.Errorf("%s\n\tnew I/O in a service; put it behind a port with an out/ adapter (do not add it to %s)", l, serviceIOBaseline)
+			t.Errorf("%s\n\tnew I/O in a service; put it behind a port with an out/ adapter (do not add it to a baseline)", l)
 		}
 	}
 	for _, l := range base {
 		if !slices.Contains(got, l) {
-			t.Errorf("%s\n\tno longer true; remove it from %s", l, serviceIOBaseline)
+			t.Errorf("%s\n\tno longer true; remove it from its baseline (%s)", l, strings.Join(serviceIOBaselines, " or "))
 		}
 	}
 }
 
-// shrinkBaseline returns the lines of base that are still in got: an update
-// removes what was fixed and never adds what is new.
 func shrinkBaseline(base, got []string) []string {
 	var kept []string
 	for _, l := range base {
@@ -223,8 +222,8 @@ func TestServiceIOCatchesViolations(t *testing.T) {
 		"internal/ledger/dot.go":         "package ledger\n\nimport . \"os\"\n\nvar _ = Remove\n",
 		"internal/ledger/resolve.go":     "package ledger\n\nimport \"net\"\n\nvar _ = net.ResolveTCPAddr\n",
 		"internal/ledger/tls.go":         "package ledger\n\nimport \"crypto/tls\"\n\nvar _ = tls.Dial\nvar _ = tls.NewListener\nvar _ tls.Config\n",
-		"internal/ledger/helpers.go":     "package ledger\n\nimport (\n\t\"" + m + "internal/config\"\n\t\"" + m + "internal/lib/atomicfile\"\n\t\"" + m + "internal/lib/pidlock\"\n\t\"" + m + "internal/lib/browser\"\n\t\"" + m + "internal/lib/sysdns\"\n\t\"" + m + "pkg/trustpin\"\n)\n\nvar _ = sysdns.Resolver{}\nvar _ = atomicfile.Write\nvar _ = pidlock.AcquireLock\nvar _ = config.Load\nvar _ = config.SocketPath\nvar _ = browser.Open\nvar _ = browser.Command\nvar _ = trustpin.Fetch\nvar _ = trustpin.Check\nvar _ atomicfile.Options\n",
-		"internal/ledger/clean.go":       "package ledger\n\nimport (\n\t\"net\"\n\t\"os\"\n\t\"os/user\"\n\t\"path/filepath\"\n)\n\nvar _ = os.Getenv\nvar _ = os.ErrNotExist\nvar _ = os.O_RDONLY\nvar _ = os.ModeDir\nvar _ *os.File\nvar _ = net.JoinHostPort\nvar _ net.Conn\nvar _ = filepath.Join\nvar _ = user.Current\n",
+		"internal/ledger/helpers.go":     "package ledger\n\nimport (\n\t\"" + m + "internal/config\"\n\t\"" + m + "internal/lib/atomicfile\"\n\t\"" + m + "internal/lib/pidlock\"\n\t\"" + m + "internal/lib/browser\"\n\t\"" + m + "internal/lib/sysdns\"\n\t\"" + m + "internal/lib/ownerfile\"\n\t\"" + m + "pkg/trustpin\"\n)\n\nvar _ = ownerfile.OpenNoFollow\nvar _ = ownerfile.Check\nvar _ = sysdns.Resolver{}\nvar _ = atomicfile.Write\nvar _ = pidlock.AcquireLock\nvar _ = config.Load\nvar _ = config.SocketPath\nvar _ = browser.Open\nvar _ = browser.Command\nvar _ = trustpin.Fetch\nvar _ = trustpin.Check\nvar _ atomicfile.Options\n",
+		"internal/ledger/clean.go":       "package ledger\n\nimport (\n\t\"net\"\n\t\"os\"\n\t\"os/user\"\n\t\"path/filepath\"\n)\n\nvar _ = os.Getenv\nvar _ = os.ErrNotExist\nvar _ = os.O_RDONLY\nvar _ = os.ModeDir\nvar _ *os.File\nvar _ = net.JoinHostPort\nvar _ net.Conn\nvar _ = filepath.Join\nvar _ = user.Current\nvar _ user.User\n",
 		"internal/ledger/out/disk/d.go":  src("disk"),
 		"internal/ledger/in/cli/c.go":    src("cli"),
 		"internal/core/thing/t.go":       src("thing"),
@@ -239,10 +238,12 @@ func TestServiceIOCatchesViolations(t *testing.T) {
 		"internal/ledger alias.go: net.DefaultResolver",
 		"internal/ledger alias.go: net.Listen",
 		"internal/ledger alias.go: os.MkdirAll",
+		"internal/ledger clean.go: os/user.Current",
 		"internal/ledger dot.go: dot-imports os",
 		"internal/ledger helpers.go: internal/config.Load",
 		"internal/ledger helpers.go: internal/lib/atomicfile.Write",
 		"internal/ledger helpers.go: internal/lib/browser.Open",
+		"internal/ledger helpers.go: internal/lib/ownerfile.OpenNoFollow",
 		"internal/ledger helpers.go: internal/lib/pidlock.AcquireLock",
 		"internal/ledger helpers.go: internal/lib/sysdns.Resolver",
 		"internal/ledger helpers.go: pkg/trustpin.Fetch",

@@ -35,6 +35,9 @@ func staleImportsAllowlist(pkgs map[string]*goPkg, allow map[string][]string) []
 // exactly what pkg/ imports beyond its layer, so a forward that leaves
 // takes its line with it.
 func TestPkgImportsAllowlistOnlyShrinks(t *testing.T) {
+	for _, p := range pkgExtraProblems {
+		t.Errorf("pkg_imports_allowlist.txt: %s\n\teach line is \"pkg/<package>: <import>\"", p)
+	}
 	_, pkgs := loadModule(t)
 	for _, l := range staleImportsAllowlist(pkgs, pkgExtra) {
 		t.Errorf("pkg_imports_allowlist.txt: %s\n\tno longer imported beyond the layer; remove the line", l)
@@ -52,5 +55,21 @@ func TestPkgImportsAllowlistCatchesAStaleLine(t *testing.T) {
 	want := []string{"pkg/setup: internal/handoff", "pkg/setup: internal/lib/x"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("stale = %q, want %q", got, want)
+	}
+}
+
+func TestPkgImportsAllowlistRefusesABadLine(t *testing.T) {
+	allow, problems := parsePkgImports("pkg/setup: internal/setup\n\n  \nno separator here\ninternal/app: internal/setup\npkg/setup: \npkg/setup: internal/handoff\n")
+	want := map[string][]string{"pkg/setup": {"internal/setup", "internal/handoff"}}
+	if len(allow) != len(want) || !slices.Equal(allow["pkg/setup"], want["pkg/setup"]) {
+		t.Errorf("allow = %q, want %q", allow, want)
+	}
+	wantProblems := []string{
+		`line 4: "no separator here" is not "<package>: <import>"`,
+		`line 5: "internal/app: internal/setup" names internal/app, which is not under pkg/`,
+		`line 6: "pkg/setup:" is not "<package>: <import>"`,
+	}
+	if !slices.Equal(problems, wantProblems) {
+		t.Errorf("problems = %q, want %q", problems, wantProblems)
 	}
 }

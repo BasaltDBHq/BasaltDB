@@ -255,7 +255,7 @@ func TestReadOrCreateCreatesA0600FileOnceAndKeepsIt(t *testing.T) {
 	fi, err := os.Lstat(path)
 	require.NoError(t, err)
 	require.Equal(t, FileMode, fi.Mode().Perm())
-	require.Equal(t, uint64(1), uint64(fi.Sys().(*syscall.Stat_t).Nlink))
+	require.EqualValues(t, 1, fi.Sys().(*syscall.Stat_t).Nlink)
 
 	raw, _, err = ReadOrCreate(path, Rules{MaxBytes: 64}, func() ([]byte, error) { return []byte("other"), nil }, time.Now)
 	require.NoError(t, err)

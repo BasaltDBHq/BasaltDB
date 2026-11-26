@@ -195,12 +195,10 @@ type ContractTrustPin struct {
 }
 
 // ContractRunInput is what Run needs besides the request (pkg/setup's
-// RunInput). The caller refuses Passkey and AskPasskey both set.
+// RunInput).
 type ContractRunInput struct {
 	AllRows       []string
 	Passkey       *ContractPasskey
-	AskPasskey    func(ctx context.Context) (ContractPasskey, error)
-	AddPasskey    bool
 	Approve       func(ContractPlan) error
 	Committed     func(ContractResult)
 	ColumnClasses []ContractColumnClass
@@ -282,7 +280,7 @@ func (c Contract) Check(ctx context.Context, conn Querier, at ConnConfig, req Co
 	slices.Sort(out.Tables)
 	out.ReadOnly = slices.Clone(tables.ReadOnly)
 	out.Excluded = append(out.Excluded, tables.Excluded...)
-	if out.PasskeyNeeded, err = PasskeyNeeded(ctx, c.be, conn, false); err != nil {
+	if out.PasskeyNeeded, err = PasskeyNeeded(ctx, c.be, conn); err != nil {
 		return ContractChecked{}, err
 	}
 	if out.Columns, err = c.checkLabels(ctx, conn, s); err != nil {
@@ -531,10 +529,10 @@ func (c Contract) Run(ctx context.Context, conn Querier, at ConnConfig, req Cont
 			if err := s.RecheckTables(ctx, q); err != nil {
 				return err
 			}
-			if in.Passkey == nil && in.AskPasskey == nil {
+			if in.Passkey == nil {
 				// Refused before the script runs, not after it: nothing was
 				// changed to roll back.
-				return c.requirePasskey(ctx, q, in.AddPasskey)
+				return c.requirePasskey(ctx, q)
 			}
 			return nil
 		}
@@ -554,7 +552,7 @@ func (c Contract) Run(ctx context.Context, conn Querier, at ConnConfig, req Cont
 				registered = in.Passkey.stored()
 				return nil
 			}
-			return nil // none needed (checked first), or the laptop asks after the commit
+			return nil // none needed (checked first)
 		}
 		return ApplySetupWith(ctx, c.be, sameTx(tx), script, first, inTx)
 	})
@@ -574,14 +572,6 @@ func (c Contract) Run(ctx context.Context, conn Querier, at ConnConfig, req Cont
 	if in.Committed != nil {
 		in.Committed(res)
 	}
-	if in.AskPasskey == nil {
-		return res, nil
-	}
-	asked, err := c.askPasskey(ctx, conn, in)
-	if err != nil {
-		return res, PasskeyFailed(s.P, err)
-	}
-	res.Passkey = asked
 	return res, nil
 }
 
@@ -632,8 +622,8 @@ func (c Contract) writeLabels(ctx context.Context, tx Querier, s *Setup, in Cont
 // requirePasskey refuses PASSKEY_REQUIRED, in the setup's transaction
 // before its script runs, when the database needs the person's passkey and
 // none was given: nothing changed.
-func (c Contract) requirePasskey(ctx context.Context, tx Querier, add bool) error {
-	need, err := PasskeyNeeded(ctx, c.be, tx, add)
+func (c Contract) requirePasskey(ctx context.Context, tx Querier) error {
+	need, err := PasskeyNeeded(ctx, c.be, tx)
 	if err != nil {
 		return err
 	}
@@ -641,25 +631,4 @@ func (c Contract) requirePasskey(ctx context.Context, tx Querier, add bool) erro
 		return &SetuprunRefusalError{Code: SetuprunCodePasskeyRequired, Message: "this setup needs the person's portal passkey, and none was given"}
 	}
 	return nil
-}
-
-// askPasskey is the laptop's passkey step, after the setup committed (step
-// 7): it asks for the person's passkey and stores it when the database has
-// no active portal passkey, or in.AddPasskey asks for another.
-func (c Contract) askPasskey(ctx context.Context, conn Querier, in ContractRunInput) (*ContractStoredPasskey, error) {
-	need, err := PasskeyNeeded(ctx, c.be, conn, in.AddPasskey)
-	if err != nil || !need {
-		return nil, err
-	}
-	pk, err := in.AskPasskey(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if !pk.verified() {
-		return nil, errors.New("the passkey was not verified")
-	}
-	if err := c.be.RegisterPasskey(ctx, conn, pk.Cred, pk.Label); err != nil {
-		return nil, err
-	}
-	return pk.stored(), nil
 }

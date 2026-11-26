@@ -23,7 +23,7 @@ import (
 )
 
 // These tests run the engine's agent runtime against a real Postgres
-// through a setup from the laptop (CONTRACT.md, Setup from your laptop): the
+// through a setup (CONTRACT.md, Setup): the
 // engine serves only status until the database, read with the agent's own
 // credential, shows the setup recorded; then status clears the setup from
 // engine.json and the tools are served, with no restart.

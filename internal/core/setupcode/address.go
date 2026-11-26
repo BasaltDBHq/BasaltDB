@@ -56,7 +56,7 @@ func (a Address) Check() error {
 // --database-url (step 1) to the connection string the agent would log in
 // with at a: the database that string names, as init reads it, must be
 // exactly a, Supabase ref included. So the engine accepts no address that
-// the laptop path would read as another database.
+// would read as another database.
 func (a Address) checkAsDatabaseURL() error {
 	u := &url.URL{
 		Scheme: "postgres", User: url.User(LoginUser(a, "basalt")),

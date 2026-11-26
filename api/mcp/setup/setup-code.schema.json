@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/setup-code.v1.json",
   "title": "Setup code",
-  "description": "The JSON inside a setup code, basalt-setup.1.<b64url(deflate-raw(json))>.<check> (CONTRACT.md, Setup from your laptop). basalt init --remote makes it on the bot's machine; basalt init --setup-code reads it on the person's own computer, and the connect service reads it from the connect page. Never the agent's password (its SCRAM-SHA-256 verifier instead, which is sensitive) and never anything of the admin. Closed: an unknown key is refused. Rules a schema cannot state (guard.from <= guard.to, and < for UPGRADE; at least one table in write or read in an INSTALL code, unless agent.allTables; a table in only one of write and read; the agent role <prefix>_agent_<name> at most 63 bytes; expiresAt no later than the setupId's UUIDv7 time plus 10 minutes; a code without target carries engine, and an AGENT code without target carries agent.verifier) are in CONTRACT.md. Golden fixtures: setup-code.fixtures.json.",
+  "description": "The JSON inside a setup code, basalt-setup.1.<b64url(deflate-raw(json))>.<check> (CONTRACT.md, Setup). basalt init --remote makes it on the bot's machine; basalt init --setup-code reads it on the person's own computer, and the connect service reads it from the connect page. Never the agent's password (its SCRAM-SHA-256 verifier instead, which is sensitive) and never anything of the admin. Closed: an unknown key is refused. Rules a schema cannot state (guard.from <= guard.to, and < for UPGRADE; at least one table in write or read in an INSTALL code, unless agent.allTables; a table in only one of write and read; the agent role <prefix>_agent_<name> at most 63 bytes; expiresAt no later than the setupId's UUIDv7 time plus 10 minutes; a code without target carries engine, and an AGENT code without target carries agent.verifier) are in CONTRACT.md. Golden fixtures: setup-code.fixtures.json.",
   "oneOf": [
     { "$ref": "#/$defs/install" },
     { "$ref": "#/$defs/agentChange" },
@@ -90,7 +90,7 @@
     "setupId": {
       "type": "string",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-      "description": "UUIDv7 made by basalt init --remote. Single use: recorded in basalt_meta.setups by the laptop's install transaction. Time-ordered, so a code older than the agent's latest recorded setup is refused."
+      "description": "UUIDv7 made by basalt init --remote. Single use: recorded in basalt_meta.setups by the setup's transaction. Time-ordered, so a code older than the agent's latest recorded setup is refused."
     },
     "prefix": {
       "type": "string",
@@ -100,7 +100,7 @@
     "target": {
       "type": "object",
       "additionalProperties": false,
-      "description": "The database the bot's engine connects to, from its password-less connection string. The laptop and the connect service compare it with the admin connection string by database identity and refuse a mismatch (CO-17). Absent in a connect-only code (INSTALL, or AGENT with a verifier, both with engine), which only the connect service runs.",
+      "description": "The database the bot's engine connects to, from its password-less connection string. The connect service compares it with the admin connection string by database identity and refuse a mismatch (CO-17). Absent in a connect-only code (INSTALL, or AGENT with a verifier, both with engine), which only the connect service runs.",
       "required": ["host", "port", "database"],
       "properties": {
         "host": {
@@ -132,7 +132,7 @@
     "build": {
       "type": "string",
       "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$",
-      "description": "The bot's basalt version, named when the laptop's binary is older than guard.to (update basalt on this computer to at least <build>)."
+      "description": "The bot's basalt version, named when the setup package that runs the code is older than guard.to (BINARY_TOO_OLD)."
     },
     "table": {
       "type": "string",
@@ -150,7 +150,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["schemas"],
-      "description": "CONTRACT.md, The setup code. In place of write and read: the agent gets write access to every ordinary and partitioned table in these schemas that the admin role owns when the setup runs (read access only to one without a primary key). Tables made later are not covered. The connect page and the laptop command list the concrete tables before the person approves.",
+      "description": "CONTRACT.md, The setup code. In place of write and read: the agent gets write access to every ordinary and partitioned table in these schemas that the admin role owns when the setup runs (read access only to one without a primary key). Tables made later are not covered. The connect page lists the concrete tables before the person approves.",
       "properties": {
         "schemas": {
           "type": "array",

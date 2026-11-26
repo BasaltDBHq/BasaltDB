@@ -56,10 +56,10 @@ type ArgumentError struct {
 
 func (e *ArgumentError) Error() string { return e.Message }
 
-// SetupError is a call refused because the agent's setup from the laptop has
-// not run (CONTRACT.md, Setup from your laptop). Code is the pending setup
-// code, which the person runs on their own computer, and Fingerprint the
-// one it shows; Expired when it ran out.
+// SetupError is a call refused because the agent's setup has not run
+// (CONTRACT.md, Setup). Code is the pending setup code, which the person
+// runs on the connect page, and Fingerprint the one it shows; Expired when
+// it ran out.
 type SetupError struct {
 	Code        string
 	Fingerprint string

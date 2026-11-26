@@ -3,11 +3,9 @@ package setup
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
 // MaxPasskeyLabel is the registration request's label limit in bytes.
@@ -25,29 +23,15 @@ func VerifyRegistrationCode(code string, req passkey.RegistrationRequest, rp pas
 	return passkey.VerifyRegistration(req, resp, rp)
 }
 
-// PasskeyNeeded is whether the setup registers a portal passkey (step 7):
-// when no active one is registered, or add asks for another. Before the
+// PasskeyNeeded is whether the setup needs the person's portal passkey:
+// when no active one is registered. Before the
 // setup ran, a database without the guard has none.
-func PasskeyNeeded(ctx context.Context, b SetuprunBackend, q Querier, add bool) (bool, error) {
-	if add {
-		return true, nil
-	}
+func PasskeyNeeded(ctx context.Context, b SetuprunBackend, q Querier) (bool, error) {
 	has, err := b.HasPasskeyFor(ctx, q, passkey.Production.Origin)
 	if b.UndefinedTable(err) {
 		return true, nil
 	}
 	return !has, err
-}
-
-// PasskeyFailed is the refusal when the setup ran and its passkey step
-// failed with err.
-func PasskeyFailed(p setupcode.Payload, err error) error {
-	why := ""
-	if s := SQLStateOf(err); s != "" {
-		why = " (Postgres error " + s + ")"
-	}
-	return &SetuprunRefusalError{Code: CodePasskeyMissing, Err: err, Message: fmt.Sprintf("the setup ran but no passkey was registered%s. Ask %s for a new code; running it registers the passkey",
-		why, AgentWord(p))}
 }
 
 // LocalRelying is the relying party of the setup page served at origin on

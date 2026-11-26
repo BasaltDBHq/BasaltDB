@@ -1,6 +1,6 @@
 // Package setup runs a setup code as the database's admin: the checks,
-// the questions, the one transaction and record_setup (CONTRACT.md, Setup
-// from your laptop). The connect service, through the public package
+// the questions, the one transaction and record_setup (CONTRACT.md,
+// Setup). The connect service, through the public package
 // pkg/setup, uses it, so the setup has one implementation; pkg/setup is
 // its API for other modules, without this module's internal types.
 //
@@ -33,7 +33,6 @@ const (
 	SetuprunCodeAnswersInvalid  = "ANSWERS_INVALID"
 	SetuprunCodePasskeyRequired = "PASSKEY_REQUIRED"
 	SetuprunCodePasskeyInvalid  = "PASSKEY_INVALID"
-	CodePasskeyMissing          = "PASSKEY_NOT_REGISTERED" //nolint:gosec // a refusal code, not a credential
 	SetuprunCodeNoTables        = "NO_TABLES"
 	// SetuprunCodeTablesChanged: the tables changed since they were listed.
 	SetuprunCodeTablesChanged = "TABLES_CHANGED"

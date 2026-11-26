@@ -86,7 +86,7 @@ func TestPlanInitAppliesOnlyMissingVersions(t *testing.T) {
 
 // An engine serves a guard newer than its build: a setup code's guard.to
 // may be newer than the engine that made it, once the person's computer
-// ran a newer basalt (CONTRACT.md, Setup from your laptop).
+// ran a newer basalt (CONTRACT.md, Setup).
 func TestCheckAgentVersionServesNewerGuard(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)

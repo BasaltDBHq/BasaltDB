@@ -28,7 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
 
-// Setup code shape (CONTRACT.md, Setup from your laptop).
+// Setup code shape (CONTRACT.md, Setup).
 const (
 	setupCodePrefix      = "basalt-setup."
 	setupCodeFormat      = "1."
@@ -63,7 +63,7 @@ type setupFixtures struct {
 		Code    string `json:"code"`
 		Refusal string `json:"refusal"`
 	} `json:"invalid"`
-	Laptop []laptopFixture `json:"laptop"`
+	Checks []checksFixture `json:"checks"`
 }
 
 type validSetupFixture struct {
@@ -73,9 +73,9 @@ type validSetupFixture struct {
 	Payload     map[string]any `json:"payload"`
 }
 
-// laptopFixture is what the setup checks decide for a code against a
+// checksFixture is what the setup checks decide for a code against a
 // database state at a time (CONTRACT.md, The setup checks).
-type laptopFixture struct {
+type checksFixture struct {
 	Name     string `json:"name"`
 	Code     string `json:"code"`
 	Now      string `json:"now"`
@@ -311,17 +311,17 @@ func setupFingerprint(t *testing.T, p map[string]any) string {
 	return strings.Join(groups, " ")
 }
 
-// TestSetupLaptopFixtures runs the setup checks, in
-// CONTRACT.md's order, over the laptop fixtures: the refusal, or the summary
+// TestSetupChecksFixtures runs the setup checks, in
+// CONTRACT.md's order, over the checks fixtures: the refusal, or the summary
 // lines the person must see (the agent and role named, a password
 // replacement said out loud, the fingerprint, prefix and timeout).
-func TestSetupLaptopFixtures(t *testing.T) {
+func TestSetupChecksFixtures(t *testing.T) {
 	t.Parallel()
 	f := loadSetupFixtures(t)
-	require.NotEmpty(t, f.Laptop)
+	require.NotEmpty(t, f.Checks)
 	schema := readJSON(t, "setup/setup-code.schema.json")
 	refusals := map[string]bool{}
-	for _, l := range f.Laptop {
+	for _, l := range f.Checks {
 		refusals[l.Refusal] = true
 		t.Run(l.Name, func(t *testing.T) {
 			t.Parallel()
@@ -329,7 +329,7 @@ func TestSetupLaptopFixtures(t *testing.T) {
 			require.Empty(t, refusal)
 			now, err := time.Parse(time.RFC3339, l.Now)
 			require.NoError(t, err)
-			got, summary := laptopDecision(t, p, l, now)
+			got, summary := checksDecision(t, p, l, now)
 			require.Equal(t, l.Refusal, got)
 			for _, line := range l.Summary {
 				require.Contains(t, summary, line)
@@ -337,11 +337,11 @@ func TestSetupLaptopFixtures(t *testing.T) {
 		})
 	}
 	for _, r := range []string{"", "EXPIRED", "SETUP_ID_IN_FUTURE", "BINARY_TOO_OLD", "PREFIX_MISMATCH", "USED", "SUPERSEDED", "ROLE_EXISTS", "ROLE_MISSING"} {
-		require.True(t, refusals[r], "a laptop fixture for %q", r)
+		require.True(t, refusals[r], "a checks fixture for %q", r)
 	}
 }
 
-func laptopDecision(t *testing.T, p map[string]any, l laptopFixture, now time.Time) (string, string) {
+func checksDecision(t *testing.T, p map[string]any, l checksFixture, now time.Time) (string, string) {
 	expires, _ := time.Parse(time.RFC3339, p["expiresAt"].(string))
 	id, kind, prefix := p["setupId"].(string), p["kind"].(string), p["prefix"].(string)
 	to := int(p["guard"].(map[string]any)["to"].(float64))
@@ -380,7 +380,7 @@ func laptopDecision(t *testing.T, p map[string]any, l laptopFixture, now time.Ti
 		// An AGENT code with a verifier runs as an INSTALL instead.
 		return "ROLE_MISSING", ""
 	}
-	return "", laptopSummary(t, p, role)
+	return "", checksSummary(t, p, role)
 }
 
 // hasVerifier reports whether the payload's agent part carries a verifier.
@@ -390,7 +390,7 @@ func hasVerifier(p map[string]any) bool {
 	return ok && v != ""
 }
 
-func laptopSummary(t *testing.T, p map[string]any, role string) string {
+func checksSummary(t *testing.T, p map[string]any, role string) string {
 	kind, prefix := p["kind"].(string), p["prefix"].(string)
 	guard := p["guard"].(map[string]any)
 	who := "your agent"

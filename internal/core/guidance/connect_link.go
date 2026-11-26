@@ -43,8 +43,7 @@ const ConnectStepText = "Open the link on your own computer or phone, check that
 // ConnectOnlyMessage is the personMessage of a connect-only setup code,
 // which only the connect page runs (CONTRACT.md, Connect-only setup codes):
 // the link, the fingerprint to check, and that the page asks for the
-// database's connection string, which the agent never needs. No laptop
-// command.
+// database's connection string, which the agent never needs.
 func ConnectOnlyMessage(lead, url, fingerprint string) (string, []toolresult.Link) {
 	return NewMessage().
 		Text(lead+" Open this link, check that it shows the setup fingerprint "+fingerprint+", and follow the page. It uses Basalt Vault, a hosted service:").

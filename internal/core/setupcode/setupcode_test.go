@@ -40,10 +40,10 @@ type fixtures struct {
 		Code    string `json:"code"`
 		Refusal string `json:"refusal"`
 	} `json:"invalid"`
-	Laptop []laptopFixture `json:"laptop"`
+	Checks []checksFixture `json:"checks"`
 }
 
-type laptopFixture struct {
+type checksFixture struct {
 	Name     string `json:"name"`
 	Code     string `json:"code"`
 	Now      string `json:"now"`
@@ -70,7 +70,7 @@ func loadFixtures(t testing.TB) fixtures {
 	require.NoError(t, json.Unmarshal(raw, &f))
 	require.NotEmpty(t, f.Valid)
 	require.NotEmpty(t, f.Invalid)
-	require.NotEmpty(t, f.Laptop)
+	require.NotEmpty(t, f.Checks)
 	require.NotEmpty(t, f.Verifiers)
 	return f
 }
@@ -124,9 +124,9 @@ func TestInvalidFixtures(t *testing.T) {
 	}
 }
 
-func TestLaptopFixtures(t *testing.T) {
+func TestChecksFixtures(t *testing.T) {
 	t.Parallel()
-	for _, l := range loadFixtures(t).Laptop {
+	for _, l := range loadFixtures(t).Checks {
 		t.Run(l.Name, func(t *testing.T) {
 			t.Parallel()
 			p, err := setupcode.Decode(l.Code)
@@ -134,7 +134,7 @@ func TestLaptopFixtures(t *testing.T) {
 			now, err := time.Parse(time.RFC3339, l.Now)
 			require.NoError(t, err)
 
-			err = laptopCheck(t, p, l, now)
+			err = runChecks(t, p, l, now)
 			if l.Refusal == "" {
 				require.NoError(t, err)
 				shown := strings.Join(setupcode.Summary(p, setupcode.SummaryState{GuardVersion: l.Database.GuardVersion}), "\n")
@@ -149,7 +149,7 @@ func TestLaptopFixtures(t *testing.T) {
 	}
 }
 
-func laptopCheck(t *testing.T, p setupcode.Payload, l laptopFixture, now time.Time) error {
+func runChecks(t *testing.T, p setupcode.Payload, l checksFixture, now time.Time) error {
 	t.Helper()
 	if err := setupcode.CheckLocal(p, now, l.BinaryGuardVersion); err != nil {
 		return err

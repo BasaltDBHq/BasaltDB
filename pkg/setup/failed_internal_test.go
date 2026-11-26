@@ -8,7 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
@@ -37,10 +36,4 @@ func TestSetupFailedCarriesNoDatabaseWords(t *testing.T) {
 
 	worded := &setuprun.SetuprunRefusalError{Code: CodeSetupFailed, Err: pg, Message: "Removing BasaltDB failed, for example because one of its roles still has privileges in another database; nothing changed."}
 	require.Equal(t, worded.Message, asError(worded).Error())
-
-	missing := asError(setuprun.PasskeyFailed(setupcode.Payload{}, pg))
-	require.True(t, errors.As(missing, &e))
-	require.Equal(t, CodePasskeyNotRegistered, e.Code)
-	require.Contains(t, e.Message, "the setup ran but no passkey was registered (Postgres error 42501).")
-	require.NotContains(t, e.Message, "secret_words")
 }

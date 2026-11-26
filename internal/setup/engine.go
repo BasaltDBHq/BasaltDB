@@ -10,7 +10,7 @@ import (
 )
 
 // SetuprunEngineState is what the database records about the code's engine
-// (CONTRACT.md, Setup from your laptop, "The engine key and address"): read
+// (CONTRACT.md, Setup, "The engine key and address"): read
 // before the summary, with the admin connection.
 type SetuprunEngineState struct {
 	// Key is the code's engine key (SPKI DER), nil when the code has none.

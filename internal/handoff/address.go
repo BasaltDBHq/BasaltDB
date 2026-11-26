@@ -1,5 +1,5 @@
 // Package handoff is the engine's side of the address hand-off of a
-// connect-only setup code (CONTRACT.md, Setup from your laptop, The engine
+// connect-only setup code (CONTRACT.md, Setup, The engine
 // and a connect-only code; Connect, The address hand-off). The engine
 // collects the address of the database the person's setup ran in from the
 // connect service, checks it itself, probes it with a login bound to fail,

@@ -1,8 +1,8 @@
 package setupcode
 
-// Refusal names why a setup code is refused (CONTRACT.md, Setup from your
-// laptop). The codec's are the first four; the rest are the person's
-// computer's checks against its clock, its binary and the database.
+// Refusal names why a setup code is refused (CONTRACT.md, The setup
+// checks). The codec's are the first four; the rest are the runner's
+// checks against its clock, its binary and the database.
 type Refusal string
 
 // Refusals.

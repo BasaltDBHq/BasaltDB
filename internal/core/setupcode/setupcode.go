@@ -1,6 +1,6 @@
 // Package setupcode encodes, decodes and checks the setup code that carries
 // an install from the bot's machine to the person's own computer
-// (CONTRACT.md, Setup from your laptop):
+// (CONTRACT.md, Setup):
 //
 //	basalt-setup.1.<b64url(deflate-raw(json))>.<check>
 //

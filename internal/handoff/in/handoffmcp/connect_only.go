@@ -15,7 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
 
-// A connect-only setup on the engine (CONTRACT.md, Setup from your laptop,
+// A connect-only setup on the engine (CONTRACT.md, Setup,
 // The engine and a connect-only code). Until the person confirms the
 // database the engine collected, the agent is served by ConnectOnly: it
 // holds no credential and no connection, status and confirm_database

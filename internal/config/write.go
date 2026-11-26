@@ -221,7 +221,7 @@ func UpsertedVault(path string, open func(string) (*os.File, error), s Settings,
 }
 
 // ClearSetup removes agent's pending setup from the config at path, once
-// the engine found it recorded (CONTRACT.md, Setup from your laptop, On the
+// the engine found it recorded (CONTRACT.md, Setup, On the
 // engine). Only setup id is cleared: when the agent's pending setup is
 // another one (basalt init --remote made a new code meanwhile) or none,
 // the file is left as it is and cleared is false. The file is read without

@@ -14,26 +14,13 @@ import (
 	"github.com/basaltdbhq/basaltdb/pkg/setup"
 )
 
-// notFromTheService are the setup package's codes the connect service
-// cannot get, so the contract's refusal table leaves them out.
-var notFromTheService = map[string]string{
-	setup.CodePasskeyNotRegistered: "needs RunInput.AskPasskey, the laptop's passkey step",
-}
-
 // Every code the setup package returns is a reason of the contract's
 // refusal table, and this server answers it with the table's ConnectRPC
 // code: a new package code fails here until the contract has its row.
 func TestContractRefusalsCoverTheSetupPackage(t *testing.T) {
 	t.Parallel()
 	table := contractRefusals(t)
-	for code := range notFromTheService {
-		require.Contains(t, setup.Codes(), code, "an exemption the package no longer returns")
-	}
 	for _, code := range setup.Codes() {
-		if _, ok := notFromTheService[code]; ok {
-			require.NotContains(t, table, code, "%s is in the table: drop its exemption", code)
-			continue
-		}
 		want, ok := table[code]
 		require.True(t, ok, "the setup package returns %s, which contract/connect.md's refusal table lacks", code)
 		got := fromSetup(&setup.Error{Code: code, Message: "m"})

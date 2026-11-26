@@ -40,7 +40,7 @@ func (r row) Scan(dest ...any) error {
 
 // The passkey rule refuses PASSKEY_REQUIRED from a read alone, so Run can
 // apply it before the setup's script: on a fresh database (no passkeys
-// table), and with AddPasskey; a database with a passkey passes.
+// table); a database with a passkey passes.
 func TestRequirePasskeyOnlyReads(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -48,9 +48,7 @@ func TestRequirePasskeyOnlyReads(t *testing.T) {
 	c := setup.NewContract(setupstore.New())
 	fresh := pgquerier.Neutralize(readsOnly{lookup: &pgconn.PgError{Code: "42P01"}})
 	has := pgquerier.Neutralize(readsOnly{})
-	require.True(t, errors.As(setup.ContractRequirePasskey(c, ctx, fresh, false), &e))
+	require.True(t, errors.As(setup.ContractRequirePasskey(c, ctx, fresh), &e))
 	require.Equal(t, setup.SetuprunCodePasskeyRequired, e.Code)
-	require.True(t, errors.As(setup.ContractRequirePasskey(c, ctx, has, true), &e))
-	require.Equal(t, setup.SetuprunCodePasskeyRequired, e.Code)
-	require.NoError(t, setup.ContractRequirePasskey(c, ctx, has, false))
+	require.NoError(t, setup.ContractRequirePasskey(c, ctx, has))
 }

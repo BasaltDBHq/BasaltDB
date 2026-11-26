@@ -12,8 +12,8 @@ import (
 )
 
 // Password is the agent's password a pool logs in with. The engine
-// replaces it when it promotes a rotated credential (CONTRACT.md, Setup
-// from your laptop, On the engine), then resets the pool so every new
+// replaces it when it promotes a rotated credential (CONTRACT.md, Setup,
+// On the engine), then resets the pool so every new
 // connection logs in with the new one.
 type Password struct {
 	v atomic.Pointer[string]

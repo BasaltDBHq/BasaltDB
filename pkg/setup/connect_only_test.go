@@ -229,7 +229,7 @@ func TestAllTablesNoTables(t *testing.T) {
 
 // A connect-only recovery code (AGENT with a verifier) creates the role as
 // an INSTALL does when it does not exist, with the person's ticks, and
-// rotates its password with the laptop's warning when it does.
+// rotates its password with the summary's warning when it does.
 func TestConnectOnlyRecoveryCode(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

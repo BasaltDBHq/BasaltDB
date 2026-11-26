@@ -1,5 +1,5 @@
 {
-  "description": "Golden fixtures for the setup code (CONTRACT.md, Setup from your laptop). Generated once and fixed. valid: a codec decodes each code to its payload; fingerprint is its setup fingerprint. invalid: refused with the stated refusal (codec checks, the schema, and the rules the schema cannot state). laptop: what basalt init --setup-code decides for a valid code against a database state at time now, checks in CONTRACT.md's order (the admin connection string's target is not modelled): the refusal, or lines the summary must contain. verifiers: the SCRAM-SHA-256 verifier for a password and a salt (standard base64). Codes were encoded from compact JSON in the key order of setup-code.schema.json, deflated with Go compress/flate level 9. Test values only: no password here is used anywhere.",
+  "description": "Golden fixtures for the setup code (CONTRACT.md, Setup). Generated once and fixed. valid: a codec decodes each code to its payload; fingerprint is its setup fingerprint. invalid: refused with the stated refusal (codec checks, the schema, and the rules the schema cannot state). checks: what the setup checks (CONTRACT.md, The setup checks) decide for a valid code against a database state at time now, checks in CONTRACT.md's order (the admin connection string's target is not modelled): the refusal, or lines the summary must contain. verifiers: the SCRAM-SHA-256 verifier for a password and a salt (standard base64). Codes were encoded from compact JSON in the key order of setup-code.schema.json, deflated with Go compress/flate level 9. Test values only: no password here is used anywhere.",
   "invalid": [
     {
       "name": "one character changed",
@@ -172,7 +172,7 @@
       "refusal": "INVALID"
     }
   ],
-  "laptop": [
+  "checks": [
     {
       "name": "install on an empty database",
       "code": "basalt-setup.1.TFFdb9pAEPwvq7z1zviMMXASDw4kBAoNXxUhVVWd7bW5YvvM3ZmPRPz3ykituo87u7MzO5-QKl0IC5wRMGjrapIAB5cJFmOnT7te1KPduC1oP3Vd6v6rhAGBgyyb6cm39SaczYBApTGVF-AQCSNyCwSs0Bla4J-wV8YCB3E21KVY0xhLq0VOmVMplaN2TF2JSBh0YlU0XEpb4EHHbxNIhL1DwKFSxmYaDRD4u7DCtCGO4gTTbC9_H_KiVNVRGws3AlktdNIISLUqgLsErALOghuBqJb53a7TcVwgIDIs71pLUTS3chTJr0g1Ps5aWgT-A6o6ymXsNJCBnwQ0iuS_fqyKSpQS79gJtUwlauCwHq7COV2_hNTrBA--2w94uJyMHsPv48dzNh1mZj5a-ouncDB4uPpvl13ro6xOo8WX7WGqFm_PcinGra9mmm-OM9Xbv4_zYa1eewOedfLdqJz6WzXXfiC3--txV8ZilKxi1Z1_nNjzNXt5vap962nQ_MwKiwWWdiMLVLWdG-DtJtAbAbxUUqMJm5g81wsoY5R5GzfgzOOMvcPtTwAAAP__.vVPyGw",
@@ -395,7 +395,7 @@
       ]
     },
     {
-      "name": "all tables with a target runs on the laptop",
+      "name": "all tables with a target runs",
       "code": "basalt-setup.1.PFHdbuI8EH2XUe8-m8YhBGqJixRaCh9s-VtRulqtnGSSeHHiYDsUWvHuqyDtzu2ZOXN-viDTphQOOCNg0TX1NAUOHhMs6w8S2vPjAe0nXUEfMs-j3r_BAAgcZNVuT79tttF8DgRqg5k8A4dYWKEcEHDC5OiAf0GhrQMO4sNSj2JDE6ycEYqyTq21QtOxTS1iYbGT6LLl0sYBD3tBl0Aq3A0CDrW2LjdogcDfgzVmLXGcpJjlhfx9UGWl66OxDq4E8kaYtBWQGV0C9wg4DZyFVwJxI9XNbqfX8YCAyLG6aa1E2f5SKNJfsW59CKW2IlZoW9gmBZbCAv8BdRMrmcDPK4ETGplJNMBhM1pHC7p5iajfC-8C7yHk0Wo6foy-Tx4_8tkot4vxKlg-RcPh3SV4O-_vP6v6NF7-tzvM9PLtWa7E5P5_O1Pb41wPiveJGjX6dTDkeU_tx9Us2OmFCUK5Ky7HfZWIcbpOdH_xeWLPl_zl9aKL-6dhm5ATDkus3FaWqBu3sMC7bX1XAniupUEbtaX4nh9Sxqjvbb2QM58z9g7XPwEAAP__.8IxXqQ",
       "now": "2026-11-20T06:07:11Z",
       "database": {

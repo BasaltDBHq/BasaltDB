@@ -101,7 +101,7 @@ message SetupSummary {
   // The engine's fingerprint, when the code carries an engine key.
   string engine_fingerprint = 14;
   // The summary lines that do not depend on the database, in the words
-  // the removed laptop command showed.
+  // of the setup checks (CONTRACT.md, The setup checks).
   repeated string lines = 15;
   // The schemas of agent.allTables (public only); empty when the code
   // names its tables in write and read.
@@ -156,7 +156,7 @@ message CheckSetupResponse {
   // True when RunSetup needs a passkey registration.
   bool passkey_needed = 2;
   // Lines that depend on the database's state, in the words
-  // the removed laptop command showed.
+  // of the setup checks (CONTRACT.md, The setup checks).
   repeated string notes = 3;
   // True for an UPGRADE code with nothing to do: RunSetup then changes and
   // records nothing.
@@ -279,7 +279,7 @@ message Question {
   string kind = 1;
   // schema.table.
   string table = 2;
-  // The question, in the words the removed laptop command asked it.
+  // The question, in the words of the setup checks.
   string text = 3;
   // The answers allowed: ALL_ROWS or NONE.
   repeated string choices = 4;
@@ -483,7 +483,7 @@ message RunRemoveResponse {
 message Refusal {
   // SCREAMING_SNAKE_CASE, from the refusals table in CONTRACT.md, Connect.
   string reason = 1;
-  // The fixed message, in the words the laptop command uses. Never holds
+  // The fixed message, in the words of the setup checks. Never holds
   // the connection string.
   string message = 2;
   // Set when trying again later can work.

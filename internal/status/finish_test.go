@@ -21,8 +21,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
 )
 
-// This file tests finishing a setup from the laptop on the engine
-// (CONTRACT.md, Setup from your laptop, On the engine; RI-10): the setup is
+// This file tests finishing a setup on the engine
+// (CONTRACT.md, Setup, On the engine; RI-10): the setup is
 // cleared from engine.json only when the database, read with the agent's
 // own credential, shows its setupId recorded, and the tools are served
 // right after, with no restart.

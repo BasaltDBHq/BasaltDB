@@ -7,7 +7,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
 )
 
-// Finishing a setup from the laptop (CONTRACT.md, Setup from your laptop, On
+// Finishing a setup (CONTRACT.md, Setup, On
 // the engine). On status, on every call while an INSTALL setup holds the
 // tools, and at each heartbeat, the engine logs in with the agent's own
 // credential (the .pending one first) and looks for the pending setupId in

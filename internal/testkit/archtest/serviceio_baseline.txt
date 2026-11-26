@@ -1,0 +1,75 @@
+internal/engine dirs_unix.go: imports syscall
+internal/engine dirs_unix.go: os.Lstat
+internal/engine dirs_unix.go: os.MkdirAll
+internal/engine dirs_unix.go: os.OpenFile
+internal/engine engine.go: imports syscall
+internal/engine engine.go: net.ListenUnix
+internal/engine engine.go: os.Chmod
+internal/engine engine.go: os.Lstat
+internal/engine engine.go: os.MkdirAll
+internal/engine engine.go: os.Remove
+internal/engine laststop.go: os.MkdirAll
+internal/engine laststop.go: os.Remove
+internal/engine laststop.go: os.Stat
+internal/engine laststop_unix.go: imports syscall
+internal/engine laststop_unix.go: os.OpenFile
+internal/engine starter_unix.go: imports os/exec
+internal/engine starter_unix.go: imports syscall
+internal/engine starter_unix.go: net.DialTimeout
+internal/engine starter_unix.go: os.MkdirAll
+internal/engine starter_unix.go: os.OpenFile
+internal/engine starter_unix.go: os.Stat
+internal/engine waits.go: os.Lstat
+internal/engine waits.go: os.ReadDir
+internal/handoff address.go: net.DefaultResolver
+internal/handoff address.go: net.Resolver
+internal/handoff cache.go: os.MkdirAll
+internal/handoff pathfiles.go: os.Lstat
+internal/handoff pathfiles.go: os.Rename
+internal/handoff probe.go: net.Dialer
+internal/handoff setupfiles.go: os.Lstat
+internal/handoff setupfiles.go: os.Remove
+internal/plugin install.go: os.Chmod
+internal/plugin install.go: os.Lstat
+internal/plugin install.go: os.Mkdir
+internal/plugin install.go: os.MkdirTemp
+internal/plugin install.go: os.OpenFile
+internal/plugin install.go: os.OpenRoot
+internal/plugin install.go: os.RemoveAll
+internal/plugin install.go: os.Rename
+internal/plugin kept_entries.go: imports syscall
+internal/plugin kept_entries.go: os.MkdirAll
+internal/plugin kept_entries.go: os.OpenFile
+internal/plugin kept_entries.go: os.OpenRoot
+internal/plugin kept_entries.go: os.ReadDir
+internal/plugin kept_entries.go: os.Remove
+internal/plugin kept_files.go: os.Lstat
+internal/plugin kept_files.go: os.MkdirAll
+internal/plugin kept_files.go: os.RemoveAll
+internal/plugin kept_files.go: path/filepath.WalkDir
+internal/plugin kept_upload.go: imports syscall
+internal/plugin kept_upload.go: os.Mkdir
+internal/plugin kept_upload.go: os.MkdirAll
+internal/plugin kept_upload.go: os.OpenRoot
+internal/plugin kept_upload.go: os.RemoveAll
+internal/plugin plugin_feed.go: os.ReadFile
+internal/plugin plugin_watch.go: os.MkdirAll
+internal/plugin plugin_watch.go: os.ReadFile
+internal/plugin plugin_watch.go: os.Remove
+internal/plugin plugins_service.go: os.Open
+internal/plugin sweep.go: os.Lstat
+internal/plugin sweep.go: os.ReadDir
+internal/plugin sweep.go: os.Remove
+internal/plugin sweep.go: os.RemoveAll
+internal/plugin trust.go: os.Chmod
+internal/plugin trust.go: os.Lstat
+internal/plugin trust.go: os.Mkdir
+internal/plugin trust.go: os.OpenFile
+internal/plugin trust.go: os.ReadDir
+internal/plugin trust_list.go: os.Lstat
+internal/plugin trust_list.go: os.ReadDir
+internal/plugin verify.go: os.OpenFile
+internal/plugin verify.go: path/filepath.WalkDir
+internal/setup binary.go: path/filepath.EvalSymlinks
+internal/setup rotations.go: os.Lstat
+internal/status extra.go: os.Stat

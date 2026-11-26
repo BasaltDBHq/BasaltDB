@@ -47,7 +47,7 @@ func CheckLocal(p Payload, now time.Time, binaryGuardVersion int) error {
 	case expires.After(now.Add(Lifetime + ClockSkew)):
 		return refuseWith(RefusalExpiryTooFar, futureMessage(agent))
 	case p.Guard.To > binaryGuardVersion:
-		return refuseWith(RefusalBinaryTooOld, "This setup code needs BasaltDB "+p.Build+" or later, and the connect service runs an older one: try again shortly.")
+		return refuseWith(RefusalBinaryTooOld, "This setup code needs BasaltDB "+p.Build+" or later: try again shortly.")
 	case p.Guard.To < MinGuardVersion:
 		return refuseWith(RefusalGuardTooOld, fmt.Sprintf("This setup code is for guard version %d, but setup codes need guard version %d or later. "+
 			"Ask %s for a new code made with an up-to-date basalt.", p.Guard.To, MinGuardVersion, agent))

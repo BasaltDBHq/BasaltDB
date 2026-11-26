@@ -8,7 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
@@ -60,7 +59,7 @@ func TestRecordTrustPinRefusesAgents(t *testing.T) {
 	_, err = d.Admin.Exec(ctx, `GRANT EXECUTE ON FUNCTION basalt_meta.record_trust_pin(text, int, text) TO `+a.Role)
 	require.NoError(t, err)
 	err = guard.RecordTrustPin(ctx, a.Conn, "db.example.com", 5432, pinSHA)
-	requireCode(t, err, guardmodel.CodeNotAllowed)
+	requireCode(t, err, guard.CodeNotAllowed)
 	require.Zero(t, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger WHERE kind = 'TRUST_PIN_RECORDED'`))
 }
 
@@ -83,7 +82,7 @@ func TestRecordTrustPinRefusesBadInput(t *testing.T) {
 		"short sha":      {"db.example.com", 5432, "abc"},
 		"upper sha":      {"db.example.com", 5432, "807025AD50D4ED219D2C9C7D299C004F824EB00CF7F65AFEF607D07B72E6CAFA"},
 	} {
-		requireCode(t, guard.RecordTrustPin(ctx, d.Admin, c.host, c.port, c.sha), guardmodel.CodeLedgerInputInvalid)
+		requireCode(t, guard.RecordTrustPin(ctx, d.Admin, c.host, c.port, c.sha), guard.CodeLedgerInputInvalid)
 	}
 }
 

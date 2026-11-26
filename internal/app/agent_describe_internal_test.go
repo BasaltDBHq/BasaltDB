@@ -286,13 +286,13 @@ func TestHideColumnsDropsIndexesKeysAndExpressions(t *testing.T) {
 
 	fks := m["foreignKeys"].([]any)
 	require.Equal(t, []any{map[string]any{
-		"direction": "INCOMING", "columns": []any{"id"}, "table": "shop.lines",
+		"direction": "INCOMING", "fields": []any{"id"}, "resource": "shop.lines",
 		"onDelete": "CASCADE", "onUpdate": "NO_ACTION",
 	}}, fks)
-	require.Equal(t, []any{"SELECT", "UPDATE"}, m["actions"])
+	require.Equal(t, []any{"READ", "UPDATE"}, m["actions"])
 	require.NotNil(t, m["policy"])
 	require.Equal(t, map[string]any{
-		"estimatedRows": 12.0, "tableBytes": 8192.0, "totalBytes": 32768.0,
+		"estimatedRows": 12.0, "resourceBytes": 8192.0, "totalBytes": 32768.0,
 		"seqScans": 3.0, "indexScans": 0.0, "lastAnalyzed": nil,
 	}, m["stats"])
 }
@@ -321,6 +321,7 @@ func TestReadOnlyTableHasNullPolicy(t *testing.T) {
 	body, isError := callDescribe(t, describeService(t, cat, classes, ""), map[string]any{"resource": "shop.orders"})
 	require.False(t, isError, body)
 	m := decodeBody(t, body)
+	require.Equal(t, []any{"READ"}, m["actions"])
 	require.Contains(t, m, "policy")
 	require.Nil(t, m["policy"])
 }
@@ -334,7 +335,7 @@ func TestUnguardedWritableTableHasNullPolicy(t *testing.T) {
 	body, isError := callDescribe(t, describeService(t, cat, classes, ""), map[string]any{"resource": "shop.orders"})
 	require.False(t, isError, body)
 	m := decodeBody(t, body)
-	require.Equal(t, []any{"SELECT", "UPDATE"}, m["actions"])
+	require.Equal(t, []any{"READ", "UPDATE"}, m["actions"])
 	require.Contains(t, m, "policy")
 	require.Nil(t, m["policy"])
 }
@@ -367,7 +368,7 @@ func TestOverviewSmallListsResources(t *testing.T) {
 	require.Equal(t, map[string]any{"namespaces": 2.0, "resources": 50.0, "notGranted": 0.0}, m["counts"])
 	require.Equal(t, map[string]any{"kind": "POSTGRES", "database": "app", "host": "db.example.com"}, m["store"])
 	first := m["resources"].([]any)[0].(map[string]any)
-	require.Equal(t, map[string]any{"resource": "app.t001", "kind": "TABLE", "estimatedRows": 12.0, "access": []any{"SELECT"}}, first)
+	require.Equal(t, map[string]any{"resource": "app.t001", "kind": "TABLE", "estimatedRows": 12.0, "access": []any{"READ"}}, first)
 	limits := m["limits"].(map[string]any)
 	require.EqualValues(t, sqlguard.DefaultReadRowLimit, limits["readRowLimit"])
 	require.EqualValues(t, sqlguard.DefaultStatementTimeout.Milliseconds(), limits["statementTimeoutMs"])
@@ -844,9 +845,9 @@ func openDetail() pgcatalog.Detail {
 
 // TestResourceFingerprintsArePinned: the resource fingerprint is the
 // agent's cache key (ifFingerprint), so the same structure keeps the same
-// fingerprint from one engine release to the next. The values are the
-// fingerprints these tables had before describe was written in
-// store-neutral types.
+// fingerprint from one engine release to the next. A change to the answer's
+// wire names changes them once: these are the values after foreignKeys took
+// fields and resource.
 func TestResourceFingerprintsArePinned(t *testing.T) {
 	t.Parallel()
 	fp := func(cat *fakeCatalog, classes fakeClasses, resource string) string {
@@ -854,7 +855,7 @@ func TestResourceFingerprintsArePinned(t *testing.T) {
 	}
 
 	cat, classes := ordersCatalog()
-	require.Equal(t, "7f923422275798f3a00060b442c39dad26b4bd5d0268e3dd9f910f534296e403", fp(cat, classes, "shop.orders"), "hidden columns, indexes and keys")
+	require.Equal(t, "6415fa1490f34af7f3d2d355af20f3159810ae9cfc9e95c60686ef61d97792f8", fp(cat, classes, "shop.orders"), "hidden columns, indexes and keys")
 
 	cat, classes = ordersCatalog()
 	d := cat.details[ordersOID]
@@ -862,12 +863,12 @@ func TestResourceFingerprintsArePinned(t *testing.T) {
 	d.Indexes[0].Definition += " WHERE id < 5 & true"
 	d.Comment = "<orders> & co"
 	cat.details[ordersOID] = d
-	require.Equal(t, "2694b9c982b7bd8fd73ae11e4b38df6013ab8921797a32fce900213f6f3c1ede", fp(cat, classes, "shop.orders"), "escaped text and index counters")
+	require.Equal(t, "ca88eaedfda5d5468f27bc11b7abbf29697b7e9afa1bcd9ead4a3d607774a25a", fp(cat, classes, "shop.orders"), "escaped text and index counters")
 
 	open := openDetail()
 	cat = &fakeCatalog{visible: []pgcatalog.Relation{open.Relation}, details: map[uint32]pgcatalog.Detail{200: open}}
 	classes = fakeClasses{classes: map[agentstore.FieldRef]pii.Class{
 		agentcatalog.FieldRef(200, 2): {Class: guardmodel.ClassIdentifier, EntityType: "PERSON_NAME"},
 	}, print: "p1"}
-	require.Equal(t, "dc0a15972befb4445524c297feaed53dd8f27378f28db50b500d2e85565b20ed", fp(cat, classes, "shop.open"), "nothing hidden")
+	require.Equal(t, "fdee9462d6161335923f9bf1e25514dd1c2069bb8dcd5b01ea0c7cb1cae07569", fp(cat, classes, "shop.open"), "nothing hidden")
 }

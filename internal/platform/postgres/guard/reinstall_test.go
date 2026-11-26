@@ -202,7 +202,7 @@ func TestAgentCannotTouchInstalls(t *testing.T) {
 
 func requireDetail(t *testing.T, err error, detail string) {
 	t.Helper()
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
 	var pg *pgconn.PgError
 	require.ErrorAs(t, err, &pg)
 	require.Equal(t, detail, pg.Detail)

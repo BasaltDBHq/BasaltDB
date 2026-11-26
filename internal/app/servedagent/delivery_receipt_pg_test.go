@@ -163,7 +163,7 @@ func requireRevertReceipt(t *testing.T, env agentEnv, r channel.Receipt, id, cha
 }
 
 // After a revert is relayed, the page's answer and request_revert's result
-// carry a receipt from Postgres's record, with the revert's change.
+// carry a receipt from the store's record, with the revert's change.
 func TestRevertReceipt(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)

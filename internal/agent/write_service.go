@@ -60,7 +60,7 @@ func (wc *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, erro
 	stmt, err := wc.store.Language.Check(p.Request, action.ToolWrite)
 	op := stmt.Op
 	if err != nil {
-		return WriteOutcome{}, wc.refused(ctx, in, op, p.Request, start, err)
+		return WriteOutcome{}, wc.refused(ctx, in, stmt, p.Request, start, err)
 	}
 	res, err := wc.store.Data.Write(ctx, in, p.Request, stmt)
 	if errors.Is(err, action.ErrApprovalRequired) {
@@ -88,7 +88,7 @@ func (wc *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, erro
 		return out, waitErr
 	}
 	if err != nil {
-		return WriteOutcome{}, wc.refused(ctx, in, op, p.Request, start, err)
+		return WriteOutcome{}, wc.refused(ctx, in, stmt, p.Request, start, err)
 	}
 	return WriteOutcome{WriteResult: res, RunID: run.ID, Op: op, Warnings: wc.rlsWarnings(ctx, stmt.Tables, res.Rows)}, nil
 }
@@ -105,12 +105,12 @@ func (wc *Service) writeRun(ctx context.Context, p WriteParams) (action.Run, err
 	return action.Run{ID: info.RunID, TaskID: info.TaskID, Intent: info.Intent}, nil
 }
 
-// actionTool is the tool an action came from: query runs only a SELECT
+// actionTool is the tool an action came from: query runs only a read
 // (the store's check refuses anything else as WRONG_TOOL), write everything else.
 // Failure maps the error by tool, so a refusal is recorded with the code
 // the agent gets.
 func actionTool(op action.Op) string {
-	if op == action.OpSelect {
+	if op == action.OpRead {
 		return guidance.ToolQuery
 	}
 	return guidance.ToolWrite
@@ -119,7 +119,7 @@ func actionTool(op action.Op) string {
 // refusalOp is the op the guard's record_refusal accepts.
 func refusalOp(op action.Op) action.Op {
 	switch op {
-	case action.OpSelect, action.OpInsert, action.OpUpdate, action.OpDelete:
+	case action.OpRead, action.OpInsert, action.OpUpdate, action.OpDelete:
 		return op
 	case action.OpMerge, action.OpOther:
 		return action.OpOther

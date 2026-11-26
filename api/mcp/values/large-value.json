@@ -1,5 +1,5 @@
 {
-  "description": "Shared vectors for largeValues markers (CONTRACT.md, Large values): each value's text as the marker measures it (a JSON string's characters, any other value its jsonb text as Postgres prints it), its bytes and sha256 as Postgres computes them, and its cost in the result budget's unit in a column of that name, taken over the value's JSON text as Postgres prints it (a string with its quotes and escapes): its bytes, plus 6 per byte JSON escapes, plus 128, plus the column's name. The engine and the pages run them.",
+  "description": "Shared vectors for largeValues markers (CONTRACT.md, Large values): each value's text as the marker measures it (a JSON string's characters, any other value its jsonb text as Postgres prints it), its bytes and sha256 as Postgres computes them, and its cost in the result budget's unit in a field of that name, taken over the value's JSON text as Postgres prints it (a string with its quotes and escapes): its bytes, plus 6 per byte JSON escapes, plus 128, plus the field's name. The engine and the pages run them.",
   "vectors": [
     {
       "name": "string",
@@ -7,7 +7,7 @@
       "text": "héllo, wörld",
       "bytes": 14,
       "sha256": "3920a1c92728f88629d9c72d7301ff2b41430ce2ac5a04cef82d88e34ee7f763",
-      "column": "v",
+      "field": "v",
       "cost": 157
     },
     {
@@ -16,7 +16,7 @@
       "text": "{\"big\": 123456789012345678901234567890, \"name\": \"Ada\", \"price\": 1.10}",
       "bytes": 69,
       "sha256": "76a6bd50238466a44c1b1ef4696974b482e714fc70ff3fc5a4ddbb7318859819",
-      "column": "v",
+      "field": "v",
       "cost": 246
     },
     {
@@ -25,7 +25,7 @@
       "text": "a\"b\\c<d>&e\n\u0001",
       "bytes": 12,
       "sha256": "0317752292a010d890c0b347375947caaedc61f29f4836aa6501756efff8087c",
-      "column": "v",
+      "field": "v",
       "cost": 217
     }
   ]

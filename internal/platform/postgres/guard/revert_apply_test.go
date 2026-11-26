@@ -12,7 +12,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -42,10 +41,21 @@ func revertScope(t *testing.T, a *guardtest.Agent, p *passkeytest.Authenticator,
 
 func requireRevertInvalid(t *testing.T, err error, detail string) {
 	t.Helper()
-	requireCode(t, err, guardmodel.CodeRevertInvalid)
+	requireCode(t, err, guard.CodeRevertInvalid)
 	var pg *pgconn.PgError
 	require.True(t, errors.As(err, &pg))
 	require.Contains(t, pg.Detail, detail)
+}
+
+// requireRevertRefused is REVERT_INVALID with the typed detail code and a
+// hint that contains hint (version 11).
+func requireRevertRefused(t *testing.T, err error, code, hint string) {
+	t.Helper()
+	requireCode(t, err, guard.CodeRevertInvalid)
+	var pg *pgconn.PgError
+	require.True(t, errors.As(err, &pg))
+	require.Equal(t, code, pg.Detail)
+	require.Contains(t, pg.Hint, hint)
 }
 
 func leadStatus(t *testing.T, d *guardtest.DB, id int) string {
@@ -196,7 +206,7 @@ func TestApplyRefusedWhenRowChangedAfterPreview(t *testing.T) {
 	d.Exec(t, `UPDATE public.leads SET status = 'person' WHERE id = 111`)
 
 	_, err := guard.ApplyRevert(ctx, a.Conn, prep.RevertID, as)
-	requireRevertInvalid(t, err, "rows changed since the preview")
+	requireRevertRefused(t, err, guard.RevertRowsChanged, "rows changed since the preview")
 	require.Equal(t, "won", leadStatus(t, d, 110), "nothing was written")
 	require.Equal(t, "PENDING", scalarOf[string](t, a.Conn, `SELECT status FROM basalt_meta.agent_reverts`))
 }
@@ -232,20 +242,20 @@ func TestApplyRefusals(t *testing.T) {
 	})
 	t.Run("a superuser relay", func(t *testing.T) {
 		_, err := guard.ApplyRevert(ctx, d.Admin, prep.RevertID, as)
-		requireCode(t, err, guardmodel.CodeNotAllowed)
+		requireCode(t, err, guard.CodeNotAllowed)
 	})
 
 	_, err := guard.ApplyRevert(ctx, a.Conn, prep.RevertID, as)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, a.Conn, prep.RevertID, as)
-	requireRevertInvalid(t, err, "already applied")
+	requireRevertRefused(t, err, guard.RevertAlreadyApplied, "already applied")
 
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, newRun(t, a, "Another"), `UPDATE public.leads SET status = 'won' WHERE id = 121`))
 	late, lateAs := prepareSigned(t, a, p, revert.ScopeChange,
 		scalarOf[uuid.UUID](t, a.Conn, `SELECT change_id FROM basalt_meta.agent_changes WHERE op = 'UPDATE' ORDER BY change_id DESC LIMIT 1`))
 	d.Exec(t, `UPDATE basalt_meta.reverts SET expires_at = now() - interval '1 second' WHERE revert_id = $1`, late.RevertID)
 	_, err = guard.ApplyRevert(ctx, a.Conn, late.RevertID, lateAs)
-	requireCode(t, err, guardmodel.CodeRevertExpired)
+	requireCode(t, err, guard.CodeRevertExpired)
 }
 
 func TestRevertOfRevert(t *testing.T) {
@@ -264,7 +274,7 @@ func TestRevertOfRevert(t *testing.T) {
 		require.Equal(t, revert.ConflictAlreadyReverted, conflictOf(l))
 	}
 	_, err := guard.PrepareRevert(ctx, a.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo again")
-	requireCode(t, err, guardmodel.CodeNothingToRevert)
+	requireCode(t, err, guard.CodeNothingToRevert)
 
 	undo := revertScope(t, a, p, revert.ScopeChange, first.ChangeID)
 	require.Equal(t, 2, undo.Rows)
@@ -285,7 +295,7 @@ func TestStaleReadAfterRevert(t *testing.T) {
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'won' WHERE id = 140`))
 	revertScope(t, a, p, revert.ScopeRun, in.RunID)
 	err := guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'won again' WHERE id = 140`)
-	requireCode(t, err, guardmodel.CodeStaleRead)
+	requireCode(t, err, guard.CodeStaleRead)
 }
 
 func TestAppTriggerRunsOnRevert(t *testing.T) {

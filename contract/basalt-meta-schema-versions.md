@@ -109,3 +109,24 @@ Every text a person signs, and the ledger's fields, take the store-neutral form 
 | `agent_reverts` | `selection` as texts carry it; `agents` stays the roles. A selected role with no recorded name is refused (`UNKNOWN_AGENT`), never left out |
 | `_selection_agents(jsonb)` | New, `SECURITY DEFINER`, `EXECUTE` for `<prefix>_agents` (`agent_reverts` runs it as its caller): a stored selection's roles as sorted `agent:<name>`, refusing a role with no recorded name |
 | `_check_plugin_approval_detail`, `_plugin_approval_binding`, `_plugin_approval_change`, `open_plugin_approval` | Replaced. `agents` are `agent:<name>`, each mapped to its role from the record (`UNKNOWN_AGENT` for an unknown name or a role that is not an agent role); the binding carries `store` and `requestedBy` as `agent:<name>`, and `change.agentsAdded` and `agentsRemoved` name agents the same way. `plugin_approvals.agents` and the view keep the roles |
+
+### Schema version 11: typed details
+
+The guard answers the refusals the engine tells apart with a code, never a sentence the engine has to match ([Guard errors](basalt-meta.md#guard-errors)): the code is the `DETAIL` and the sentence the `HINT`, as `SCOPE_REFUSED` and `WIDEN_REFUSED` already do. A refusal for a bad entry of a [revert scope descriptor](revert.md#the-scope-descriptor) names that entry. File `024_guard_typed_details.sql`. **Breaking** (AE-11): the engine reads the codes, so it needs this version; an install at version 10 upgrades in place (`basalt init`, then the page it opens). Idempotent.
+
+| Object | Change |
+|---|---|
+| `_revert_refused(code text, hint text)` | New, internal (no grants), `IMMUTABLE`: raises `BS005` `REVERT_INVALID` with detail `code` and hint `hint` |
+| `apply_revert` | Replaced (`SECURITY DEFINER` and `SET search_path = pg_catalog, pg_temp` kept). `REVERT_INVALID` detail `ALREADY_APPLIED` (hint `revert already applied`), `ALREADY_SIGNED` (a batched revert already signed), `PASSKEY_REVOKED` (hint `passkey revoked`) and `ROWS_CHANGED` (hint `rows changed since the preview; nothing was reverted, prepare the revert again`). A revoked passkey is told by its record when `_verify_assertion` refuses the assertion, whatever check refused it. Every other `REVERT_INVALID` keeps its sentence as the detail: the engine answers any of them as a refused signature |
+| `_revert_chain_list` | Replaced. `NOTHING_TO_REVERT` for a scope with no row a revert could restore has detail `READS_ONLY` and the hint "`<scope> <scopeId>` changed no rows that a revert could restore". `preview_revert`, `prepare_revert`, `apply_revert` and `rescope_revert` reach it. Every other `NOTHING_TO_REVERT` keeps its sentence as the detail |
+| `_revert_select_norm` | Replaced. A `SHAPE` refusal for an `agents`, `runs` or `resources` entry of the wrong kind names the first such entry in the caller's order: "`<entry>` is not an agent:<name> name", "`<entry>` is not a run id" or "`<entry>` is not a schema.table name" (a `resources` entry that is not a string), a non-string entry as JSON, cut to 127 characters followed by `...` when longer. The detail stays `SHAPE`; `NAME` is unchanged |
+
+### Schema version 12: refusal resources
+
+A refused action names the resources its statement names, as a read does, so a search of the ledger for a resource finds its refusals too. File `025_refusal_resources.sql`. **Breaking** (AE-11): the engine calls the new `record_refusal`, so it needs this version; an install at version 11 upgrades in place (`basalt init`, then the page it opens). Idempotent.
+
+| Object | Change |
+|---|---|
+| `record_refusal(…, duration_ms int, resources text[])` | Replaces the nine-argument form, which is dropped (`SECURITY DEFINER` and `SET search_path = pg_catalog, pg_temp` kept; `EXECUTE` for `<prefix>_agents`). `resources` are kept in order, a write's target first: the first 100 that are neither empty nor over 1000 bytes, the rest left out rather than refused, so no name keeps a refusal out of the ledger. The change record's `table_name` is the first, the `REFUSED` ledger row's detail gains `resources` (`[]` when none) |
+
+The engine passes a read's `tables` and a refusal's `resources` qualified in the agent's own session ([`record_read`](basalt-meta.md#functions-an-agent-role-may-call)); no guard function changes for reads.

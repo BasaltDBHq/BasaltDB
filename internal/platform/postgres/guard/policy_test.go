@@ -7,7 +7,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
@@ -46,21 +45,21 @@ func TestRowLimits(t *testing.T) {
 		name string
 		vars map[string]string
 		stmt string
-		want guardmodel.Code
+		want guard.Code
 	}{
-		{"update 11 held", nil, `UPDATE public.leads SET score = 2 WHERE id BETWEEN 101 AND 111`, guardmodel.CodeApprovalRequired},
-		{"update 51 held at row 11", nil, `UPDATE public.leads SET score = 2 WHERE id BETWEEN 101 AND 151`, guardmodel.CodeApprovalRequired},
-		{"insert 11 held", nil, `INSERT INTO public.leads SELECT g, 'n' FROM generate_series(2001, 2011) g`, guardmodel.CodeApprovalRequired},
-		{"delete 1 held", nil, `DELETE FROM public.leads WHERE id = 150`, guardmodel.CodeApprovalRequired},
-		{"preview 51 refused", preview, `UPDATE public.leads SET score = 2 WHERE id BETWEEN 101 AND 151`, guardmodel.CodeRowLimitExceeded},
-		{"preview never commits", preview, `UPDATE public.leads SET score = 3 WHERE id = 101`, guardmodel.CodePreviewCannotCommit},
+		{"update 11 held", nil, `UPDATE public.leads SET score = 2 WHERE id BETWEEN 101 AND 111`, guard.CodeApprovalRequired},
+		{"update 51 held at row 11", nil, `UPDATE public.leads SET score = 2 WHERE id BETWEEN 101 AND 151`, guard.CodeApprovalRequired},
+		{"insert 11 held", nil, `INSERT INTO public.leads SELECT g, 'n' FROM generate_series(2001, 2011) g`, guard.CodeApprovalRequired},
+		{"delete 1 held", nil, `DELETE FROM public.leads WHERE id = 150`, guard.CodeApprovalRequired},
+		{"preview 51 refused", preview, `UPDATE public.leads SET score = 2 WHERE id BETWEEN 101 AND 151`, guard.CodeRowLimitExceeded},
+		{"preview never commits", preview, `UPDATE public.leads SET score = 3 WHERE id = 101`, guard.CodePreviewCannotCommit},
 		{
 			"unknown approval",
 			map[string]string{"basalt.approval_id": "0193a4c2-0000-7000-8000-000000000000"},
-			`UPDATE public.leads SET score = 3 WHERE id = 101`, guardmodel.CodeApprovalInvalid,
+			`UPDATE public.leads SET score = 3 WHERE id = 101`, guard.CodeApprovalInvalid,
 		},
-		{"unknown mode", map[string]string{"basalt.mode": "OFF"}, `UPDATE public.leads SET score = 3 WHERE id = 101`, guardmodel.CodeNotAllowed},
-		{"bad run id", map[string]string{"basalt.run_id": "run_7f3k"}, `UPDATE public.leads SET score = 3 WHERE id = 101`, guardmodel.CodeLedgerInputInvalid},
+		{"unknown mode", map[string]string{"basalt.mode": "OFF"}, `UPDATE public.leads SET score = 3 WHERE id = 101`, guard.CodeNotAllowed},
+		{"bad run id", map[string]string{"basalt.run_id": "run_7f3k"}, `UPDATE public.leads SET score = 3 WHERE id = 101`, guard.CodeLedgerInputInvalid},
 	}
 	for _, tc := range cases {
 		err := withVars(ctx, a.Conn, in, tc.vars, tc.stmt)
@@ -72,7 +71,7 @@ func TestRowLimits(t *testing.T) {
 
 	// Moving the commit check earlier fails closed on a preview too.
 	err := withVars(ctx, a.Conn, in, preview, `SET CONSTRAINTS ALL IMMEDIATE; UPDATE public.leads SET score = 3 WHERE id = 101`)
-	requireCode(t, err, guardmodel.CodePreviewCannotCommit)
+	requireCode(t, err, guard.CodePreviewCannotCommit)
 
 	// A loop of small writes is not blocked.
 	for i := 0; i < 12; i++ {
@@ -139,7 +138,7 @@ func TestCascadeCountedAndRecorded(t *testing.T) {
 
 	// 15 leads + 30 notes + 15 tags (notes 1..20 have tags; 1..30 here) > 50.
 	_, err = previewRows(t, a, in, `DELETE FROM public.leads WHERE id <= 15`)
-	requireCode(t, err, guardmodel.CodeRowLimitExceeded)
+	requireCode(t, err, guard.CodeRowLimitExceeded)
 
 	// SET NULL cascade into lead_owner, which the agent cannot write.
 	got, err = previewRows(t, a, in, `DELETE FROM public.leads WHERE id = 101`)

@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 )
@@ -57,7 +56,7 @@ func TestRevealApprovalErrorByReason(t *testing.T) {
 		t.Parallel()
 		pe := pageError(t, ac.revealApprovalError(refused(action.ApprovalRevealRefused), link))
 		require.Equal(t, guidance.CodeApprovalInvalid, pe.Code)
-		require.Equal(t, guardmodel.RevealRefused, pe.Reason)
+		require.Equal(t, guidance.ReasonRevealRefused, pe.Reason)
 	})
 	t.Run("rows changed", func(t *testing.T) {
 		t.Parallel()

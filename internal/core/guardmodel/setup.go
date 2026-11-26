@@ -13,15 +13,6 @@ const (
 	SetupUpgrade = "UPGRADE"
 )
 
-// SETUP_REFUSED reasons: the DETAIL record_setup raises with BS010.
-const (
-	SetupUsed         = "USED"
-	SetupSuperseded   = "SUPERSEDED"
-	SetupExpired      = "EXPIRED"
-	SetupIDInFuture   = "SETUP_ID_IN_FUTURE"
-	SetupExpiryTooFar = "EXPIRY_TOO_FAR"
-)
-
 // Setup is one setup code to record with RecordSetup.
 type Setup struct {
 	// ID is the code's setupId (a UUIDv7).

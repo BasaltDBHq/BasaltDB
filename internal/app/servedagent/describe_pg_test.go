@@ -195,7 +195,7 @@ func TestDescribePolicyOnlyOnGuardedTables(t *testing.T) {
 
 	notes, isError := h.describe(t, map[string]any{"resource": "shop.notes"})
 	require.False(t, isError, "%v", notes)
-	require.Equal(t, []any{"SELECT", "INSERT"}, notes["actions"])
+	require.Equal(t, []any{"READ", "INSERT"}, notes["actions"])
 	require.Contains(t, notes, "policy")
 	require.Nil(t, notes["policy"], "an unguarded table has no write policy")
 

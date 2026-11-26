@@ -90,7 +90,7 @@ func ReadClassification(ctx context.Context, tx pgx.Tx, n guardmodel.Names) (gua
 }
 
 func readableColumns(ctx context.Context, tx pgx.Tx) ([]guardmodel.ReadableColumn, error) {
-	sql, args, err := psql.Select("table_oid", "attnum", "table_schema", "table_name", "column_name", "data_type").
+	sql, args, err := psql.Select("table_schema", "table_name", "column_name", "data_type").
 		From("basalt_meta.pii_readable_columns()").
 		OrderBy(`table_schema COLLATE "C"`, `table_name COLLATE "C"`, "attnum").ToSql()
 	if err != nil {
@@ -102,7 +102,7 @@ func readableColumns(ctx context.Context, tx pgx.Tx) ([]guardmodel.ReadableColum
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (guardmodel.ReadableColumn, error) {
 		var c guardmodel.ReadableColumn
-		err := r.Scan(&c.TableOID, &c.Attnum, &c.Schema, &c.Table, &c.Column, &c.DataType)
+		err := r.Scan(&c.Schema, &c.Table, &c.Column, &c.DataType)
 		return c, err
 	})
 }

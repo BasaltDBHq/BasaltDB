@@ -90,7 +90,7 @@ func TestNothingLeaksToNotifier(t *testing.T) {
 	})
 	require.NoError(t, err)
 	_, err = guard.RecordRefusal(ctx, c, guard.Refusal{
-		Intent: refused, Op: "SELECT", Statement: "SELECT " + marker,
+		Intent: refused, Op: "READ", Statement: "SELECT " + marker,
 		Code: "QUERY_TIMEOUT", Reason: marker + "-reason",
 	})
 	require.NoError(t, err)
@@ -197,7 +197,7 @@ func TestFeedEventsMatchTheSchema(t *testing.T) {
 	events := make([]feedEvent, 0, 1+len(rows))
 	events = append(events, skippedEvent(install, "product_a", 0, 1))
 	for _, r := range rows {
-		ev, ok := feedEventOf(install, "product_a", r)
+		ev, ok := feedEventOf(install, "product_a", action.StorePostgres, r)
 		require.True(t, ok, r.Kind)
 		events = append(events, ev)
 	}
@@ -224,7 +224,7 @@ func TestFeedEventsMatchTheSchema(t *testing.T) {
 		{Seq: 1, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("UPDATE"), Verb: s("UP;DATE")},    // not a verb
 		{Seq: 0, At: at, Kind: guardmodel.KindRevertPending, RevertID: id()},
 	} {
-		_, ok := feedEventOf(install, "product_a", bad)
+		_, ok := feedEventOf(install, "product_a", action.StorePostgres, bad)
 		require.False(t, ok, "%+v", bad)
 	}
 }
@@ -238,12 +238,17 @@ func TestSenderNeverBlocks(t *testing.T) {
 	p := &feedPlugin{key: pluginmodel.EntryKey{Name: "acme-feed", Instance: "default"}, m: feedManifest("acme-feed"), mode: hangMode, schema: feedSchema(t)}
 	require.NoError(t, h.Register(context.Background(), pluginmodel.Entry{Key: p.key, Manifest: p.m, Agents: []string{"product_a"}, Timeout: time.Minute}, p))
 	s := newPluginSender(h, p.key, time.Now)
+	// A batch the plugin reads, so every call it takes hangs until the stop.
+	// A batch it cannot read fails at once, and a worker then takes another
+	// call before the stop: the count of calls taken depends on timing.
+	batch, _, err := feedBatch([]feedEvent{skippedEvent(uuid.Must(uuid.NewV7()), "product_a", 0, 1)})
+	require.NoError(t, err)
 	var stopped, expired atomic.Int32
 	call := func(notAfter time.Time) pluginCall {
 		return pluginCall{
 			notAfter: notAfter,
 			run: func(ctx context.Context, h *Host, k pluginmodel.EntryKey) error {
-				_, err := h.ObserveFeedOn(ctx, k, 0, "product_a", json.RawMessage(`[{"data":{"seq":1}}]`))
+				_, err := h.ObserveFeedOn(ctx, k, 0, "product_a", batch)
 				return err
 			},
 			done: func(err error) {
@@ -270,6 +275,9 @@ func TestSenderNeverBlocks(t *testing.T) {
 	require.Less(t, time.Since(begun), 5*time.Second)
 	require.Equal(t, int32(pluginSenderQueue+10-full), stopped.Load(), "every call taken is told it was stopped")
 	require.ErrorIs(t, s.Send(context.Background(), call(time.Time{})), errSenderStopped)
+	p.mu.Lock()
+	require.Empty(t, p.invalid, "every request the sender made validates against feed.schema.json")
+	p.mu.Unlock()
 
 	s = newPluginSender(h, p.key, time.Now)
 	t.Cleanup(s.Stop)

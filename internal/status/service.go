@@ -75,7 +75,7 @@ type Deps struct {
 	// PLUGIN_NOT_TRUSTED); status says nothing about plugins when nil.
 	Plugins PluginReporter
 	// CrashDirs are the directories crash reports are saved in, for
-	// status.crash; Access lists the agent role's tables, for
+	// status.crash; Access lists the resources the agent's role can use, for
 	// status.access. Each is left out of status when nil or empty.
 	CrashDirs []string
 	Access    AccessReader
@@ -139,7 +139,7 @@ type EngineRecord struct {
 }
 
 // CatalogAccess is what the agent's role can read and write, as quoted
-// table names.
+// resource names.
 type CatalogAccess struct {
 	Read       []string
 	Write      []string

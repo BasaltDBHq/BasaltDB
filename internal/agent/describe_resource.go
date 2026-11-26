@@ -57,7 +57,7 @@ func (ds *Service) DescribeResource(ctx context.Context, resource, ifFingerprint
 	if err != nil {
 		return Resource{}, err
 	}
-	if slices.ContainsFunc(detail.Actions, func(a action.Op) bool { return a != action.OpSelect }) {
+	if slices.ContainsFunc(detail.Actions, func(a action.Op) bool { return a != action.OpRead }) {
 		guarded, err := ds.store.Catalog.Guarded(ctx, d.Ref)
 		if err != nil {
 			return Resource{}, err

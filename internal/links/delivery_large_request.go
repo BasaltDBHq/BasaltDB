@@ -135,7 +135,7 @@ func (dc *Service) tooLargeText(what string, cost int64, expires time.Time, isRe
 	until := " It expires at " + expires.UTC().Format(guidance.PersonTime) + "."
 	narrower := ""
 	if isRevert {
-		narrower = " Or ask the agent for a narrower revert (only some runs or tables)."
+		narrower = " Or ask the agent for a narrower revert (only some runs or resources)."
 	}
 	switch {
 	case dc.core.PagesBase != links.Portal:

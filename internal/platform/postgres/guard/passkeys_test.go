@@ -44,7 +44,7 @@ func TestRevokedPasskeyCannotApproveOrRevert(t *testing.T) {
 
 	prep, as := prepareSigned(t, a, p, revert.ScopeRun, in.RunID)
 	_, err = guard.ApplyRevert(ctx, a.Conn, prep.RevertID, as)
-	requireRevertInvalid(t, err, "passkey revoked")
+	requireRevertRefused(t, err, guard.RevertPasskeyRevoked, "passkey revoked")
 	require.Equal(t, "won", leadStatus(t, d, 90), "nothing was reverted")
 
 	// The other passkey still signs.
@@ -59,9 +59,9 @@ func TestRevokedPasskeyCannotApproveOrRevert(t *testing.T) {
 
 	// Revoked stays revoked: re-registering the same id is refused.
 	err = guard.RegisterPasskey(ctx, d.Admin, p.Credential(), "again")
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
 	_, err = guard.RevokePasskey(ctx, d.Admin, p.ID, false)
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
 
 	// The revocation is in the chained ledger.
 	require.Equal(t, 1, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger
@@ -78,7 +78,7 @@ func TestLastPasskeyNeedsForce(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := guard.RevokePasskey(ctx, d.Admin, p.ID, false)
-	requireCode(t, err, guardmodel.CodeNotAllowed)
+	requireCode(t, err, guard.CodeNotAllowed)
 	require.Nil(t, scalarOf[*time.Time](t, d.Admin, `SELECT revoked_at FROM basalt_meta.passkeys WHERE credential_id = $1`, p.ID))
 
 	remaining, err := guard.RevokePasskey(ctx, d.Admin, p.ID, true)
@@ -157,5 +157,5 @@ func TestRegisterPasskeyStoresUserHandle(t *testing.T) {
 
 	cred.UserHandle = make([]byte, 65)
 	cred.ID = []byte{9}
-	requireCode(t, guard.RegisterPasskey(ctx, d.Admin, cred, "too long"), guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, guard.RegisterPasskey(ctx, d.Admin, cred, "too long"), guard.CodeLedgerInputInvalid)
 }

@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
@@ -72,7 +71,7 @@ func TestStaleReadRefusesAChangedRow(t *testing.T) {
 	d.Exec(t, `UPDATE public.leads SET status = 'won' WHERE id = 20`)
 
 	err := guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'lost' WHERE id = 20`)
-	requireCode(t, err, guardmodel.CodeStaleRead)
+	requireCode(t, err, guard.CodeStaleRead)
 	var pg *pgconn.PgError
 	require.True(t, errors.As(err, &pg))
 	require.Contains(t, pg.Detail, `public.leads {"id": 20} read at xmin `)
@@ -81,7 +80,7 @@ func TestStaleReadRefusesAChangedRow(t *testing.T) {
 
 	// A stale DELETE says STALE_READ, not APPROVAL_REQUIRED.
 	err = guardtest.Guarded(ctx, a.Conn, in, `DELETE FROM public.leads WHERE id = 20`)
-	requireCode(t, err, guardmodel.CodeStaleRead)
+	requireCode(t, err, guard.CodeStaleRead)
 
 	// Reading again catches up.
 	readLeads(t, a, in, 20)
@@ -178,7 +177,7 @@ func TestReadsBelongToTheirRun(t *testing.T) {
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, other, `UPDATE public.leads SET score = 5 WHERE id = 7`),
 		"another run's reads do not apply")
 	err := guardtest.Guarded(ctx, a.Conn, first, `UPDATE public.leads SET score = 6 WHERE id = 7`)
-	requireCode(t, err, guardmodel.CodeStaleRead)
+	requireCode(t, err, guard.CodeStaleRead)
 }
 
 func TestRecordReadWritesAChangeAndALedgerRow(t *testing.T) {
@@ -199,7 +198,11 @@ func TestRecordReadWritesAChangeAndALedgerRow(t *testing.T) {
 	require.NoError(t, a.Conn.QueryRow(ctx, `SELECT detail FROM basalt_meta.agent_ledger WHERE kind = 'READ' AND change_id = $1`,
 		change).Scan(&detail))
 	require.Equal(t, in.RunID.String(), detail["runId"])
-	require.Equal(t, []any{"leads"}, detail["resources"])
+	require.Equal(t, []any{"public.leads"}, detail["resources"], "the name the agent wrote, qualified")
+	var resource string
+	require.NoError(t, a.Conn.QueryRow(ctx, `SELECT table_name FROM basalt_meta.agent_changes WHERE change_id = $1`,
+		change).Scan(&resource))
+	require.Equal(t, "public.leads", resource)
 	versions, ok := detail["versions"].([]any)
 	require.True(t, ok)
 	require.Len(t, versions, 3)
@@ -213,6 +216,56 @@ func TestRecordReadWritesAChangeAndALedgerRow(t *testing.T) {
 	outside, err := guard.RecordRead(ctx, a.Conn, guard.Read{Statement: "SELECT count(id) FROM leads", Tables: []string{"leads"}, Rows: 1})
 	require.NoError(t, err)
 	require.Equal(t, 1, count(t, a.Conn, `SELECT count(1)::int FROM basalt_meta.agent_changes WHERE change_id = $1 AND run_id IS NULL`, outside))
+}
+
+// A read records each resource it names as the ledger names a written
+// table: schema.table, quoted where needed, resolved with the agent's own
+// search_path, in the order given. A name that resolves to nothing is kept
+// as written.
+func TestRecordReadQualifiesItsResources(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	d.Exec(t, `CREATE SCHEMA sales; CREATE TABLE sales.leads (id int); CREATE TABLE public."Old Leads" (id int)`)
+	a := d.NewAgent(t, "bot", leads, nil)
+	ctx := context.Background()
+	in := newRun(t, a, "Read")
+
+	resources := func(change uuid.UUID) []any {
+		t.Helper()
+		var detail map[string]any
+		require.NoError(t, a.Conn.QueryRow(ctx, `SELECT detail FROM basalt_meta.agent_ledger WHERE kind = 'READ' AND change_id = $1`,
+			change).Scan(&detail))
+		got, ok := detail["resources"].([]any)
+		require.True(t, ok, "resources is an array: %v", detail["resources"])
+		return got
+	}
+
+	// The names as the SQL check gives them: parser-folded, unquoted.
+	change, err := guard.RecordRead(ctx, a.Conn, guard.Read{
+		RunID: in.RunID, Statement: "SELECT 1", Rows: 0,
+		Tables: []string{"leads", "public.leads", "Old Leads", "sales.leads", "missing", "a.b.c"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []any{"public.leads", `public."Old Leads"`, "sales.leads", "missing", "a.b.c"}, resources(change),
+		"leads and public.leads are one resource, at its first place; the order given is kept")
+
+	// The agent's own search_path decides what an unqualified name is.
+	tx, err := a.Conn.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+	d.Exec(t, `GRANT USAGE ON SCHEMA sales TO `+a.Role)
+	_, err = tx.Exec(ctx, `SET LOCAL search_path = sales, public`)
+	require.NoError(t, err)
+	change, err = guard.RecordRead(ctx, tx, guard.Read{RunID: in.RunID, Statement: "SELECT 1", Tables: []string{"leads"}})
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit(ctx))
+	require.Equal(t, []any{"sales.leads"}, resources(change))
+
+	// A statement that names nothing records no resources.
+	change, err = guard.RecordRead(ctx, a.Conn, guard.Read{RunID: in.RunID, Statement: "SELECT 1"})
+	require.NoError(t, err)
+	require.Empty(t, resources(change))
+	requireIntact(t, a.Conn)
 }
 
 func TestBigReadsAreNotCountedAsWrites(t *testing.T) {
@@ -243,7 +296,7 @@ func TestRecordReadValidates(t *testing.T) {
 	good := guard.RowVersion{TableOID: oid("public.leads"), Key: json.RawMessage(`{"id": 1}`), Version: "123"}
 
 	_, err := guard.RecordRead(ctx, a.Conn, guard.Read{RunID: theirs.RunID, Statement: "SELECT 1", Versions: []guard.RowVersion{good}})
-	requireCode(t, err, guardmodel.CodeNotAllowed)
+	requireCode(t, err, guard.CodeNotAllowed)
 
 	cases := map[string]guard.RowVersion{
 		"unguarded table":  {TableOID: oid("public.payroll"), Key: json.RawMessage(`{"id": 1}`), Version: "1"},
@@ -257,13 +310,13 @@ func TestRecordReadValidates(t *testing.T) {
 	for name, v := range cases {
 		t.Run(name, func(t *testing.T) {
 			_, err := guard.RecordRead(ctx, a.Conn, guard.Read{RunID: in.RunID, Statement: "SELECT 1", Versions: []guard.RowVersion{v}})
-			requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+			requireCode(t, err, guard.CodeLedgerInputInvalid)
 		})
 	}
 	_, err = guard.RecordRead(ctx, a.Conn, guard.Read{RunID: in.RunID, Statement: "", Versions: nil})
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
 	_, err = guard.RecordRead(ctx, a.Conn, guard.Read{RunID: in.RunID, Statement: "SELECT 1", Rows: -1})
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
 
 	// The same row twice in one read (a self-join) is fine.
 	_, err = guard.RecordRead(ctx, a.Conn, guard.Read{RunID: in.RunID, Statement: "SELECT 1", Versions: []guard.RowVersion{good, good}})

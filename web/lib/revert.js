@@ -7,7 +7,7 @@
 // signature to: the page only shows it.
 //
 // From a short link the person may also change the scope (CONTRACT.md,
-// Rescope, widen and reject): untick agents, runs or tables, which posts a
+// Rescope, widen and reject): untick agents, runs or resources, which posts a
 // narrower select, or include other agents' changes, which first asks the
 // passkey for a widen proof (rescope.js). Each answer is a new request the
 // page checks and shows in full, as on load.
@@ -62,7 +62,7 @@ const CONFLICTS = {
   KEY_TAKEN: "Another row now has this key.",
   ALREADY_REVERTED: "Already reverted.",
   VALUES_PRUNED: "Older than 30 days: the old values are gone.",
-  SCHEMA_CHANGED: "The table changed since the agent wrote it.",
+  SCHEMA_CHANGED: "The resource changed since the agent wrote it.",
   CASCADE: "Restoring it would change rows that are not part of this revert.",
   CONSTRAINT: "Restoring it would break a database constraint.",
 };
@@ -483,7 +483,7 @@ function renderReveal(state) {
   $("hide-values").setAttribute("aria-pressed", String(state.valuesHidden === true));
   $("reveal-text").textContent = state.revealDone
     ? SHOWN_TO_YOU
-    : `${hiddenLines(req)} of these rows are in tables the agent cannot read. You can see their values with your passkey; the agent still cannot.`;
+    : `${hiddenLines(req)} of these rows are in resources the agent cannot read. You can see their values with your passkey; the agent still cannot.`;
   $("reveal").disabled = state.busy || state.revealFinal === req;
 }
 

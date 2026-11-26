@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -133,7 +132,7 @@ func setMode(t *testing.T, mode string) func(ctx context.Context, tx pgx.Tx) {
 
 func requireApprovalInvalid(t *testing.T, err error, detail string) {
 	t.Helper()
-	requireCode(t, err, guardmodel.CodeApprovalInvalid)
+	requireCode(t, err, guard.CodeApprovalInvalid)
 	require.Contains(t, scopeErrorText(t, err), "|"+detail+"|")
 }
 
@@ -217,7 +216,7 @@ func TestRevealApprovalRowsRefused(t *testing.T) {
 	for name, c := range cases {
 		rows, err := e.reveal(t, c.ticket, c.r)
 		require.Nil(t, rows, name)
-		requireApprovalInvalid(t, err, guardmodel.RevealRefused)
+		requireApprovalInvalid(t, err, guard.RevealRefused)
 		got := scopeErrorText(t, err, e.held.ApprovalID)
 		if text == "" {
 			text = got
@@ -228,7 +227,7 @@ func TestRevealApprovalRowsRefused(t *testing.T) {
 	// The ticket after its window.
 	e.d.Exec(t, `UPDATE basalt_meta.approvals SET reveal_until = now() - interval '1 second' WHERE approval_id = $1`, e.held.ApprovalID)
 	_, err := e.reveal(t, ticket, rerun{})
-	requireApprovalInvalid(t, err, guardmodel.RevealRefused)
+	requireApprovalInvalid(t, err, guard.RevealRefused)
 	require.Equal(t, text, scopeErrorText(t, err, e.held.ApprovalID))
 
 	// A hidden row changed since the hold.
@@ -236,7 +235,7 @@ func TestRevealApprovalRowsRefused(t *testing.T) {
 	e.d.Exec(t, `UPDATE public.lead_notes SET note = 'edited by a person' WHERE id = 39`)
 	rows, err := e.reveal(t, ticket, rerun{})
 	require.Nil(t, rows)
-	requireApprovalInvalid(t, err, guardmodel.RevealRowsChanged)
+	requireApprovalInvalid(t, err, guard.RevealRowsChanged)
 }
 
 // open_reveal refuses every proof but the person's for this approval, with
@@ -272,7 +271,7 @@ func TestOpenRevealRefused(t *testing.T) {
 	var text string
 	for name, c := range cases {
 		_, err := guard.OpenReveal(ctx, e.a.Conn, id, c.proof, c.key)
-		requireApprovalInvalid(t, err, guardmodel.RevealRefused)
+		requireApprovalInvalid(t, err, guard.RevealRefused)
 		got := scopeErrorText(t, err)
 		if text == "" {
 			text = got
@@ -285,7 +284,7 @@ func TestOpenRevealRefused(t *testing.T) {
 	_, err = guard.OpenReveal(ctx, e.a.Conn, id, valid, key)
 	require.NoError(t, err)
 	_, err = guard.OpenReveal(ctx, e.a.Conn, id, valid, key)
-	requireApprovalInvalid(t, err, guardmodel.RevealRefused)
+	requireApprovalInvalid(t, err, guard.RevealRefused)
 	require.Equal(t, text, scopeErrorText(t, err), "a replay reads like any other refusal")
 
 	helper := e.d.NewAgent(t, "helper", leads, leads)
@@ -308,7 +307,7 @@ func TestOpenRevealRefused(t *testing.T) {
 	other.d.Exec(t, `UPDATE basalt_meta.approvals SET expires_at = now() - interval '1 second'`)
 	as, k := other.proof(t, "secret")
 	_, err = guard.OpenReveal(ctx, other.a.Conn, other.held.ApprovalID, as, k)
-	requireCode(t, err, guardmodel.CodeApprovalExpired)
+	requireCode(t, err, guard.CodeApprovalExpired)
 }
 
 // A SECRET column comes back null and named, and grants and ownership

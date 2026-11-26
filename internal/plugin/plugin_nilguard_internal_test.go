@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"testing"
 
@@ -36,9 +37,9 @@ func TestErrorHelpersNeedNoGuardForNoError(t *testing.T) {
 	t.Parallel()
 	other := errors.New("the connection broke")
 
-	require.Equal(t, whyUnreachable, unrecordedWhy(nil, nil))
-	require.Equal(t, whyUnreachable, unrecordedWhy(nil, other))
-	require.Equal(t, whyNotAdmitted, unrecordedWhy(nil, ErrNotAdmitted))
+	require.Equal(t, whyUnreachable, unrecordedWhy(nil))
+	require.Equal(t, whyUnreachable, unrecordedWhy(other))
+	require.Equal(t, whyNotAdmitted, unrecordedWhy(ErrNotAdmitted))
 
 	require.False(t, transientErr(nil, nil))
 	require.False(t, transientErr(nil, ErrNotAdmitted))
@@ -47,10 +48,47 @@ func TestErrorHelpersNeedNoGuardForNoError(t *testing.T) {
 	require.Equal(t, "UNREADABLE", *dbFailure(nil, nil))
 	require.Equal(t, "UNREADABLE", *dbFailure(nil, other))
 
-	err := unreachable(nil, "product_a", other)
+	err := unreachable("product_a", other)
 	require.ErrorContains(t, err, "it does not answer")
 
-	r := keptOpenRefusal(nil, other, 7)
+	r := keptOpenRefusal(other, 7)
 	require.Equal(t, reasonDatabaseUnreachable, r.Reason)
 	require.Equal(t, "the database does not answer", r.Message)
+}
+
+// The host decides on the store's typed answer alone: each reason gives the
+// status, open refusal and feed class it gave when the host read the
+// database's codes, and any store answer is never transient.
+func TestStoreAnswersDecideByReason(t *testing.T) {
+	t.Parallel()
+	answer := func(r pluginmodel.StoreReason) error {
+		return fmt.Errorf("record: %w", &pluginmodel.StoreError{Reason: r, Code: "C0DE1", Message: "the store's text", Err: errors.New("raw")})
+	}
+	whys := map[pluginmodel.StoreReason]string{
+		pluginmodel.StoreGuardOutdated:  whyNoPluginEvents,
+		pluginmodel.StoreGuardMissing:   whyNoGuard,
+		pluginmodel.StoreRefused:        whyRefused,
+		pluginmodel.StoreTooManyPending: whyRefused,
+		pluginmodel.StoreUnknownAgent:   whyRefused,
+		pluginmodel.StoreAnswered:       whyUnreachable,
+	}
+	for r, why := range whys {
+		err := answer(r)
+		require.Equal(t, why, unrecordedWhy(err), r)
+		require.False(t, transientErr(nil, err), r)
+		require.Equal(t, "STORE_CODE C0DE1", *dbFailure(nil, err), r)
+		require.ErrorContains(t, unreachable("product_a", err), "it refused: the store's text", r)
+	}
+
+	opens := map[pluginmodel.StoreReason]PluginOpenRefusal{
+		pluginmodel.StoreTooManyPending: {Reason: reasonTooManyPending, Message: "8 plugin approvals already wait in this database"},
+		pluginmodel.StoreUnknownAgent:   {Reason: reasonUnknownAgent, Message: "a listed agent is not an agent role of this database"},
+		pluginmodel.StoreGuardOutdated:  {Reason: reasonGuardOutdated, Message: "the guard is older than schema version 7"},
+		pluginmodel.StoreRefused:        {Reason: reasonDatabaseUnreachable, Message: "the store's text"},
+		pluginmodel.StoreGuardMissing:   {Reason: reasonDatabaseUnreachable, Message: "the store's text"},
+		pluginmodel.StoreAnswered:       {Reason: reasonDatabaseUnreachable, Message: "the store's text"},
+	}
+	for r, want := range opens {
+		require.Equal(t, want, *keptOpenRefusal(answer(r), 7), r)
+	}
 }

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 	"unicode/utf8"
@@ -78,11 +79,11 @@ func (wc *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, erro
 	start := wc.core.Now()
 	stmt, err := wc.store.Language.Check(p.Request, action.ToolQuery)
 	if err != nil {
-		return QueryOutcome{}, wc.refused(ctx, in, stmt.Op, p.Request, start, err)
+		return QueryOutcome{}, wc.refused(ctx, in, stmt, p.Request, start, err)
 	}
 	res, err := wc.store.Data.Read(ctx, p.Request, stmt)
 	if err != nil {
-		return QueryOutcome{}, wc.refused(ctx, in, stmt.Op, p.Request, start, err)
+		return QueryOutcome{}, wc.refused(ctx, in, stmt, p.Request, start, err)
 	}
 	// The values of IDENTIFIER columns go in the dictionary before the rows
 	// leave the engine (M5.1 plan, section 6). One that cannot be added
@@ -120,9 +121,11 @@ func recorded(code string) bool {
 }
 
 // refused records a REFUSED change for err when it is an action the ledger
-// keeps, and returns err. A failure to record is logged; the agent still
-// gets the original refusal.
-func (wc *Service) refused(ctx context.Context, in action.Intent, op action.Op, req agentstore.Request, start time.Time, err error) error {
+// keeps, with the op and resources of stmt (as much as the check
+// classified), and returns err. A failure to record is logged; the agent
+// still gets the original refusal.
+func (wc *Service) refused(ctx context.Context, in action.Intent, stmt action.Statement, req agentstore.Request, start time.Time, err error) error {
+	op := stmt.Op
 	te := guidance.MessageTooLarge(actionTool(op), err, wc.core.Errors.ToolError(err))
 	if !recorded(te.Code) {
 		return err
@@ -130,11 +133,47 @@ func (wc *Service) refused(ctx context.Context, in action.Intent, op action.Op, 
 	r := action.Refusal{
 		Intent: in, Op: refusalOp(op), Statement: req.Text, Params: req.Params,
 		Code: te.Code, Reason: truncate(te.Message, maxReasonBytes), Duration: wc.core.Now().Sub(start),
+		Resources: refusalResources(stmt),
 	}
-	if recErr := wc.store.Ledger.RecordRefusal(context.WithoutCancel(ctx), r); recErr != nil {
+	if recErr := wc.recordRefusal(context.WithoutCancel(ctx), r); recErr != nil {
 		wc.core.Log.Error("record refusal", "code", te.Code, "err", recErr)
 	}
 	return err
+}
+
+// recordRefusal records r. When that fails while r names resources, it
+// records r once more naming none, so no name can keep a refusal out of
+// the ledger, and logs the first failure as a warning.
+func (wc *Service) recordRefusal(ctx context.Context, r action.Refusal) error {
+	err := wc.store.Ledger.RecordRefusal(ctx, r)
+	if err == nil || len(r.Resources) == 0 {
+		return err
+	}
+	r.Resources = nil
+	if retryErr := wc.store.Ledger.RecordRefusal(ctx, r); retryErr != nil {
+		return errors.Join(err, retryErr)
+	}
+	wc.core.Log.Warn("record refusal: recorded without its resources", "code", r.Code, "err", err)
+	return nil
+}
+
+// refusalResources are the resources a refusal records: a write's target
+// first, as a write's own record names it, then the statement's other
+// relations as the check lists them. The order matters: the change record
+// names the first, so a write cannot pick its refusal's resource by naming
+// another table that sorts earlier.
+func refusalResources(stmt action.Statement) []string {
+	if stmt.Target == "" {
+		return stmt.Tables
+	}
+	out := make([]string, 0, len(stmt.Tables)+1)
+	out = append(out, stmt.Target)
+	for _, t := range stmt.Tables {
+		if t != stmt.Target {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // truncate cuts s to at most n bytes on a rune boundary.

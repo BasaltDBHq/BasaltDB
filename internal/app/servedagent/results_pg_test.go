@@ -124,7 +124,7 @@ func TestRLSHidesRowsWarning(t *testing.T) {
 	w, ok := warnings(hidden)[0].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "RLS_HIDES_ROWS", w["code"])
-	require.Equal(t, "public.vault", w["table"])
+	require.Equal(t, "public.vault", w["resource"])
 	require.NotEmpty(t, w["message"])
 	require.Contains(t, str(t, w["personMessage"]), "public·vault", "a bare host's dot shows as a middle dot")
 	steps := requireSteps(t, w, catalogWarning(t, "RLS_HIDES_ROWS").Steps, true)

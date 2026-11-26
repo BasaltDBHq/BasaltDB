@@ -99,8 +99,8 @@ func (ac *Service) FindApproval(ctx context.Context, id uuid.UUID) (action.Appro
 
 func (ac *Service) HasColumns() bool { return ac.deps.Columns != nil }
 
-func (ac *Service) ColumnOrder(ctx context.Context, tables []string) (map[string][]string, error) {
-	return ac.deps.Columns.ColumnOrder(ctx, tables)
+func (ac *Service) ColumnOrder(ctx context.Context, resources []string) (map[string][]string, error) {
+	return ac.deps.Columns.ColumnOrder(ctx, resources)
 }
 
 // HeldWrite is a write held for the person's approval, with the preview

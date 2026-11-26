@@ -1,4 +1,4 @@
-package largevalue_test
+package pglargevalue_test
 
 import (
 	"context"
@@ -15,10 +15,11 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pglargevalue"
 )
 
 // vectorsFile holds the shared vectors the engine and the pages run.
-const vectorsFile = "../../../api/mcp/values/large-value.json"
+const vectorsFile = "../../../../api/mcp/values/large-value.json"
 
 type vector struct {
 	Name   string          `json:"name"`
@@ -26,7 +27,7 @@ type vector struct {
 	Text   string          `json:"text"`
 	Bytes  int64           `json:"bytes"`
 	SHA256 string          `json:"sha256"`
-	Column string          `json:"column"`
+	Field  string          `json:"field"`
 	Cost   int64           `json:"cost"`
 }
 
@@ -42,11 +43,11 @@ func TestSharedVectorsMatchPostgres(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &file))
 	require.Len(t, file.Vectors, 3)
 	db := guardtest.New(t)
-	text := largevalue.TextOf("$1::jsonb")
-	sql := fmt.Sprintf(`SELECT %s, %s, %s, %s`, text, largevalue.BytesOf(text), largevalue.SHA256Of(text), largevalue.CostOf("($1::jsonb)::text", "$2::text"))
+	text := pglargevalue.TextOf("$1::jsonb")
+	sql := fmt.Sprintf(`SELECT %s, %s, %s, %s`, text, pglargevalue.BytesOf(text), pglargevalue.SHA256Of(text), pglargevalue.CostOf("($1::jsonb)::text", "$2::text"))
 	for _, v := range file.Vectors {
 		var got vector
-		require.NoError(t, db.Admin.QueryRow(context.Background(), sql, string(v.Value), v.Column).
+		require.NoError(t, db.Admin.QueryRow(context.Background(), sql, string(v.Value), v.Field).
 			Scan(&got.Text, &got.Bytes, &got.SHA256, &got.Cost), v.Name)
 		require.Equal(t, v.Text, got.Text, v.Name)
 		require.Equal(t, v.Bytes, got.Bytes, v.Name)
@@ -69,7 +70,7 @@ type image struct {
 func elide(t *testing.T, db *guardtest.DB, src string) map[int64]image {
 	t.Helper()
 	// Plain SQL: the CTE under test.
-	rows, err := db.Admin.Query(context.Background(), largevalue.With+largevalue.Elide(src)+`
+	rows, err := db.Admin.Query(context.Background(), pglargevalue.With+pglargevalue.Elide(src)+`
 		SELECT ord, part, img, large_values FROM lv_out ORDER BY ord`)
 	require.NoError(t, err)
 	out := map[int64]image{}
@@ -108,7 +109,7 @@ func TestElideLeavesOutAValueOverOneMiB(t *testing.T) {
 	require.Equal(t, map[string]any{"id": float64(1)}, got[1].Img)
 	require.Nil(t, got[1].Large)
 	require.Equal(t, map[string]any{"id": float64(1)}, got[2].Img, "body is absent, not null")
-	require.Equal(t, []largevalue.Entry{{In: "BEFORE", Column: "body", Bytes: int64(len(big)), SHA256: sha(big)}}, got[2].Large)
+	require.Equal(t, []largevalue.Entry{{In: "BEFORE", Field: "body", Bytes: int64(len(big)), SHA256: sha(big)}}, got[2].Large)
 	require.Equal(t, map[string]any{"id": float64(1), "body": "small"}, got[3].Img)
 }
 
@@ -127,7 +128,7 @@ func TestElideCountsEscapesInTheCost(t *testing.T) {
 	require.NotNil(t, got[1].Img, "the image is kept, with no value left in it")
 	require.Len(t, got[1].Large, 7)
 	for i, e := range got[1].Large {
-		require.Equal(t, largevalue.Entry{In: "AFTER", Column: fmt.Sprintf("c%d", i), Bytes: 1000000, SHA256: sha(lt)}, e)
+		require.Equal(t, largevalue.Entry{In: "AFTER", Field: fmt.Sprintf("c%d", i), Bytes: 1000000, SHA256: sha(lt)}, e)
 	}
 }
 
@@ -175,7 +176,7 @@ func TestElideLinesSlicesChangeIDs(t *testing.T) {
 	db := guardtest.New(t)
 	var line map[string]any
 	// Plain SQL: the CTE under test.
-	require.NoError(t, db.Admin.QueryRow(context.Background(), largevalue.With+largevalue.ElideLines(`SELECT 1 AS item,
+	require.NoError(t, db.Admin.QueryRow(context.Background(), pglargevalue.With+pglargevalue.ElideLines(`SELECT 1 AS item,
 		jsonb_build_object('op', 'UPDATE', 'table', 'public.t', 'key', '{"id": 1}'::jsonb,
 			'now', jsonb_build_object('id', 1, 'v', repeat('x', 2000000)), 'set', '{"v": "old"}'::jsonb,
 			'action', 'RESTORE', 'conflict', NULL,
@@ -190,7 +191,7 @@ func TestElideLinesSlicesChangeIDs(t *testing.T) {
 	require.Len(t, line["largeValues"], 1)
 
 	var small map[string]any
-	require.NoError(t, db.Admin.QueryRow(context.Background(), largevalue.With+largevalue.ElideLines(`SELECT 1 AS item,
+	require.NoError(t, db.Admin.QueryRow(context.Background(), pglargevalue.With+pglargevalue.ElideLines(`SELECT 1 AS item,
 		'{"op": "DELETE", "key": {"id": 1}, "now": null, "changeIds": ["a"]}'::jsonb AS line`)+`
 		SELECT line FROM lv_lines`).Scan(&small))
 	require.Equal(t, map[string]any{"op": "DELETE", "key": map[string]any{"id": float64(1)}, "now": nil, "changeIds": []any{"a"}}, small,
@@ -206,5 +207,5 @@ func TestElideCostsAValueByItsJSONText(t *testing.T) {
 	quotes := strings.Repeat(`"`, 140000)
 	got := elide(t, db, `SELECT 1 AS item, 1 AS ord, 'AFTER' AS part, jsonb_build_object('id', 1, 'q', repeat('"', 140000)) AS img`)
 	require.Equal(t, map[string]any{"id": float64(1)}, got[1].Img)
-	require.Equal(t, []largevalue.Entry{{In: "AFTER", Column: "q", Bytes: 140000, SHA256: sha(quotes)}}, got[1].Large)
+	require.Equal(t, []largevalue.Entry{{In: "AFTER", Field: "q", Bytes: 140000, SHA256: sha(quotes)}}, got[1].Large)
 }

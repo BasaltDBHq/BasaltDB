@@ -23,7 +23,7 @@ type Service struct {
 	deps *Deps
 	// approvals is what delivery reads of the approval use case: the person's
 	// passkeys (the credentials a signing link accepts), an approval to receipt,
-	// and each table's column order for the pages.
+	// and each resource's field order for the pages.
 	approvals ApprovalReads
 	// failure maps an error to the tool's error body for a page answer.
 	failure func(tool string, args map[string]any, err error) *toolresult.ToolError
@@ -33,9 +33,9 @@ type Service struct {
 type ApprovalReads interface {
 	Passkeys(ctx context.Context) ([]passkey.Credential, error)
 	FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error)
-	// HasColumns says whether the pages can show the tables' column order.
+	// HasColumns says whether the pages can show the resources' field order.
 	HasColumns() bool
-	ColumnOrder(ctx context.Context, tables []string) (map[string][]string, error)
+	ColumnOrder(ctx context.Context, resources []string) (map[string][]string, error)
 }
 
 func New(core Core, deps *Deps, approvals ApprovalReads,

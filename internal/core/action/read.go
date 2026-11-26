@@ -7,23 +7,32 @@ import (
 	"github.com/google/uuid"
 )
 
+// ResourceRef names one resource (a table, a collection, a bucket) as its
+// store assigns it. It is opaque outside the store's adapter: compared and
+// used as a map key, never parsed. Postgres: "16384".
+type ResourceRef string
+
+// FieldRef names one field of a resource as its store assigns it. It is
+// opaque outside the store's adapter. Postgres: "16384/3".
+type FieldRef string
+
 // Column is one result column.
 type Column struct {
 	Name string
-	// Type is the store's type name, or "oid:<n>" for a Postgres type the
-	// driver does not know.
+	// Type is the store's type name; the store's adapter names a type it
+	// does not know in its own words.
 	Type string
-	// TableOID and Attnum are the table column the value comes from, both 0
-	// for a computed column. The engine maps them to the column's PII
-	// class; they never reach the agent.
-	TableOID uint32
-	Attnum   int16
+	// Ref is the store field the value comes from, empty for a computed
+	// column. The engine maps it to the field's PII class; it never reaches
+	// the agent.
+	Ref FieldRef
 }
 
 // RowVersion is the version of one row a read saw.
 type RowVersion struct {
-	TableOID uint32
-	// Key is a JSON object of the table's primary-key columns.
+	// Resource is the resource the row is in.
+	Resource ResourceRef
+	// Key is a JSON object of the resource's key fields.
 	Key     json.RawMessage
 	Version string
 }

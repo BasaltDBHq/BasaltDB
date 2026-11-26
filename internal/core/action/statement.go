@@ -6,7 +6,7 @@ type Op string
 // The ops of a statement. OpOther is the op a refusal is recorded with when
 // the statement is not one of the four the ledger records by name.
 const (
-	OpSelect Op = "SELECT"
+	OpRead   Op = "READ"
 	OpInsert Op = "INSERT"
 	OpUpdate Op = "UPDATE"
 	OpDelete Op = "DELETE"
@@ -21,6 +21,9 @@ type Statement struct {
 	Op Op
 	// Tables are the relations the statement names, as written, sorted.
 	Tables []string
+	// Target is the relation a write writes, as written like Tables; ""
+	// for a read or a statement the check could not classify.
+	Target string
 	// ParamCount is the highest $n placeholder used, 0 when none.
 	ParamCount int
 	// Handle is the store's own data about the statement (for Postgres, the

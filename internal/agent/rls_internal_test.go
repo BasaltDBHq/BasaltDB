@@ -126,7 +126,7 @@ func TestRLSWarningNamesTheTableAndOnlyAppearsOnZeroRows(t *testing.T) {
 
 	warnings := s.rlsWarnings(context.Background(), []string{"public.leads", "public.secrets"}, 0)
 	require.Len(t, warnings, 1)
-	require.Equal(t, `"public"."secrets"`, warnings[0].Table)
+	require.Equal(t, `"public"."secrets"`, warnings[0].Resource)
 	require.Contains(t, warnings[0].PersonMessage, `"public"."secrets"`, "the database's name, not the agent's spelling")
 }
 

@@ -69,7 +69,7 @@ func (c Catalog) Find(ctx context.Context, namespace, name string) (agentstore.R
 }
 
 func (c Catalog) Describe(ctx context.Context, ref agentstore.ResourceRef) (agentstore.Detail, error) {
-	oid, err := pgOID(ref)
+	oid, err := ResourceOID(ref)
 	if err != nil {
 		return agentstore.Detail{}, err
 	}
@@ -81,7 +81,7 @@ func (c Catalog) Describe(ctx context.Context, ref agentstore.ResourceRef) (agen
 }
 
 func (c Catalog) Guarded(ctx context.Context, ref agentstore.ResourceRef) (bool, error) {
-	oid, err := pgOID(ref)
+	oid, err := ResourceOID(ref)
 	if err != nil {
 		return false, err
 	}
@@ -118,8 +118,8 @@ func (c Catalog) Database() string { return c.pg.Database() }
 
 func (c Catalog) Host() string { return c.pg.Host() }
 
-// pgResourceRef is a table's ref: its OID.
-func pgResourceRef(oid uint32) agentstore.ResourceRef {
+// ResourceRef is a table's ref: its OID.
+func ResourceRef(oid uint32) agentstore.ResourceRef {
 	return agentstore.ResourceRef(strconv.FormatUint(uint64(oid), 10))
 }
 
@@ -139,12 +139,12 @@ func pgFieldRefs(oid uint32, attnums []int16) []agentstore.FieldRef {
 	return out
 }
 
-// pgOID reads a resource ref back. A ref this adapter did not write is an
-// engine defect, never a guess.
-func pgOID(ref agentstore.ResourceRef) (uint32, error) {
+// ResourceOID reads a resource ref back. A ref this adapter did not write
+// is an engine defect, never a guess.
+func ResourceOID(ref agentstore.ResourceRef) (uint32, error) {
 	oid, err := strconv.ParseUint(string(ref), 10, 32)
-	if err != nil || pgResourceRef(uint32(oid)) != ref {
-		return 0, fmt.Errorf("describe: %q is not a Postgres resource ref", ref)
+	if err != nil || ResourceRef(uint32(oid)) != ref {
+		return 0, fmt.Errorf("%q is not a Postgres resource ref", ref)
 	}
 	return uint32(oid), nil
 }
@@ -168,16 +168,25 @@ func ParseFieldRef(ref agentstore.FieldRef) (pgcatalog.ColumnKey, error) {
 	return pgcatalog.ColumnKey{OID: uint32(oid), Attnum: int16(attnum)}, nil
 }
 
+// pgAction is Basalt's op for a Postgres table privilege: SELECT is a READ,
+// and INSERT, UPDATE and DELETE are named alike.
+func pgAction(privilege string) action.Op {
+	if privilege == "SELECT" {
+		return action.OpRead
+	}
+	return action.Op(privilege)
+}
+
 func pgResource(r pgcatalog.Relation) agentstore.Resource {
 	var actions []action.Op
 	if r.Privileges != nil {
 		actions = make([]action.Op, len(r.Privileges))
 		for i, p := range r.Privileges {
-			actions[i] = action.Op(p)
+			actions[i] = pgAction(p)
 		}
 	}
 	return agentstore.Resource{
-		Ref: pgResourceRef(r.OID), Namespace: r.Schema, Name: r.Name, Kind: r.Kind,
+		Ref: ResourceRef(r.OID), Namespace: r.Schema, Name: r.Name, Kind: r.Kind,
 		Estimate: r.EstimatedRows, Comment: r.Comment, Actions: actions,
 	}
 }
@@ -203,16 +212,16 @@ type pgIndexDisplay struct {
 // pgForeignKeyDisplay is one foreign key as describe shows it.
 type pgForeignKeyDisplay struct {
 	Direction string   `json:"direction"`
-	Columns   []string `json:"columns"`
-	Table     string   `json:"table"`
+	Fields    []string `json:"fields"`
+	Resource  string   `json:"resource"`
 	OnDelete  string   `json:"onDelete"`
 	OnUpdate  string   `json:"onUpdate"`
 }
 
-// pgStatsDisplay is a table's size and scan activity as describe shows it.
+// pgStatsDisplay is a resource's size and scan activity as describe shows it.
 type pgStatsDisplay struct {
 	EstimatedRows *int64  `json:"estimatedRows"`
-	TableBytes    int64   `json:"tableBytes"`
+	ResourceBytes int64   `json:"resourceBytes"`
 	TotalBytes    int64   `json:"totalBytes"`
 	SeqScans      int64   `json:"seqScans"`
 	IndexScans    int64   `json:"indexScans"`
@@ -268,14 +277,14 @@ func pgField(oid uint32, c pgcatalog.Column) agentstore.Field {
 
 func pgForeignKey(k pgcatalog.Key, names map[int16]string, lang sqllang.Language) pgForeignKeyDisplay {
 	fk := pgForeignKeyDisplay{
-		Direction: "INCOMING", Columns: make([]string, 0, len(k.Attnums)), Table: lang.PrintName(k.OtherSchema, k.OtherTable),
+		Direction: "INCOMING", Fields: make([]string, 0, len(k.Attnums)), Resource: lang.PrintName(k.OtherSchema, k.OtherTable),
 		OnDelete: pgFKAction(k.OnDelete), OnUpdate: pgFKAction(k.OnUpdate),
 	}
 	if k.Outgoing {
 		fk.Direction = "OUTGOING"
 	}
 	for _, n := range k.Attnums {
-		fk.Columns = append(fk.Columns, names[n])
+		fk.Fields = append(fk.Fields, names[n])
 	}
 	return fk
 }
@@ -285,7 +294,7 @@ func pgFKAction(a string) string { return strings.ReplaceAll(a, " ", "_") }
 
 func pgStats(d pgcatalog.Detail) pgStatsDisplay {
 	st := pgStatsDisplay{
-		EstimatedRows: d.EstimatedRows, TableBytes: d.Stats.TableBytes, TotalBytes: d.Stats.TotalBytes,
+		EstimatedRows: d.EstimatedRows, ResourceBytes: d.Stats.TableBytes, TotalBytes: d.Stats.TotalBytes,
 		SeqScans: d.Stats.SeqScans, IndexScans: d.Stats.IndexScans,
 	}
 	if d.Stats.LastAnalyzed != nil {

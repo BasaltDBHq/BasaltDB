@@ -14,8 +14,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
@@ -198,16 +198,49 @@ func findApprovalRefusal(err error) error {
 // any other APPROVAL_INVALID is an approval signed or used meanwhile.
 func revealApprovalRefusal(err error) error {
 	se := guardAnswer(err)
-	if se == nil || guardmodel.Code(se.LedgerCode) != guardmodel.CodeApprovalInvalid {
+	if se == nil || guard.Code(se.LedgerCode) != guard.CodeApprovalInvalid {
 		return err
 	}
 	switch se.Detail {
-	case guardmodel.RevealRefused:
+	case guard.RevealRefused:
 		return approvalRefusal(err, action.ApprovalRevealRefused, se.Detail)
-	case guardmodel.RevealRowsChanged:
+	case guard.RevealRowsChanged:
 		return approvalRefusal(err, action.ApprovalRevealRowsChanged, se.Detail)
 	case approvalNotFoundDetail:
 		return approvalRefusal(err, action.ApprovalNotFound, se.Detail)
 	}
 	return approvalRefusal(err, action.ApprovalNotOpen, se.Detail)
+}
+
+// pluginApprovalRefusal maps SubmitPluginApproval's errors to the plugin's
+// typed refusals (pluginmodel.ApprovalRefusalError): APPROVAL_EXPIRED is
+// an expired approval; an APPROVAL_INVALID whose detail is an approval
+// already signed, cancelled or not held is that, and any other is a
+// revoked or unknown passkey (the catalog's PASSKEY_REVOKED) or a
+// signature the guard did not accept. Any other answer is returned as
+// MapError made it.
+func pluginApprovalRefusal(err error) error {
+	se := guardAnswer(err)
+	if se == nil {
+		return err
+	}
+	reason := pluginmodel.ApprovalBadSignature
+	switch guard.Code(se.LedgerCode) {
+	case guard.CodeApprovalExpired:
+		reason = pluginmodel.ApprovalExpired
+	case guard.CodeApprovalInvalid:
+		switch {
+		case se.Detail == guard.DetailAlreadyApproved:
+			reason = pluginmodel.ApprovalAlreadyApproved
+		case se.Detail == guard.DetailApprovalCancelled:
+			reason = pluginmodel.ApprovalCancelled
+		case se.Detail == guard.DetailApprovalNotFound:
+			reason = pluginmodel.ApprovalNotFound
+		case se.Reason == action.ReasonPasskeyRevoked:
+			reason = pluginmodel.ApprovalPasskeyRevoked
+		}
+	default:
+		return err
+	}
+	return &pluginmodel.ApprovalRefusalError{Reason: reason, Err: err}
 }

@@ -86,7 +86,7 @@ func TestMarkedReadsLeaveOutLargeValuesThePersonsReadsDoNot(t *testing.T) {
 	r := rows[first.ID][0]
 	require.Equal(t, map[string]any{"id": float64(1)}, r.After, "body is absent")
 	require.Equal(t, map[string]any{"id": float64(1), "body": "small"}, r.Before)
-	require.Equal(t, []largevalue.Entry{{In: "AFTER", Column: "body", Bytes: int64(len(big)), SHA256: hexSHA(big)}}, r.LargeValues)
+	require.Equal(t, []largevalue.Entry{{In: "AFTER", Field: "body", Bytes: int64(len(big)), SHA256: hexSHA(big)}}, r.LargeValues)
 
 	w := rows[second.ID][0]
 	require.Len(t, w.Before, 6, "the first 5 MB image fits")
@@ -94,7 +94,7 @@ func TestMarkedReadsLeaveOutLargeValuesThePersonsReadsDoNot(t *testing.T) {
 	require.Nil(t, w.After)
 	require.Len(t, w.LargeValues, 1)
 	require.Equal(t, "AFTER", w.LargeValues[0].In)
-	require.Empty(t, w.LargeValues[0].Column)
+	require.Empty(t, w.LargeValues[0].Field)
 
 	raw, err := json.Marshal(ledger.RecordFromDomain(second, rows[second.ID]))
 	require.NoError(t, err)

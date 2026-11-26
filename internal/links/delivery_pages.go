@@ -16,20 +16,21 @@ import (
 // What the engine's local pages ask of an agent (CONTRACT.md, Local
 // pages): the request a short link stands for, and the relay of the
 // person's signature with this agent's credential. The relay decides
-// nothing: Postgres verifies the passkey signature.
+// nothing: the guard verifies the passkey signature.
 
 // ErrNotThisAgent is an approval or revert this agent's role cannot see:
 // another agent's, or none.
 var ErrNotThisAgent = errors.New("not one of this agent's approvals or reverts")
 
-// ColumnOrder reads tables' columns in table order (attnum).
+// ColumnOrder reads resources' fields in the order their store keeps them.
 type ColumnOrder interface {
-	// ColumnOrder maps each table name, as the lines spell it, to its
-	// columns; a table it cannot find is left out.
-	ColumnOrder(ctx context.Context, tables []string) (map[string][]string, error)
+	// ColumnOrder maps each resource name, as the lines spell it, to its
+	// field names in the store's order; a resource it cannot find is left
+	// out.
+	ColumnOrder(ctx context.Context, resources []string) (map[string][]string, error)
 }
 
-// ColumnsOf is the column order of the resources (tables) lines name, for the pages'
+// ColumnsOf is the field order of the resources lines name, for the pages'
 // display only (CONTRACT.md, Local pages): never signed, and a failure
 // only costs the order, so it is logged and nil is returned.
 func (dc *Service) ColumnsOf(ctx context.Context, lines []string) approval.ColumnOrder {
@@ -37,7 +38,7 @@ func (dc *Service) ColumnsOf(ctx context.Context, lines []string) approval.Colum
 		return nil
 	}
 	seen := map[string]bool{}
-	var tables []string
+	var resources []string
 	for _, l := range lines {
 		var line struct {
 			Resource string `json:"resource"`
@@ -46,12 +47,12 @@ func (dc *Service) ColumnsOf(ctx context.Context, lines []string) approval.Colum
 			continue
 		}
 		seen[line.Resource] = true
-		tables = append(tables, line.Resource)
+		resources = append(resources, line.Resource)
 	}
-	if len(tables) == 0 {
+	if len(resources) == 0 {
 		return nil
 	}
-	cols, err := dc.approvals.ColumnOrder(ctx, tables)
+	cols, err := dc.approvals.ColumnOrder(ctx, resources)
 	if err != nil {
 		dc.core.Log.WarnContext(ctx, "pages: column order not read; the page shows the rows' order", "err", err)
 		return nil

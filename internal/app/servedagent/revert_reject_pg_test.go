@@ -21,7 +21,7 @@ import (
 
 func rejectPath(id uuid.UUID) string { return "/api/v1/reverts/" + id.String() + "/reject" }
 
-func requireGuardCode(t *testing.T, err error, want guardmodel.Code) {
+func requireGuardCode(t *testing.T, err error, want guard.Code) {
 	t.Helper()
 	code, ok := guard.CodeOf(err)
 	require.True(t, ok, "%v", err)
@@ -121,7 +121,7 @@ func TestRejectRouteBeforeAWiden(t *testing.T) {
 
 	// The signature the person made before the reject applies nothing.
 	_, err = guard.ApplyRevert(context.Background(), e.bot.Conn, id, signed)
-	requireGuardCode(t, err, guardmodel.CodeRevertInvalid)
+	requireGuardCode(t, err, guard.CodeRevertInvalid)
 	var status string
 	require.NoError(t, e.d.Admin.QueryRow(context.Background(), `SELECT status FROM public.leads WHERE id = 30`).Scan(&status))
 	require.Equal(t, "bot", status, "nothing was reverted")
@@ -145,7 +145,7 @@ func TestRejectRouteAfterAWiden(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, e.p.post(rejectPath(id), pageOrigin, agentSecret, rejectBody(t, nil), &perr),
 		"the agent's old link cannot reject")
 	_, err := guard.RejectRevert(ctx, e.bot.Conn, id, "", nil)
-	requireGuardCode(t, err, guardmodel.CodeRevertInvalid)
+	requireGuardCode(t, err, guard.CodeRevertInvalid)
 	require.ErrorContains(t, err, "REVERT_INVALID")
 
 	// The engine restarts: the person's link still opens, but the token is

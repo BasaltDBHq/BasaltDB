@@ -18,7 +18,7 @@ const (
 	KindRevert = "REVERT"
 	// RevealSecretLen is the length of the page's reveal secret.
 	RevealSecretLen = 16
-	// RevealKeyLen is the length of the key derived from it; Postgres
+	// RevealKeyLen is the length of the key derived from it; the guard
 	// refuses any other.
 	RevealKeyLen = 32
 	// revealRowValues is how many values a revealed row holds: key, then
@@ -26,9 +26,9 @@ const (
 	revealRowValues = 3
 )
 
-// RevealKey derives the key the engine passes Postgres for a reveal from the
+// RevealKey derives the key the engine passes the guard for a reveal from the
 // page's reveal secret: HKDF-SHA-256 with an empty salt and info
-// "basalt-reveal-key.1". The secret itself never reaches Postgres.
+// "basalt-reveal-key.1". The secret itself never reaches the guard.
 func RevealKey(secret []byte) ([]byte, error) {
 	if len(secret) != RevealSecretLen {
 		return nil, Invalid("reveal secret is %d bytes, want %d", len(secret), RevealSecretLen)

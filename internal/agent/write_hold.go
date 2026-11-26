@@ -32,7 +32,7 @@ func (wc *Service) hold(ctx context.Context, in action.Intent, p WriteParams, st
 	held, err := wc.approvals.Hold(ctx, in, p.Request, stmt.Op)
 	var refusal *approvalsvc.HoldRefusalError
 	if errors.As(err, &refusal) {
-		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.Request, start, refusal.Err)
+		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt, p.Request, start, refusal.Err)
 	}
 	if err != nil {
 		return uuid.Nil, time.Time{}, err
@@ -81,7 +81,7 @@ func (wc *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutco
 	if a, err = wc.waitForSignature(ctx, a, p); err != nil {
 		return WriteOutcome{}, err
 	}
-	// The receipt is built from Postgres's record of the approval after the
+	// The receipt is built from the store's record of the approval after the
 	// signature (CONTRACT.md, Receipts), and handed over only once the write
 	// is applied.
 	if a, err = wc.approvals.FindApproval(ctx, a.ID); err != nil {
@@ -100,11 +100,11 @@ func (wc *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutco
 	stmt, err := wc.store.Language.Check(p.Request, action.ToolWrite)
 	op := stmt.Op
 	if err != nil {
-		return WriteOutcome{}, wc.refused(ctx, in, op, p.Request, start, err)
+		return WriteOutcome{}, wc.refused(ctx, in, stmt, p.Request, start, err)
 	}
 	res, err := wc.store.Data.WriteApproved(ctx, in, a.ID, p.Request, stmt)
 	if err != nil {
-		return WriteOutcome{}, wc.withApprovalLink(ctx, a, wc.refused(ctx, in, op, p.Request, start, err))
+		return WriteOutcome{}, wc.withApprovalLink(ctx, a, wc.refused(ctx, in, stmt, p.Request, start, err))
 	}
 	return WriteOutcome{
 		WriteResult: res, RunID: run.ID, Op: op, ApprovalID: a.ID,

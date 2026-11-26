@@ -150,7 +150,7 @@ func TestRejectRevertRefusals(t *testing.T) {
 	requireWidenRefused(t, err)
 
 	_, err = guard.RejectRevert(ctx, e.bot.Conn, e.prep.RevertID, strings.Repeat("é", guardmodel.MaxRejectNote+1), nil)
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
 	_, err = guard.RejectRevert(ctx, e.bot.Conn, e.prep.RevertID, strings.Repeat("é", guardmodel.MaxRejectNote), nil)
 	require.NoError(t, err, "500 characters, whatever their bytes")
 
@@ -163,9 +163,9 @@ func TestRejectRevertRefusals(t *testing.T) {
 		require.NoError(t, err)
 		e.d.Exec(t, sql, prep.RevertID)
 		_, err = guard.RejectRevert(ctx, e.bot.Conn, prep.RevertID, "", nil)
-		want := guardmodel.CodeRevertInvalid
+		want := guard.CodeRevertInvalid
 		if name == "expired" {
-			want = guardmodel.CodeRevertExpired
+			want = guard.CodeRevertExpired
 		}
 		requireCode(t, err, want)
 	}

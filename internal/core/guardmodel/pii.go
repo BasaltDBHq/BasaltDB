@@ -46,10 +46,9 @@ type Classification struct {
 	At time.Time
 }
 
-// ReadableColumn is one row of pii_readable_columns().
+// ReadableColumn is one row of pii_readable_columns(): a column by its
+// schema, table and name.
 type ReadableColumn struct {
-	TableOID              uint32
-	Attnum                int16
 	Schema, Table, Column string
 	DataType              string
 }
@@ -60,7 +59,8 @@ type ColumnKey struct{ Schema, Table, Column string }
 // ClassificationState is what basalt classify reads before it suggests:
 // the readable columns, the stored classes and both fingerprints.
 type ClassificationState struct {
-	// Readable is pii_readable_columns(), by schema, table and attnum.
+	// Readable is pii_readable_columns(), by schema, table and column
+	// position.
 	Readable []ReadableColumn
 	// Stored are the rows of pii_columns.
 	Stored map[ColumnKey]PIIColumn

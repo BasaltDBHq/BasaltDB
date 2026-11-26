@@ -31,13 +31,14 @@ type RequestArgs interface {
 
 // ResourceRef names one resource (a table, a collection, a bucket) as its
 // store assigns it. It is opaque to the agent service: compared and used as
-// a map key, never parsed. Postgres: the table's OID, as "16384".
-type ResourceRef string
+// a map key, never parsed. It is action.ResourceRef, so a read's row
+// versions name resources the way describe does.
+type ResourceRef = action.ResourceRef
 
 // FieldRef names one field of a resource as its store assigns it. It is
-// opaque to the agent service. Postgres: the OID and attribute number, as
-// "16384/3".
-type FieldRef string
+// opaque to the agent service. It is action.FieldRef, so a read's columns
+// name fields the way describe does.
+type FieldRef = action.FieldRef
 
 // Resource is one resource the agent can read.
 type Resource struct {

@@ -56,7 +56,7 @@ func openRaw(q guard.Querier, detail, settings string) error {
 	return err
 }
 
-func requireGuardDetail(t *testing.T, err error, code guardmodel.Code, detail string) {
+func requireGuardDetail(t *testing.T, err error, code guard.Code, detail string) {
 	t.Helper()
 	requireCode(t, err, code)
 	var pg *pgconn.PgError
@@ -169,9 +169,9 @@ func TestPluginApprovalRoundTrip(t *testing.T) {
 	require.Empty(t, recs)
 
 	_, err = guard.SubmitPluginApproval(ctx, a.Conn, resp)
-	requireGuardDetail(t, err, guardmodel.CodeApprovalInvalid, guardmodel.DetailAlreadyApproved)
+	requireGuardDetail(t, err, guard.CodeApprovalInvalid, guard.DetailAlreadyApproved)
 	_, err = guard.SubmitPluginApproval(ctx, a.Conn, guardmodel.PluginApprovalResponse{ApprovalID: uuid.Must(uuid.NewV7()), Assertion: resp.Assertion})
-	requireGuardDetail(t, err, guardmodel.CodeApprovalInvalid, guardmodel.DetailApprovalNotFound)
+	requireGuardDetail(t, err, guard.CodeApprovalInvalid, guard.DetailApprovalNotFound)
 	st, err := guard.VerifyChain(ctx, a.Conn)
 	require.NoError(t, err)
 	require.True(t, st.Intact)
@@ -197,13 +197,13 @@ func TestAgentCannotForgePluginApproved(t *testing.T) {
 
 	t.Run("record_plugin_event refuses both approval kinds", func(t *testing.T) {
 		for _, kind := range []guardmodel.PluginEventKind{guardmodel.PluginApproved, guardmodel.PluginApprovalPending} {
-			requireCode(t, recordRaw(t, a.Conn, string(kind), approvedDetail), guardmodel.CodeLedgerInputInvalid)
+			requireCode(t, recordRaw(t, a.Conn, string(kind), approvedDetail), guard.CodeLedgerInputInvalid)
 		}
 	})
 	t.Run("record_event refuses them", func(t *testing.T) {
 		for _, kind := range []guardmodel.PluginEventKind{guardmodel.PluginApproved, guardmodel.PluginApprovalPending} {
 			_, err := a.Conn.Exec(ctx, `SELECT basalt_meta.record_event($1, NULL, $2::jsonb)`, string(kind), approvedDetail)
-			requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+			requireCode(t, err, guard.CodeLedgerInputInvalid)
 		}
 	})
 	t.Run("internal functions and the tables are closed to agents", func(t *testing.T) {
@@ -329,14 +329,14 @@ func TestOpenRefusesUnknownAgent(t *testing.T) {
 	}
 	for _, name := range []string{"agent:nobody", "agent:fake_0", "agent:fake_1", "agent:fake_2", "agent:fake_3", "agent:fake_4"} {
 		_, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Name, name), guardmodel.PluginSettings{})
-		requireGuardDetail(t, err, guardmodel.CodeNotAllowed, guardmodel.DetailUnknownAgent)
+		requireGuardDetail(t, err, guard.CodeNotAllowed, guard.DetailUnknownAgent)
 		require.NotContains(t, err.Error(), name, "the refusal never names the agent")
 	}
 	require.Zero(t, count(t, d.Admin, `SELECT count(*)::int FROM basalt_meta.plugin_approvals`))
 	require.Zero(t, ledgerKinds(t, d, a.Role, string(guardmodel.PluginApprovalPending)))
 	// The admin is not an agent role and cannot open one.
 	_, err := guard.OpenPluginApproval(ctx, d.Admin, localApproval(a.Name), guardmodel.PluginSettings{})
-	requireCode(t, err, guardmodel.CodeNotAllowed)
+	requireCode(t, err, guard.CodeNotAllowed)
 }
 
 // The detail and settings are checked against the binding schema; each
@@ -390,7 +390,7 @@ func TestOpenRefusesBadDetail(t *testing.T) {
 			mutate(m)
 			raw, err := json.Marshal(m)
 			require.NoError(t, err)
-			requireCode(t, openRaw(a.Conn, string(raw), `{}`), guardmodel.CodeLedgerInputInvalid)
+			requireCode(t, openRaw(a.Conn, string(raw), `{}`), guard.CodeLedgerInputInvalid)
 		})
 	}
 	good, err := json.Marshal(base())
@@ -410,11 +410,11 @@ func TestOpenRefusesBadDetail(t *testing.T) {
 		"settings over 64 KiB":  `{"config": {"x": "` + strings.Repeat("a", 70000) + `"}}`,
 	} {
 		t.Run("settings "+name, func(t *testing.T) {
-			requireCode(t, openRaw(a.Conn, string(good), settings), guardmodel.CodeLedgerInputInvalid)
+			requireCode(t, openRaw(a.Conn, string(good), settings), guard.CodeLedgerInputInvalid)
 		})
 	}
 	for _, detail := range []string{`null`, `[]`, `"x"`, `{}`} {
-		requireCode(t, openRaw(a.Conn, detail, `{}`), guardmodel.CodeLedgerInputInvalid)
+		requireCode(t, openRaw(a.Conn, detail, `{}`), guard.CodeLedgerInputInvalid)
 	}
 	require.Zero(t, count(t, d.Admin, `SELECT count(*)::int FROM basalt_meta.plugin_approvals`))
 	require.Zero(t, ledgerKinds(t, d, a.Role, string(guardmodel.PluginApprovalPending)))
@@ -446,7 +446,7 @@ func TestSecondPendingCancelsFirst(t *testing.T) {
 	require.Equal(t, string(guardmodel.PluginApprovalStatusCancelled), approvalStatus(t, a.Conn, first.ID))
 	require.Equal(t, string(guardmodel.PluginApprovalStatusPending), approvalStatus(t, a.Conn, otherOpened.ID))
 	_, err = guard.SubmitPluginApproval(ctx, a.Conn, signPlugin(t, p, first))
-	requireGuardDetail(t, err, guardmodel.CodeApprovalInvalid, guardmodel.DetailApprovalCancelled)
+	requireGuardDetail(t, err, guard.CodeApprovalInvalid, guard.DetailApprovalCancelled)
 	require.Zero(t, ledgerKinds(t, d, a.Role, string(guardmodel.PluginApproved)))
 
 	// For a, the newest approval naming it is the cancelled one.
@@ -482,21 +482,21 @@ func TestPendingCap(t *testing.T) {
 		opened = append(opened, o)
 	}
 	_, err := guard.OpenPluginApproval(ctx, a.Conn, instance(8), guardmodel.PluginSettings{})
-	requireGuardDetail(t, err, guardmodel.CodeNotAllowed, guardmodel.DetailTooManyPending)
+	requireGuardDetail(t, err, guard.CodeNotAllowed, guard.DetailTooManyPending)
 	require.Equal(t, 8, ledgerKinds(t, d, a.Role, string(guardmodel.PluginApprovalPending)), "the refusal writes nothing")
 
 	// Re-opening one of the eight replaces it.
 	_, err = guard.OpenPluginApproval(ctx, a.Conn, instance(0), guardmodel.PluginSettings{})
 	require.NoError(t, err)
 	_, err = guard.OpenPluginApproval(ctx, a.Conn, instance(8), guardmodel.PluginSettings{})
-	requireGuardDetail(t, err, guardmodel.CodeNotAllowed, guardmodel.DetailTooManyPending)
+	requireGuardDetail(t, err, guard.CodeNotAllowed, guard.DetailTooManyPending)
 
 	// An expired one does not count.
 	d.Exec(t, `UPDATE basalt_meta.plugin_approvals SET expires_at = now() - interval '1 second' WHERE approval_id = $1`, opened[1].ID)
 	_, err = guard.OpenPluginApproval(ctx, a.Conn, instance(8), guardmodel.PluginSettings{})
 	require.NoError(t, err)
 	_, err = guard.OpenPluginApproval(ctx, a.Conn, instance(9), guardmodel.PluginSettings{})
-	requireGuardDetail(t, err, guardmodel.CodeNotAllowed, guardmodel.DetailTooManyPending)
+	requireGuardDetail(t, err, guard.CodeNotAllowed, guard.DetailTooManyPending)
 
 	// A signed one does not count.
 	_, err = guard.SubmitPluginApproval(ctx, a.Conn, signPlugin(t, p, opened[2]))
@@ -523,7 +523,7 @@ func TestPendingExpires(t *testing.T) {
 	d.Exec(t, `UPDATE basalt_meta.plugin_approvals SET expires_at = now() - interval '1 second'`)
 	require.Equal(t, string(guardmodel.PluginApprovalStatusExpired), approvalStatus(t, a.Conn, opened.ID))
 	_, err = guard.SubmitPluginApproval(ctx, a.Conn, resp)
-	requireCode(t, err, guardmodel.CodeApprovalExpired)
+	requireCode(t, err, guard.CodeApprovalExpired)
 	require.Zero(t, ledgerKinds(t, d, a.Role, string(guardmodel.PluginApproved)))
 	recs, err := guard.ReadPluginApprovals(ctx, a.Conn)
 	require.NoError(t, err)
@@ -715,7 +715,7 @@ func TestPluginApprovalsMigration(t *testing.T) {
 	require.Error(t, err, "no view before version 5")
 	signed := validLocal()
 	signed.Signer = guardmodel.PluginSignerKnown
-	requireCode(t, guard.RecordPluginEntryEvent(ctx, a.Conn, guardmodel.PluginEnabled, signed), guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, guard.RecordPluginEntryEvent(ctx, a.Conn, guardmodel.PluginEnabled, signed), guard.CodeLedgerInputInvalid)
 
 	restore()
 	d.NewAgent(t, "bot", leads, nil)
@@ -777,7 +777,7 @@ func TestPluginEventSigner(t *testing.T) {
 		"signer not a string":    func(m map[string]any) { m["signer"] = true },
 	} {
 		t.Run(name, func(t *testing.T) {
-			requireCode(t, recordRaw(t, a.Conn, string(guardmodel.PluginEnabled), mutated(t, validLocal(), mutate)), guardmodel.CodeLedgerInputInvalid)
+			requireCode(t, recordRaw(t, a.Conn, string(guardmodel.PluginEnabled), mutated(t, validLocal(), mutate)), guard.CodeLedgerInputInvalid)
 		})
 	}
 	require.Equal(t, 2, pluginEvents(t, d, a.Role))

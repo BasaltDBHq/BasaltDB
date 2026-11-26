@@ -14,7 +14,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
@@ -105,9 +104,9 @@ func TestRevertScopeOwnWorkOnly(t *testing.T) {
 		theirs uuid.UUID
 		detail string
 	}{
-		{revert.ScopeChange, helperChange, guardmodel.ScopeNotOwnChange},
-		{revert.ScopeRun, e.helperOutside.RunID, guardmodel.ScopeNotOwnRun},
-		{revert.ScopeTask, uuid.Must(uuid.NewV7()), guardmodel.ScopeNotOwnTask},
+		{revert.ScopeChange, helperChange, guard.ScopeNotOwnChange},
+		{revert.ScopeRun, e.helperOutside.RunID, guard.ScopeNotOwnRun},
+		{revert.ScopeTask, uuid.Must(uuid.NewV7()), guard.ScopeNotOwnTask},
 	}
 	// The helper's own task, which bot never ran in.
 	helperTask := uuid.Must(uuid.NewV7())
@@ -135,13 +134,13 @@ func TestRevertScopeOwnWorkOnly(t *testing.T) {
 	// agents, or every agent: refused before anything is read.
 	for _, agents := range []string{fmt.Sprintf(`[%q]`, e.helper.Name), `null`, fmt.Sprintf(`[%q, %q]`, e.bot.Name, e.helper.Name)} {
 		sel := fmt.Sprintf(`{"scope": "TASK", "scopeId": %q, "agents": %s, "runs": null, "resources": null}`, e.task, agents)
-		requireScopeRefused(t, rawPreview(e.bot.Conn, sel), guardmodel.ScopeFilter)
-		requireScopeRefused(t, rawPrepare(e.bot.Conn, sel), guardmodel.ScopeFilter)
+		requireScopeRefused(t, rawPreview(e.bot.Conn, sel), guard.ScopeFilter)
+		requireScopeRefused(t, rawPrepare(e.bot.Conn, sel), guard.ScopeFilter)
 	}
 	// A select naming another agent's work in its runs, under a task bot
 	// never ran in, is refused for the task first: nothing about the run.
 	sel := fmt.Sprintf(`{"scope": "TASK", "scopeId": %q, "agents": [%q], "runs": [%q], "resources": null}`, helperTask, e.bot.Name, in.RunID)
-	requireScopeRefused(t, rawPreview(e.bot.Conn, sel), guardmodel.ScopeNotOwnTask)
+	requireScopeRefused(t, rawPreview(e.bot.Conn, sel), guard.ScopeNotOwnTask)
 }
 
 // A task proposal holds only the caller's own lines, and the person-only
@@ -206,7 +205,7 @@ func TestRevertScopeFilters(t *testing.T) {
 		s := e.taskScope()
 		s.Runs = []uuid.UUID{run}
 		_, err := guard.PreviewRevert(ctx, e.bot.Conn, s)
-		requireScopeRefused(t, err, guardmodel.ScopeFilter)
+		requireScopeRefused(t, err, guard.ScopeFilter)
 		_, perr := guard.PrepareRevert(ctx, e.bot.Conn, s, "x")
 		require.Equal(t, scopeErrorText(t, err, run), scopeErrorText(t, perr, run))
 		return scopeErrorText(t, err, run)
@@ -222,7 +221,7 @@ func TestRevertScopeFilters(t *testing.T) {
 		s := e.taskScope()
 		s.Tables = []string{table}
 		_, err := guard.PreviewRevert(ctx, e.bot.Conn, s)
-		requireScopeRefused(t, err, guardmodel.ScopeFilter)
+		requireScopeRefused(t, err, guard.ScopeFilter)
 		return strings.ReplaceAll(scopeErrorText(t, err), table, "<table>")
 	}
 	unknownTable := tableText("public.nope")
@@ -230,12 +229,17 @@ func TestRevertScopeFilters(t *testing.T) {
 	require.Equal(t, unknownTable, tableText("public.lead_notes"))
 	require.Contains(t, unknownTable, "<table> has no change of yours in this scope")
 	// lead_owner in run A: bot wrote it in the task (run B), so it is
-	// inside the scope; a filter that leaves no line is NOTHING_TO_REVERT.
+	// inside the scope; a filter that leaves no line is NOTHING_TO_REVERT,
+	// typed READS_ONLY with the sentence as its hint (version 11).
 	empty := e.taskScope()
 	empty.Runs = []uuid.UUID{e.botA.RunID}
 	empty.Tables = []string{"public.lead_owner"}
 	_, err = guard.PreviewRevert(ctx, e.bot.Conn, empty)
-	requireCode(t, err, guardmodel.CodeNothingToRevert)
+	requireCode(t, err, guard.CodeNothingToRevert)
+	var pg *pgconn.PgError
+	require.ErrorAs(t, err, &pg)
+	require.Equal(t, guard.NothingReadsOnly, pg.Detail)
+	require.Contains(t, pg.Hint, "changed no rows that a revert could restore")
 }
 
 // The descriptor's shape is checked from the descriptor alone: the
@@ -259,18 +263,18 @@ func TestRevertScopeShape(t *testing.T) {
 		return fmt.Sprintf(`{"scope": %q, "scopeId": %q, "agents": [%q], "runs": %s, "resources": %s}`, scope, e.task, e.bot.Name, runs, tables)
 	}
 	cases := map[string]struct{ sel, detail string }{
-		"the reserved store key": {strings.Replace(base("TASK", "null", "null"), `{`, `{"store": "db1", `, 1), guardmodel.ScopeStoreReserved},
-		"21 runs":                {base("TASK", list(runs), "null"), guardmodel.ScopeFilterCap},
-		"21 tables":              {base("TASK", "null", list(tables)), guardmodel.ScopeFilterCap},
-		"runs on a run scope":    {base("RUN", list(runs[:1]), "null"), guardmodel.ScopeShape},
-		"an empty list":          {base("TASK", "[]", "null"), guardmodel.ScopeShape},
-		"an unknown key":         {strings.Replace(base("TASK", "null", "null"), `{`, `{"database": "x", `, 1), guardmodel.ScopeShape},
-		"a missing key":          {fmt.Sprintf(`{"scope": "TASK", "scopeId": %q, "agents": [%q], "runs": null}`, e.task, e.bot.Role), guardmodel.ScopeShape},
-		"an unknown scope":       {base("DATABASE", "null", "null"), guardmodel.ScopeShape},
-		"a bad run id":           {base("TASK", `["x"]`, "null"), guardmodel.ScopeShape},
-		"a bad table name":       {base("TASK", "null", `["leads"]`), guardmodel.ScopeName},
-		"a table not a string":   {base("TASK", "null", `[1]`), guardmodel.ScopeShape},
-		"not an object":          {`[]`, guardmodel.ScopeShape},
+		"the reserved store key": {strings.Replace(base("TASK", "null", "null"), `{`, `{"store": "db1", `, 1), guard.ScopeStoreReserved},
+		"21 runs":                {base("TASK", list(runs), "null"), guard.ScopeFilterCap},
+		"21 tables":              {base("TASK", "null", list(tables)), guard.ScopeFilterCap},
+		"runs on a run scope":    {base("RUN", list(runs[:1]), "null"), guard.ScopeShape},
+		"an empty list":          {base("TASK", "[]", "null"), guard.ScopeShape},
+		"an unknown key":         {strings.Replace(base("TASK", "null", "null"), `{`, `{"database": "x", `, 1), guard.ScopeShape},
+		"a missing key":          {fmt.Sprintf(`{"scope": "TASK", "scopeId": %q, "agents": [%q], "runs": null}`, e.task, e.bot.Role), guard.ScopeShape},
+		"an unknown scope":       {base("DATABASE", "null", "null"), guard.ScopeShape},
+		"a bad run id":           {base("TASK", `["x"]`, "null"), guard.ScopeShape},
+		"a bad table name":       {base("TASK", "null", `["leads"]`), guard.ScopeName},
+		"a table not a string":   {base("TASK", "null", `[1]`), guard.ScopeShape},
+		"not an object":          {`[]`, guard.ScopeShape},
 	}
 	for name, tc := range cases {
 		err := rawPreview(e.bot.Conn, tc.sel)
@@ -297,7 +301,37 @@ func TestRevertScopeBadTableNameNamed(t *testing.T) {
 	}
 	for name, tc := range cases {
 		for call, err := range map[string]error{"preview": rawPreview(e.bot.Conn, sel(tc.tables)), "prepare": rawPrepare(e.bot.Conn, sel(tc.tables))} {
-			requireScopeRefused(t, err, guardmodel.ScopeName)
+			requireScopeRefused(t, err, guard.ScopeName)
+			_, hint, _ := guard.ScopeRefusal(err)
+			require.Equal(t, tc.hint, hint, "%s: %s", name, call)
+		}
+	}
+}
+
+// A refusal for an agents, runs or resources entry of the wrong kind names
+// the first such entry in the caller's order, a non-string as JSON, cut to
+// 127 characters (version 11). The detail stays SHAPE.
+func TestRevertScopeBadEntryNamed(t *testing.T) {
+	t.Parallel()
+	e := newScopeTask(t)
+	sel := func(agents, runs, resources string) string {
+		return fmt.Sprintf(`{"scope": "TASK", "scopeId": %q, "agents": %s, "runs": %s, "resources": %s}`, e.task, agents, runs, resources)
+	}
+	bot := fmt.Sprintf("%q", e.bot.Name)
+	run := fmt.Sprintf("%q", e.botA.RunID)
+	long := strings.Repeat("x", 200)
+	cases := map[string]struct{ sel, hint string }{
+		"a bad agent":             {sel(`["bot"]`, "null", "null"), "bot is not an agent:<name> name"},
+		"the first agent":         {sel("["+bot+`, "zz", "aa"]`, "null", "null"), "zz is not an agent:<name> name"},
+		"an agent not a string":   {sel(`[7]`, "null", "null"), "7 is not an agent:<name> name"},
+		"a bad run":               {sel("["+bot+"]", "["+run+`, "x"]`, "null"), "x is not a run id"},
+		"a run not a string":      {sel("["+bot+"]", `[{"id": 1}]`, "null"), `{"id": 1} is not a run id`},
+		"a long run is cut":       {sel("["+bot+"]", fmt.Sprintf("[%q]", long), "null"), long[:127] + "... is not a run id"},
+		"a resource not a string": {sel("["+bot+"]", "null", `["public.leads", 1]`), "1 is not a schema.table name"},
+	}
+	for name, tc := range cases {
+		for call, err := range map[string]error{"preview": rawPreview(e.bot.Conn, tc.sel), "prepare": rawPrepare(e.bot.Conn, tc.sel)} {
+			requireScopeRefused(t, err, guard.ScopeShape)
 			_, hint, _ := guard.ScopeRefusal(err)
 			require.Equal(t, tc.hint, hint, "%s: %s", name, call)
 		}
@@ -340,7 +374,7 @@ func TestRevertScopeEmptyTaskProposal(t *testing.T) {
 	p := person(t, e.d)
 
 	_, err := guard.PreviewRevert(ctx, other.Conn, e.taskScope())
-	requireCode(t, err, guardmodel.CodeNothingToRevert)
+	requireCode(t, err, guard.CodeNothingToRevert)
 	prep, err := guard.PrepareRevert(ctx, other.Conn, e.taskScope(), "Undo the task")
 	require.NoError(t, err)
 	require.Empty(t, prep.Lines)
@@ -351,11 +385,11 @@ func TestRevertScopeEmptyTaskProposal(t *testing.T) {
 	as, err := p.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, other.Conn, prep.RevertID, as)
-	requireCode(t, err, guardmodel.CodeNothingToRevert)
+	requireCode(t, err, guard.CodeNothingToRevert)
 
 	// A run or change scope with nothing to restore is never stored.
 	_, err = guard.PrepareRevert(ctx, other.Conn, action.Scope{Kind: revert.ScopeRun, ID: reader.RunID}, "x")
-	requireCode(t, err, guardmodel.CodeNothingToRevert)
+	requireCode(t, err, guard.CodeNothingToRevert)
 }
 
 // apply_revert checks the binding against the stored selection, refuses a

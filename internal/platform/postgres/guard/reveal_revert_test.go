@@ -236,7 +236,7 @@ func TestRevealRevertRowsRefused(t *testing.T) {
 	var text string
 	for name, c := range cases {
 		_, err := guard.RevealRevertRows(ctx, e.a.Conn, id, c.proof, c.key)
-		requireRevertInvalid(t, err, guardmodel.RevealRefused)
+		requireRevertInvalid(t, err, guard.RevealRefused)
 		got := scopeErrorText(t, err)
 		if text == "" {
 			text = got
@@ -250,7 +250,7 @@ func TestRevealRevertRowsRefused(t *testing.T) {
 	_, err = guard.RevealRevertRows(ctx, e.a.Conn, id, valid, key)
 	require.NoError(t, err)
 	_, err = guard.RevealRevertRows(ctx, e.a.Conn, id, valid, key)
-	requireRevertInvalid(t, err, guardmodel.RevealRefused)
+	requireRevertInvalid(t, err, guard.RevealRefused)
 	require.Equal(t, text, scopeErrorText(t, err), "a replay reads like any other refusal")
 
 	// Another agent's revert and an unknown one read alike.
@@ -262,7 +262,7 @@ func TestRevealRevertRowsRefused(t *testing.T) {
 	_, err = guard.RevealNonce(ctx, helper.Conn, approval.KindRevert, id)
 	requireRevertInvalid(t, err, "no such revert")
 	_, err = guard.RevealNonce(ctx, e.a.Conn, "OTHER", id)
-	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
 }
 
 func sha256Of(s string) []byte {
@@ -294,7 +294,7 @@ func TestRevealRevertRowsChanged(t *testing.T) {
 	require.Len(t, details, 1)
 	require.Equal(t, true, details[0]["rowsChanged"])
 	_, err = guard.RevealRevertRows(ctx, e.a.Conn, id, as, key)
-	requireRevertInvalid(t, err, guardmodel.RevealRefused)
+	requireRevertInvalid(t, err, guard.RevealRefused)
 }
 
 // A SECRET column comes back null and named; the rest of the row is real.

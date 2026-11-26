@@ -25,7 +25,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -201,11 +200,11 @@ type Host interface {
 	// GuardAgentConnString is adminURL with the agent's role and password.
 	GuardAgentConnString(adminURL, role, password string) (string, error)
 	// GuardAgentVersion is the guard version q's database has, 0 when none.
-	GuardAgentVersion(ctx context.Context, q pgquerier.Querier) (int, error)
+	GuardAgentVersion(ctx context.Context, q cli.Querier) (int, error)
 	// GuardLatestVersion is the guard version this binary installs.
 	GuardLatestVersion() int
 	// GuardSetupRecorded reports whether the setup with id is recorded.
-	GuardSetupRecorded(ctx context.Context, q pgquerier.Querier, id uuid.UUID) (bool, error)
+	GuardSetupRecorded(ctx context.Context, q cli.Querier, id uuid.UUID) (bool, error)
 	// LoadOrCreateEngineKeys reads the engine's keys at path, making them
 	// when there are none.
 	LoadOrCreateEngineKeys(path string, now func() time.Time) (*channel.EngineKeys, error)

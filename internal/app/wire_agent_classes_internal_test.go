@@ -15,16 +15,17 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
 )
 
-// A result column from a table is its field ref; a computed one (oid 0)
-// has none. The key is the column's name in each row.
+// A result column from a table carries its field ref as the store's
+// adapter wrote it; a computed one has none. The key is the column's name
+// in each row.
 func TestResultFieldsNameEachColumnsField(t *testing.T) {
 	got := resultFields([]action.Column{
-		{Name: "email", TableOID: 16384, Attnum: 3},
-		{Name: "lower", TableOID: 0, Attnum: 0},
+		{Name: "email", Ref: "16384/3"},
+		{Name: "lower"},
 	})
 	require.Equal(t, []piistore.ResultField{{Ref: "16384/3", Key: "email"}, {Key: "lower"}}, got)
 	require.Empty(t, resultFields(nil))
@@ -93,7 +94,7 @@ func TestReturnedPIIReadsOnTheWritesTransaction(t *testing.T) {
 	obs := pii.NewObserver(pii.NewMap(slog.New(slog.DiscardHandler)), &added)
 	tx := &classTx{}
 	err := returnedPII(obs)(context.Background(), pgquerier.Neutralize(tx),
-		[]action.Column{{Name: "email", TableOID: 16384, Attnum: 3}, {Name: "lower", TableOID: 0}},
+		[]action.Column{{Name: "email", Ref: "16384/3"}, {Name: "lower"}},
 		[]map[string]any{{"email": "ada@corp.ee", "lower": "eve@corp.ee"}})
 	require.NoError(t, err)
 	require.Equal(t, adds{string(corepii.EntityEmail) + ":ada@corp.ee"}, added)
@@ -101,7 +102,7 @@ func TestReturnedPIIReadsOnTheWritesTransaction(t *testing.T) {
 
 	failing := &failingTx{err: errors.New("tx aborted")}
 	err = returnedPII(obs)(context.Background(), pgquerier.Neutralize(failing),
-		[]action.Column{{Name: "email", TableOID: 16385, Attnum: 3}}, []map[string]any{{"email": "bob@corp.ee"}})
+		[]action.Column{{Name: "email", Ref: "16385/3"}}, []map[string]any{{"email": "bob@corp.ee"}})
 	require.ErrorIs(t, err, failing.err, "a reload on the transaction fails the write")
 }
 

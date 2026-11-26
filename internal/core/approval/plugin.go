@@ -18,10 +18,10 @@ import (
 )
 
 // Plugin approvals (CONTRACT.md, Plugins, What a plugin approval binds and
-// The plugin approval page): the binding text Postgres builds for a plugin
+// The plugin approval page): the binding text the guard builds for a plugin
 // install or change, the settings text that travels beside it, the request
 // a plugin approval link carries, and the code the page outputs. As for
-// held writes, nothing here decides whether an approval counts: Postgres
+// held writes, nothing here decides whether an approval counts: the guard
 // does, in basalt_meta.submit_plugin_approval.
 
 const (

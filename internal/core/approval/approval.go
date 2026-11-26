@@ -2,7 +2,7 @@
 // the engine, the static approval page and whoever relays the signed result
 // (CONTRACT.md, Approvals): the binding text the store builds, the preview
 // lines it covers, the request in the approval link, and the response code
-// the page outputs. Nothing here decides whether an approval counts; Postgres
+// the page outputs. Nothing here decides whether an approval counts; the guard
 // does, in basalt_meta.submit_approval and the guard's commit check.
 package approval
 
@@ -174,15 +174,16 @@ type Request struct {
 	// agent), served only by the engine, never carried in a long link.
 	RevealNonce   passkey.Bytes   `json:"revealNonce,omitempty"`
 	CredentialIDs []passkey.Bytes `json:"credentialIds,omitempty"`
-	// Columns orders each table's columns as the table does (attnum), for
-	// the page's display only (CONTRACT.md, Local pages): served only by
-	// the engine, never signed, never carried in a link.
+	// Columns orders each resource's fields as its store does, for the
+	// page's display only (CONTRACT.md, Local pages): served only by the
+	// engine, never signed, never carried in a link.
 	Columns ColumnOrder `json:"columns,omitempty"`
 }
 
-// ColumnOrder maps a table, as the lines spell it, to its column names in
-// table order. A present but null value decodes to an empty, non-nil map,
-// so a link that names the field at all is told apart from one without it.
+// ColumnOrder maps a resource, as the lines spell it, to its field names in
+// the store's order. A present but null value decodes to an empty, non-nil
+// map, so a link that names the field at all is told apart from one without
+// it.
 type ColumnOrder map[string][]string
 
 // UnmarshalJSON decodes the map; null is an empty map, not an absent one.

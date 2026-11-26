@@ -173,7 +173,7 @@ func TestRescopeTimeoutNamesThePrepareLimit(t *testing.T) {
 	require.Equal(t, guidance.ReasonTimeLimit, pe.Reason)
 	require.Equal(t, "the scope change took longer than 100 seconds and was stopped; nothing changed", pe.Message)
 	require.Equal(t, "Changing the scope took longer than 100 seconds and was stopped. Nothing changed. "+
-		"Choose fewer agents, runs or tables, or try again.", pe.PersonMessage)
+		"Choose fewer agents, runs or resources, or try again.", pe.PersonMessage)
 
 	require.ErrorAs(t, rescopeTimeout(30*time.Second), &pe)
 	require.Contains(t, pe.Message, "longer than 30 seconds")

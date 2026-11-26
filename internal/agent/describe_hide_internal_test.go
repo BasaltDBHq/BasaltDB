@@ -25,7 +25,7 @@ type docDisplay struct {
 func customersDoc() (agentstore.Detail, []pii.Class) {
 	ref := func(s string) agentstore.FieldRef { return agentstore.FieldRef("customers/" + s) }
 	d := agentstore.Detail{
-		Resource: agentstore.Resource{Ref: "app.customers", Namespace: "app", Name: "customers", Kind: "COLLECTION", Actions: []action.Op{action.OpSelect}},
+		Resource: agentstore.Resource{Ref: "app.customers", Namespace: "app", Name: "customers", Kind: "COLLECTION", Actions: []action.Op{action.OpRead}},
 		Fields: []agentstore.Field{
 			{Ref: ref("_id"), Name: "_id", Type: "objectId", Readable: true},
 			{Ref: ref("ssn"), Name: "ssn", Type: "string", Nullable: true},

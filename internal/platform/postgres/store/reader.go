@@ -24,9 +24,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
-	"github.com/basaltdbhq/basaltdb/internal/lib/wiretime"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/agentcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/wiretime"
 )
 
 // maxMessageBytes bounds one message from Postgres on an agent connection
@@ -178,7 +179,7 @@ func rowVersions(extras [][][]byte, oids []uint32) []action.RowVersion {
 			if version == nil {
 				continue
 			}
-			out = append(out, action.RowVersion{TableOID: oid, Key: json.RawMessage(key), Version: string(version)})
+			out = append(out, action.RowVersion{Resource: agentcatalog.ResourceRef(oid), Key: json.RawMessage(key), Version: string(version)})
 		}
 	}
 	return out
@@ -271,7 +272,11 @@ func columns(tm *pgtype.Map, fds []pgconn.FieldDescription) []action.Column {
 		if t, ok := tm.TypeForOID(fd.DataTypeOID); ok {
 			typ = t.Name
 		}
-		cols = append(cols, action.Column{Name: name, Type: typ, TableOID: fd.TableOID, Attnum: int16(fd.TableAttributeNumber)})
+		col := action.Column{Name: name, Type: typ}
+		if fd.TableOID != 0 {
+			col.Ref = agentcatalog.FieldRef(fd.TableOID, int16(fd.TableAttributeNumber))
+		}
+		cols = append(cols, col)
 	}
 	return cols
 }

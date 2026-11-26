@@ -14,12 +14,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/demo"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgpii"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
@@ -30,6 +30,10 @@ import (
 // internal/setup's backend) and the connection, trust and passkey calls localsetup
 // makes itself.
 type Backend struct{ setupstore.Store }
+
+// Port wraps a pgx connection or transaction of the local setup as setup's
+// driver-free query port.
+func (Backend) Port(q pgquerier.Querier) setup.Querier { return pgquerier.Neutralize(q) }
 
 // Connections and their trust.
 

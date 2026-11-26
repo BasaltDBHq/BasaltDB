@@ -34,7 +34,7 @@ type HeldNotice struct {
 type RevertNotice struct {
 	RevertID uuid.UUID
 	Agent    string
-	// Headline is built from what Postgres returned (revertHeadline).
+	// Headline is built from what the store returned (revertHeadline).
 	Headline  string
 	Intent    string
 	ExpiresAt time.Time

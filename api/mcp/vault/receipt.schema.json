@@ -29,12 +29,12 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 500,
-      "description": "What was approved or reverted, built from Postgres's record of the item, never from what the page sent."
+      "description": "What was approved or reverted, built from the store's record of the item, never from what the page sent."
     },
     "rowsHash": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$",
-      "description": "The rowsHash of the binding the passkey signed, from Postgres's record of the item (CONTRACT.md, Approvals and Revert), so the receipt names exactly the rows that were signed."
+      "description": "The rowsHash of the binding the passkey signed, from the store's record of the item (CONTRACT.md, Approvals and Revert), so the receipt names exactly the rows that were signed."
     },
     "agent": {
       "type": "string",

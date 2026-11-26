@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -20,7 +21,7 @@ import (
 // (CONTRACT.md, Local pages): the request of a plugin approval this
 // agent's role opened and the relay of the person's signature; the short
 // link comes with request_plugin's result. The relay decides nothing:
-// submit_plugin_approval verifies the passkey signature in Postgres.
+// the guard verifies the passkey signature in the agent's store.
 
 // PluginApprovalStore is the guard's plugin approvals on the agent's own
 // credential (schema version Plugin.ApprovalsVersion).
@@ -29,13 +30,14 @@ type PluginApprovalStore interface {
 	// when there is none. Its texts are set only for the role that opened
 	// it.
 	ReadPluginApproval(ctx context.Context, id uuid.UUID) (guardmodel.PluginApprovalRecord, bool, error)
-	// SubmitPluginApproval relays the person's assertion; Postgres verifies
-	// it and records the approval.
+	// SubmitPluginApproval relays the person's assertion; the guard
+	// verifies it and records the approval. A refusal is a
+	// *pluginmodel.ApprovalRefusalError.
 	SubmitPluginApproval(ctx context.Context, r guardmodel.PluginApprovalResponse) (time.Time, error)
 }
 
 // PluginApprovalRequest is the request of a pending plugin approval this
-// agent's role opened: its binding and settings texts as Postgres built
+// agent's role opened: its binding and settings texts as the guard built
 // them, and the database's passkeys.
 func (pc *Service) PluginApprovalRequest(ctx context.Context, id uuid.UUID) (approval.PluginRequest, error) {
 	r, err := pc.openPluginApproval(ctx, id)
@@ -54,8 +56,8 @@ func (pc *Service) PluginApprovalRequest(ctx context.Context, id uuid.UUID) (app
 }
 
 // RelayPluginApproval relays the person's signature of a plugin approval
-// this agent's role opened to submit_plugin_approval, and returns when
-// Postgres recorded it.
+// this agent's role opened to the guard, and returns when the guard
+// recorded it.
 func (pc *Service) RelayPluginApproval(ctx context.Context, r approval.PluginApprovalResponse) (time.Time, error) {
 	if _, err := pc.openPluginApproval(ctx, r.ApprovalID); err != nil {
 		return time.Time{}, err
@@ -145,36 +147,32 @@ func pluginCancelled(id uuid.UUID) error {
 		askAgentForLink())
 }
 
-// pluginRelayError is the page's answer when Postgres refused the person's
-// signature of plugin approval id: told apart by the guard's detail, the
-// message carrying it. Any other failure (the database cannot be reached)
-// is returned as it is, for the usual mapping.
+// pluginRelayError is the page's answer when the store refused the
+// person's signature of plugin approval id: told apart by the store's typed
+// refusal (pluginmodel.ApprovalRefusalError), the message carrying the
+// store's text. Any other failure (the database cannot be reached) is
+// returned as it is, for the usual mapping.
 func (pc *Service) pluginRelayError(ctx context.Context, id uuid.UUID, err error) error {
-	code, ok := guidance.LedgerCode(err)
-	if !ok {
+	ar := pluginmodel.ApprovalRefusalOf(err)
+	if ar == nil {
 		return err
 	}
-	detail := guidance.StoreDetail(err)
 	msg := pc.core.Errors.ToolError(err).Message
-	switch {
-	case code == guardmodel.CodeApprovalExpired:
+	switch ar.Reason {
+	case pluginmodel.ApprovalExpired:
 		r, found, readErr := pc.deps.Approvals.ReadPluginApproval(ctx, id)
 		if readErr == nil && found {
 			return pluginExpired(id, r.ExpiresAt)
 		}
 		return pluginPageError(guidance.CodeApprovalExpired, "", msg,
 			"This plugin approval expired. Nothing was approved; ask the agent for a new link.", askAgentForLink())
-	case code != guardmodel.CodeApprovalInvalid:
-		return err
-	case detail == guardmodel.DetailAlreadyApproved:
+	case pluginmodel.ApprovalAlreadyApproved:
 		return pluginAlreadyApproved(id)
-	case detail == guardmodel.DetailApprovalCancelled:
+	case pluginmodel.ApprovalCancelled:
 		return pluginCancelled(id)
-	case detail == guardmodel.DetailApprovalNotFound:
+	case pluginmodel.ApprovalNotFound:
 		return linksvc.ErrNotThisAgent
-	}
-	te := pc.core.Errors.ToolError(err)
-	if te.Reason == guidance.ReasonPasskeyRevoked {
+	case pluginmodel.ApprovalPasskeyRevoked:
 		steps, stepErr := guidance.NewSteps().
 			TellAgent(guidance.AskAgentForRegisterLinkText).
 			Build()
@@ -184,7 +182,18 @@ func (pc *Service) pluginRelayError(ctx context.Context, id uuid.UUID, err error
 		return pluginPageError(guidance.CodeApprovalInvalid, guidance.ReasonPasskeyRevoked, msg,
 			"The plugin approval was signed with a passkey this database does not accept (unknown or revoked), so nothing was "+
 				"approved. Ask the agent for a link to register the passkey you use, then try again on this page.", steps)
+	case pluginmodel.ApprovalBadSignature:
+		return pluginBadSignature(msg)
+	default:
+		// A reason this page does not name yet: the store refused the
+		// signature, so it is answered as one the guard did not accept.
+		return pluginBadSignature(msg)
 	}
+}
+
+// pluginBadSignature is the page's answer for a signature the guard did
+// not accept.
+func pluginBadSignature(msg string) error {
 	return pluginPageError(guidance.CodeApprovalInvalid, guidance.ReasonBadSignature, msg,
 		"The plugin approval code did not verify, so nothing was approved. Approve again on this page.", nil)
 }

@@ -30,13 +30,24 @@ const (
 	KindUtility Kind = "UTILITY"
 )
 
-// Op is the statement's operation: SELECT, INSERT, UPDATE, DELETE, MERGE, or
-// the parse node name of anything else.
+// Op is the statement's operation: READ (a SELECT), INSERT, UPDATE, DELETE,
+// MERGE, or the parse node name of anything else. READ is Basalt's op; the
+// SQL word for it is SELECT (sqlWord). A statement outside the four ops
+// READ, INSERT, UPDATE and DELETE (MERGE included) carries its name here
+// and is recorded as OTHER (action.OpOther).
 type Op string
+
+// sqlWord is the SQL command for op, as a refusal's detail names it.
+func (op Op) sqlWord() string {
+	if op == OpRead {
+		return "SELECT"
+	}
+	return string(op)
+}
 
 // Operations the M1 tools accept, plus MERGE which is refused by name.
 const (
-	OpSelect Op = "SELECT"
+	OpRead   Op = "READ"
 	OpInsert Op = "INSERT"
 	OpUpdate Op = "UPDATE"
 	OpDelete Op = "DELETE"
@@ -78,6 +89,9 @@ type Statement struct {
 	// (schema-qualified when the agent qualified them), sorted. CTE names are
 	// left out.
 	Tables []string
+	// Target is the relation an INSERT, UPDATE or DELETE writes, as
+	// written like Tables; "" for any other statement.
+	Target string
 	// Functions are the functions the statement calls, as written, sorted.
 	Functions []string
 	// ParamCount is the highest $n placeholder used, 0 when none.
@@ -122,12 +136,12 @@ func Check(sql string, tool Tool) (Statement, error) {
 func checkTool(stmt Statement, tool Tool) *RefusalError {
 	switch tool {
 	case ToolQuery:
-		if stmt.Op != OpSelect {
-			return refuse(ReasonWrongTool, "query runs one SELECT; use write for %s", stmt.Op)
+		if stmt.Op != OpRead {
+			return refuse(ReasonWrongTool, "query runs one SELECT; use write for %s", stmt.Op.sqlWord())
 		}
 	case ToolWrite:
 		if stmt.Op != OpInsert && stmt.Op != OpUpdate && stmt.Op != OpDelete {
-			return refuse(ReasonWrongTool, "write runs one INSERT, UPDATE or DELETE; use query for %s", stmt.Op)
+			return refuse(ReasonWrongTool, "write runs one INSERT, UPDATE or DELETE; use query for %s", stmt.Op.sqlWord())
 		}
 	default:
 		return refuse(ReasonWrongTool, "unknown tool %q", tool)
@@ -156,10 +170,11 @@ func Classify(sql string) (Statement, error) {
 
 	slices.Sort(stmt.Functions) // non-nil, so an empty list is [] and not null
 
+	stmt.Target = targetOf(node)
 	var reason Reason
 	stmt.Kind, stmt.Op, reason = classifyNode(node)
 	if reason != "" {
-		return stmt, refuse(reason, "%s", stmt.Op)
+		return stmt, refuse(reason, "%s", stmt.Op.sqlWord())
 	}
 	if sel := node.GetSelectStmt(); sel != nil {
 		stmt.RowSources = rowSources(sel)
@@ -175,16 +190,50 @@ func Classify(sql string) (Statement, error) {
 	return stmt, nil
 }
 
+// targetOf is the relation the statement writes, as written; "" for a
+// statement that writes none. It is the first relation written in
+// statement order: the WITH clause's data-modifying queries as written
+// (each by this same rule, so a nested WITH comes first), then the
+// statement's own INSERT, UPDATE, DELETE or MERGE target. So a refused
+// "WITH d AS (DELETE FROM payroll ...) INSERT INTO audit_log ..." names
+// payroll, the first thing it changes as a person reads it, and a
+// SELECT or a table it only reads never becomes the target.
+func targetOf(stmt *pganalyze.Node) string {
+	var with *pganalyze.WithClause
+	var rel *pganalyze.RangeVar
+	switch n := stmt.GetNode().(type) {
+	case *pganalyze.Node_SelectStmt:
+		with = n.SelectStmt.GetWithClause()
+	case *pganalyze.Node_InsertStmt:
+		with, rel = n.InsertStmt.GetWithClause(), n.InsertStmt.GetRelation()
+	case *pganalyze.Node_UpdateStmt:
+		with, rel = n.UpdateStmt.GetWithClause(), n.UpdateStmt.GetRelation()
+	case *pganalyze.Node_DeleteStmt:
+		with, rel = n.DeleteStmt.GetWithClause(), n.DeleteStmt.GetRelation()
+	case *pganalyze.Node_MergeStmt:
+		with, rel = n.MergeStmt.GetWithClause(), n.MergeStmt.GetRelation()
+	}
+	for _, c := range with.GetCtes() {
+		if t := targetOf(c.GetCommonTableExpr().GetCtequery()); t != "" {
+			return t
+		}
+	}
+	if rel == nil {
+		return ""
+	}
+	return qualifiedName(rel.GetSchemaname(), rel.GetRelname())
+}
+
 func classifyNode(stmt *pganalyze.Node) (Kind, Op, Reason) {
 	switch n := stmt.GetNode().(type) {
 	case *pganalyze.Node_SelectStmt:
 		if n.SelectStmt.GetIntoClause() != nil {
-			return KindDDL, OpSelect, ReasonSelectInto
+			return KindDDL, OpRead, ReasonSelectInto
 		}
 		if len(n.SelectStmt.GetLockingClause()) > 0 {
-			return KindRead, OpSelect, ReasonLockingRead
+			return KindRead, OpRead, ReasonLockingRead
 		}
-		return KindRead, OpSelect, ""
+		return KindRead, OpRead, ""
 	case *pganalyze.Node_InsertStmt:
 		return KindWrite, OpInsert, ""
 	case *pganalyze.Node_UpdateStmt:

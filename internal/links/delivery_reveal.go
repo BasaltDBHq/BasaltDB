@@ -6,7 +6,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -32,7 +31,7 @@ func (p ScopeProof) Assertion() passkey.Assertion {
 // The pages' reveal routes (CONTRACT.md, Approvals, Rows hidden from the
 // agent; Local pages, POST …/reveal): the person proves with their passkey
 // that they want to see the values of the lines the agent role cannot
-// read, and Postgres returns them for this one answer. The engine keeps
+// read, and the guard returns them for this one answer. The engine keeps
 // nothing: the reveal key, the ticket and the rows live for one request,
 // are never logged, and never reach the MCP channel.
 
@@ -43,8 +42,8 @@ type RevealRequest struct {
 	RevealSecret string     `json:"revealSecret"`
 }
 
-// revealKey is the key Postgres checks the proof against, derived from the
-// page's reveal secret, which never reaches Postgres.
+// revealKey is the key the guard checks the proof against, derived from the
+// page's reveal secret, which never reaches the guard.
 func (in RevealRequest) RevealKey() ([]byte, error) {
 	raw, err := links.DecodeSecret(in.RevealSecret)
 	if err != nil {
@@ -75,7 +74,7 @@ func CheckedAnswer(lines []string, rows []approval.RevealedRow) (approval.Reveal
 // goes back to that page only) to press Show values with passkey once more.
 func RevealRefused(code, link string) error {
 	te := &toolresult.ToolError{
-		Code: code, Reason: guardmodel.RevealRefused,
+		Code: code, Reason: guidance.ReasonRevealRefused,
 		Message:       "showing the hidden rows was refused: it needs the person's passkey on this page; nothing was shown",
 		PersonMessage: "Your passkey didn't confirm. Nothing was shown; try again.",
 	}

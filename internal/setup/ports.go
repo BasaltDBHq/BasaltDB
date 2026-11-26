@@ -8,6 +8,8 @@ import (
 	"os/user"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -15,7 +17,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
-	"github.com/google/uuid"
 )
 
 // The setup service's ports: what its use cases ask of the database, the

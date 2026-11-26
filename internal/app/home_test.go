@@ -61,7 +61,7 @@ func homeGet(t *testing.T, agents []homeAgent, path string) (int, string) {
 	t.Helper()
 	srv := newPages(homeOrigin, slog.New(slog.DiscardHandler))
 	if agents != nil {
-		srv.SetHome(newHomeSource(agents, slog.New(slog.DiscardHandler)))
+		srv.SetHome(newHomeSource(agents))
 	}
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, homeOrigin+path, nil))
@@ -263,7 +263,7 @@ func TestHomeRefusesAForeignHost(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ln.Close() })
 	srv := newPages(homeOrigin, slog.New(slog.DiscardHandler))
-	srv.SetHome(newHomeSource([]homeAgent{{db: homeDBOf(homeConn("pg.internal.example", "app")), link: "http://localhost:8787/setup/#1.x"}}, slog.New(slog.DiscardHandler)))
+	srv.SetHome(newHomeSource([]homeAgent{{db: homeDBOf(homeConn("pg.internal.example", "app")), link: "http://localhost:8787/setup/#1.x"}}))
 	h := httpserver.Wrap(ln.Addr().String(), ln, srv.Handler())
 	get := func(host string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodGet, "http://"+host+pageserver.HomeDataPath, nil)

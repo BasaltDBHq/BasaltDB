@@ -532,7 +532,6 @@ var portLogic = map[string]string{
 	"EngineDownServer.Abandoned":        "basalt mcp with the engine down: answers each request line itself",
 	"gatedDispatcher.Dispatch":          "the pages API: refuses a request while the engine restarts",
 	"sessionDispatcher.Dispatch":        "the pages API: translates the channel's request and response to the pages' types",
-	"homeSource.Home":                   "the home page: caches its read for a short time",
 	"setupHost.ConnTarget":              "the setup host: parses the connection string's target",
 	"setupHost.OSInstallScript":         "the setup host: reads the binary's source, then builds the install script",
 	"setupHost.OSRestartScript":         "the setup host: reads the binary's source, then builds the restart script",

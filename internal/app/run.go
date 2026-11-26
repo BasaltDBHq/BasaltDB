@@ -280,7 +280,7 @@ func runWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		return errNoAgent
 	}
 	if site != nil {
-		site.pages.SetHome(newHomeSource(srv.homes, log.With("component", "home")))
+		site.pages.SetHome(newHomeSource(srv.homes))
 	}
 
 	ctx, cancel := context.WithCancel(ctx)

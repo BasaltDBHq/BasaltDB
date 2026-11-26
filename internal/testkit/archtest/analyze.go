@@ -635,11 +635,29 @@ func bannedImport(p string) bool {
 }
 
 // serviceBanned reports whether a service may not import p: a service reaches
-// Postgres and the network through a port, never through the driver itself.
-// net/http's sub-packages (httptest, httputil and the rest) count too.
+// Postgres and the network through a port, never through the driver or a
+// protocol client library itself. net/http's sub-packages (httptest,
+// httputil and the rest) count too, and so do ConnectRPC
+// (connectrpc.com/...), gRPC (google.golang.org/grpc/...) and the clients
+// generated from the module's protos (an api/ package named <pkg>connect,
+// such as connectv1connect). The proto messages themselves are not banned.
 func serviceBanned(p string) bool {
 	return p == "github.com/jackc/pgx" || strings.HasPrefix(p, "github.com/jackc/pgx/") ||
-		p == "database/sql" || p == "net/http" || strings.HasPrefix(p, "net/http/")
+		p == "database/sql" || p == "net/http" || strings.HasPrefix(p, "net/http/") ||
+		strings.HasPrefix(p, "connectrpc.com/") ||
+		p == "google.golang.org/grpc" || strings.HasPrefix(p, "google.golang.org/grpc/") ||
+		generatedConnectClient(p)
+}
+
+// generatedConnectClient reports whether p is a ConnectRPC client generated
+// from one of the module's protos: a package under api/ whose last element is
+// <pkg>connect (api/connect itself is the contract package, not a client).
+func generatedConnectClient(p string) bool {
+	if !strings.HasPrefix(p, modulePath+"/api/") {
+		return false
+	}
+	last := p[strings.LastIndex(p, "/")+1:]
+	return strings.HasSuffix(last, "connect") && last != "connect"
 }
 
 func checkServiceImports(v violations, rel string, f *goFile) {

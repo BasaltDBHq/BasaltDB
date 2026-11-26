@@ -1,7 +1,9 @@
 package pii_test
 
 import (
+	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/stretchr/testify/require"
 
@@ -88,4 +90,48 @@ func TestValidIBAN(t *testing.T) {
 	}
 	require.Equal(t, 20, pii.IBANLength("ee"))
 	require.Zero(t, pii.IBANLength("XX"))
+}
+
+// A card or an IBAN gets one token however it is spaced (PT-9), and one
+// stored in an OTHER column gets the token of its card or IBAN form.
+func TestCardsAndIBANsGetOneTokenHoweverSpaced(t *testing.T) {
+	t.Parallel()
+	k := newKeys(t, testMaster)
+	for typ, g := range map[pii.EntityType][]string{
+		pii.EntityCard: {"4111 1111 1111 1111", "4111-1111-1111-1111", "4111111111111111", "4111‑1111‑1111‑1111"},
+		pii.EntityIBAN: {"EE38 2200 2210 2014 5685", "EE382200221020145685", "ee38-2200-2210-2014-5685", "EE38  2200  2210  2014  5685"},
+	} {
+		first := mustToken(t, k, typ, g[0], "")
+		for _, v := range g {
+			require.Equal(t, first, mustToken(t, k, typ, v, ""), v)
+			stored := mustToken(t, k, pii.EntityOther, v, "")
+			require.Equal(t, typ, stored.Type, "%s: an OTHER value that is a %s is tokenized as one", v, typ)
+			require.Equal(t, first, stored, v)
+		}
+	}
+	require.Equal(t, "4111111111111111", pii.Normalize(pii.EntityCard, "4111 1111-1111 1111", ""))
+	require.Equal(t, "EE382200221020145685", pii.Normalize(pii.EntityIBAN, "ee38 2200-2210 2014 5685", ""))
+	other := mustToken(t, k, pii.EntityOther, "order 1234", "")
+	require.Equal(t, pii.EntityOther, other.Type, "an OTHER value that is no card or IBAN keeps its type")
+}
+
+// A card written in the decimal digits of any script normalizes to its
+// ASCII digits.
+func TestACardInAnyScriptsDigitsNormalizesToASCII(t *testing.T) {
+	t.Parallel()
+	n := 0
+	for z := rune(0); z <= unicode.MaxRune; z++ {
+		if !unicode.Is(unicode.Nd, z) || unicode.Is(unicode.Nd, z-1) {
+			continue
+		}
+		n++
+		in := strings.Map(func(r rune) rune {
+			if r >= '0' && r <= '9' {
+				return z + (r - '0')
+			}
+			return r
+		}, "4111 1111 1111 1111")
+		require.Equal(t, "4111111111111111", pii.Normalize(pii.EntityCard, in, ""), "%U", z)
+	}
+	require.Greater(t, n, 60, "sanity: Unicode has dozens of digit blocks")
 }

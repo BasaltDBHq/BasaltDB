@@ -8,6 +8,7 @@ internal/engine engine.go: os.Chmod
 internal/engine engine.go: os.Lstat
 internal/engine engine.go: os.MkdirAll
 internal/engine engine.go: os.Remove
+internal/engine laststop.go: internal/lib/pidlock.Running
 internal/engine laststop.go: os.MkdirAll
 internal/engine laststop.go: os.Remove
 internal/engine laststop.go: os.Stat
@@ -15,6 +16,8 @@ internal/engine laststop_unix.go: imports syscall
 internal/engine laststop_unix.go: os.OpenFile
 internal/engine starter_unix.go: imports os/exec
 internal/engine starter_unix.go: imports syscall
+internal/engine starter_unix.go: internal/config.LockFile
+internal/engine starter_unix.go: internal/lib/pidlock.Running
 internal/engine starter_unix.go: net.DialTimeout
 internal/engine starter_unix.go: os.MkdirAll
 internal/engine starter_unix.go: os.OpenFile
@@ -23,10 +26,22 @@ internal/engine waits.go: os.Lstat
 internal/engine waits.go: os.ReadDir
 internal/handoff address.go: net.DefaultResolver
 internal/handoff address.go: net.Resolver
+internal/handoff cache.go: internal/config.ReadOwnCredential
+internal/handoff cache.go: internal/config.WriteFile
 internal/handoff cache.go: os.MkdirAll
+internal/handoff pathfiles.go: internal/config.ClearSetup
+internal/handoff pathfiles.go: internal/config.LockFile
+internal/handoff pathfiles.go: internal/config.ReadCredential
+internal/handoff pathfiles.go: internal/config.ReadOwnCredentialLimit
+internal/handoff pathfiles.go: internal/config.SameCredentialFile
 internal/handoff pathfiles.go: os.Lstat
 internal/handoff pathfiles.go: os.Rename
 internal/handoff probe.go: net.Dialer
+internal/handoff setupfiles.go: internal/config.LoadNoFollow
+internal/handoff setupfiles.go: internal/config.LockFile
+internal/handoff setupfiles.go: internal/config.ReadOwnCredential
+internal/handoff setupfiles.go: internal/config.UpdateConfig
+internal/handoff setupfiles.go: internal/config.WriteFile
 internal/handoff setupfiles.go: os.Lstat
 internal/handoff setupfiles.go: os.Remove
 internal/plugin install.go: os.Chmod
@@ -38,6 +53,8 @@ internal/plugin install.go: os.OpenRoot
 internal/plugin install.go: os.RemoveAll
 internal/plugin install.go: os.Rename
 internal/plugin kept_entries.go: imports syscall
+internal/plugin kept_entries.go: internal/config.LockFile
+internal/plugin kept_entries.go: internal/lib/atomicfile.Write
 internal/plugin kept_entries.go: os.MkdirAll
 internal/plugin kept_entries.go: os.OpenFile
 internal/plugin kept_entries.go: os.OpenRoot
@@ -53,6 +70,7 @@ internal/plugin kept_upload.go: os.MkdirAll
 internal/plugin kept_upload.go: os.OpenRoot
 internal/plugin kept_upload.go: os.RemoveAll
 internal/plugin plugin_feed.go: os.ReadFile
+internal/plugin plugin_watch.go: internal/lib/atomicfile.Write
 internal/plugin plugin_watch.go: os.MkdirAll
 internal/plugin plugin_watch.go: os.ReadFile
 internal/plugin plugin_watch.go: os.Remove
@@ -61,6 +79,7 @@ internal/plugin sweep.go: os.Lstat
 internal/plugin sweep.go: os.ReadDir
 internal/plugin sweep.go: os.Remove
 internal/plugin sweep.go: os.RemoveAll
+internal/plugin trust.go: internal/lib/atomicfile.Write
 internal/plugin trust.go: os.Chmod
 internal/plugin trust.go: os.Lstat
 internal/plugin trust.go: os.Mkdir
@@ -73,3 +92,4 @@ internal/plugin verify.go: path/filepath.WalkDir
 internal/setup binary.go: path/filepath.EvalSymlinks
 internal/setup rotations.go: os.Lstat
 internal/status extra.go: os.Stat
+internal/status portalcheck.go: internal/lib/atomicfile.Write

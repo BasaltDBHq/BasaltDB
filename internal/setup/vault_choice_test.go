@@ -1,4 +1,4 @@
-package setupcli_test
+package setup_test
 
 import (
 	"testing"
@@ -7,9 +7,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
-	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
 )
 
 func TestChooseVault(t *testing.T) {
@@ -29,7 +27,7 @@ func TestChooseVault(t *testing.T) {
 		{"agent turns it off", setup.VaultModeOff, setup.OperatedByAgent, links.Portal, setup.VaultChoice{Given: setup.VaultModeOff, Def: setup.VaultModeOn, Why: agentWhy}},
 		{"off with local pages", setup.VaultModeOff, setup.OperatedByPerson, links.DefaultLocal, setup.VaultChoice{Given: setup.VaultModeOff, Def: setup.VaultModeOff, Why: personWhy}},
 	} {
-		got, err := setupcli.ChooseVault(tc.given, tc.operatedBy, tc.pages, personWhy)
+		got, err := setup.ChooseVault(tc.given, tc.operatedBy, tc.pages, personWhy)
 		require.NoError(t, err, tc.name)
 		require.Equal(t, tc.want, got, tc.name)
 	}
@@ -43,7 +41,7 @@ func TestChooseVault(t *testing.T) {
 		setup.VaultChoice{Given: setup.VaultModeOff, Def: setup.VaultModeOn, Why: agentWhy}.Line(config.VaultWritten{Vault: config.VaultOff}))
 
 	for _, pages := range []string{links.DefaultLocal, "http://localhost:7777"} {
-		_, err := setupcli.ChooseVault(setup.VaultModeOn, setup.OperatedByPerson, pages, personWhy)
-		require.ErrorIs(t, err, cli.ErrUsage, "--vault=on needs the portal's pages, not %s", pages)
+		_, err := setup.ChooseVault(setup.VaultModeOn, setup.OperatedByPerson, pages, personWhy)
+		require.ErrorIs(t, err, setup.ErrUsage, "--vault=on needs the portal's pages, not %s", pages)
 	}
 }

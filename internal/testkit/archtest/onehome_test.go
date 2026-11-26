@@ -385,7 +385,6 @@ const parsesOnly = "parses the connection string only to read its target; it ope
 var directDialsAllowed = map[string]string{
 	"internal/platform/postgres/store/password.go: pgxpool.NewWithConfig": "opens the pool from pgdial.PoolConfig, " +
 		"adding the password refresh",
-	"internal/app/setuphost.go: pgconn.ParseConfig":      parsesOnly,
 	"internal/platform/cli/trust.go: pgconn.ParseConfig": parsesOnly,
 }
 

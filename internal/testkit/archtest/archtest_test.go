@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-var update = flag.Bool("update", false, "rewrite baseline/ to match the violations that exist now")
+var update = flag.Bool("update", false, "rewrite the baselines: baseline/ to match the violations that exist now; the service I/O baseline only drops lines no longer true")
 
 // moduleRoot finds the directory with go.mod above the test's directory.
 func moduleRoot(t *testing.T) string {

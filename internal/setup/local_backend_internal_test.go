@@ -8,6 +8,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/osusers"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -32,6 +33,8 @@ func (testBackend) AgentConnString(adminURL, role, password string) (string, err
 }
 
 func (testBackend) Trust() *trustprofile.Set { return pgdial.Trust() }
+
+func (testBackend) OSUsers() Users { return osusers.Users{} }
 
 func (testBackend) Connect(context.Context, string) (Conn, error) { return nil, errNoConnection }
 

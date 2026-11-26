@@ -225,7 +225,7 @@ func (Backend) FetchChain(ctx context.Context, host string, port int) ([]*x509.C
 // SuggestColumns runs the PII classifier over cols with its default
 // options, keeping no value.
 func (Backend) SuggestColumns(ctx context.Context, cols []piistore.Column, sample setup.SampleFunc) ([]setup.ColumnSuggestion, error) {
-	results, err := pii.SuggestAll(ctx, cols, pii.SampleFunc(sample), pii.Options{}, func(pii.Column, pii.Suggestion) bool { return false })
+	results, err := pii.SuggestAll(ctx, cols, pii.SampleFunc(sample), pii.Options{})
 	if err != nil {
 		return nil, err
 	}

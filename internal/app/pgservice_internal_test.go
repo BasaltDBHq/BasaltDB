@@ -24,7 +24,7 @@ type pgAgent struct {
 // wiring is made in one place.
 func newPGAgent(t *testing.T, url string, conns int32) pgAgent {
 	t.Helper()
-	pool, err := postgres.NewPool(context.Background(), url, conns)
+	pool, _, err := postgres.NewSwitchablePool(context.Background(), url, conns)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	limits := sqlguard.DefaultLimits()

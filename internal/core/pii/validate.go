@@ -207,3 +207,9 @@ func asciiUpper(c byte) byte {
 	}
 	return c
 }
+
+func isASCIIDigit(c byte) bool { return c >= '0' && c <= '9' }
+
+func isASCIIAlnum(c byte) bool {
+	return isASCIIDigit(c) || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}

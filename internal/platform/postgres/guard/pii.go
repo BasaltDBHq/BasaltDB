@@ -196,36 +196,6 @@ func PIIUnclassified(ctx context.Context, q Querier) ([]guardmodel.UnclassifiedC
 	})
 }
 
-// PIIClassCounts reads the login role's rows of agent_pii_columns: how
-// many are classified (any class but UNCLASSIFIED), and the names of those
-// a classify run flagged for review (needs_review), in name order.
-func PIIClassCounts(ctx context.Context, q Querier) (classified int, review []string, err error) {
-	sql, args, err := sqlport.Builder.Select("table_schema || '.' || table_name || '.' || column_name", "class", "needs_review").
-		From("basalt_meta.agent_pii_columns").
-		OrderBy(`table_schema COLLATE "C"`, `table_name COLLATE "C"`, `column_name COLLATE "C"`).ToSql()
-	if err != nil {
-		return 0, nil, err
-	}
-	rows, err := q.Query(ctx, sql, args...)
-	if err != nil {
-		return 0, nil, err
-	}
-	var (
-		name, class string
-		needsReview bool
-	)
-	_, err = pgx.ForEachRow(rows, []any{&name, &class, &needsReview}, func() error {
-		if class != guardmodel.ClassUnclassified {
-			classified++
-		}
-		if needsReview {
-			review = append(review, name)
-		}
-		return nil
-	})
-	return classified, review, err
-}
-
 // nullString maps "" to SQL NULL.
 func nullString(s string) any {
 	if s == "" {

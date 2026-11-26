@@ -371,14 +371,9 @@ func LoadNoFollow(path string) (Config, error) {
 	return load(path, openNoFollow)
 }
 
-// LoadOpen is Load with the file opened by open: a root process opens it
-// without following links (service.OpenTrustedFile) and checks the open
-// file before it is read.
-func LoadOpen(path string, open func(string) (*os.File, error)) (Config, error) {
-	return load(path, open)
-}
-
-// LoadOpenRaw is LoadOpen that also returns the bytes it read, so a caller
+// LoadOpenRaw is Load with the file opened by open (a root process opens it
+// without following links and checks the open file before it is read), and
+// it also returns the bytes it read, so a caller
 // that watches the file for changes compares what it parsed and never reads
 // the file a second time. The bytes are nil when the file could not be
 // opened or read (open refused it, or it is over 1 MiB); a file that was

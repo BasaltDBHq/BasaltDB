@@ -26,7 +26,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/osusers"
-	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
 )
 
 // runEngine runs the engine service; the launchd or systemd unit starts it.
@@ -103,15 +102,6 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 // steps, Startup failures).
 func runMCP(ctx context.Context, args []string, io cli.Stdio) int {
 	return enginecli.RunMCPOn(ctx, args, io, osHost{}, engineCLIHost{})
-}
-
-// engineDownServer is what basalt mcp answers while the engine is down.
-func engineDownServer(name, configPath string, log *slog.Logger) (statusmcp.Server, error) {
-	down, err := statusmcp.LoadEngineDown(name, configPath, AgentServiceManager(), agentEngineHost(), log)
-	if err != nil {
-		return statusmcp.Server{}, err
-	}
-	return statusmcp.NewServer(down, Instructions, degradedTools(down.Call)), nil
 }
 
 // runService is basalt service for the command table.

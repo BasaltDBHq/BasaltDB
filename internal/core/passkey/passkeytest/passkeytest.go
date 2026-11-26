@@ -120,3 +120,10 @@ func (a *Authenticator) Sign(challenge []byte, flags byte, tamper func(*passkey.
 	as.Signature = sig
 	return as, nil
 }
+
+// Challenge is the WebAuthn challenge of a binding text: sha256 of its
+// UTF-8 bytes, as the guard and the pages compute it.
+func Challenge(bindingText string) []byte {
+	sum := sha256.Sum256([]byte(bindingText))
+	return sum[:]
+}

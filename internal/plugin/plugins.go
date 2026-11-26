@@ -337,15 +337,6 @@ func (ep *Plugins) localRefusal(p config.Plugin, v pluginmodel.Verified) string 
 	return ""
 }
 
-// run supervises the started entries until ctx is done and every one has
-// stopped.
-func (ep *Plugins) run(ctx context.Context) {
-	if err := ep.start(ctx); err != nil {
-		return
-	}
-	ep.sup.Wait()
-}
-
 // start starts supervising the entries the start's checks serve, until ctx
 // is done; entries the engine starts while it runs are added to the same
 // supervisor (pluginWatch).

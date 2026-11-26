@@ -175,7 +175,7 @@ func TestRevealRevertRows(t *testing.T) {
 	require.Equal(t, ledger, agentLedger(t, e.a), "the agent's ledger is unchanged but for ROWS_REVEALED")
 
 	// The revert still applies with the person's signature.
-	sig, err := e.p.Sign(approval.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, nil)
+	sig, err := e.p.Sign(passkeytest.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	applied, err := guard.ApplyRevert(ctx, e.a.Conn, id, sig)
 	require.NoError(t, err)
@@ -226,7 +226,7 @@ func TestRevealRevertRowsRefused(t *testing.T) {
 		"a proof over another nonce":    {sign(revealChallenge(t, approval.KindRevert, id, make([]byte, 16), key, hash)), key},
 		"a proof over another rowsHash": {sign(revealChallenge(t, approval.KindRevert, id, nonce, key, otherHash[:])), key},
 		"a proof of the APPROVE kind":   {sign(revealChallenge(t, approval.KindApprove, id, nonce, key, hash)), key},
-		"the revert signature":          {sign(approval.Challenge(e.prep.BindingText)), key},
+		"the revert signature":          {sign(passkeytest.Challenge(e.prep.BindingText)), key},
 		"an approval signature":         {sign(sha256Of(held.BindingText)), key},
 		"a widen proof":                 {sign(reverttest.RescopeChallenge(id, nonce, widenKey, `{}`)), widenKey},
 		"a crafted signature, s = n":    {withSig(valid, derSig([]byte{1}, p256Order)), key},
@@ -344,7 +344,7 @@ func TestRevealRevertRowsGrantsAndState(t *testing.T) {
 		`SELECT has_function_privilege($1, 'basalt_meta._reveal_row(oid, jsonb, jsonb, jsonb)', 'EXECUTE')`, e.a.Role))
 
 	as, key := e.proof(t, e.prep.RevertID, "secret")
-	sig, err := e.p.Sign(approval.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, nil)
+	sig, err := e.p.Sign(passkeytest.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, e.a.Conn, e.prep.RevertID, sig)
 	require.NoError(t, err)

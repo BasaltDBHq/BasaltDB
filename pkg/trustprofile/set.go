@@ -134,22 +134,8 @@ func longest(group []*Profile, host string, exact bool) *Profile {
 	return best
 }
 
-// Profiles are every profile of the set, operator ones first, each with its
-// state.
-func (s *Set) Profiles() []Listed { return slices.Clone(s.listed) }
-
 // Refused are the operator files that were not loaded.
 func (s *Set) Refused() []Refused { return slices.Clone(s.refused) }
-
-// Named is the active profile called name, or nil.
-func (s *Set) Named(name string) *Profile {
-	for _, l := range s.listed {
-		if l.Name == name && l.State == Active {
-			return l.Profile
-		}
-	}
-	return nil
-}
 
 //go:embed profiles
 var builtinFS embed.FS

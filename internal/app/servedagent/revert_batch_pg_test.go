@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -66,7 +65,7 @@ func newBatchEnv(t *testing.T, pagesOrigin ...string) batchEnv {
 // relaying the code.
 func (e batchEnv) sign(t *testing.T) {
 	t.Helper()
-	as, err := e.person.Sign(approval.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := e.person.Sign(passkeytest.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(context.Background(), e.a.Conn, e.prep.RevertID, as)
 	require.NoError(t, err)

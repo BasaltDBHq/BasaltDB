@@ -167,12 +167,12 @@ func TestDecodeRefuses(t *testing.T) {
 func TestSplit(t *testing.T) {
 	t.Parallel()
 	for _, frag := range []string{"#2.abc", "2.abc"} {
-		payload, err := linkcodec.Split(frag)
+		payload, err := linkcodectest.Split(frag)
 		require.NoError(t, err, frag)
 		require.Equal(t, "abc", payload)
 	}
 	for _, frag := range []string{"", "#", "#1.abc", "1.abc", "3.abc", "s=abc", "1"} {
-		_, err := linkcodec.Split(frag)
+		_, err := linkcodectest.Split(frag)
 		require.ErrorContains(t, err, "must start with", frag)
 	}
 }
@@ -241,7 +241,7 @@ func TestEncodeRequestRefusesWhatAPageCannotDecode(t *testing.T) {
 	frag, err := linkcodec.EncodeRequest(binding, []string{strings.Repeat("x", 500000)}, nil)
 	require.NoError(t, err)
 	var got []string
-	_, err = linkcodec.DecodeRequest(frag, 1, func(b string, lines []string, _ []passkey.Bytes) struct{} {
+	_, err = linkcodectest.DecodeRequest(frag, 1, func(b string, lines []string, _ []passkey.Bytes) struct{} {
 		got = append([]string{b}, lines...)
 		return struct{}{}
 	})

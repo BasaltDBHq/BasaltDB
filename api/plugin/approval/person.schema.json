@@ -16,7 +16,6 @@
             "PLUGIN_UPLOAD_PART",
             "PLUGIN_OPEN",
             "PLUGIN_LIST",
-            "PLUGIN_APPROVE",
             "PLUGIN_DISABLE",
             "PLUGIN_REMOVE"
           ]
@@ -35,10 +34,6 @@
         {
           "if": { "properties": { "method": { "const": "PLUGIN_OPEN" } } },
           "then": { "properties": { "params": { "$ref": "#/$defs/openParams" } } }
-        },
-        {
-          "if": { "properties": { "method": { "const": "PLUGIN_APPROVE" } } },
-          "then": { "properties": { "params": { "$ref": "#/$defs/approveParams" } } }
         },
         {
           "if": { "properties": { "method": { "enum": ["PLUGIN_DISABLE", "PLUGIN_REMOVE"] } } },
@@ -120,26 +115,6 @@
           "maxItems": 1024,
           "uniqueItems": true,
           "items": { "$ref": "../manifest.schema.json#/$defs/relativePath" }
-        }
-      }
-    },
-    "approveParams": {
-      "description": "Relay a signed plugin approval: the signed plugin approval response without its approvalId repeated.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["approvalId", "assertion"],
-      "properties": {
-        "approvalId": { "type": "string", "format": "uuid" },
-        "assertion": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["credentialId", "authenticatorData", "clientDataJson", "signature"],
-          "properties": {
-            "credentialId": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
-            "authenticatorData": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
-            "clientDataJson": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
-            "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" }
-          }
         }
       }
     },
@@ -322,16 +297,6 @@
           "then": { "properties": { "approval": { "properties": { "required": { "const": true } } } } }
         }
       ]
-    },
-    "approveResult": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["approvalId", "status", "approvedAt"],
-      "properties": {
-        "approvalId": { "type": "string", "format": "uuid" },
-        "status": { "const": "APPROVED" },
-        "approvedAt": { "type": "string", "format": "date-time" }
-      }
     },
     "disableResult": {
       "type": "object",

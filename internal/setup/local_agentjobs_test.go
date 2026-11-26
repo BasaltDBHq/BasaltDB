@@ -242,7 +242,7 @@ func TestRemoveFinishesOnADatabaseBasaltIsGoneFrom(t *testing.T) {
 	ctx := context.Background()
 	// The database part of an earlier removal committed; the engine's
 	// files were not changed.
-	require.NoError(t, guard.Uninstall(ctx, f.db.Admin, f.db.Names))
+	require.NoError(t, guardtest.Uninstall(ctx, f.db.Admin, f.db.Names))
 
 	checked, err := svc.Check(ctx, f.agentJob(setup.JobRemove))
 	require.NoError(t, err)

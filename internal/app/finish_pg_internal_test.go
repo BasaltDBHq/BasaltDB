@@ -51,8 +51,9 @@ func newRemoteAgent(t *testing.T, dsn, kind string) remoteAgent {
 		ExpiresAt: r.expires.Format(time.RFC3339), Code: "basalt-setup.1.abc.def", Fingerprint: "a1b2 c3d4 e5f6 0718 293a",
 	}
 	setup := r.setup
-	require.NoError(t, config.UpsertAgent(r.cfgPath, config.Settings{SocketDir: "/run/basalt", StateDir: dir, OperatedBy: mcpcontract.OperatedByAgent, PagesURL: links.Portal},
-		config.Agent{Name: "bot", OSUser: "bot", Store: config.PostgresStore(r.credFile), Setup: &setup}))
+	_, err := config.UpsertAgentVault(r.cfgPath, config.Settings{SocketDir: "/run/basalt", StateDir: dir, OperatedBy: mcpcontract.OperatedByAgent, PagesURL: links.Portal},
+		config.Agent{Name: "bot", OSUser: "bot", Store: config.PostgresStore(r.credFile), Setup: &setup})
+	require.NoError(t, err)
 	return r
 }
 
@@ -78,7 +79,7 @@ func (r remoteAgent) configSetup(t *testing.T) *config.Setup {
 
 func (r remoteAgent) record(t *testing.T, d *guardtest.DB, kind string) {
 	t.Helper()
-	_, err := guard.RecordSetup(context.Background(), d.Admin, d.Names,
+	_, err := guardtest.RecordSetup(context.Background(), d.Admin, d.Names,
 		guardmodel.Setup{ID: r.setupID, Kind: kind, Agent: "bot", GuardVersion: guard.LatestVersion(), ExpiresAt: r.expires})
 	require.NoError(t, err)
 }
@@ -187,7 +188,7 @@ func TestTheSetupIsNotClearedWhileInitHoldsTheLock(t *testing.T) {
 	a := d.NewAgent(t, "bot", demoTables, demoTables)
 	r := newRemoteAgent(t, a.URL, guardmodel.SetupUpgrade)
 	rt := r.start(t)
-	_, err := guard.RecordSetup(ctx, d.Admin, d.Names,
+	_, err := guardtest.RecordSetup(ctx, d.Admin, d.Names,
 		guardmodel.Setup{ID: r.setupID, Kind: guardmodel.SetupUpgrade, GuardVersion: guard.LatestVersion(), ExpiresAt: r.expires})
 	require.NoError(t, err)
 

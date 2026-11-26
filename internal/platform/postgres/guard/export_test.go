@@ -1,7 +1,10 @@
 package guard
 
 import (
+	"errors"
+
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
@@ -48,4 +51,15 @@ func PluginApprovalsSQL(n guardmodel.Names) string {
 // StoreNeutralSQL is schema version 10's SQL as the install runs it.
 func StoreNeutralSQL(n guardmodel.Names) string {
 	return renderSQL(n, migrations[versionStoreNeutral-1].sql)
+}
+
+// ScopeRefusal returns the detail (ScopeShape, ScopeNotOwnRun, ...) and the
+// guard's explanation of a SCOPE_REFUSED error, and false for any other
+// error.
+func ScopeRefusal(err error) (detail, hint string, ok bool) {
+	var pg *pgconn.PgError
+	if !errors.As(err, &pg) || pg.Code != sqlstateScopeRefused {
+		return "", "", false
+	}
+	return pg.Detail, pg.Hint, true
 }

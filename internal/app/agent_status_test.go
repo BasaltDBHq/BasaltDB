@@ -515,7 +515,7 @@ func requireOnlyStatusServed(t *testing.T, srv *mcpserver.Server, tools []mcpser
 		require.Equal(t, guidance.CodeUnavailable, body["code"], tool.Name)
 		require.Equal(t, reason, body["reason"], tool.Name)
 		require.NotEmpty(t, body["errorId"], tool.Name)
-		require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool.Name)
+		require.Equal(t, stepcatalogtest.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool.Name)
 		require.Contains(t, body["personMessage"], inMessage, tool.Name)
 		require.Equal(t, "basalt init --agent bot", body["nextSteps"].([]any)[0].(map[string]any)["command"], tool.Name)
 	}

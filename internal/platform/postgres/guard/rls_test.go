@@ -78,7 +78,7 @@ func TestInitAddsGuardPolicyOnRLSTables(t *testing.T) {
 	require.Empty(t, uncovered)
 
 	require.NoError(t, a.Conn.Close(ctx))
-	require.NoError(t, guard.Uninstall(ctx, d.Admin, d.Names))
+	require.NoError(t, guardtest.Uninstall(ctx, d.Admin, d.Names))
 	require.Empty(t, guardPolicies(t, d))
 }
 

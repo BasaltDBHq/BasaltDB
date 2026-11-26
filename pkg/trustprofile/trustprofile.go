@@ -497,10 +497,6 @@ func PinName(host string) string {
 	return pinPrefix + nameOf(NormalizeHost(host), maxLabelLen-len(pinPrefix))
 }
 
-// NameFor is a profile name for host: its letters and digits, the rest as
-// dashes, up to the longest name.
-func NameFor(host string) string { return nameOf(NormalizeHost(host), maxLabelLen) }
-
 func nameOf(host string, limit int) string {
 	var b strings.Builder
 	for _, r := range host {

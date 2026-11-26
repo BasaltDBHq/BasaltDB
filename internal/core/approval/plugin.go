@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -162,46 +161,12 @@ func (r PluginRequest) URL(base string) (string, error) {
 	return links.PluginApproval(base, r.ApprovalID) + "#" + frag, nil
 }
 
-// pluginTexts is how many texts a plugin approval link carries: the
-// binding, then the settings.
-const pluginTexts = 2
-
-// ParsePluginRequest decodes a plugin approval link fragment, with or
-// without '#', and checks it (Check).
-func ParsePluginRequest(fragment string) (PluginRequest, PluginBinding, error) {
-	r, err := linkcodec.DecodeRequest(fragment, pluginTexts-1, func(binding string, lines []string, ids []passkey.Bytes) PluginRequest {
-		out := PluginRequest{Binding: binding, Settings: lines[0], CredentialIDs: ids}
-		if b, err := ParsePluginBinding(binding); err == nil {
-			out.ApprovalID = b.ApprovalID
-		}
-		return out
-	})
-	if err != nil {
-		return PluginRequest{}, PluginBinding{}, Invalid("plugin approval request %v", err)
-	}
-	b, err := r.Check()
-	if err != nil {
-		return PluginRequest{}, PluginBinding{}, err
-	}
-	return r, b, nil
-}
-
 // PluginApprovalResponse is what the plugin approval page outputs after the person
 // signs (api/plugin/approval/response.schema.json), and the body of POST
 // /api/v1/plugins/{approvalId}/approve.
 type PluginApprovalResponse struct {
 	ApprovalID uuid.UUID `json:"approvalId"`
 	passkey.SignedAssertion
-}
-
-// NewPluginApprovalResponse wraps an assertion for approvalID.
-func NewPluginApprovalResponse(approvalID uuid.UUID, a passkey.Assertion) PluginApprovalResponse {
-	return PluginApprovalResponse{ApprovalID: approvalID, SignedAssertion: passkey.SignedAssertion{
-		CredentialID:      a.CredentialID,
-		AuthenticatorData: a.AuthenticatorData,
-		ClientDataJSON:    a.ClientDataJSON,
-		Signature:         a.Signature,
-	}}
 }
 
 // Signed returns the approval id and the assertion.
@@ -218,23 +183,4 @@ func DecodePluginResponse(raw []byte) (PluginApprovalResponse, error) {
 		return PluginApprovalResponse{}, err
 	}
 	return r, nil
-}
-
-// VerifyPlugin checks a response against the binding text it should sign
-// and the stored passkey, the way submit_plugin_approval does (without the
-// approval's state and expiry, which only Postgres knows). It returns the
-// new signature counter.
-func VerifyPlugin(bindingText string, cred passkey.Credential, r PluginApprovalResponse) (uint32, error) {
-	b, err := ParsePluginBinding(bindingText)
-	if err != nil {
-		return 0, err
-	}
-	if b.ApprovalID != r.ApprovalID {
-		return 0, Invalid("response is for plugin approval %s, binding for %s", r.ApprovalID, b.ApprovalID)
-	}
-	count, err := passkey.VerifyAssertion(cred, Challenge(bindingText), r.Assertion())
-	if err != nil {
-		return 0, fmt.Errorf("plugin approval %s: %w", r.ApprovalID, err)
-	}
-	return count, nil
 }

@@ -23,7 +23,6 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
@@ -100,7 +99,7 @@ func TestNothingLeaksToNotifier(t *testing.T) {
 	del := run("remove a spam lead")
 	stmt := `DELETE FROM public.leads WHERE id = $1 AND name <> '` + marker + `-statement'`
 	held := holdWrite(t, c, del, stmt, []any{3})
-	as, err := pk.Sign(approval.Challenge(held.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := pk.Sign(passkeytest.Challenge(held.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.SubmitApproval(ctx, c, held.ApprovalID, as)
 	require.NoError(t, err)
@@ -119,7 +118,7 @@ func TestNothingLeaksToNotifier(t *testing.T) {
 	// rejected with a note.
 	prep, err := guard.PrepareRevert(ctx, c, revertstore.Scope{Kind: revert.ScopeChange, ID: updated}, "undo the rename "+marker)
 	require.NoError(t, err)
-	sig, err := pk.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	sig, err := pk.Sign(passkeytest.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, c, prep.RevertID, sig)
 	require.NoError(t, err)

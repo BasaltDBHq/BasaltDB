@@ -86,16 +86,6 @@ func ListOpenReverts(ctx context.Context, q guard.Querier, p action.RevertListPa
 	return l.page(ctx, q, p.Params, p.Status)
 }
 
-// ListRevertLines returns one page of the lines of a batched plan the
-// calling role prepared, keyset on the line number.
-func ListRevertLines(ctx context.Context, q guard.Querier, p revertstore.RevertLineParams) (pagination.Page[revertstore.RevertLine], error) {
-	sql, args, err := revertLinePage(p)
-	if err != nil {
-		return pagination.Page[revertstore.RevertLine]{}, err
-	}
-	return collectRevertLines(ctx, q, p, sql, args)
-}
-
 // ListRevertLinesMarked is ListRevertLines for an agent (revert_plan): each
 // line's values and images too large for the agent are left out and named
 // in its largeValues, and its changeIds cut to the first

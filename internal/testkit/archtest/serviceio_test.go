@@ -74,9 +74,9 @@ var serviceIOBanned = map[string][]string{
 	// path builders, validators and methods on a loaded Config are pure
 	modulePath + "/internal/config": {
 		// read the config
-		"Load", "LoadNoFollow", "LoadOpen", "LoadOpenRaw", "Discover",
+		"Load", "LoadNoFollow", "LoadOpenRaw", "Discover",
 		// write the config
-		"UpsertAgent", "UpsertAgentVault", "UpsertAgentVaultAt", "UpsertedVault",
+		"UpsertAgentVault", "UpsertAgentVaultAt", "UpsertedVault",
 		"ClearSetup", "ClearSetupAt", "UpdateConfig", "WriteFile", "RemoveAgents",
 		// read a credential file
 		"ReadCredential", "ReadCredentialAt", "ReadCredentialAtLimit",

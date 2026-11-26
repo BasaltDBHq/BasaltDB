@@ -119,16 +119,12 @@ test("registration request from Go decodes", () => {
   assert.throws(() => parseRegistrationRequest(empty), /userName/);
 });
 
-test("registration request carries basalt init's hand-back secret", () => {
+test("registration request refuses a field it does not know", () => {
   const f = fixtures.registrationRequest;
   const encode = (extra) =>
     "1." + b64urlEncode(utf8(JSON.stringify({ challenge: f.challenge, userId: f.userId, userName: "a", displayName: "a", ...extra })));
-  assert.equal(parseRegistrationRequest(encode({})).handBack, "", "no hand-back: the page shows the code");
-  const secret = "A".repeat(21) + "_";
-  assert.equal(parseRegistrationRequest(encode({ handBack: secret })).handBack, secret);
-  for (const bad of ["short", "A".repeat(23), "+".repeat(22), 7]) {
-    assert.throws(() => parseRegistrationRequest(encode({ handBack: bad })), /handBack/);
-  }
+  assert.equal(parseRegistrationRequest(encode({})).userName, "a");
+  assert.throws(() => parseRegistrationRequest(encode({ handBack: "A".repeat(21) + "_" })), /unknown field/);
   assert.throws(() => parseRegistrationRequest(encode({ other: 1 })), /unknown field/);
 });
 

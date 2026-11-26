@@ -97,7 +97,7 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 		served = append(served, tool.Name)
 	}
 	slices.Sort(served)
-	require.NoError(t, mcpcontract.CheckServed(mcpcontract.MustLoad(), served), "the shim lists exactly the IMPLEMENTED contracts")
+	require.NoError(t, stepcatalogtest.CheckServed(mcpcontract.MustLoad(), served), "the shim lists exactly the IMPLEMENTED contracts")
 
 	entry, ok := stepcatalogtest.CatalogOf(t).ErrorEntry(guidance.CodeUnavailable, guidance.ReasonEngineUnreachable, "query")
 	require.True(t, ok)
@@ -111,7 +111,7 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 		require.Equal(t, guidance.ReasonEngineUnreachable, body["reason"], tool)
 		require.NotEmpty(t, body["errorId"], tool)
 		require.NotEmpty(t, body["personMessage"], tool)
-		require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool)
+		require.Equal(t, stepcatalogtest.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool)
 		require.Equal(t, osservice.StartCommand("linux"), body["nextSteps"].([]any)[0].(map[string]any)["command"], tool)
 	}
 	body, isError := serveCall(t, srv, guidance.ToolStatus, map[string]any{})

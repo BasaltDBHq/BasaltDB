@@ -7,7 +7,6 @@ package mcpcontract
 import (
 	"embed"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"path"
 	"sort"
@@ -209,25 +208,6 @@ var ActorActions = map[string][]string{
 	ActorAgent:    {"CALL_TOOL", "REVISE_CALL", "RETRY_SMALLER_BATCHES", "ASK_PERSON", "END_TURN", "STOP", ActionSendRequest, ActionRunCommand},
 	ActorPerson:   {"OPEN_LINK", ActionRunCommand, "TELL_AGENT"},
 	ActorOperator: {ActionRunCommand},
-}
-
-// Resolve returns steps with every OPERATOR step addressed to the agent when
-// operatedBy is AGENT and to the person otherwise (PERSON, or a config the
-// shim cannot read). Part of the exported contract package: the shim and
-// other consumers call it; this repo only tests it.
-func Resolve(steps []StepKind, operatedBy string) []StepKind {
-	actor := ActorPerson
-	if operatedBy == OperatedByAgent {
-		actor = ActorAgent
-	}
-	out := make([]StepKind, len(steps))
-	for i, s := range steps {
-		if s.Actor == ActorOperator {
-			s.Actor = actor
-		}
-		out[i] = s
-	}
-	return out
 }
 
 //go:embed errors/next-steps.json
@@ -440,24 +420,4 @@ func (c NextSteps) errorEntry(code, reason, tool, scope string) (ErrorSteps, boo
 		return ErrorSteps{}, false
 	}
 	return *fallback, true
-}
-
-// CheckServed compares the tools a server lists with the contracts: every
-// served tool needs a contract, and every IMPLEMENTED contract must be served.
-// Part of the exported contract package; this repo calls it from tests.
-func CheckServed(tools []Tool, served []string) error {
-	var errs []error
-	servedSet := make(map[string]bool, len(served))
-	for _, name := range served {
-		servedSet[name] = true
-		if _, ok := Find(tools, name); !ok {
-			errs = append(errs, fmt.Errorf("tool %q is served but has no contract in api/mcp/tools", name))
-		}
-	}
-	for _, t := range tools {
-		if t.Status == StatusImplemented && !servedSet[t.Name] {
-			errs = append(errs, fmt.Errorf("tool %q is %s but not served", t.Name, StatusImplemented))
-		}
-	}
-	return errors.Join(errs...)
 }

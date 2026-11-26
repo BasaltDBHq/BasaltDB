@@ -69,7 +69,7 @@ func applyApproved(ctx context.Context, c *pgx.Conn, in guard.Intent, id uuid.UU
 
 func sign(t *testing.T, p *passkeytest.Authenticator, held guard.Held, tamper func(*passkey.Assertion)) passkey.Assertion {
 	t.Helper()
-	as, err := p.Sign(approval.Challenge(held.BindingText), passkeytest.FlagsUPUV, tamper)
+	as, err := p.Sign(passkeytest.Challenge(held.BindingText), passkeytest.FlagsUPUV, tamper)
 	require.NoError(t, err)
 	return as
 }
@@ -140,13 +140,13 @@ func TestApprovalFlow(t *testing.T) {
 		requireInvalid(t, err, "unknown passkey")
 	})
 	t.Run("a signature for another binding", func(t *testing.T) {
-		as, err := p.Sign(approval.Challenge(held.BindingText+" "), passkeytest.FlagsUPUV, nil)
+		as, err := p.Sign(passkeytest.Challenge(held.BindingText+" "), passkeytest.FlagsUPUV, nil)
 		require.NoError(t, err)
 		_, err = guard.SubmitApproval(context.Background(), a.Conn, held.ApprovalID, as)
 		requireInvalid(t, err, "client data does not match")
 	})
 	t.Run("no user verification", func(t *testing.T) {
-		as, err := p.Sign(approval.Challenge(held.BindingText), passkeytest.FlagUP, nil)
+		as, err := p.Sign(passkeytest.Challenge(held.BindingText), passkeytest.FlagUP, nil)
 		require.NoError(t, err)
 		_, err = guard.SubmitApproval(context.Background(), a.Conn, held.ApprovalID, as)
 		requireInvalid(t, err, "verification required")

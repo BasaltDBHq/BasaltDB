@@ -1,7 +1,6 @@
 // Package pii holds the engine's PII primitives: keys derived from k_master,
-// value normalization, deterministic tokens, the tokenizer that runs a list
-// of detectors over text, and the keyed-hash dictionary those detectors look
-// values up in. No function here logs or prints a value or a key.
+// value normalization, deterministic tokens and the keyed-hash dictionary of
+// known values. No function here logs or prints a value or a key.
 package pii
 
 import (

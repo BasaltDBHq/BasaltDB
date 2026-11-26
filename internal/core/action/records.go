@@ -71,9 +71,6 @@ type RowChange struct {
 	// the images left out whole: absent on the wire, never null.
 	LargeValues                             []largevalue.Entry
 	KeyLeftOut, BeforeLeftOut, AfterLeftOut bool
-	// Marks summarize the values over 1 MiB of the person's read, for the
-	// CLI to print after them (largevalue.Summary).
-	Marks largevalue.Marks
 }
 
 // BasedOn is the row version a write was based on (CONTRACT.md).

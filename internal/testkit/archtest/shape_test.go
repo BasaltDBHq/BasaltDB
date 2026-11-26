@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path"
 	"path/filepath"
@@ -25,7 +27,10 @@ import (
 //   - no in/ package refuses the admin credential itself: internal/app wraps
 //     every served tool once;
 //   - ids come from internal/lib/uniqueid (the forbidigo lint in
-//     .golangci.yml); a //nolint:forbidigo is a baseline entry;
+//     .golangci.yml); a directive that silences it is a baseline entry
+//     only on the line of the uuid.New* call it silences, keyed by that
+//     call; one anywhere else, or a call in the node after one (golangci
+//     widens the directive to it), fails even when listed;
 //   - the service-to-service edges are the ones ARCHITECTURE.md lists.
 //
 // The breaks that exist today are in shape_baseline.txt, which only shrinks.
@@ -237,7 +242,95 @@ func rootIdent(e ast.Expr) string {
 
 // silencesForbidigo matches a nolint directive that turns forbidigo off:
 // one naming it in a list, naming all, or naming no linter.
-var silencesForbidigo = regexp.MustCompile(`^//\s*nolint(\s|$|:[^\s/]*\b(forbidigo|all)\b)`)
+var silencesForbidigo = regexp.MustCompile(`^//\s*nolint(\s|$|:[^/]*\b(forbidigo|all)\b)`)
+
+// strayNolint is the finding for a directive that silences forbidigo but does
+// not sit on the line of a uuid.New* call. golangci widens a directive on its
+// own line to the whole next node, so it could hide new calls: it is never
+// baselined.
+const strayNolint = "nolint silences forbidigo away from a uuid.New* call (put it on the call's line; never baselined)"
+
+// hiddenCall is the finding for a uuid.New* call in the node after a
+// directive line, which golangci silences with it: never baselined.
+const hiddenCall = "is silenced by the nolint on the line above (golangci widens it to this node; never baselined)"
+
+// neverBaselined marks the findings TestShapes refuses even when listed.
+const neverBaselined = "never baselined"
+
+// idNolints returns, for the file at file, one finding per uuid.New* call a
+// forbidigo-silencing directive sits beside ("<func>: uuid.<Name> silences
+// …"), and a strayNolint finding for each such directive with no call on
+// its line.
+func idNolints(file string) ([]string, error) {
+	src, err := os.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.Contains(string(src), "nolint") {
+		return nil, nil
+	}
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, file, src, parser.ParseComments|parser.SkipObjectResolution)
+	if err != nil {
+		return nil, err
+	}
+	uuidName := localName(f, "github.com/google/uuid")
+	calls := map[int][]*ast.SelectorExpr{} // line -> uuid.New* selectors on it
+	ast.Inspect(f, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok || uuidName == "" || !strings.HasPrefix(sel.Sel.Name, "New") {
+			return true
+		}
+		if x, ok := sel.X.(*ast.Ident); ok && x.Name == uuidName {
+			line := fset.Position(sel.Pos()).Line
+			calls[line] = append(calls[line], sel)
+		}
+		return true
+	})
+	var out []string
+	directives := map[int]bool{} // lines that hold a forbidigo-silencing directive
+	for _, cg := range f.Comments {
+		for _, c := range cg.List {
+			if silencesForbidigo.MatchString(c.Text) {
+				directives[fset.Position(c.Pos()).Line] = true
+			}
+		}
+	}
+	// golangci widens a directive to the node that starts on the next line,
+	// even when the directive ends a line of code: a call in that node is
+	// silenced unseen.
+	ast.Inspect(f, func(n ast.Node) bool {
+		if n == nil || !directives[fset.Position(n.Pos()).Line-1] {
+			return true
+		}
+		from, to := fset.Position(n.Pos()).Line, fset.Position(n.End()).Line
+		for line, sels := range calls {
+			if line < from || line > to || directives[line] {
+				continue
+			}
+			for _, sel := range sels {
+				out = append(out, enclosing(f, sel)+": uuid."+sel.Sel.Name+" "+hiddenCall)
+			}
+			delete(calls, line)
+		}
+		return true
+	})
+	for _, cg := range f.Comments {
+		for _, c := range cg.List {
+			if !silencesForbidigo.MatchString(c.Text) {
+				continue
+			}
+			on := calls[fset.Position(c.Pos()).Line]
+			if len(on) == 0 {
+				out = append(out, enclosing(f, c)+": "+strayNolint)
+			}
+			for _, sel := range on {
+				out = append(out, enclosing(f, sel)+": uuid."+sel.Sel.Name+" silences the uniqueid lint (generate ids with internal/lib/uniqueid)")
+			}
+		}
+	}
+	return out, nil
+}
 
 // enclosing names the function of f that holds pos, or "package level".
 func enclosing(f *ast.File, pos ast.Node) string {
@@ -260,12 +353,12 @@ func shapeViolations(root string) ([]string, error) {
 	add := func(rel, format string, a ...any) { count[rel+": "+fmt.Sprintf(format, a...)]++ }
 	for rel, p := range pkgs {
 		for _, f := range p.files {
-			for _, cg := range f.ast.Comments {
-				for _, c := range cg.List {
-					if silencesForbidigo.MatchString(c.Text) {
-						add(rel, "%s: %s silences the uniqueid lint (generate ids with internal/lib/uniqueid)", f.name, enclosing(f.ast, c))
-					}
-				}
+			lines, err := idNolints(filepath.Join(root, filepath.FromSlash(rel), f.name))
+			if err != nil {
+				return nil, err
+			}
+			for _, l := range lines {
+				add(rel, "%s: %s", f.name, l)
 			}
 		}
 		isRoot, inbound, mcpPkg := isDomainRoot(rel), isDomainInbound(rel), isMCPAdapter(rel)
@@ -404,6 +497,10 @@ func TestShapes(t *testing.T) {
 		base = keep
 	}
 	for _, l := range got {
+		if strings.Contains(l, neverBaselined) {
+			t.Errorf("%s\n\tput each directive on the line of the one uuid.New* call it silences, with no call on the next line", l)
+			continue
+		}
 		if !slices.Contains(base, l) {
 			t.Errorf("%s\n\tnew violation; fix it (do not add it to shape_baseline.txt)", l)
 		}
@@ -455,7 +552,7 @@ func TestShapeRulesCatchViolations(t *testing.T) {
 			"var _ = srv.HoldsAdminCredential\n\nfunc Errs(mount " + mountT + ") ([]srv.Tool, error) { return nil, nil }\nfunc Ptrs(mount " + mountT + ") []*srv.Tool { return nil }\n\ntype List []srv.Tool\n\nfunc Named(mount " + mountT + ") List { return nil }\n",
 		"internal/approval/in/approvalmcp/t.go":  "package approvalmcp\n\n" + mcpImp + "func Tools(svc any, wrap " + mountT + ") []srv.Tool { return nil }\n\ntype Down struct{}\n\nfunc (Down) Tools() []srv.Tool { srv.RefuseAdminCredential(); return nil }\n",
 		"internal/approval/in/approvalpage/p.go": "package approvalpage\n\n" + mcpImp + "func Page(mount " + mountT + ") []srv.Tool { srv.RefuseAdminCredential(); return nil }\n",
-		"internal/lib/ids/i.go":                  "package ids\n\nvar ID = 1 //nolint:forbidigo // probe\n\nfunc F() {\n\t_ = 1 //nolint:gosec,forbidigo // probe\n\t_ = 2 //nolint:gosec,forbidigo // probe\n\t_ = 3 //nolint:gosec // not forbidigo\n}\n\nfunc G() {\n\t_ = 1 //nolint:all // probe\n}\n",
+		"internal/lib/ids/i.go":                  "package ids\n\nimport \"github.com/google/uuid\"\n\nvar ID = uuid.New() //nolint:forbidigo // probe\n\nfunc F() {\n\t_ = uuid.NewSHA1(uuid.Nil, nil) //nolint:gosec,forbidigo // probe\n\t_ = uuid.NewMD5(uuid.Nil, nil) //nolint:gosec, forbidigo // probe\n\t_ = uuid.NewSHA1(uuid.Nil, nil) //nolint:gosec,forbidigo // probe\n\t_ = 3 //nolint:gosec // not forbidigo\n\t_ = uuid.Nil //nolint:all // beside other code\n}\n\nfunc G() {\n\t//nolint:forbidigo // own line above an if-block\n\tif true {\n\t\t_ = uuid.New()\n\t}\n}\n\nfunc H() {\n\t_ = uuid.New() //nolint:forbidigo // probe\n\t_ = uuid.NewSHA1(uuid.Nil, nil)\n}\n",
 		"internal/app/a.go":                      "package app\n\n" + mcpImp + "var _ = srv.RefuseAdminCredential\n",
 		"ARCHITECTURE.md":                        "- " + edgeLine + " Today: `agent` → `approval`, `ledger`; `approval` → `links`. Go refuses a cycle.\n",
 	}
@@ -478,9 +575,14 @@ func TestShapeRulesCatchViolations(t *testing.T) {
 		"internal/approval/in/approvalmcp: t.go: Tools returns []mcpserver.Tool (export one func Tools(port, mount) []mcpserver.Tool)",
 		"internal/approval/in/approvalpage: p.go: Page uses mcpserver.RefuseAdminCredential (internal/app wraps every tool once)",
 		"internal/approval: s.go: Service.Set sets a dependency on a built service (take it in New)",
-		"internal/lib/ids: i.go: F silences the uniqueid lint (generate ids with internal/lib/uniqueid) (2 times)",
-		"internal/lib/ids: i.go: G silences the uniqueid lint (generate ids with internal/lib/uniqueid)",
-		"internal/lib/ids: i.go: package level silences the uniqueid lint (generate ids with internal/lib/uniqueid)",
+		"internal/lib/ids: i.go: F: " + strayNolint,
+		"internal/lib/ids: i.go: F: uuid.NewMD5 silences the uniqueid lint (generate ids with internal/lib/uniqueid)",
+		"internal/lib/ids: i.go: F: uuid.NewSHA1 silences the uniqueid lint (generate ids with internal/lib/uniqueid) (2 times)",
+		"internal/lib/ids: i.go: G: " + strayNolint,
+		"internal/lib/ids: i.go: G: uuid.New " + hiddenCall,
+		"internal/lib/ids: i.go: H: uuid.New silences the uniqueid lint (generate ids with internal/lib/uniqueid)",
+		"internal/lib/ids: i.go: H: uuid.NewSHA1 " + hiddenCall,
+		"internal/lib/ids: i.go: package level: uuid.New silences the uniqueid lint (generate ids with internal/lib/uniqueid)",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("shapeViolations:\n got %q\nwant %q", got, want)

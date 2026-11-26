@@ -11,11 +11,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pglargevalue"
 )
 
@@ -27,7 +27,7 @@ const ownSelect = `jsonb_build_object('scope', $1::text, 'scopeId', $2::text, ` 
 	`'agents', jsonb_build_array(basalt_meta.agent_name()), 'runs', $3::jsonb, 'resources', $4::jsonb)`
 
 // scopeArgs are the ownSelect arguments of s. A nil list is JSON null (all).
-func scopeArgs(s action.Scope) ([]any, error) {
+func scopeArgs(s revertstore.Scope) ([]any, error) {
 	runs, err := json.Marshal(s.Runs)
 	if err != nil {
 		return nil, err
@@ -42,7 +42,7 @@ func scopeArgs(s action.Scope) ([]any, error) {
 // PreviewRevert returns the revert lines of the caller's own scope as
 // Postgres builds them (CONTRACT.md, Revert), in COLLATE "C" order,
 // redacted for the caller. It changes nothing.
-func PreviewRevert(ctx context.Context, q Querier, s action.Scope) ([]string, error) {
+func PreviewRevert(ctx context.Context, q Querier, s revertstore.Scope) ([]string, error) {
 	args, err := scopeArgs(s)
 	if err != nil {
 		return nil, err
@@ -59,10 +59,10 @@ func PreviewRevert(ctx context.Context, q Querier, s action.Scope) ([]string, er
 // and reads only the totals and the limit lines after the line whose hash
 // is after ("" for the first page). Postgres counts, hashes and elides,
 // so a large preview or value never crosses the wire on an agent's call.
-func PreviewRevertPage(ctx context.Context, q Querier, s action.Scope, after string, limit int) (action.PreviewPage, error) {
+func PreviewRevertPage(ctx context.Context, q Querier, s revertstore.Scope, after string, limit int) (revertstore.PreviewPage, error) {
 	args, err := scopeArgs(s)
 	if err != nil {
-		return action.PreviewPage{}, err
+		return revertstore.PreviewPage{}, err
 	}
 	// Plain SQL: a set-returning function over a built descriptor, under a
 	// recursive CTE (pglargevalue.ElideLines).
@@ -87,21 +87,21 @@ func PreviewRevertPage(ctx context.Context, q Querier, s action.Scope, after str
 	// page at limit 1 holds one line.
 	rows, err := q.Query(ctx, sql, append(args, after, limit)...)
 	if err != nil {
-		return action.PreviewPage{}, err
+		return revertstore.PreviewPage{}, err
 	}
 	defer rows.Close()
-	var out action.PreviewPage
+	var out revertstore.PreviewPage
 	for rows.Next() {
 		var hash, text *string
 		if err := rows.Scan(&out.Lines, &out.Restore, &out.AllAlreadyReverted, &out.CursorFound, &out.More, &hash, &text); err != nil {
-			return action.PreviewPage{}, err
+			return revertstore.PreviewPage{}, err
 		}
 		if text != nil {
-			out.Page = append(out.Page, action.PreviewLine{Text: *text, Hash: *hash})
+			out.Page = append(out.Page, revertstore.PreviewLine{Text: *text, Hash: *hash})
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return action.PreviewPage{}, err
+		return revertstore.PreviewPage{}, err
 	}
 	return out, nil
 }
@@ -113,12 +113,12 @@ func PreviewRevertPage(ctx context.Context, q Querier, s action.Scope, after str
 // person may widen on the page; it cannot be signed as it is. Over revert.MaxLines lines
 // it stores a batched plan. Call it outside a read-only transaction; a
 // large plan's trial can take minutes.
-func PrepareRevert(ctx context.Context, q Querier, s action.Scope, intent string) (action.PreparedRevert, error) {
+func PrepareRevert(ctx context.Context, q Querier, s revertstore.Scope, intent string) (revertstore.PreparedRevert, error) {
 	args, err := scopeArgs(s)
 	if err != nil {
-		return action.PreparedRevert{}, err
+		return revertstore.PreparedRevert{}, err
 	}
-	var p action.PreparedRevert
+	var p revertstore.PreparedRevert
 	// Plain SQL: a set-returning function in FROM over a built descriptor.
 	withLines := budget.From(ctx) == nil
 	err = q.QueryRow(ctx, `SELECT r.revert_id, r.binding_text, r.expires_at, CASE WHEN $6 THEN r.lines END,
@@ -126,11 +126,11 @@ func PrepareRevert(ctx context.Context, q Querier, s action.Scope, intent string
 		FROM basalt_meta.prepare_revert(`+ownSelect+`, $5) AS r`, append(args, intent, withLines)...).
 		Scan(&p.RevertID, &p.BindingText, &p.ExpiresAt, &p.Lines, &p.LineCount)
 	if err != nil {
-		return action.PreparedRevert{}, err
+		return revertstore.PreparedRevert{}, err
 	}
 	batched, err := bindingBatched(p.BindingText)
 	if err != nil {
-		return action.PreparedRevert{}, err
+		return revertstore.PreparedRevert{}, err
 	}
 	p.Batched = batched
 	return p, nil
@@ -141,17 +141,17 @@ func PrepareRevert(ctx context.Context, q Querier, s action.Scope, intent string
 // (set_config(..., true)), whatever the role's default is. Past it
 // Postgres cancels the prepare (SQLSTATE 57014) and nothing is stored.
 // The engine's request_revert prepares through it.
-func PrepareRevertWithin(ctx context.Context, db TxBeginner, s action.Scope, intent string, timeout time.Duration) (action.PreparedRevert, error) {
+func PrepareRevertWithin(ctx context.Context, db TxBeginner, s revertstore.Scope, intent string, timeout time.Duration) (revertstore.PreparedRevert, error) {
 	if timeout < time.Millisecond {
-		return action.PreparedRevert{}, guardmodel.ErrPrepareTimeout
+		return revertstore.PreparedRevert{}, guardmodel.ErrPrepareTimeout
 	}
 	sql, args, err := psql.Select().
 		Column(sq.Expr("pg_catalog.set_config('statement_timeout', ?, true)", strconv.FormatInt(timeout.Milliseconds(), 10))).
 		ToSql()
 	if err != nil {
-		return action.PreparedRevert{}, err
+		return revertstore.PreparedRevert{}, err
 	}
-	var p action.PreparedRevert
+	var p revertstore.PreparedRevert
 	err = pgx.BeginTxFunc(ctx, db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, sql, args...); err != nil {
 			return err
@@ -161,7 +161,7 @@ func PrepareRevertWithin(ctx context.Context, db TxBeginner, s action.Scope, int
 		return err
 	})
 	if err != nil {
-		return action.PreparedRevert{}, err
+		return revertstore.PreparedRevert{}, err
 	}
 	return p, nil
 }
@@ -172,14 +172,14 @@ func PrepareRevertWithin(ctx context.Context, db TxBeginner, s action.Scope, int
 // preview refuses the whole revert with REVERT_INVALID. For a batched plan
 // it records the signature and the agent then applies the plan with
 // ApplyRevertBatch. Run it in its own transaction.
-func ApplyRevert(ctx context.Context, q Querier, revertID uuid.UUID, a passkey.Assertion) (action.AppliedRevert, error) {
-	var out action.AppliedRevert
+func ApplyRevert(ctx context.Context, q Querier, revertID uuid.UUID, a passkey.Assertion) (revertstore.AppliedRevert, error) {
+	var out revertstore.AppliedRevert
 	// Plain SQL: one function call returning jsonb.
 	err := q.QueryRow(ctx, `SELECT basalt_meta.apply_revert($1::uuid, $2::bytea, $3::bytea, $4::bytea, $5::bytea)`,
 		revertID.String(), a.CredentialID, a.AuthenticatorData, a.ClientDataJSON, a.Signature).
 		Scan(&out)
 	if err != nil {
-		return action.AppliedRevert{}, err
+		return revertstore.AppliedRevert{}, err
 	}
 	return out, nil
 }
@@ -189,12 +189,12 @@ func ApplyRevert(ctx context.Context, q Querier, revertID uuid.UUID, a passkey.A
 // refuses the whole batch unless every line is in the plan and pending,
 // re-checks each line with its row locked, and skips (people win) a row
 // changed since the plan was built. Run it in its own transaction.
-func ApplyRevertBatch(ctx context.Context, q Querier, revertID uuid.UUID, lines []int) (action.BatchResult, error) {
+func ApplyRevertBatch(ctx context.Context, q Querier, revertID uuid.UUID, lines []int) (revertstore.BatchResult, error) {
 	var raw []byte
 	// Plain SQL: one function call returning jsonb.
 	err := q.QueryRow(ctx, `SELECT basalt_meta.apply_revert_batch($1::uuid, $2::int[])`, revertID.String(), lines).Scan(&raw)
 	if err != nil {
-		return action.BatchResult{}, err
+		return revertstore.BatchResult{}, err
 	}
 	return decodeBatchResult(raw)
 }
@@ -239,20 +239,20 @@ type batchResultJSON struct {
 
 // decodeBatchResult reads apply_revert_batch's jsonb answer into the
 // store-neutral batch result: a line's sqlState is its StoreCode.
-func decodeBatchResult(raw []byte) (action.BatchResult, error) {
+func decodeBatchResult(raw []byte) (revertstore.BatchResult, error) {
 	var in batchResultJSON
 	if err := json.Unmarshal(raw, &in); err != nil {
-		return action.BatchResult{}, fmt.Errorf("decode apply_revert_batch: %w", err)
+		return revertstore.BatchResult{}, fmt.Errorf("decode apply_revert_batch: %w", err)
 	}
-	out := action.BatchResult{
+	out := revertstore.BatchResult{
 		RevertID: in.RevertID, Batch: in.Batch, Status: in.Status,
 		Restored: in.Restored, Skipped: in.Skipped, Pending: in.Pending,
 	}
 	if in.Items != nil {
-		out.Items = make([]action.BatchItem, 0, len(in.Items))
+		out.Items = make([]revertstore.BatchItem, 0, len(in.Items))
 	}
 	for _, it := range in.Items {
-		out.Items = append(out.Items, action.BatchItem{Line: it.Line, Outcome: it.Outcome, Conflict: it.Conflict, StoreCode: it.SQLState})
+		out.Items = append(out.Items, revertstore.BatchItem{Line: it.Line, Outcome: it.Outcome, Conflict: it.Conflict, StoreCode: it.SQLState})
 	}
 	return out, nil
 }

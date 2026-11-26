@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
@@ -111,7 +112,7 @@ func TestRevertDoesNotDependOnTheSessionZone(t *testing.T) {
 			limits := sqlguard.DefaultLimits()
 			writer := postgres.NewStore(zonedPool(t, a.URL, zones[0]), limits, time.Now)
 			run := write(t, writer, `UPDATE public.events SET note = 'tagged' WHERE id IN (1, 2)`)
-			scope := action.Scope{Kind: revert.ScopeRun, ID: run}
+			scope := revertstore.Scope{Kind: revert.ScopeRun, ID: run}
 
 			engine := postgres.NewStore(zonedPool(t, a.URL, zones[1]), limits, time.Now)
 			pv, err := engine.PreviewRevert(ctx, scope, "", 10)
@@ -162,7 +163,7 @@ func TestSignedLinesDoNotDependOnTheSessionZone(t *testing.T) {
 
 		// The row images the guard stores, read back as revert lines.
 		run := write(t, store, `UPDATE public.events SET note = note || '.' WHERE id = 1`)
-		pv, err := store.PreviewRevert(ctx, action.Scope{Kind: revert.ScopeRun, ID: run}, "", 10)
+		pv, err := store.PreviewRevert(ctx, revertstore.Scope{Kind: revert.ScopeRun, ID: run}, "", 10)
 		require.NoError(t, err)
 		requireUTC(t, previewTexts(pv))
 	}
@@ -174,7 +175,7 @@ func TestSignedLinesDoNotDependOnTheSessionZone(t *testing.T) {
 }
 
 // previewTexts are the texts of a preview page's lines.
-func previewTexts(pv action.PreviewPage) []string {
+func previewTexts(pv revertstore.PreviewPage) []string {
 	out := make([]string, 0, len(pv.Page))
 	for _, l := range pv.Page {
 		out = append(out, l.Text)
@@ -271,7 +272,7 @@ func TestAWriteThatSkipsTheEngineStoresTheEngineImages(t *testing.T) {
 	require.Contains(t, all, `"ratio": 0.30000000000000004`)
 
 	// The engine reverts the direct write without a false conflict.
-	scope := action.Scope{Kind: revert.ScopeRun, ID: in.RunID}
+	scope := revertstore.Scope{Kind: revert.ScopeRun, ID: in.RunID}
 	pv, err := engine.PreviewRevert(ctx, scope, "", 10)
 	require.NoError(t, err)
 	requireNoSkip(t, previewTexts(pv))
@@ -359,7 +360,7 @@ func TestAWriteThatSkipsTheEngineStoresByteaAsTheEngine(t *testing.T) {
 	require.Equal(t, images(t, d, viaEngine), got)
 	require.Contains(t, strings.Join(got, "\n"), `"body": "\\x00ff41"`)
 
-	scope := action.Scope{Kind: revert.ScopeRun, ID: in.RunID}
+	scope := revertstore.Scope{Kind: revert.ScopeRun, ID: in.RunID}
 	prep, err := engine.PrepareRevert(ctx, scope, "Undo", time.Minute)
 	require.NoError(t, err)
 	requireNoSkip(t, prep.Lines)
@@ -383,7 +384,7 @@ func TestRevertFunctionsCalledByHandDoNotDependOnTheSession(t *testing.T) {
 		at = at + interval '1 day', took = took * 2 WHERE id IN (1, 2)`)
 
 	hand := handConn(t, a.URL)
-	scope := action.Scope{Kind: revert.ScopeRun, ID: run}
+	scope := revertstore.Scope{Kind: revert.ScopeRun, ID: run}
 	lines, err := guard.PreviewRevert(ctx, hand, scope)
 	require.NoError(t, err)
 	requireNoSkip(t, lines)

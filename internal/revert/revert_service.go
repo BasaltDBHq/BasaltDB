@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -24,13 +25,13 @@ import (
 // (exactly one id) and a page of lines.
 type PreviewRevertParams struct {
 	pagination.Params
-	Scope action.Scope
+	Scope revertstore.Scope
 }
 
 // RevertPreview is one page of what a revert would do, with the totals of
 // the whole preview.
 type RevertPreview struct {
-	Scope   action.Scope
+	Scope   revertstore.Scope
 	Rows    int
 	Skipped int
 	Page    pagination.Page[revert.Line]
@@ -99,7 +100,7 @@ func cursorHash(cursor string) (string, error) {
 // parsed. Plan is nil on a widened plan's line that names a change the
 // agent did not make: the agent's view leaves its text out (RS-5).
 type RevertPlanLine struct {
-	action.RevertLine
+	revertstore.RevertLine
 	Plan *revert.Line
 }
 
@@ -122,9 +123,9 @@ type RevertPlan struct {
 // RevertPlan returns a large revert plan this agent prepared, its progress
 // and one page of its lines, for the agent to apply with ApplyRevertBatch
 // once the person signed it.
-func (rc *Service) RevertPlan(ctx context.Context, p action.RevertLineParams) (RevertPlan, error) {
+func (rc *Service) RevertPlan(ctx context.Context, p revertstore.RevertLineParams) (RevertPlan, error) {
 	r, err := rc.store.Records.FindRevert(ctx, p.RevertID)
-	if refusalOf(err).Reason == action.RevertNotFound {
+	if refusalOf(err).Reason == revertstore.RevertNotFound {
 		return RevertPlan{}, &toolresult.ToolError{Code: guidance.CodeNotFound, Reason: guidance.ReasonRevert, Message: fmt.Sprintf("no revert %s prepared by this agent", p.RevertID)}
 	}
 	if err != nil {
@@ -194,7 +195,7 @@ func (rc *Service) ApplyRevertBatch(ctx context.Context, p ApplyRevertBatchParam
 // AppliedBatch is one applied batch with what happens next (CONTRACT.md,
 // Next steps): the next pending lines, or the end of the plan.
 type AppliedBatch struct {
-	action.BatchResult
+	revertstore.BatchResult
 	PersonMessage string
 	NextSteps     []toolresult.NextStep
 }
@@ -203,7 +204,7 @@ type AppliedBatch struct {
 // request form: one of the agent's own changes or runs, and why the person
 // reverts it.
 type RequestRevertParams struct {
-	Scope  action.Scope
+	Scope  revertstore.Scope
 	Intent string
 }
 
@@ -315,7 +316,7 @@ type AwaitRevertParams struct {
 // or Wait is over. It never signs: the person signs on the revert page.
 func (rc *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (RequestedRevert, error) {
 	r, err := rc.store.Records.FindRevert(ctx, p.RevertID)
-	if refusalOf(err).Reason == action.RevertNotFound {
+	if refusalOf(err).Reason == revertstore.RevertNotFound {
 		return RequestedRevert{}, revertNotFound(p.RevertID)
 	}
 	if err != nil {
@@ -354,17 +355,17 @@ func (rc *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Reques
 func (rc *Service) applyRevertError(ctx context.Context, r action.Revert, err error) error {
 	refused := refusalOf(err)
 	switch refused.Reason {
-	case action.RevertExpiredReason:
+	case revertstore.RevertExpiredReason:
 		return rc.revertExpired(r)
-	case action.RevertNothing:
+	case revertstore.RevertNothing:
 		return nothingSigned(r)
-	case action.RevertRowsChanged:
+	case revertstore.RevertRowsChanged:
 		return rc.rowsChanged(r, refused.Detail)
-	case action.RevertPasskeyRevoked:
+	case revertstore.RevertPasskeyRevoked:
 		return rc.passkeyRevoked(ctx, r)
-	case action.RevertAlreadySigned:
+	case revertstore.RevertAlreadySigned:
 		return alreadySigned(r)
-	case action.RevertSignature:
+	case revertstore.RevertSignature:
 		return rc.badSignature(ctx, r, "the database refused the signature, nothing was reverted: "+refused.Detail)
 	default:
 		return err
@@ -373,11 +374,11 @@ func (rc *Service) applyRevertError(ctx context.Context, r action.Revert, err er
 
 // refusalOf is the store's refusal in err, the zero refusal (no reason)
 // when err carries none.
-func refusalOf(err error) action.RevertRefusalError {
-	if rr := action.RevertRefusalOf(err); rr != nil {
+func refusalOf(err error) revertstore.RevertRefusalError {
+	if rr := revertstore.RevertRefusalOf(err); rr != nil {
 		return *rr
 	}
-	return action.RevertRefusalError{}
+	return revertstore.RevertRefusalError{}
 }
 
 // revertState is the answer for r without a new link: what happened, for
@@ -477,7 +478,7 @@ func applyByText(r action.Revert) string {
 // in (any run with that task id) must be its own. Another agent's id and an
 // unknown one get the same NOT_FOUND; the store refuses the same scopes when
 // an agent role calls the guard directly.
-func (rc *Service) checkOwnScope(ctx context.Context, scope action.Scope) error {
+func (rc *Service) checkOwnScope(ctx context.Context, scope revertstore.Scope) error {
 	switch scope.Kind {
 	case revert.ScopeRun:
 		_, err := rc.runs.FindRun(ctx, scope.ID)
@@ -515,7 +516,7 @@ const taskWidenPointer = "You can include other agents' changes in this task on 
 // notOwnScope is a change or run that is not this agent's (RS-6): NOT_FOUND
 // with the scope's reason, the same answer for another agent's id and an
 // unknown one, on preview_revert and request_revert alike.
-func notOwnScope(scope action.Scope) error {
+func notOwnScope(scope revertstore.Scope) error {
 	kind := strings.ToLower(string(scope.Kind))
 	return &toolresult.ToolError{
 		Code: guidance.CodeNotFound, Reason: string(scope.Kind), Message: fmt.Sprintf(
@@ -530,7 +531,7 @@ func notOwnScope(scope action.Scope) error {
 // notOwnTask is a task this agent has no run in (RS-6): NOT_FOUND reason
 // TASK, the same answer whether or not other agents ran in it. The message
 // names no agent: this agent cannot see who ran in the task (N12-R1).
-func notOwnTask(scope action.Scope) error {
+func notOwnTask(scope revertstore.Scope) error {
 	return &toolresult.ToolError{
 		Code: guidance.CodeNotFound, Reason: string(revert.ScopeTask), Message: fmt.Sprintf(
 			"task %s has no run of this agent; nothing was prepared. An agent reverts only its own work: "+
@@ -546,19 +547,19 @@ func notOwnTask(scope action.Scope) error {
 // errors): another agent's or an unknown change, run or task is NOT_FOUND,
 // alike; a descriptor the engine built badly is INVALID_ARGUMENT with the
 // store's explanation. nil when refused is not about the scope.
-func scopeRefused(scope action.Scope, refused action.RevertRefusalError) error {
+func scopeRefused(scope revertstore.Scope, refused revertstore.RevertRefusalError) error {
 	switch refused.Reason {
-	case action.RevertNotOwnChange, action.RevertNotOwnRun:
+	case revertstore.RevertNotOwnChange, revertstore.RevertNotOwnRun:
 		return notOwnScope(scope)
-	case action.RevertNotOwnTask:
+	case revertstore.RevertNotOwnTask:
 		return notOwnTask(scope)
-	case action.RevertFilter:
+	case revertstore.RevertFilter:
 		return scopeFilterRefused(refused.Detail)
-	case action.RevertFilterName:
+	case revertstore.RevertFilterName:
 		return scopeFilterInvalid(refused.Detail)
-	case action.RevertFilterCap:
+	case revertstore.RevertFilterCap:
 		return ScopeFilterCapped()
-	case action.RevertInvalid:
+	case revertstore.RevertInvalid:
 		return &guidance.ArgumentError{Message: "the revert scope was refused: " + refused.Detail}
 	default:
 		return nil
@@ -592,22 +593,22 @@ func ScopeFilterCapped() error {
 // prepareError is the answer to a prepare that failed: what the person
 // can do when nothing can be reverted, or when the prepare is too large for
 // an MCP call and their terminal is the better path.
-func (rc *Service) prepareError(ctx context.Context, tool string, scope action.Scope, err error) error {
+func (rc *Service) prepareError(ctx context.Context, tool string, scope revertstore.Scope, err error) error {
 	refused := refusalOf(err)
 	if out := scopeRefused(scope, refused); out != nil {
 		return out
 	}
-	if errors.Is(err, action.ErrEmptyProposal) {
+	if errors.Is(err, revertstore.ErrEmptyProposal) {
 		return rc.nothingToRevertError(ctx, tool, scope, guidance.ReasonReadsOnly, "this agent changed no rows in it that a revert could restore")
 	}
-	if refused.Reason == action.RevertNothing || refused.Reason == action.RevertReadsOnly {
+	if refused.Reason == revertstore.RevertNothing || refused.Reason == revertstore.RevertReadsOnly {
 		return rc.nothingToRevert(ctx, tool, scope, refused)
 	}
 	if ctx.Err() != nil {
 		// The client canceled the call: not the prepare's time limit.
 		return fmt.Errorf("prepare revert: %w", ctx.Err())
 	}
-	if refused.Reason != action.RevertTimedOut {
+	if refused.Reason != revertstore.RevertTimedOut {
 		return err
 	}
 	return rc.prepareTimeout(tool, scope, refused.StoreCode)
@@ -683,7 +684,7 @@ func (rc *Service) revertNotice(ctx context.Context, r action.Revert) (revertLin
 // bindingHeadline is the headline of a revert not widened, from its
 // binding: the scope and filters it covers and its totals.
 func bindingHeadline(b revert.Binding, r action.Revert) string {
-	filters := filterText(action.Scope{Runs: b.Select.Runs, Resources: b.Select.Resources})
+	filters := filterText(revertstore.Scope{Runs: b.Select.Runs, Resources: b.Select.Resources})
 	return fmt.Sprintf("Revert of %s %s%s: %d rows to restore, %d left as they are (changed after the agent).",
 		strings.ToLower(string(b.Select.Scope)), b.Select.ScopeID, filters, r.Rows, r.Skipped)
 }

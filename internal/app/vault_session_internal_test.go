@@ -21,7 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
@@ -30,6 +29,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
@@ -105,8 +105,8 @@ func (a *heldAgent) RevealRevert(context.Context, uuid.UUID, string, linksvc.Rev
 	return approval.RevealAnswer{}, linksvc.ErrNotThisAgent
 }
 
-func (a *heldAgent) RelayRevert(context.Context, revert.Response) (action.AppliedRevert, linksvc.Receipt, error) {
-	return action.AppliedRevert{}, linksvc.Receipt{}, linksvc.ErrNotThisAgent
+func (a *heldAgent) RelayRevert(context.Context, revert.Response) (revertstore.AppliedRevert, linksvc.Receipt, error) {
+	return revertstore.AppliedRevert{}, linksvc.Receipt{}, linksvc.ErrNotThisAgent
 }
 
 func (a *heldAgent) CheckLink(id uuid.UUID, secret string) bool { return a.secrets.Check(id, secret) }

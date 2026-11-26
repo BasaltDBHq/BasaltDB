@@ -9,11 +9,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 )
 
@@ -66,7 +66,7 @@ func TestRejectRevertBeforeWiden(t *testing.T) {
 	_, err = guard.ApplyRevert(ctx, e.bot.Conn, id, sig)
 	requireRevertInvalid(t, err, "rejected")
 	require.Equal(t, "a", leadStatus(t, e.d, 30), "nothing was reverted")
-	_, err = guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{RevertID: id, Select: e.own()})
+	_, err = guard.RescopeRevert(ctx, e.bot.Conn, revertstore.RescopeRequest{RevertID: id, Select: e.own()})
 	requireRevertInvalid(t, err, "rejected")
 	_, err = guard.ResetRevert(ctx, e.bot.Conn, id)
 	requireRevertInvalid(t, err, "rejected")
@@ -108,7 +108,7 @@ func TestRejectRevertAfterWidenNeedsTheToken(t *testing.T) {
 
 	// Narrowed back to the agent's own work under the token: still widened
 	// once (a ceiling), so the token is still required.
-	_, err := guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{RevertID: id, Select: e.own(), Token: token})
+	_, err := guard.RescopeRevert(ctx, e.bot.Conn, revertstore.RescopeRequest{RevertID: id, Select: e.own(), Token: token})
 	require.NoError(t, err)
 	_, err = guard.RejectRevert(ctx, e.bot.Conn, id, "", nil)
 	requireWidenRefused(t, err)
@@ -136,7 +136,7 @@ func TestRejectRevertRefusals(t *testing.T) {
 	e := newWidenEnv(t)
 	ctx := context.Background()
 
-	theirs, err := guard.PrepareRevert(ctx, e.helper.Conn, action.Scope{Kind: revert.ScopeRun, ID: e.help.RunID}, "x")
+	theirs, err := guard.PrepareRevert(ctx, e.helper.Conn, revertstore.Scope{Kind: revert.ScopeRun, ID: e.help.RunID}, "x")
 	require.NoError(t, err)
 	unknown := uuid.Must(uuid.NewV7())
 	_, errTheirs := guard.RejectRevert(ctx, e.bot.Conn, theirs.RevertID, "", nil)
@@ -159,7 +159,7 @@ func TestRejectRevertRefusals(t *testing.T) {
 		"expired": `UPDATE basalt_meta.reverts SET expires_at = now() - interval '1 second' WHERE revert_id = $1`,
 		"applied": `UPDATE basalt_meta.reverts SET applied_at = now() WHERE revert_id = $1`,
 	} {
-		prep, err := guard.PrepareRevert(ctx, e.bot.Conn, action.Scope{Kind: revert.ScopeRun, ID: e.botA.RunID}, name)
+		prep, err := guard.PrepareRevert(ctx, e.bot.Conn, revertstore.Scope{Kind: revert.ScopeRun, ID: e.botA.RunID}, name)
 		require.NoError(t, err)
 		e.d.Exec(t, sql, prep.RevertID)
 		_, err = guard.RejectRevert(ctx, e.bot.Conn, prep.RevertID, "", nil)

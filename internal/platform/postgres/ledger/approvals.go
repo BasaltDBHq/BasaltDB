@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
@@ -104,7 +105,7 @@ func FindApproval(ctx context.Context, q guard.Querier, id uuid.UUID) (action.Ap
 // are waiting for the person (PENDING) or approved and not yet applied
 // (APPROVED). Only list_pending reads it: a statement or params too large
 // for the agent is left out and named in LargeValues.
-func ListOpenApprovals(ctx context.Context, q guard.Querier, p action.ApprovalListParams) (pagination.Page[action.Approval], error) {
+func ListOpenApprovals(ctx context.Context, q guard.Querier, p approvalstore.ApprovalListParams) (pagination.Page[action.Approval], error) {
 	switch p.Status {
 	case "", ApprovalPending, ApprovalApproved:
 	default:

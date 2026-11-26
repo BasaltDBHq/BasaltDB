@@ -16,6 +16,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -69,7 +70,7 @@ func (wc *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutco
 		return WriteOutcome{}, err
 	}
 	a, err := wc.approvals.FindApproval(ctx, p.ApprovalID)
-	if action.IsApprovalRefused(err, action.ApprovalNotFound) {
+	if approvalstore.IsApprovalRefused(err, approvalstore.ApprovalNotFound) {
 		return WriteOutcome{}, approvalsvc.ApprovalInvalid(guidance.ReasonNotThisAgent, "approval %s is not one of this agent's held writes", p.ApprovalID)
 	}
 	if err != nil {

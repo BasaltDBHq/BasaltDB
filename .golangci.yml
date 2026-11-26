@@ -183,7 +183,7 @@ linters:
             - pkg: github.com/basaltdbhq/basaltdb/internal/agent
               desc: the ledger and PII code do not depend on the agent service
         # internal/core/action is the store-neutral vocabulary: the standard
-        # library, uuid, pagination and the signed-message codecs only.
+        # library, uuid, pagination and the large-value rules only.
         action-is-neutral:
           files:
             - "**/internal/core/action/**"
@@ -193,10 +193,40 @@ linters:
             - $gostd
             - github.com/google/uuid
             - github.com/basaltdbhq/basaltdb/internal/lib/pagination
-            - github.com/basaltdbhq/basaltdb/internal/core/approval
             - github.com/basaltdbhq/basaltdb/internal/core/largevalue
+        # The approval's and the revert's store port types are store-neutral
+        # too: the standard library, uuid, pagination, the action types and
+        # the signed-message codecs only.
+        store-port-types-are-neutral:
+          files:
+            - "**/internal/core/approvalstore/**"
+            - "**/internal/core/revertstore/**"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/google/uuid
+            - github.com/basaltdbhq/basaltdb/internal/lib/pagination
+            - github.com/basaltdbhq/basaltdb/internal/core/action
+            - github.com/basaltdbhq/basaltdb/internal/core/approval
             - github.com/basaltdbhq/basaltdb/internal/core/passkey
             - github.com/basaltdbhq/basaltdb/internal/core/revert
+        # The signed-message codecs sit below the action types and the
+        # approval's and revert's store port types. core/action no longer
+        # imports them, so the compiler no longer refuses that import: this
+        # rule does, for all three.
+        codecs-below-action:
+          files:
+            - "**/internal/core/approval/**"
+            - "**/internal/core/passkey/**"
+            - "**/internal/core/revert/**"
+          deny:
+            - pkg: github.com/basaltdbhq/basaltdb/internal/core/action
+              desc: the signed-message codecs sit below the action types; they must not import them
+            - pkg: github.com/basaltdbhq/basaltdb/internal/core/approvalstore
+              desc: the signed-message codecs sit below the approval's store port types; they must not import them
+            - pkg: github.com/basaltdbhq/basaltdb/internal/core/revertstore
+              desc: the signed-message codecs sit below the revert's store port types; they must not import them
     # Every id BasaltDB generates is a UUIDv7 from internal/lib/uniqueid.
     forbidigo:
       analyze-types: true

@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 )
 
 // relayStore serves one pending revert, and a rescope that returns the
@@ -20,7 +21,7 @@ import (
 type relayStore struct {
 	Store
 	r        action.Revert
-	rescoped action.RescopedRevert
+	rescoped revertstore.RescopedRevert
 }
 
 func (s relayStore) FindRevert(context.Context, uuid.UUID) (action.Revert, error) { return s.r, nil }
@@ -33,7 +34,7 @@ func (relayStore) RevealNonce(context.Context, string, uuid.UUID) ([]byte, error
 	return []byte("reveal nonce"), nil
 }
 
-func (s relayStore) RescopeRevert(context.Context, action.RescopeRequest, time.Duration) (action.RescopedRevert, error) {
+func (s relayStore) RescopeRevert(context.Context, revertstore.RescopeRequest, time.Duration) (revertstore.RescopedRevert, error) {
 	return s.rescoped, nil
 }
 
@@ -109,7 +110,7 @@ func TestRescopeRefusesTextsOutOfTheRules(t *testing.T) {
 	r := pendingRevert(binding, lines)
 	sel := revert.Select{Scope: revert.ScopeRun, ScopeID: r.ScopeID, Agents: []string{"agent:bot"}}
 
-	for name, out := range map[string]action.RescopedRevert{
+	for name, out := range map[string]revertstore.RescopedRevert{
 		"binding": {RevertID: r.ID, BindingText: broken, Lines: lines, ExpiresAt: r.ExpiresAt},
 		"line":    {RevertID: r.ID, BindingText: binding, Lines: []string{brokenLine}, ExpiresAt: r.ExpiresAt},
 	} {

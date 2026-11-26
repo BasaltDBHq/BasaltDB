@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -63,7 +64,7 @@ func (ac *Service) openApproval(ctx context.Context, id uuid.UUID) (action.Appro
 		return action.Approval{}, err
 	}
 	a, err := ac.store.Records.FindApproval(ctx, id)
-	if action.IsApprovalRefused(err, action.ApprovalNotFound) {
+	if approvalstore.IsApprovalRefused(err, approvalstore.ApprovalNotFound) {
 		return action.Approval{}, linksvc.ErrNotThisAgent
 	}
 	if err != nil {

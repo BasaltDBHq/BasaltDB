@@ -9,8 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
@@ -63,7 +63,7 @@ func TestStoreNeutralRevertTexts(t *testing.T) {
 	a := d.NewAgent(t, "bot", leads, leads)
 	in := newRun(t, a, "Mark two leads")
 	require.NoError(t, guardtest.Guarded(context.Background(), a.Conn, in, `UPDATE public.leads SET status = 'm' WHERE id IN (3, 4)`))
-	prep, err := guard.PrepareRevert(context.Background(), a.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo it")
+	prep, err := guard.PrepareRevert(context.Background(), a.Conn, revertstore.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo it")
 	require.NoError(t, err)
 
 	b := asObject(t, prep.BindingText)
@@ -202,7 +202,7 @@ func TestAgentRevertsRefusesAnUnnamedAgent(t *testing.T) {
 	a := d.NewAgent(t, "bot", leads, leads)
 	in := newRun(t, a, "Mark a lead")
 	require.NoError(t, guardtest.Guarded(context.Background(), a.Conn, in, `UPDATE public.leads SET status = 'm' WHERE id = 3`))
-	prep, err := guard.PrepareRevert(context.Background(), a.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo it")
+	prep, err := guard.PrepareRevert(context.Background(), a.Conn, revertstore.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo it")
 	require.NoError(t, err)
 
 	d.Exec(t, `DELETE FROM basalt_meta.agent_names WHERE role = '`+a.Role+`'`)

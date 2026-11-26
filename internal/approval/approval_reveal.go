@@ -9,6 +9,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -41,8 +42,8 @@ func (ac *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret stri
 	return linksvc.CheckedAnswer(a.Lines, rows)
 }
 
-// HeldRun is what re-runs a held write (action.HeldRun).
-type HeldRun = action.HeldRun
+// HeldRun is what re-runs a held write (approvalstore.HeldRun).
+type HeldRun = approvalstore.HeldRun
 
 // heldWrite reads the held write from approval a's binding.
 func heldWrite(a action.Approval) (HeldRun, error) {
@@ -60,18 +61,18 @@ func heldWrite(a action.Approval) (HeldRun, error) {
 // revealApprovalError is the page's answer to a reveal the store refused,
 // by the store's refusal reason.
 func (ac *Service) revealApprovalError(err error, link string) error {
-	ar := action.ApprovalRefusalOf(err)
+	ar := approvalstore.ApprovalRefusalOf(err)
 	if ar == nil {
 		return err
 	}
 	switch ar.Reason {
-	case action.ApprovalRevealRefused:
+	case approvalstore.ApprovalRevealRefused:
 		return linksvc.RevealRefused(guidance.CodeApprovalInvalid, link)
-	case action.ApprovalRevealRowsChanged:
+	case approvalstore.ApprovalRevealRowsChanged:
 		return linksvc.RevealRowsChanged(guidance.CodeApprovalInvalid, "approval", "This approval can no longer apply; ask the agent to try the write again")
-	case action.ApprovalNotFound:
+	case approvalstore.ApprovalNotFound:
 		return linksvc.ErrNotThisAgent
-	case action.ApprovalNotOpen:
+	case approvalstore.ApprovalNotOpen:
 		return &guidance.PageError{ToolError: &toolresult.ToolError{
 			Code:          guidance.CodeApprovalInvalid,
 			Message:       "the hidden rows cannot be shown: the approval was signed or used meanwhile",

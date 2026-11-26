@@ -29,12 +29,12 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/web"
 )
@@ -52,7 +52,7 @@ type Agent interface {
 	// RevertRequest is the request for the page holding secret, the
 	// revert's live link secret.
 	RevertRequest(ctx context.Context, id uuid.UUID, secret string) (revert.Request, error)
-	RelayRevert(ctx context.Context, r revert.Response) (action.AppliedRevert, linksvc.Receipt, error)
+	RelayRevert(ctx context.Context, r revert.Response) (revertstore.AppliedRevert, linksvc.Receipt, error)
 	// RescopeRevert changes the revert's scope for the page holding secret
 	// (CONTRACT.md, Rescope, widen and reject).
 	RescopeRevert(ctx context.Context, id uuid.UUID, secret string, in revertsvc.ScopeRequest) (revertsvc.ScopeResponse, error)

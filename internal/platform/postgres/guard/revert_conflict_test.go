@@ -8,9 +8,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
@@ -166,7 +166,7 @@ func TestRevertConflictSuite(t *testing.T) {
 				}
 			}
 			if restores == 0 {
-				_, err := guard.PrepareRevert(context.Background(), e.a.Conn, action.Scope{Kind: revert.ScopeRun, ID: e.in.RunID}, "Undo")
+				_, err := guard.PrepareRevert(context.Background(), e.a.Conn, revertstore.Scope{Kind: revert.ScopeRun, ID: e.in.RunID}, "Undo")
 				requireCode(t, err, guard.CodeNothingToRevert)
 				return
 			}

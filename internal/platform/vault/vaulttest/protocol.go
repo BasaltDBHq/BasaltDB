@@ -318,19 +318,6 @@ func decodeFixed(s string, n int) ([]byte, error) {
 	return b, nil
 }
 
-// decodeStrict decodes JSON into v, refusing unknown fields and trailing data.
-func decodeStrict(data []byte, v any) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
-		return err
-	}
-	if dec.More() {
-		return errMalformed
-	}
-	return nil
-}
-
 // controlType reads the type of a control message.
 func controlType(data []byte) (string, error) {
 	var head struct {

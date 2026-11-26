@@ -108,14 +108,15 @@ func RevertRefusalOf(err error) *RevertRefusalError {
 }
 
 // Scope is what a revert covers: one change, run or task of the caller,
-// narrowed to some of its runs (a task only) and tables.
+// narrowed to some of its runs (a task only) and resources.
 type Scope struct {
 	Kind revert.Scope
 	ID   uuid.UUID
 	// Runs narrows a TASK to some of the caller's runs in it; nil for all.
 	Runs []uuid.UUID
-	// Tables narrows the lines to some schema.table names; nil for all.
-	Tables []string
+	// Resources narrows the lines to some resource names, in the store's
+	// form (Postgres: schema.table); nil for all.
+	Resources []string
 }
 
 // PreviewLine is one line of a revert preview with the hash of its full

@@ -105,18 +105,18 @@ func overviewLargeSteps(b *guidance.Steps, namespaces []NamespaceCount) {
 		}
 	}
 	b.CallTool(guidance.ToolDescribe, map[string]any{guidance.ArgQuery: firstRunes(largest.Namespace, describeQueryMax)},
-		"Find tables with describe and a query: a word of a table, column or schema name. These arguments list the largest schema.")
+		"Find resources with describe and a query: a word of a resource, field or namespace name. These arguments list the largest namespace.")
 }
 
 // notGrantedSteps (NOT_GRANTED): the person tells the agent when it needs
-// one of the tables; the setup page that basalt init links to lists them, so
+// one of the resources; the setup page that basalt init links to lists them, so
 // the agent never sees their names (D-1, D-7). No ASK_PERSON: platform
-// schemas are ungranted on every Supabase project.
+// namespaces are ungranted on every Supabase project.
 func (ds *Service) notGrantedSteps(b *guidance.Steps, notGranted int) string {
-	b.TellAgent("Tell the agent when it needs one of these tables: it gives you a link where you pick them.")
+	b.TellAgent("Tell the agent when it needs one of these resources: it gives you a link where you pick them.")
 	return fmt.Sprintf("%d %s in this database %s not granted to the agent, so it cannot see %s. "+
-		"To give it one, tell the agent: it gives you a link where you pick the tables.",
-		notGranted, plural(notGranted, "table", "tables"), plural(notGranted, "is", "are"), plural(notGranted, "it", "them"))
+		"To give it one, tell the agent: it gives you a link where you pick the resources.",
+		notGranted, plural(notGranted, "resource", "resources"), plural(notGranted, "is", "are"), plural(notGranted, "it", "them"))
 }
 
 func plural(n int, one, many string) string {
@@ -130,19 +130,19 @@ func plural(n int, one, many string) string {
 // one the agent cannot read: the same answer, so names cannot be probed.
 func describeNotFound(resource string) error {
 	return &toolresult.ToolError{Code: guidance.CodeNotFound, Message: fmt.Sprintf(
-		"%q is not a table this agent can read: it does not exist, or the agent has no access to it", firstRunes(resource, guidance.MaxTableChars))}
+		"%q is not a resource this agent can read: it does not exist, or the agent has no access to it", firstRunes(resource, guidance.MaxTableChars))}
 }
 
 // describeNotFoundSteps are NOT_FOUND's steps for describe, all of them on
 // every answer: search, ask, and basalt init, whose link opens the page
-// where the person grants a table.
+// where the person grants a resource.
 func (ds *Service) describeNotFoundSteps(b *guidance.Steps, f guidance.Failure) string {
 	b.CallTool(guidance.ToolDescribe, map[string]any{guidance.ArgQuery: ds.searchTerm(f.Arg(guidance.ArgResource))},
-		"Search for the table by name: it may be spelled differently or sit in another schema.")
-	b.AskPerson("Tell the person the table was not found or is not granted to you, and ask whether you should have it.")
-	b.TellAgent("Tell the agent to add the table once you decide it should have it, or which table to use instead.")
-	b.AgentRunCommand(ds.core.Commands.Init(), "When the person tells you to add it, run this and show them the link it prints, where they grant the table.")
-	return "The agent asked for a table it cannot see: it does not exist, or the agent may not read it. " +
-		"An agent uses one database; a table in another database needs its own agent. " +
-		"To give the agent a table, tell it: it gives you a link where you pick the tables."
+		"Search for the resource by name: it may be spelled differently or sit in another namespace.")
+	b.AskPerson("Tell the person the resource was not found or is not granted to you, and ask whether you should have it.")
+	b.TellAgent("Tell the agent to add the resource once you decide it should have it, or which resource to use instead.")
+	b.AgentRunCommand(ds.core.Commands.Init(), "When the person tells you to add it, run this and show them the link it prints, where they grant the resource.")
+	return "The agent asked for a resource it cannot see: it does not exist, or the agent may not read it. " +
+		"An agent uses one database; a resource in another database needs its own agent. " +
+		"To give the agent a resource, tell it: it gives you a link where you pick the resources."
 }

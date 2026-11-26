@@ -221,7 +221,6 @@ func TestInboundOnlyTranslates(t *testing.T) {
 // import a database driver today, with the reason. The list only shrinks: a
 // new file fails, and so does a listed file that no longer imports one.
 var inboundDriverBaseline = map[string]string{
-	"internal/handoff/in/handoffcli/login.go":    "maps a pgconn.PgError from the login probe to a refusal",
 	"internal/platform/cli/host.go":              "its host port returns a *pgx.Conn",
 	"internal/platform/cli/io.go":                "its querier port uses pgx rows and command tags",
 	"internal/platform/cli/trust.go":             "parses the connection string and returns a *pgx.Conn",

@@ -8,7 +8,7 @@
       "comment": "Line items, one per product in an order",
       "estimatedRows": 0,
       "kind": "TABLE",
-      "matched": "table",
+      "matched": "resource",
       "resource": "\"Sales\".\"Order Items\""
     },
     {
@@ -18,7 +18,7 @@
       "comment": "Customer orders",
       "estimatedRows": 20,
       "kind": "TABLE",
-      "matched": "table",
+      "matched": "resource",
       "resource": "shop.orders"
     },
     {
@@ -30,7 +30,7 @@
       ],
       "estimatedRows": 20,
       "kind": "TABLE",
-      "matched": "column order_id",
+      "matched": "field order_id",
       "resource": "shop.lines"
     }
   ]

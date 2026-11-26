@@ -341,7 +341,7 @@ func TestBatchNeverReachesALaterRegistration(t *testing.T) {
 	e.stop()
 	e.applied("product_a")
 
-	f := newPluginFeed(e.host, e.served, e.pools, e.stateDir, newPluginSenders(e.host, time.Now), RealClock(), e.log)
+	f := newPluginFeed(e.host, e.served, e.pools, e.stateDir, testPorts.WriteFeedCursor, newPluginSenders(e.host, time.Now), RealClock(), e.log)
 	f.senders.sync([]pluginmodel.EntryKey{p.key})
 	t.Cleanup(f.senders.stop)
 	r := &feedReader{f: f, pair: feedPair{key: p.key, agent: "product_a"}, ledger: e.pools["product_a"], log: e.log}

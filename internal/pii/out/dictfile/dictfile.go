@@ -16,6 +16,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
+	"github.com/basaltdbhq/basaltdb/internal/lib/ownerfile"
 )
 
 const (
@@ -29,6 +30,8 @@ const (
 	statusFileMode os.FileMode = 0o644
 	// maxStatusFileSize bounds what is read back from status.json.
 	maxStatusFileSize = 4096
+	// goosWindows is runtime.GOOS on Windows, where file modes are not checked.
+	goosWindows = "windows"
 )
 
 // Files is a dictionary's files in <stateDir>/pii.
@@ -94,7 +97,7 @@ func ensureDictionaryDir(stateDir string) (string, error) {
 	if !fi.IsDir() {
 		return "", fmt.Errorf("pii directory %s must be a directory, not a link or file", dir)
 	}
-	if err := checkOwner(fi); err != nil {
+	if err := ownerfile.CheckOwner(fi, ownerfile.Rules{}); err != nil {
 		return "", fmt.Errorf("pii directory %s: %w", dir, err)
 	}
 	if runtime.GOOS != goosWindows && fi.Mode().Perm()&dirWriteMask != 0 {
@@ -115,44 +118,33 @@ func createDictionaryDir(stateDir, dir string) error {
 	if err := os.Chmod(dir, dictionaryDirMode); err != nil {
 		return fmt.Errorf("pii directory %s: %w", dir, err)
 	}
-	if err := syncDir(stateDir); err != nil {
+	if err := atomicfile.SyncDir(stateDir); err != nil {
 		return fmt.Errorf("pii directory %s: sync parent: %w", dir, err)
 	}
 	return nil
 }
 
 // openBaseFile maps the dictionary file at path read-only and checks it. It
-// opens without following a link and checks the opened file itself: a regular
-// file of this process's user, mode 0600 or narrower. Those failures are
-// errors (someone changed the engine's files). A missing file wraps
-// os.ErrNotExist; a file of an unusable size wraps pii's invalid-dictionary
-// error (pii.CheckDictionarySize) and is rebuilt. pii parses the content.
+// opens without following a link and checks the opened file itself
+// (ownerfile.Open): a regular file with one link, of this process's user,
+// mode 0600 or narrower. Those failures are errors (someone changed the
+// engine's files). A missing file wraps os.ErrNotExist; a file of an
+// unusable size wraps pii's invalid-dictionary error
+// (pii.CheckDictionarySize) and is rebuilt. pii parses the content.
+//
+// A read never overlaps a rebuild's rename of this file: pii maps the file
+// only when the dictionary is opened (before any build can start) and right
+// after a build's WriteBase, in that build, and one build runs at a time
+// (pii.FuseDictionary.StartBuild); one engine holds a state directory (the
+// engine lock). A mapping made before a rename keeps the old file, which
+// keeps its one link until it is unmapped, so a hard error here is never a
+// race with the rebuild.
 func openBaseFile(path string) ([]byte, func() error, error) {
-	link, err := os.Lstat(path)
-	if err != nil {
-		return nil, nil, fmt.Errorf("pii dictionary %s: %w", path, err)
-	}
-	if !link.Mode().IsRegular() {
-		return nil, nil, fmt.Errorf("pii dictionary %s must be a regular file, not a link or directory", path)
-	}
-	f, err := openNoFollow(path)
+	f, fi, err := ownerfile.Open(path, ownerfile.Rules{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("pii dictionary %s: %w", path, err)
 	}
 	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, nil, fmt.Errorf("pii dictionary %s: %w", path, err)
-	}
-	if !os.SameFile(link, fi) || !fi.Mode().IsRegular() {
-		return nil, nil, fmt.Errorf("pii dictionary %s changed while it was opened", path)
-	}
-	if err := checkOwner(fi); err != nil {
-		return nil, nil, fmt.Errorf("pii dictionary %s: %w", path, err)
-	}
-	if runtime.GOOS != goosWindows && fi.Mode().Perm()&keyFilePermMask != 0 {
-		return nil, nil, fmt.Errorf("pii dictionary %s is mode %o; it must be readable by the engine's user only (0600)", path, fi.Mode().Perm())
-	}
 	if err := pii.CheckDictionarySize(fi.Size()); err != nil {
 		return nil, nil, fmt.Errorf("pii dictionary %s: %w", path, err)
 	}
@@ -177,7 +169,7 @@ func writeStatusFile(dir string, st pii.DictionaryStatus) error {
 // unreadable stateDir) or does not parse. It holds counts and times only.
 func ReadStatus(stateDir string) (pii.DictionaryStatus, bool) {
 	var st pii.DictionaryStatus
-	f, err := openNoFollow(filepath.Join(stateDir, pii.DictionaryDirName, pii.StatusFileName))
+	f, err := ownerfile.OpenNoFollow(filepath.Join(stateDir, pii.DictionaryDirName, pii.StatusFileName))
 	if err != nil {
 		return st, false
 	}
@@ -193,7 +185,7 @@ func ReadStatus(stateDir string) (pii.DictionaryStatus, bool) {
 // Any problem gives a zero status: it only carries counts.
 func readStatusFile(dir string) pii.DictionaryStatus {
 	var st pii.DictionaryStatus
-	f, err := openNoFollow(filepath.Join(dir, pii.StatusFileName))
+	f, err := ownerfile.OpenNoFollow(filepath.Join(dir, pii.StatusFileName))
 	if err != nil {
 		return st
 	}

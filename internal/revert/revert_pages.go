@@ -49,7 +49,7 @@ func (rc *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret strin
 	case r.Widened && held:
 		req := st.request
 		req.CredentialIDs, req.RescopeNonce, req.RevealNonce = ids, nonce, reveal
-		req.Columns = rc.delivery.ColumnsOf(ctx, req.Lines)
+		req.Fields = rc.delivery.FieldsOf(ctx, req.Lines)
 		if err := approval.CheckTexts(req.Binding, req.Lines...); err != nil {
 			return revert.Request{}, err
 		}
@@ -63,7 +63,7 @@ func (rc *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret strin
 	}
 	return revert.Request{
 		RevertID: r.ID, Binding: r.BindingText, Lines: r.Lines, RescopeNonce: nonce, RevealNonce: reveal, CredentialIDs: ids,
-		Columns: rc.delivery.ColumnsOf(ctx, r.Lines),
+		Fields: rc.delivery.FieldsOf(ctx, r.Lines),
 	}, nil
 }
 

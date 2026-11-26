@@ -5,17 +5,11 @@ package credfiles
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
-	"syscall"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
-)
-
-const (
-	// credentialPermMask is the permission bits a credential file must not have.
-	credentialPermMask = 0o077
+	"github.com/basaltdbhq/basaltdb/internal/lib/ownerfile"
 )
 
 // OpenEngineFile opens a file in the engine's own directories as root. The
@@ -47,15 +41,11 @@ func checkEngineFile(f *os.File, uid int, engineUser string) error {
 	if err != nil {
 		return err
 	}
-	if err := config.CheckPlainFile(fi); err != nil {
+	if err := ownerfile.CheckPlain(fi); err != nil {
 		return fmt.Errorf("%s: %w", f.Name(), err)
 	}
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		return errors.New("cannot read the file's owner")
-	}
-	if int(st.Uid) != uid {
-		return fmt.Errorf("%s is owned by uid %d, not %s", f.Name(), st.Uid, engineUser)
+	if err := ownerfile.CheckOwner(fi, ownerfile.Rules{Owners: []int{uid}, OwnerName: engineUser}); err != nil {
+		return fmt.Errorf("%s: %w", f.Name(), err)
 	}
 	return nil
 }
@@ -71,93 +61,73 @@ func ReadKeptCredential(h FilesHost, path, engineUser string) (string, error) {
 }
 
 // readOwnedCredential is ReadKeptCredential for the user uid, named who in
-// errors.
+// errors: the file reached as OpenEngineFile reaches it, with
+// readCredentialFrom's checks for an owner of exactly uid.
 func readOwnedCredential(h FilesHost, path string, uid int, who string) (string, error) {
-	f, err := openOwnedFile(h, path, uid, who)
+	f, err := h.OSOpenTrustedFile(path, uid)
 	if err != nil {
 		return "", err
 	}
 	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return "", err
+	raw, _, err := ownerfile.ReadOpen(f, ownerfile.Rules{Owners: []int{uid}, OwnerName: who, MaxBytes: MaxCredentialBytes})
+	defer clear(raw)
+	if re := ownerfile.Refusal(err); re != nil && re.Rule != ownerfile.TooLarge {
+		return "", fmt.Errorf("%s: %w", f.Name(), re)
 	}
-	if fi.Mode().Perm()&credentialPermMask != 0 {
-		return "", fmt.Errorf("mode %o is more open than 0600", fi.Mode().Perm())
-	}
-	raw, err := io.ReadAll(io.LimitReader(f, MaxCredentialBytes+1))
-	if err != nil {
-		return "", err
-	}
-	line := strings.TrimSpace(string(raw))
-	if line == "" || len(raw) > MaxCredentialBytes {
-		return "", errors.New("empty or too large")
-	}
-	return line, nil
+	return credentialLine(raw, err)
 }
 
 // readOwnCredential reads a credential file this process wrote (basalt init
 // --remote: the credential file and its .pending), owned by this process's
-// user, with readCredentialFile's checks. It returns the file read, so a
-// caller can check the path still names it before moving it.
+// effective user, with readCredentialFrom's checks. It returns the file
+// read, so a caller can check the path still names the file before moving
+// it.
 func readOwnCredential(path string) (string, os.FileInfo, error) {
-	return readCredentialFile(path, ownedByThisUser)
+	return readCredentialFile(path, ownerfile.Rules{OwnerName: "you", MaxBytes: MaxCredentialBytes})
 }
 
-// ownedByThisUser accepts a file owned by this process's user.
-func ownedByThisUser(uid uint32) (bool, string) {
-	euid := os.Geteuid()
-	return euid >= 0 && uint64(uid) == uint64(euid), "you"
-}
-
-// readCredentialFile opens path with O_NOFOLLOW and O_NONBLOCK (a FIFO
-// planted at the path must not hang the read), then checks the open
-// descriptor is a regular file with one link (a hard link could make the
-// secret readable, or replaceable, by another path), mode 0600 or tighter,
-// with an owner owner accepts, and reads from that descriptor, so nothing
-// can change between check and read.
-func readCredentialFile(path string, owner func(uid uint32) (ok bool, want string)) (string, os.FileInfo, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+// readCredentialFile opens path without following a symlink and without
+// blocking on a FIFO (ownerfile.OpenNoFollow), then reads it with
+// readCredentialFrom's checks.
+func readCredentialFile(path string, r ownerfile.Rules) (string, os.FileInfo, error) {
+	f, err := ownerfile.OpenNoFollow(path)
 	if err != nil {
 		return "", nil, err
 	}
 	defer f.Close()
-	return readCredentialFrom(f, owner)
+	return readCredentialFrom(f, r)
 }
 
-// readCredentialFrom is readCredentialFile's checks and read on the open f.
-func readCredentialFrom(f *os.File, owner func(uid uint32) (ok bool, want string)) (string, os.FileInfo, error) {
-	fi, err := f.Stat()
+// readCredentialFrom checks the open f with ownerfile's rules (a regular
+// file with one link, so a hardlink to a root-only file the engine user
+// planted is never copied out as the credential; mode 0600 or tighter; an
+// owner r names; at most MaxCredentialBytes) and reads it from that
+// descriptor, so nothing can change between check and read. It returns the
+// trimmed line.
+func readCredentialFrom(f *os.File, r ownerfile.Rules) (string, os.FileInfo, error) {
+	raw, fi, err := ownerfile.ReadOpen(f, r)
+	defer clear(raw)
+	line, err := credentialLine(raw, err)
 	if err != nil {
 		return "", nil, err
-	}
-	// A regular file with one link: a hardlink to a root-only file the engine
-	// user planted would otherwise be copied out as the credential.
-	if err := config.CheckPlainFile(fi); err != nil {
-		return "", nil, err
-	}
-	if fi.Mode().Perm()&credentialPermMask != 0 {
-		return "", nil, fmt.Errorf("mode %o is more open than 0600", fi.Mode().Perm())
-	}
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		return "", nil, errors.New("cannot read the file's owner")
-	}
-	if st.Nlink != 1 {
-		return "", nil, fmt.Errorf("it has %d hard links; a credential file has one", st.Nlink)
-	}
-	if ok, want := owner(st.Uid); !ok {
-		return "", nil, fmt.Errorf("owned by uid %d, not %s", st.Uid, want)
-	}
-	raw, err := io.ReadAll(io.LimitReader(f, MaxCredentialBytes+1))
-	if err != nil {
-		return "", nil, err
-	}
-	line := strings.TrimSpace(string(raw))
-	if line == "" || len(raw) > MaxCredentialBytes {
-		return "", nil, errors.New("empty or too large")
 	}
 	return line, fi, nil
+}
+
+// credentialLine is a credential file's trimmed text, or err. A file over
+// MaxCredentialBytes and an empty one are one error.
+func credentialLine(raw []byte, err error) (string, error) {
+	if re := ownerfile.Refusal(err); re != nil && re.Rule == ownerfile.TooLarge {
+		return "", errors.New("empty or too large")
+	}
+	if err != nil {
+		return "", err
+	}
+	line := strings.TrimSpace(string(raw))
+	if line == "" {
+		return "", errors.New("empty or too large")
+	}
+	return line, nil
 }
 
 // lockFile takes the agent's lock (config.LockFile), the one the engine

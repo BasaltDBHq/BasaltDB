@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
 
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
 
@@ -87,8 +88,11 @@ func (engineTerminal) TerminalText(s string) string { return cli.TerminalText(s)
 
 func (engineTerminal) InfoOwnerUID(fi os.FileInfo) (int, bool) { return cli.InfoOwnerUID(fi) }
 
+// WriteFileAtomic writes last-stop.json, the one record of why the
+// supervisor gave up, which it writes just before it exits: the directory
+// is synced so the record survives a crash.
 func (engineTerminal) WriteFileAtomic(path string, data []byte) error {
-	return cli.WriteFileAtomic(path, data)
+	return atomicfile.Write(path, data, atomicfile.Options{Mode: config.FileMode, SyncDir: true})
 }
 
 func (engineTerminal) HeldAtEveryLook(held func() bool, sleep func(time.Duration)) bool {

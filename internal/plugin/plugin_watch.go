@@ -687,7 +687,7 @@ func (ep *Plugins) Serve(ctx context.Context, cfg config.Config, configPath stri
 	}
 	// The notifier hooks follow what is served; they stop before the
 	// plugins drain.
-	f := newPluginFeed(ep.host, ep.servedEntries, ledgers, ep.o.stateDir, ep.senders, ep.o.clock, ep.log)
+	f := newPluginFeed(ep.host, ep.servedEntries, ledgers, ep.o.stateDir, ep.o.Ports.WriteFeedCursor, ep.senders, ep.o.clock, ep.log)
 	if ep.o.feedTiming != nil {
 		f.timing = *ep.o.feedTiming
 	}
@@ -787,7 +787,12 @@ func (w *pluginWatch) writeServing() {
 	if err != nil || bytes.Equal(raw, w.serving) {
 		return
 	}
-	if err := writeFileAtomic(w.ep.o.stateDir, PluginServingFile, raw); err != nil {
+	// What runs is shown again at the next change: no directory sync.
+	err = os.MkdirAll(w.ep.o.stateDir, stateDirMode)
+	if err == nil {
+		err = atomicfile.Write(filepath.Join(w.ep.o.stateDir, PluginServingFile), raw, atomicfile.Options{Mode: privateFile})
+	}
+	if err != nil {
 		w.log.Warn("which plugins run could not be written to the state directory", "err", err)
 		return
 	}
@@ -801,17 +806,5 @@ func (w *pluginWatch) removeServing() {
 	}
 }
 
-// writeFileAtomic writes name in dir whole: a temporary file renamed into
-// place, mode 0600.
-func writeFileAtomic(dir, name string, raw []byte) error {
-	if err := os.MkdirAll(dir, stateDirMode); err != nil {
-		return err
-	}
-	return atomicfile.Write(filepath.Join(dir, name), raw, atomicfile.Options{Mode: privateFileMode})
-}
-
 // stateDirMode keeps the engine's state to its own OS user.
 const stateDirMode = 0o700
-
-// privateFileMode keeps a state file to the engine's own OS user.
-const privateFileMode = 0o600

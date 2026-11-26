@@ -21,6 +21,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/lib/ownerfile"
 )
 
 // Platform defaults. The engine service runs as its own OS user; the config
@@ -36,9 +37,6 @@ const (
 	linuxStateDir  = "/var/lib/basalt"
 	darwinStateDir = darwinConfigDir + "/state"
 
-	// credentialPermMask is the permission bits a credential file must not
-	// have: nothing for group or others.
-	credentialPermMask = 0o077
 	// maxConfigBytes bounds the config and credential files read at start.
 	maxConfigBytes = 1 << 20
 	socketSuffix   = ".sock"
@@ -586,29 +584,39 @@ func (c Config) checkLinkBudget() error {
 // with one link, owned by this process's user or root, that group and others
 // cannot read, so a credential never sits readable by the agent and a link
 // never sends the read to another file. Every check is on the descriptor
-// read from (openCredential).
+// read from (ownerfile.Read).
 func ReadCredential(path string) (string, error) {
-	f, err := openCredential(path)
+	raw, _, err := ownerfile.Read(path, credentialRules())
 	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return "", err
-	}
-	if fi.Mode().Perm()&credentialPermMask != 0 {
-		return "", fmt.Errorf("credential file %s is mode %o; it must be readable by the engine's user only (0600)", path, fi.Mode().Perm())
-	}
-	raw, err := readSmallFrom(path, f)
-	if err != nil {
-		return "", err
+		return "", credentialFileErr(path, err)
 	}
 	url := strings.TrimSpace(string(raw))
 	if url == "" {
 		return "", fmt.Errorf("credential file %s is empty", path)
 	}
 	return url, nil
+}
+
+// credentialFileErr words ReadCredential's refusals as the contract does
+// (CONTRACT.md, Commands, basalt engine). A missing file stays
+// fs.ErrNotExist.
+func credentialFileErr(path string, err error) error {
+	re := ownerfile.Refusal(err)
+	if re == nil {
+		return err
+	}
+	switch re.Rule {
+	case ownerfile.Symlink:
+		return fmt.Errorf("credential file %s is a symbolic link; the engine reads only a regular file at that path, so replace the link with the file itself", path)
+	case ownerfile.Owner:
+		return fmt.Errorf("credential file %s is owned by uid %d, not this process's user or root", path, re.UID)
+	case ownerfile.Mode:
+		return fmt.Errorf("credential file %s is mode %o; it must be readable by the engine's user only (0600)", path, re.Perm)
+	case ownerfile.TooLarge:
+		return errors.New("file " + path + " is larger than 1 MiB")
+	case ownerfile.NotRegular, ownerfile.HardLinks, ownerfile.Changed, ownerfile.Unlinked:
+	}
+	return fmt.Errorf("credential file %s: %w", path, re)
 }
 
 func readSmall(path string, open func(string) (*os.File, error)) ([]byte, error) {

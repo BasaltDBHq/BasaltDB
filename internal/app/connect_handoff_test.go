@@ -552,7 +552,7 @@ func slicesContains(list []string, v string) bool {
 // engineKeysOf loads the engine key init made for cfg.
 func engineKeysOf(t *testing.T, cfg string) *channel.EngineKeys {
 	t.Helper()
-	k, err := keyfile.LoadKeys(filepath.Join(filepath.Dir(cfg), setup.StateDirName, "channel.json"))
+	k, err := keyfile.LoadOrCreateKeys(filepath.Join(filepath.Dir(cfg), setup.StateDirName, "channel.json"), time.Now)
 	require.NoError(t, err)
 	return k
 }

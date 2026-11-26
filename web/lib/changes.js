@@ -124,9 +124,9 @@ function sides(line, mid, skipped) {
   return { before: before ?? null, after: after ?? null };
 }
 
-// columnsOf is the group's columns: in table order when the engine sent it
-// (order, unsigned and for display only), any column it does not list after
-// them in the order the rows carry; in the rows' order without it (a long
+// columnsOf is the group's columns: in the store's field order when the
+// engine sent it (order, unsigned and for display only), any field it does
+// not list after them in the order the rows carry; in the rows' order without it (a long
 // link). Every column the rows carry is shown either way.
 function columnsOf(views, mid, skipped, order = []) {
   const cols = new Set();
@@ -253,7 +253,8 @@ export function groupTable(views, opts) {
 //   why         line => the reason it is left alone, or null
 //   highlights  (view, col) => whether an update changes col
 //   notes       lines => notes under the table, for the group's lines
-//   columns     Map from table to its columns in table order (engine only)
+//   fields      Map from resource to its field names in the store's order
+//               (engine only)
 export function changeGroups(items, opts) {
   return tableGroups(items).map((g) => {
     const views = g.items
@@ -272,7 +273,7 @@ export function changeGroups(items, opts) {
     box.append(head);
     if (hidden && opts.longLink) box.append(el("p", "group-note", OPEN_FROM_ENGINE));
     const scroll = el("div", "scroll");
-    scroll.append(groupTable(views, { ...opts, order: opts.columns?.get(g.resource) ?? [] }));
+    scroll.append(groupTable(views, { ...opts, order: opts.fields?.get(g.resource) ?? [] }));
     box.append(scroll);
     for (const text of opts.notes(g.items.map((i) => i.line))) box.append(el("p", "group-note", text));
     for (const v of views) {

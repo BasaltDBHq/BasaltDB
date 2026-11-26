@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
@@ -114,14 +115,17 @@ func Allowed(a netip.Addr) bool {
 	return true
 }
 
+// RefusedPrefixes is a copy of the ranges Allowed refuses.
+func RefusedPrefixes() []netip.Prefix { return slices.Clone(refusedPrefixes) }
+
 // errUnresolved is a host that resolves to nothing: the database cannot be
 // reached from the bot's machine.
 var errUnresolved = errors.New("the database's host does not resolve")
 
-// pick resolves host once and returns the address to connect to: every
+// Pick resolves host once and returns the address to connect to: every
 // address the name resolves to must be allowed (setupcode.ErrAddressInvalid
 // otherwise), and IPv4 is preferred. An IP literal is checked as it is.
-func pick(ctx context.Context, r Resolver, host string) (netip.Addr, error) {
+func Pick(ctx context.Context, r Resolver, host string) (netip.Addr, error) {
 	var addrs []netip.Addr
 	if a, err := netip.ParseAddr(host); err == nil {
 		addrs = []netip.Addr{a}

@@ -189,8 +189,6 @@ var codeLiteralsAllowed = map[string]string{
 		"guidance.CodeInvalidArgument is the constant",
 	`internal/platform/shim/plugin_source.go: Reason "BAD_MANIFEST"`: "the shim spells the plugin refusal's reason; " +
 		"pluginmodel.RefusedBadManifest is the constant",
-	`internal/platform/mcpserver/server.go: Code "INTERNAL"`: "the server's panic answer spells the code; " +
-		"guidance.CodeInternal is the constant",
 	`internal/plugin/upload_error.go: Code "PLUGIN_REFUSED"`: "the upload error spells the code; " +
 		"plugin.CodePluginRefused is the constant",
 	`internal/app/crash.go: ErrorCode "INTERNAL"`: "the crash report spells the code; " +

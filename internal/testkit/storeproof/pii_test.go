@@ -177,7 +177,7 @@ func TestMemoryStoreSuggestsByKind(t *testing.T) {
 func TestMemoryStoreWatchLogsAnUnclassifiedField(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	w := pii.NewWatch(memAgent, pii.NewMap(h.logger), h.store, h.logger)
+	w := pii.NewWatch(memAgent, pii.NewMap(h.logger), pii.StoreSet{Classes: h.store}, h.logger)
 	require.NoError(t, w.Tick(context.Background()))
 	require.Contains(t, h.log.String(), "1 columns unclassified: shop.customers.note")
 }

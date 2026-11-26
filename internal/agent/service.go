@@ -7,8 +7,6 @@ package agent
 import (
 	"context"
 	"errors"
-	"log/slog"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -43,16 +41,6 @@ type StoreSet struct {
 	// Visibility says what the store hides from the agent (the
 	// RLS_HIDES_ROWS warning); optional, nothing is hidden when nil.
 	Visibility Visibility
-}
-
-// Core is the part of the shared settings the agent use cases read, copied
-// when the service is built.
-type Core struct {
-	Name     string
-	Log      *slog.Logger
-	Now      func() time.Time
-	Commands guidance.Commands
-	Errors   guidance.ErrorMap
 }
 
 type noPII struct{}

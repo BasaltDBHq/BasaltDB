@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -60,14 +61,32 @@ type Upkeep struct {
 	uncovered     []action.Uncovered
 }
 
+// StoreSet is the agent's store as the upkeep uses it: the ports its
+// adapter answers, built by the wiring.
+type StoreSet struct {
+	Store Store
+}
+
+// missingPorts names the ports of set that are nil.
+func (set StoreSet) missingPorts() []string {
+	var out []string
+	if set.Store == nil {
+		out = append(out, "Store")
+	}
+	return out
+}
+
 // New returns the upkeep for one agent, pinning chain heads in memory
 // until WithPins. It panics on a missing dependency.
-func New(agent, version string, db Store, log *slog.Logger, now func() time.Time) *Upkeep {
-	if agent == "" || db == nil || log == nil || now == nil {
+func New(agent, version string, set StoreSet, log *slog.Logger, now func() time.Time) *Upkeep {
+	if missing := set.missingPorts(); len(missing) > 0 {
+		panic("upkeep: store set missing ports: " + strings.Join(missing, ", "))
+	}
+	if agent == "" || log == nil || now == nil {
 		panic("upkeep: agent, db, logger and clock required")
 	}
 	return &Upkeep{
-		agent: agent, version: version, operatedBy: operatedByPerson, db: db, log: log, now: now,
+		agent: agent, version: version, operatedBy: operatedByPerson, db: set.Store, log: log, now: now,
 		pins: &chainpin.Memory{}, rls: noRefresh{}, pii: noPII{}, admit: admitAll,
 	}
 }

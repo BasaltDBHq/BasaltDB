@@ -728,9 +728,9 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		svc:  svc,
 		run:  repin,
 		home: homeDBOf(cc),
-		upkeep: ledger.New(a.Name, buildinfo.Version, postgres.NewUpkeep(pool), log, time.Now).WithPins(env.pins).WithRLSCache(blind).
+		upkeep: ledger.New(a.Name, buildinfo.Version, ledger.StoreSet{Store: postgres.NewUpkeep(pool)}, log, time.Now).WithPins(env.pins).WithRLSCache(blind).
 			WithOperatedBy(env.cfg.OperatedBy).WithGate(svc.AdmitTick).
-			WithPII(pii.NewWatch(a.Name, classes, classStore, log.With("component", "pii"))),
+			WithPII(pii.NewWatch(a.Name, classes, pii.StoreSet{Classes: classStore}, log.With("component", "pii"))),
 		scan: pii.ScanSource{Agent: a.Name, Map: classes, Classes: classStore, Fields: pgpii.Fields(pool, limits, pii.DefaultLoadTimeout)},
 		db:   pool,
 		kept: keptAgent{

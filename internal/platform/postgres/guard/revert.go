@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 
-	sq "github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
@@ -17,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pglargevalue"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // ownSelect is the SQL expression of the calling role's own descriptor for
@@ -145,9 +144,7 @@ func PrepareRevertWithin(ctx context.Context, db TxBeginner, s revertstore.Scope
 	if timeout < time.Millisecond {
 		return revertstore.PreparedRevert{}, guardmodel.ErrPrepareTimeout
 	}
-	sql, args, err := psql.Select().
-		Column(sq.Expr("pg_catalog.set_config('statement_timeout', ?, true)", strconv.FormatInt(timeout.Milliseconds(), 10))).
-		ToSql()
+	sql, args, err := sqlport.StatementTimeoutSQL(timeout)
 	if err != nil {
 		return revertstore.PreparedRevert{}, err
 	}

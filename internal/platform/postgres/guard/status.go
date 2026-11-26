@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // Migrations lists every version this build installs, in order. Each one
@@ -105,7 +106,7 @@ func installedVersions(ctx context.Context, q Querier, readable bool) ([]int, er
 	if !readable {
 		return nil, nil
 	}
-	sql, args, err := psql.Select("version").From("basalt_meta.schema_version").OrderBy("version").ToSql()
+	sql, args, err := sqlport.Builder.Select("version").From("basalt_meta.schema_version").OrderBy("version").ToSql()
 	if err != nil {
 		return nil, err
 	}

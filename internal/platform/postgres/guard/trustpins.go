@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // sqlstateUndefinedTable is a view that does not exist: a guard below
@@ -19,7 +20,7 @@ const sqlstateUndefinedTable = "42P01"
 // the certificate whose DER SHA-256 (lowercase hex) is sha256: a
 // TRUST_PIN_RECORDED ledger row. Needs TrustPinsVersion.
 func RecordTrustPin(ctx context.Context, q Querier, host string, port int, sha256 string) error {
-	sql, args, err := psql.Select().Column(sq.Expr("basalt_meta.record_trust_pin(?::text, ?::int, ?::text)", host, port, sha256)).ToSql()
+	sql, args, err := sqlport.Builder.Select().Column(sq.Expr("basalt_meta.record_trust_pin(?::text, ?::int, ?::text)", host, port, sha256)).ToSql()
 	if err != nil {
 		return err
 	}
@@ -31,7 +32,7 @@ func RecordTrustPin(ctx context.Context, q Querier, host string, port int, sha25
 // read on the agent's connection from agent_trust_pins: false when none is
 // recorded or the guard is older than TrustPinsVersion.
 func RecordedTrustPin(ctx context.Context, q Querier, host string, port int) (string, bool, error) {
-	sql, args, err := psql.Select("sha256").From("basalt_meta.agent_trust_pins").
+	sql, args, err := sqlport.Builder.Select("sha256").From("basalt_meta.agent_trust_pins").
 		Where(sq.Eq{"host": host, "port": port}).ToSql()
 	if err != nil {
 		return "", false, err

@@ -380,32 +380,21 @@ func (r Request) URL(base string) (string, error) {
 
 // Response is what the revert page outputs after the person signs.
 type Response struct {
-	RevertID          uuid.UUID     `json:"revertId"`
-	CredentialID      passkey.Bytes `json:"credentialId"`
-	AuthenticatorData passkey.Bytes `json:"authenticatorData"`
-	ClientDataJSON    passkey.Bytes `json:"clientDataJson"`
-	Signature         passkey.Bytes `json:"signature"`
+	RevertID uuid.UUID `json:"revertId"`
+	passkey.SignedAssertion
 }
 
-// Assertion returns the WebAuthn assertion the response carries.
-func (r Response) Assertion() passkey.Assertion {
-	return passkey.Assertion{
-		CredentialID:      r.CredentialID,
-		AuthenticatorData: r.AuthenticatorData,
-		ClientDataJSON:    r.ClientDataJSON,
-		Signature:         r.Signature,
-	}
+// Signed returns the revert id and the assertion.
+func (r Response) Signed() (uuid.UUID, passkey.SignedAssertion) {
+	return r.RevertID, r.SignedAssertion
 }
 
 // DecodeResponse decodes the signed response the revert page posts (its
 // JSON), strictly: an unknown field or a missing one is refused.
 func DecodeResponse(raw []byte) (Response, error) {
 	var r Response
-	if err := passkey.DecodeStrict(raw, &r); err != nil {
-		return Response{}, Invalid("%v", err)
-	}
-	if len(r.CredentialID) == 0 || len(r.AuthenticatorData) == 0 || len(r.ClientDataJSON) == 0 || len(r.Signature) == 0 {
-		return Response{}, Invalid("revert response is missing a field")
+	if err := approval.DecodeSigned(raw, &r, "revert response is missing a field"); err != nil {
+		return Response{}, err
 	}
 	return r, nil
 }

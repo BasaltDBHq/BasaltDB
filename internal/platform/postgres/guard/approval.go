@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // RegisterPasskey stores the person's passkey (basalt init, admin
@@ -116,7 +117,7 @@ type TxBeginner interface {
 // SubmitApproval relays the person's passkey assertion for an approval;
 // Postgres verifies it. It returns when the approval was recorded.
 func SubmitApproval(ctx context.Context, q Querier, approvalID uuid.UUID, a passkey.Assertion) (time.Time, error) {
-	sql, args, err := psql.Select().Column(sq.Expr(
+	sql, args, err := sqlport.Builder.Select().Column(sq.Expr(
 		"basalt_meta.submit_approval(?::uuid, ?::bytea, ?::bytea, ?::bytea, ?::bytea)",
 		approvalID.String(), a.CredentialID, a.AuthenticatorData, a.ClientDataJSON, a.Signature)).ToSql()
 	if err != nil {

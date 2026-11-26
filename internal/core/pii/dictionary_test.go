@@ -51,7 +51,7 @@ func buildWith(t *testing.T, d *pii.FuseDictionary, values []value) error {
 	return b.Commit(pii.ScanStats{At: fixedNow, Columns: 3, Rows: int64(len(values))})
 }
 
-func requireFound(t *testing.T, d pii.Dictionary, k *pii.Keys, v value) {
+func requireFound(t *testing.T, d *pii.FuseDictionary, k *pii.Keys, v value) {
 	t.Helper()
 	typ, ok := d.Lookup(k.GenericHash(v.text))
 	require.True(t, ok, "generic %s", v.typ)
@@ -59,7 +59,7 @@ func requireFound(t *testing.T, d pii.Dictionary, k *pii.Keys, v value) {
 	require.True(t, d.Contains(v.typ, k.TypedHash(v.typ, v.text, v.region)), "typed %s", v.typ)
 }
 
-func requireNotFound(t *testing.T, d pii.Dictionary, k *pii.Keys, v value) {
+func requireNotFound(t *testing.T, d *pii.FuseDictionary, k *pii.Keys, v value) {
 	t.Helper()
 	_, ok := d.Lookup(k.GenericHash(v.text))
 	require.False(t, ok)
@@ -128,7 +128,7 @@ func TestDictionaryFindsEveryAddedValue(t *testing.T) {
 }
 
 // foundAs reports whether spelling s of v is found by both forms, as v's type.
-func foundAs(d pii.Dictionary, k *pii.Keys, v value, s string) bool {
+func foundAs(d *pii.FuseDictionary, k *pii.Keys, v value, s string) bool {
 	typ, ok := d.Lookup(k.GenericHash(s))
 	return ok && typ == v.typ && d.Contains(v.typ, k.TypedHash(v.typ, s, v.region))
 }
@@ -171,8 +171,7 @@ func TestDictionaryPhoneRegion(t *testing.T) {
 	require.True(t, d.Contains(pii.EntityPhone, k.TypedHash(pii.EntityPhone, "+62 812 3456 7890", "")))
 }
 
-// A value added to the delta is found at once, before any build, and the
-// tokenizer finds it through the dictionary detector.
+// A value added to the delta is found at once, before any build.
 func TestDictionaryDeltaFoundBeforeBuild(t *testing.T) {
 	k := newKeys(t, testMaster)
 	d := openDict(t, t.TempDir(), k, dictOptions())
@@ -181,13 +180,6 @@ func TestDictionaryDeltaFoundBeforeBuild(t *testing.T) {
 	requireNotFound(t, d, k, v)
 	require.NoError(t, d.Add(v.typ, v.text, v.region))
 	requireFound(t, d, k, v)
-
-	tz := pii.NewTokenizer(k, "", append(pii.PatternDetectors(), pii.NewDictionaryDetector(k, d, ""))...)
-	out, reps, err := tz.Tokenize("Ask Kaja Kask about it")
-	require.NoError(t, err)
-	require.Len(t, reps, 1)
-	require.NotContains(t, out, "Kaja")
-	require.Zero(t, finalScan(t, tz, out))
 }
 
 // A value removed from the input is gone after the next build (M51-8).
@@ -510,8 +502,7 @@ func BenchmarkDictionaryLookup200k(b *testing.B) {
 
 // A two-word PERSON_NAME is also found surname first ("Tamm, Alice", "TAMM
 // Alice"), from the delta and from a build, at one extra generic hash per
-// name. The reversed text gets the token of what it says, not of the stored
-// order. Longer names and other types are found only in stored order.
+// name. Longer names and other types are found only in stored order.
 func TestDictionaryTwoWordNameMatchesReversed(t *testing.T) {
 	k := newKeys(t, testMaster)
 	name := value{pii.EntityPersonName, "Alice Tamm", ""}
@@ -524,50 +515,14 @@ func TestDictionaryTwoWordNameMatchesReversed(t *testing.T) {
 	byBuild := openDict(t, t.TempDir(), k, dictOptions())
 	require.NoError(t, buildWith(t, byBuild, []value{name, long, addr}))
 	for kind, d := range map[string]*pii.FuseDictionary{"delta": byDelta, "build": byBuild} {
-		tz := pii.NewTokenizer(k, "", append(pii.PatternDetectors(), pii.NewDictionaryDetector(k, d, ""))...)
-		for _, c := range []struct{ in, span string }{
-			{"ask Tamm, Alice about it", "Tamm, Alice"},
-			{"TAMM Alice called", "TAMM Alice"},
-			{"Alice Tamm called", "Alice Tamm"},
-			{"tamm alice", "tamm alice"},
-		} {
-			out, reps, err := tz.Tokenize(c.in)
-			require.NoError(t, err, "%s %q", kind, c.in)
-			require.Len(t, reps, 1, "%s %q", kind, c.in)
-			require.Equal(t, c.span, c.in[reps[0].Start:reps[0].End], "%s %q", kind, c.in)
-			want, err := k.MakeToken(pii.EntityPersonName, c.span, "")
-			require.NoError(t, err)
-			require.Equal(t, want, reps[0].Token, "%s %q", kind, c.in)
-			require.Zero(t, finalScan(t, tz, out), "%s %q", kind, c.in)
+		for _, in := range []string{"Tamm Alice", "TAMM Alice", "Alice Tamm", "tamm alice"} {
+			typ, ok := d.Lookup(k.GenericHash(in))
+			require.True(t, ok, "%s %q", kind, in)
+			require.Equal(t, pii.EntityPersonName, typ, "%s %q", kind, in)
 		}
-		for _, in := range []string{"Kask Liis Mari", "Kask, Mari Liis", "Lane Fixture"} {
-			_, reps, err := tz.Tokenize(in)
-			require.NoError(t, err)
-			require.Empty(t, reps, "%s %q", kind, in)
+		for _, in := range []string{"Kask Liis Mari", "Kask Mari Liis", "Lane Fixture"} {
+			_, ok := d.Lookup(k.GenericHash(in))
+			require.False(t, ok, "%s %q", kind, in)
 		}
 	}
-}
-
-// A mapDict stores a two-word name both ways too.
-func TestMapDictMatchesReversedNames(t *testing.T) {
-	k := newKeys(t, testMaster)
-	d := newMapDict()
-	d.add(k, pii.EntityPersonName, "Alice Tamm")
-	_, ok := d.Lookup(k.GenericHash("Tamm Alice"))
-	require.True(t, ok)
-}
-
-// Known limits of the reversed order: a pair of ordinary words reversed is
-// still a match (it errs toward privacy), and a hyphen or an apostrophe
-// splits a word, so such a name has three words and no reversed form.
-func TestReversedNameKnownLimits(t *testing.T) {
-	k := newKeys(t, testMaster)
-	d := newMapDict()
-	d.add(k, pii.EntityPersonName, "Will Smith")
-	d.add(k, pii.EntityPersonName, "Mari-Liis Kask")
-	tz := pii.NewTokenizer(k, "", append(pii.PatternDetectors(), pii.NewDictionaryDetector(k, d, ""))...)
-	_, reps := tokenize(t, tz, "Smith will review it")
-	require.Len(t, reps, 1)
-	_, reps = tokenize(t, tz, "Kask, Mari-Liis")
-	require.Empty(t, reps)
 }

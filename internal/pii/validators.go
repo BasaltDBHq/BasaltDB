@@ -13,8 +13,7 @@ import (
 )
 
 // The card and IBAN checks are internal/core/pii's, imported here as corepii
-// (corepii.ValidCardNumber, corepii.ValidIBAN, corepii.LuhnValid), shared
-// with the tokenizer's patterns.
+// (corepii.ValidCardNumber, corepii.ValidIBAN, corepii.LuhnValid).
 
 // compact drops spaces and dashes, as cards, IBANs and IMEIs are often
 // written in groups.

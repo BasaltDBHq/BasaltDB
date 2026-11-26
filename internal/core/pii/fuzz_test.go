@@ -54,29 +54,3 @@ func FuzzNormalizeIsIdempotent(f *testing.F) {
 		}
 	})
 }
-
-// Tokenize never fails with the built-in detectors, its replacements point at
-// the input in order, and tokenizing its output again replaces nothing.
-func FuzzTokenizeIsIdempotent(f *testing.F) {
-	for _, s := range fuzzSeeds {
-		f.Add(s)
-	}
-	f.Fuzz(func(t *testing.T, s string) {
-		if !utf8.ValidString(s) {
-			t.Skip()
-		}
-		tz := newTokenizer(t)
-		out, reps, err := tz.Tokenize(s)
-		require.NoError(t, err)
-		last := 0
-		for _, r := range reps {
-			require.LessOrEqual(t, last, r.Start)
-			require.Less(t, r.Start, r.End)
-			last = r.End
-		}
-		again, more, err := tz.Tokenize(out)
-		require.NoError(t, err)
-		require.Empty(t, more, "%q -> %q", s, out)
-		require.Equal(t, out, again)
-	})
-}

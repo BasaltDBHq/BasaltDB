@@ -14,8 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
@@ -173,7 +175,7 @@ func itoa(i int) string { return strconv.Itoa(i) }
 // does on the agent's credential.
 func guardPrepare(t *testing.T, a *guardtest.Agent, run uuid.UUID) (uuid.UUID, error) {
 	t.Helper()
-	prep, err := guard.PrepareRevert(context.Background(), a.Conn, action.Scope{Kind: revert.ScopeRun, ID: run}, "Undo the counts")
+	prep, err := guard.PrepareRevert(context.Background(), a.Conn, revertstore.Scope{Kind: revert.ScopeRun, ID: run}, "Undo the counts")
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -196,7 +198,7 @@ func TestListOpenApprovalsReadsAHeldWrite(t *testing.T) {
 	req := action.Request{Text: sql, Params: []any{1}}
 	p, err := store.Preview(ctx, action.Intent(in), req)
 	require.NoError(t, err)
-	_, err = store.Hold(ctx, action.Intent(in), action.HoldRequest{Op: action.OpDelete, Request: req, Assigned: p.Assigned, Lines: p.Lines})
+	_, err = store.Hold(ctx, action.Intent(in), approvalstore.HoldRequest{Op: action.OpDelete, Request: req, Assigned: p.Assigned, Lines: p.Lines})
 	require.NoError(t, err)
 	page, err := ledger.ListOpenApprovals(ctx, a.Conn, action.ApprovalListParams{Params: pagination.Params{Limit: 1}})
 	require.NoError(t, err)
@@ -222,7 +224,7 @@ func TestFindApprovalReadsTheHeldRequest(t *testing.T) {
 	req := action.Request{Text: sql, Params: []any{1}}
 	p, err := store.Preview(ctx, action.Intent(in), req)
 	require.NoError(t, err)
-	held, err := store.Hold(ctx, action.Intent(in), action.HoldRequest{Op: action.OpDelete, Request: req, Assigned: p.Assigned, Lines: p.Lines})
+	held, err := store.Hold(ctx, action.Intent(in), approvalstore.HoldRequest{Op: action.OpDelete, Request: req, Assigned: p.Assigned, Lines: p.Lines})
 	require.NoError(t, err)
 	found, err := ledger.FindApproval(ctx, a.Conn, held.ApprovalID)
 	require.NoError(t, err)

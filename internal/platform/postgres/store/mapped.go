@@ -9,8 +9,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgcatalog"
@@ -115,17 +117,17 @@ func (r *Reader) Read(ctx context.Context, sql string, params []any, stmt action
 // catalog), then runs the write in a preview transaction (basalt.mode =
 // PREVIEW) on the agent's credential that always rolls back, and returns
 // the columns with the preview lines. An error of the preview run is marked
-// *action.PreviewFailedError; a catalog read's error is not.
-func (s *Store) Preview(ctx context.Context, in action.Intent, req agentstore.Request) (action.HeldPreview, error) {
+// *approvalstore.PreviewFailedError; a catalog read's error is not.
+func (s *Store) Preview(ctx context.Context, in action.Intent, req agentstore.Request) (approvalstore.HeldPreview, error) {
 	assigned, err := s.holdColumns(ctx, req.Text, req.Params)
 	if err != nil {
-		return action.HeldPreview{}, err
+		return approvalstore.HeldPreview{}, err
 	}
 	lines, err := s.previewRaw(ctx, in, req.Text, req.Params, assigned)
 	if err != nil {
-		return action.HeldPreview{}, &action.PreviewFailedError{Err: MapError(err)}
+		return approvalstore.HeldPreview{}, &approvalstore.PreviewFailedError{Err: MapError(err)}
 	}
-	return action.HeldPreview{Assigned: assigned, Lines: lines}, nil
+	return approvalstore.HeldPreview{Assigned: assigned, Lines: lines}, nil
 }
 
 // RevealHeld checks the person's reveal proof for a held write
@@ -135,13 +137,13 @@ func (s *Store) Preview(ctx context.Context, in action.Intent, req agentstore.Re
 // them), and reads the held approval's hidden rows with the reveal's ticket
 // (basalt_meta.reveal_approval_rows). The ticket lives in this call only;
 // the transaction always rolls back.
-func (s *Store) RevealHeld(ctx context.Context, id uuid.UUID, run action.HeldRun, proof passkey.Assertion, key []byte) ([]approval.RevealedRow, error) {
+func (s *Store) RevealHeld(ctx context.Context, id uuid.UUID, run approvalstore.HeldRun, proof passkey.Assertion, key []byte) ([]approval.RevealedRow, error) {
 	r0, err := s.revealHeldRaw(ctx, id, run, proof, key)
 	return r0, revealApprovalRefusal(MapError(err))
 }
 
 // Hold stores a held write for the person's approval.
-func (s *Store) Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error) {
+func (s *Store) Hold(ctx context.Context, in action.Intent, r approvalstore.HoldRequest) (approvalstore.Held, error) {
 	r0, err := s.holdRaw(ctx, in, r)
 	return r0, MapError(err)
 }
@@ -204,7 +206,7 @@ func (s *Store) Passkeys(ctx context.Context) ([]passkey.Credential, error) {
 // after, with the preview's totals (guard.PreviewRevertPage). The guard
 // runs the revert on trial and undoes it; this transaction is read-write
 // for that, and is rolled back anyway.
-func (s *Store) PreviewRevert(ctx context.Context, scope action.Scope, after string, limit int) (action.PreviewPage, error) {
+func (s *Store) PreviewRevert(ctx context.Context, scope revertstore.Scope, after string, limit int) (revertstore.PreviewPage, error) {
 	r0, err := s.previewRevertRaw(ctx, scope, after, limit)
 	return r0, PrepareError(err)
 }
@@ -213,8 +215,8 @@ func (s *Store) PreviewRevert(ctx context.Context, scope action.Scope, after str
 // (basalt_meta.prepare_revert) on the agent's credential, in its own
 // transaction with the statement timeout set to timeout instead of the
 // agent's limit. A proposal with no line is rolled back and answered
-// action.ErrEmptyProposal: through MCP it is NOTHING_TO_REVERT (RS-6).
-func (s *Store) PrepareRevert(ctx context.Context, scope action.Scope, intent string, timeout time.Duration) (action.PreparedRevert, error) {
+// revertstore.ErrEmptyProposal: through MCP it is NOTHING_TO_REVERT (RS-6).
+func (s *Store) PrepareRevert(ctx context.Context, scope revertstore.Scope, intent string, timeout time.Duration) (revertstore.PreparedRevert, error) {
 	r0, err := s.prepareRevertRaw(ctx, scope, intent, timeout)
 	return r0, PrepareError(err)
 }
@@ -224,7 +226,7 @@ func (s *Store) PrepareRevert(ctx context.Context, scope action.Scope, intent st
 // own transaction with the statement timeout set to timeout instead of the
 // agent's limit. Past it Postgres cancels the rescope (57014) and nothing
 // changes.
-func (s *Store) RescopeRevert(ctx context.Context, req action.RescopeRequest, timeout time.Duration) (action.RescopedRevert, error) {
+func (s *Store) RescopeRevert(ctx context.Context, req revertstore.RescopeRequest, timeout time.Duration) (revertstore.RescopedRevert, error) {
 	r0, err := s.rescopeRevertRaw(ctx, req, timeout)
 	return r0, rescopeRevertRefusal(MapError(err))
 }
@@ -232,7 +234,7 @@ func (s *Store) RescopeRevert(ctx context.Context, req action.RescopeRequest, ti
 // ResetRevert puts a widened revert the agent's role prepared back to its
 // proposal (basalt_meta.reset_revert), for the agent's reissueLink, under
 // the same time limit as a rescope.
-func (s *Store) ResetRevert(ctx context.Context, id uuid.UUID, timeout time.Duration) (action.RescopedRevert, error) {
+func (s *Store) ResetRevert(ctx context.Context, id uuid.UUID, timeout time.Duration) (revertstore.RescopedRevert, error) {
 	r0, err := s.resetRevertRaw(ctx, id, timeout)
 	return r0, MapError(err)
 }
@@ -256,7 +258,7 @@ func (s *Store) HasTaskRun(ctx context.Context, id uuid.UUID) (bool, error) {
 // scope in the agent's view of the ledger, or uuid.Nil when none did. A change
 // scope is the change itself; a run or task scope is any of its changes. The
 // revert's change is what request_revert takes to redo the reverted work.
-func (s *Store) RevertedBy(ctx context.Context, scope action.Scope) (uuid.UUID, error) {
+func (s *Store) RevertedBy(ctx context.Context, scope revertstore.Scope) (uuid.UUID, error) {
 	r0, err := s.revertedByRaw(ctx, scope)
 	return r0, MapError(err)
 }
@@ -277,7 +279,7 @@ func (s *Store) RevertLines(ctx context.Context, p action.RevertLineParams) (pag
 // ApplyRevertBatch applies lines of a signed plan in one transaction on the
 // agent's credential (basalt_meta.apply_revert_batch), under the agent's
 // statement timeout.
-func (s *Store) ApplyRevertBatch(ctx context.Context, id uuid.UUID, lines []int) (action.BatchResult, error) {
+func (s *Store) ApplyRevertBatch(ctx context.Context, id uuid.UUID, lines []int) (revertstore.BatchResult, error) {
 	r0, err := s.applyRevertBatchRaw(ctx, id, lines)
 	return r0, MapError(err)
 }
@@ -288,7 +290,7 @@ func (s *Store) ApplyRevertBatch(ctx context.Context, id uuid.UUID, lines []int)
 // signature. It runs in its own transaction with the engine's timeouts
 // (guard.SetTimeouts), so the agent role's own defaults cannot fail the
 // person's revert.
-func (s *Store) ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (action.AppliedRevert, error) {
+func (s *Store) ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (revertstore.AppliedRevert, error) {
 	r0, err := s.applyRevertRaw(ctx, id, a)
 	return r0, applyRevertRefusal(MapError(err))
 }
@@ -303,7 +305,7 @@ func (s *Store) RevertNonce(ctx context.Context, id uuid.UUID) ([]byte, error) {
 // RejectRevert marks a pending revert the agent's role prepared REJECTED
 // for the person on the revert page (basalt_meta.reject_revert), with the
 // scope token the engine holds for a widened revert's rotated link.
-func (s *Store) RejectRevert(ctx context.Context, id uuid.UUID, note string, token []byte) (action.RejectedRevert, error) {
+func (s *Store) RejectRevert(ctx context.Context, id uuid.UUID, note string, token []byte) (revertstore.RejectedRevert, error) {
 	r0, err := s.rejectRevertRaw(ctx, id, note, token)
 	return r0, rejectRevertRefusal(MapError(err))
 }
@@ -320,7 +322,7 @@ func (s *Store) RevealNonce(ctx context.Context, kind string, id uuid.UUID) ([]b
 // redacted lines with the person's reveal proof and the key derived from
 // the page's reveal secret (basalt_meta.reveal_revert_rows), in its own
 // pinned transaction: it rebuilds the lines' rows to match their hashes.
-func (s *Store) RevealRevertRows(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) (action.RevealedRevert, error) {
+func (s *Store) RevealRevertRows(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) (revertstore.RevealedRevert, error) {
 	r0, err := s.revealRevertRowsRaw(ctx, id, proof, key)
 	return r0, revealRevertRowsRefusal(MapError(err))
 }

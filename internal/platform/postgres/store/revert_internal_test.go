@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 )
 
@@ -40,7 +41,7 @@ type refusalRow struct {
 	name              string
 	mapping           func(error) error
 	err               error
-	reason            action.RevertReason
+	reason            revertstore.RevertReason
 	detail, storeCode string
 }
 
@@ -63,75 +64,75 @@ func TestRevertRefusalsPerCall(t *testing.T) {
 		noSuchRevert = "no such revert"
 	)
 	rows := []refusalRow{
-		{"find: not prepared by the role", findRevertRefusal, ledger.ErrRevertNotFound, action.RevertNotFound, "", ""},
+		{"find: not prepared by the role", findRevertRefusal, ledger.ErrRevertNotFound, revertstore.RevertNotFound, "", ""},
 		{"find: any other error", findRevertRefusal, errors.New("conn closed"), "", "", ""},
 
-		{"prepare: not own change", prepareRefusal, scopeRefusedErr("NOT_OWN_CHANGE", "x"), action.RevertNotOwnChange, "x", ""},
-		{"prepare: not own run", prepareRefusal, scopeRefusedErr("NOT_OWN_RUN", "x"), action.RevertNotOwnRun, "x", ""},
-		{"prepare: not own task", prepareRefusal, scopeRefusedErr("NOT_OWN_TASK", "x"), action.RevertNotOwnTask, "x", ""},
-		{"prepare: filter", prepareRefusal, scopeRefusedErr("FILTER", filterHint), action.RevertFilter, filterHint, ""},
-		{"prepare: filter cap", prepareRefusal, scopeRefusedErr("FILTER_CAP", "at most 50"), action.RevertFilterCap, "at most 50", ""},
-		{"prepare: table name", prepareRefusal, scopeRefusedErr("NAME", nameHint), action.RevertFilterName, nameHint, ""},
+		{"prepare: not own change", prepareRefusal, scopeRefusedErr("NOT_OWN_CHANGE", "x"), revertstore.RevertNotOwnChange, "x", ""},
+		{"prepare: not own run", prepareRefusal, scopeRefusedErr("NOT_OWN_RUN", "x"), revertstore.RevertNotOwnRun, "x", ""},
+		{"prepare: not own task", prepareRefusal, scopeRefusedErr("NOT_OWN_TASK", "x"), revertstore.RevertNotOwnTask, "x", ""},
+		{"prepare: filter", prepareRefusal, scopeRefusedErr("FILTER", filterHint), revertstore.RevertFilter, filterHint, ""},
+		{"prepare: filter cap", prepareRefusal, scopeRefusedErr("FILTER_CAP", "at most 50"), revertstore.RevertFilterCap, "at most 50", ""},
+		{"prepare: table name", prepareRefusal, scopeRefusedErr("NAME", nameHint), revertstore.RevertFilterName, nameHint, ""},
 		// Told apart by the detail, never the hint: a SHAPE with the hint an
 		// older guard gave a bad name, or any hint, is RevertInvalid.
-		{"prepare: table name shape, older guard", prepareRefusal, scopeRefusedErr("SHAPE", shapeHint), action.RevertInvalid, shapeHint, ""},
-		{"prepare: table name, any hint", prepareRefusal, scopeRefusedErr("NAME", "x"), action.RevertFilterName, "x", ""},
-		{"prepare: run id shape", prepareRefusal, scopeRefusedErr("SHAPE", "runs are run ids"), action.RevertInvalid, "runs are run ids", ""},
-		{"prepare: agents shape", prepareRefusal, scopeRefusedErr("SHAPE", "agents are role names"), action.RevertInvalid, "agents are role names", ""},
-		{"prepare: other shape", prepareRefusal, scopeRefusedErr("SHAPE", "scopeId is a uuid"), action.RevertInvalid, "scopeId is a uuid", ""},
-		{"prepare: store reserved", prepareRefusal, scopeRefusedErr("STORE_RESERVED", "x"), action.RevertInvalid, "x", ""},
-		{"prepare: descriptor", prepareRefusal, scopeRefusedErr("DESCRIPTOR", "x"), action.RevertInvalid, "x", ""},
-		{"prepare: reads only", prepareRefusal, guardErr("BS009", "NOTHING_TO_REVERT", "READS_ONLY", readsOnly), action.RevertReadsOnly, "NOTHING_TO_REVERT: " + readsOnly, ""},
+		{"prepare: table name shape, older guard", prepareRefusal, scopeRefusedErr("SHAPE", shapeHint), revertstore.RevertInvalid, shapeHint, ""},
+		{"prepare: table name, any hint", prepareRefusal, scopeRefusedErr("NAME", "x"), revertstore.RevertFilterName, "x", ""},
+		{"prepare: run id shape", prepareRefusal, scopeRefusedErr("SHAPE", "runs are run ids"), revertstore.RevertInvalid, "runs are run ids", ""},
+		{"prepare: agents shape", prepareRefusal, scopeRefusedErr("SHAPE", "agents are role names"), revertstore.RevertInvalid, "agents are role names", ""},
+		{"prepare: other shape", prepareRefusal, scopeRefusedErr("SHAPE", "scopeId is a uuid"), revertstore.RevertInvalid, "scopeId is a uuid", ""},
+		{"prepare: store reserved", prepareRefusal, scopeRefusedErr("STORE_RESERVED", "x"), revertstore.RevertInvalid, "x", ""},
+		{"prepare: descriptor", prepareRefusal, scopeRefusedErr("DESCRIPTOR", "x"), revertstore.RevertInvalid, "x", ""},
+		{"prepare: reads only", prepareRefusal, guardErr("BS009", "NOTHING_TO_REVERT", "READS_ONLY", readsOnly), revertstore.RevertReadsOnly, "NOTHING_TO_REVERT: " + readsOnly, ""},
 		// Told apart by the detail, never the words: the sentence as the
 		// detail, as a guard before version 11 gave it, is every row skipped.
-		{"prepare: reads only words, untyped", prepareRefusal, guardErr("BS009", "NOTHING_TO_REVERT", readsOnly, ""), action.RevertNothing, "NOTHING_TO_REVERT: " + readsOnly, ""},
-		{"prepare: every row skipped", prepareRefusal, guardErr("BS009", "NOTHING_TO_REVERT", allSkipped, ""), action.RevertNothing, "NOTHING_TO_REVERT: " + allSkipped, ""},
-		{"prepare: time limit", prepareRefusal, statementTimeout(), action.RevertTimedOut, "", "57014"},
-		{"prepare: empty proposal", prepareRefusal, action.ErrEmptyProposal, "", "", ""},
+		{"prepare: reads only words, untyped", prepareRefusal, guardErr("BS009", "NOTHING_TO_REVERT", readsOnly, ""), revertstore.RevertNothing, "NOTHING_TO_REVERT: " + readsOnly, ""},
+		{"prepare: every row skipped", prepareRefusal, guardErr("BS009", "NOTHING_TO_REVERT", allSkipped, ""), revertstore.RevertNothing, "NOTHING_TO_REVERT: " + allSkipped, ""},
+		{"prepare: time limit", prepareRefusal, statementTimeout(), revertstore.RevertTimedOut, "", "57014"},
+		{"prepare: empty proposal", prepareRefusal, revertstore.ErrEmptyProposal, "", "", ""},
 		{"prepare: permission denied", prepareRefusal, guardErr("42501", "permission denied", "", ""), "", "", ""},
 
-		{"apply: expired", applyRevertRefusal, revertExpired(), action.RevertExpiredReason, "", ""},
-		{"apply: no row to restore", applyRevertRefusal, guardErr("BS009", "NOTHING_TO_REVERT", "RUN x has no row to restore in this scope", ""), action.RevertNothing, "", ""},
-		{"apply: rows changed", applyRevertRefusal, revertRefused("ROWS_CHANGED", rowsChanged), action.RevertRowsChanged, rowsChanged, ""},
-		{"apply: passkey revoked", applyRevertRefusal, revertRefused("PASSKEY_REVOKED", "passkey revoked"), action.RevertPasskeyRevoked, "passkey revoked", ""},
-		{"apply: already applied", applyRevertRefusal, revertRefused("ALREADY_APPLIED", applied), action.RevertAlreadySigned, applied, ""},
-		{"apply: already signed", applyRevertRefusal, revertRefused("ALREADY_SIGNED", signedBatch), action.RevertAlreadySigned, signedBatch, ""},
+		{"apply: expired", applyRevertRefusal, revertExpired(), revertstore.RevertExpiredReason, "", ""},
+		{"apply: no row to restore", applyRevertRefusal, guardErr("BS009", "NOTHING_TO_REVERT", "RUN x has no row to restore in this scope", ""), revertstore.RevertNothing, "", ""},
+		{"apply: rows changed", applyRevertRefusal, revertRefused("ROWS_CHANGED", rowsChanged), revertstore.RevertRowsChanged, rowsChanged, ""},
+		{"apply: passkey revoked", applyRevertRefusal, revertRefused("PASSKEY_REVOKED", "passkey revoked"), revertstore.RevertPasskeyRevoked, "passkey revoked", ""},
+		{"apply: already applied", applyRevertRefusal, revertRefused("ALREADY_APPLIED", applied), revertstore.RevertAlreadySigned, applied, ""},
+		{"apply: already signed", applyRevertRefusal, revertRefused("ALREADY_SIGNED", signedBatch), revertstore.RevertAlreadySigned, signedBatch, ""},
 		// Told apart by the detail, never the words: a sentence as the
 		// detail, as a guard before version 11 gave it, is a refused signature.
-		{"apply: rows changed words, untyped", applyRevertRefusal, revertInvalid(rowsChanged), action.RevertSignature, rowsChanged, ""},
-		{"apply: passkey revoked words, untyped", applyRevertRefusal, revertInvalid("passkey revoked"), action.RevertSignature, "passkey revoked", ""},
-		{"apply: already words, untyped", applyRevertRefusal, revertInvalid(applied), action.RevertSignature, applied, ""},
-		{"apply: no such revert", applyRevertRefusal, revertInvalid(noSuchRevert), action.RevertSignature, noSuchRevert, ""},
-		{"apply: rejected", applyRevertRefusal, revertInvalid(rejected), action.RevertSignature, rejected, ""},
-		{"apply: bad signature", applyRevertRefusal, revertInvalid("signature does not verify"), action.RevertSignature, "signature does not verify", ""},
+		{"apply: rows changed words, untyped", applyRevertRefusal, revertInvalid(rowsChanged), revertstore.RevertSignature, rowsChanged, ""},
+		{"apply: passkey revoked words, untyped", applyRevertRefusal, revertInvalid("passkey revoked"), revertstore.RevertSignature, "passkey revoked", ""},
+		{"apply: already words, untyped", applyRevertRefusal, revertInvalid(applied), revertstore.RevertSignature, applied, ""},
+		{"apply: no such revert", applyRevertRefusal, revertInvalid(noSuchRevert), revertstore.RevertSignature, noSuchRevert, ""},
+		{"apply: rejected", applyRevertRefusal, revertInvalid(rejected), revertstore.RevertSignature, rejected, ""},
+		{"apply: bad signature", applyRevertRefusal, revertInvalid("signature does not verify"), revertstore.RevertSignature, "signature does not verify", ""},
 		{"apply: time limit", applyRevertRefusal, statementTimeout(), "", "", ""},
 		{"apply: scope refused", applyRevertRefusal, scopeRefusedErr("SHAPE", "x"), "", "", ""},
 
-		{"rescope: shape", rescopeRevertRefusal, scopeRefusedErr("SHAPE", shapeHint), action.RevertInvalid, shapeHint, ""},
-		{"rescope: table name", rescopeRevertRefusal, scopeRefusedErr("NAME", nameHint), action.RevertInvalid, nameHint, ""},
-		{"rescope: descriptor", rescopeRevertRefusal, scopeRefusedErr("DESCRIPTOR", "x"), action.RevertInvalid, "x", ""},
-		{"rescope: filter", rescopeRevertRefusal, scopeRefusedErr("FILTER", filterHint), action.RevertInvalid, filterHint, ""},
-		{"rescope: widen refused", rescopeRevertRefusal, revertInvalid("WIDEN_REFUSED"), action.RevertWidenRefused, "WIDEN_REFUSED", ""},
-		{"rescope: expired", rescopeRevertRefusal, revertExpired(), action.RevertExpiredReason, "", ""},
-		{"rescope: time limit", rescopeRevertRefusal, statementTimeout(), action.RevertTimedOut, "", "57014"},
+		{"rescope: shape", rescopeRevertRefusal, scopeRefusedErr("SHAPE", shapeHint), revertstore.RevertInvalid, shapeHint, ""},
+		{"rescope: table name", rescopeRevertRefusal, scopeRefusedErr("NAME", nameHint), revertstore.RevertInvalid, nameHint, ""},
+		{"rescope: descriptor", rescopeRevertRefusal, scopeRefusedErr("DESCRIPTOR", "x"), revertstore.RevertInvalid, "x", ""},
+		{"rescope: filter", rescopeRevertRefusal, scopeRefusedErr("FILTER", filterHint), revertstore.RevertInvalid, filterHint, ""},
+		{"rescope: widen refused", rescopeRevertRefusal, revertInvalid("WIDEN_REFUSED"), revertstore.RevertWidenRefused, "WIDEN_REFUSED", ""},
+		{"rescope: expired", rescopeRevertRefusal, revertExpired(), revertstore.RevertExpiredReason, "", ""},
+		{"rescope: time limit", rescopeRevertRefusal, statementTimeout(), revertstore.RevertTimedOut, "", "57014"},
 		{"rescope: no such revert", rescopeRevertRefusal, revertInvalid(noSuchRevert), "", "", ""},
 		{"rescope: already signed", rescopeRevertRefusal, revertInvalid(signedScope), "", "", ""},
 		{"rescope: every row skipped", rescopeRevertRefusal, guardErr("BS009", "NOTHING_TO_REVERT", allSkipped, ""), "", "", ""},
 
-		{"reject: widen refused", rejectRevertRefusal, revertInvalid("WIDEN_REFUSED"), action.RevertWidenRefused, "WIDEN_REFUSED", ""},
-		{"reject: no such revert", rejectRevertRefusal, revertInvalid(noSuchRevert), action.RevertNotFound, noSuchRevert, ""},
-		{"reject: expired", rejectRevertRefusal, revertExpired(), action.RevertExpiredReason, "", ""},
-		{"reject: applied", rejectRevertRefusal, revertInvalid(applied), action.RevertNotPending, applied, ""},
-		{"reject: rejected", rejectRevertRefusal, revertInvalid(rejected), action.RevertNotPending, rejected, ""},
-		{"reject: signed", rejectRevertRefusal, revertInvalid(signedScope), action.RevertNotPending, signedScope, ""},
-		{"reject: reveal refused", rejectRevertRefusal, revertInvalid("REVEAL_REFUSED"), action.RevertNotPending, "REVEAL_REFUSED", ""},
+		{"reject: widen refused", rejectRevertRefusal, revertInvalid("WIDEN_REFUSED"), revertstore.RevertWidenRefused, "WIDEN_REFUSED", ""},
+		{"reject: no such revert", rejectRevertRefusal, revertInvalid(noSuchRevert), revertstore.RevertNotFound, noSuchRevert, ""},
+		{"reject: expired", rejectRevertRefusal, revertExpired(), revertstore.RevertExpiredReason, "", ""},
+		{"reject: applied", rejectRevertRefusal, revertInvalid(applied), revertstore.RevertNotPending, applied, ""},
+		{"reject: rejected", rejectRevertRefusal, revertInvalid(rejected), revertstore.RevertNotPending, rejected, ""},
+		{"reject: signed", rejectRevertRefusal, revertInvalid(signedScope), revertstore.RevertNotPending, signedScope, ""},
+		{"reject: reveal refused", rejectRevertRefusal, revertInvalid("REVEAL_REFUSED"), revertstore.RevertNotPending, "REVEAL_REFUSED", ""},
 		{"reject: note too long", rejectRevertRefusal, guardErr("BS008", "LEDGER_INPUT_INVALID", "a reject note is at most 500 characters", ""), "", "", ""},
 
-		{"reveal: refused", revealRevertRowsRefusal, revertInvalid("REVEAL_REFUSED"), action.RevertRevealRefused, "REVEAL_REFUSED", ""},
-		{"reveal: no such revert", revealRevertRowsRefusal, revertInvalid(noSuchRevert), action.RevertNotFound, noSuchRevert, ""},
-		{"reveal: expired", revealRevertRowsRefusal, revertExpired(), action.RevertExpiredReason, "", ""},
-		{"reveal: signed", revealRevertRowsRefusal, revertInvalid("revert already signed"), action.RevertNotPending, "revert already signed", ""},
-		{"reveal: widen refused", revealRevertRowsRefusal, revertInvalid("WIDEN_REFUSED"), action.RevertNotPending, "WIDEN_REFUSED", ""},
+		{"reveal: refused", revealRevertRowsRefusal, revertInvalid("REVEAL_REFUSED"), revertstore.RevertRevealRefused, "REVEAL_REFUSED", ""},
+		{"reveal: no such revert", revealRevertRowsRefusal, revertInvalid(noSuchRevert), revertstore.RevertNotFound, noSuchRevert, ""},
+		{"reveal: expired", revealRevertRowsRefusal, revertExpired(), revertstore.RevertExpiredReason, "", ""},
+		{"reveal: signed", revealRevertRowsRefusal, revertInvalid("revert already signed"), revertstore.RevertNotPending, "revert already signed", ""},
+		{"reveal: widen refused", revealRevertRowsRefusal, revertInvalid("WIDEN_REFUSED"), revertstore.RevertNotPending, "WIDEN_REFUSED", ""},
 		{"reveal: time limit", revealRevertRowsRefusal, statementTimeout(), "", "", ""},
 	}
 	for _, row := range rows {
@@ -139,7 +140,7 @@ func TestRevertRefusalsPerCall(t *testing.T) {
 			t.Parallel()
 			mapped := MapError(row.err)
 			out := row.mapping(mapped)
-			refused := action.RevertRefusalOf(out)
+			refused := revertstore.RevertRefusalOf(out)
 			if row.reason == "" {
 				require.Nil(t, refused, "%v", out)
 				require.Equal(t, mapped, out, "returned as MapError made it")
@@ -203,8 +204,8 @@ func TestTypedDetailsKeepTheirSentence(t *testing.T) {
 		})
 	}
 	// A signed revert's nothing to revert says the sentence, never the code.
-	refused := action.RevertRefusalOf(applyRevertRefusal(MapError(guardErr("BS009", "NOTHING_TO_REVERT", "READS_ONLY", readsOnly))))
+	refused := revertstore.RevertRefusalOf(applyRevertRefusal(MapError(guardErr("BS009", "NOTHING_TO_REVERT", "READS_ONLY", readsOnly))))
 	require.NotNil(t, refused)
-	require.Equal(t, action.RevertNothing, refused.Reason)
+	require.Equal(t, revertstore.RevertNothing, refused.Reason)
 	require.Equal(t, readsOnly, refused.Detail)
 }

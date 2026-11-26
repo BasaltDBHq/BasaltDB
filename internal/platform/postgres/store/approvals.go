@@ -13,6 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
@@ -52,7 +53,7 @@ func (s *Store) previewRaw(ctx context.Context, in action.Intent, sql string, pa
 }
 
 // revealHeldRaw is RevealHeld before MapError.
-func (s *Store) revealHeldRaw(ctx context.Context, id uuid.UUID, run action.HeldRun,
+func (s *Store) revealHeldRaw(ctx context.Context, id uuid.UUID, run approvalstore.HeldRun,
 	proof passkey.Assertion, key []byte,
 ) ([]approval.RevealedRow, error) {
 	held, err := heldStatement(run.Request)
@@ -123,11 +124,11 @@ func heldStatement(req approval.HeldRequest) (revealRun, error) {
 // holdRaw is Hold before MapError. The guard's verb is Basalt's op: for
 // the three ops a write is held for (INSERT, UPDATE, DELETE) the word is
 // the same.
-func (s *Store) holdRaw(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error) {
+func (s *Store) holdRaw(ctx context.Context, in action.Intent, r approvalstore.HoldRequest) (approvalstore.Held, error) {
 	h, err := guard.Hold(ctx, s.db, guardIntent(in), s.limits.StatementTimeout, guard.HoldRequest{
 		Verb: string(r.Op), Statement: r.Request.Text, Params: r.Request.Params, Assigned: r.Assigned, Lines: r.Lines,
 	})
-	return action.Held(h), err
+	return approvalstore.Held(h), err
 }
 
 // tableColumnsRaw is TableColumns before MapError.
@@ -168,7 +169,7 @@ func (s *Store) passkeysRaw(ctx context.Context) ([]passkey.Credential, error) {
 }
 
 // The guard's answers to an approval call, mapped to the approval's own
-// refusals (action.ApprovalRefusalError) after MapError, per call. An
+// refusals (approvalstore.ApprovalRefusalError) after MapError, per call. An
 // answer no mapping names is returned as MapError made it. MapError's
 // approvalDetails are not reused here: they serve the agent's apply, and
 // their NOT_THIS_AGENT also covers "another agent", which a reveal answers
@@ -179,15 +180,15 @@ func (s *Store) passkeysRaw(ctx context.Context) ([]passkey.Credential, error) {
 const approvalNotFoundDetail = "no such approval"
 
 // approvalRefusal is err refused for reason, with the store's text detail.
-func approvalRefusal(err error, reason action.ApprovalReason, detail string) error {
-	return &action.ApprovalRefusalError{Reason: reason, Detail: detail, Err: err}
+func approvalRefusal(err error, reason approvalstore.ApprovalReason, detail string) error {
+	return &approvalstore.ApprovalRefusalError{Reason: reason, Detail: detail, Err: err}
 }
 
 // findApprovalRefusal maps FindApproval's error: an approval the role does
 // not hold is ApprovalNotFound.
 func findApprovalRefusal(err error) error {
 	if errors.Is(err, ledger.ErrApprovalNotFound) {
-		return approvalRefusal(err, action.ApprovalNotFound, "")
+		return approvalRefusal(err, approvalstore.ApprovalNotFound, "")
 	}
 	return err
 }
@@ -203,13 +204,13 @@ func revealApprovalRefusal(err error) error {
 	}
 	switch se.Detail {
 	case guard.RevealRefused:
-		return approvalRefusal(err, action.ApprovalRevealRefused, se.Detail)
+		return approvalRefusal(err, approvalstore.ApprovalRevealRefused, se.Detail)
 	case guard.RevealRowsChanged:
-		return approvalRefusal(err, action.ApprovalRevealRowsChanged, se.Detail)
+		return approvalRefusal(err, approvalstore.ApprovalRevealRowsChanged, se.Detail)
 	case approvalNotFoundDetail:
-		return approvalRefusal(err, action.ApprovalNotFound, se.Detail)
+		return approvalRefusal(err, approvalstore.ApprovalNotFound, se.Detail)
 	}
-	return approvalRefusal(err, action.ApprovalNotOpen, se.Detail)
+	return approvalRefusal(err, approvalstore.ApprovalNotOpen, se.Detail)
 }
 
 // pluginApprovalRefusal maps SubmitPluginApproval's errors to the plugin's

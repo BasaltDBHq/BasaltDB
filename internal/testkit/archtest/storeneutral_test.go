@@ -111,8 +111,9 @@ var piiStoreRule = storeRule{
 }
 
 // approvalStoreRule holds internal/approval to its store's ports: it
-// decides on the store's typed refusals (action.ApprovalRefusalError), never
-// on the guard's codes or details, and passes the held request on unread,
+// decides on the store's typed refusals
+// (approvalstore.ApprovalRefusalError), never on the guard's codes or
+// details, and passes the held request on unread,
 // so it never names the SQL family or its sql argument. CodeStoreError,
 // which the service answers for a write that changes no rows now, stays:
 // the selectors match exact names.
@@ -150,6 +151,14 @@ var actionStoreRule = storeRule{
 	allowedDeps: map[string]string{},
 }
 
+// portTypeStoreRules hold the approval's and the revert's store port types
+// (internal/core/approvalstore, internal/core/revertstore) to the action
+// types' rule: they left internal/core/action, not the rule.
+var portTypeStoreRules = []storeRule{
+	actionStoreRule.in(filepath.Join("internal", "core", "approvalstore")),
+	actionStoreRule.in(filepath.Join("internal", "core", "revertstore")),
+}
+
 // pluginStoreRule holds internal/plugin, the plugin host, to its guard port:
 // it decides on the store's typed answers (pluginmodel.StoreError and
 // ApprovalRefusalError), never on a store's error codes, the guard's codes
@@ -180,9 +189,10 @@ var pluginStoreRule = storeRule{
 // holds every inbound adapter of its domain (inboundStoreRules).
 var domainStoreRules = []storeRule{agentStoreRule, revertStoreRule, piiStoreRule, approvalStoreRule, pluginStoreRule}
 
-// storeRules are the store-neutral packages: the domain roots and the
-// shared action types. inboundStoreRules adds the domains' in/ packages.
-var storeRules = []storeRule{agentStoreRule, revertStoreRule, piiStoreRule, approvalStoreRule, actionStoreRule, pluginStoreRule}
+// storeRules are the store-neutral packages: the domain roots, the shared
+// action types and the approval's and revert's port types. inboundStoreRules
+// adds the domains' in/ packages.
+var storeRules = append([]storeRule{agentStoreRule, revertStoreRule, piiStoreRule, approvalStoreRule, actionStoreRule, pluginStoreRule}, portTypeStoreRules...)
 
 // inboundAllowed are the findings an inbound adapter may keep, by its
 // directory, each with its reason.
@@ -464,9 +474,14 @@ func TestAgentDomainIsStoreNeutral(t *testing.T) {
 }
 
 func TestActionTypesAreStoreNeutral(t *testing.T) {
-	requireStoreNeutral(t, actionStoreRule,
-		"the action types name a store's fields and resources by action.FieldRef and action.ResourceRef; "+
-			"the store's adapter writes and reads them (for Postgres, internal/platform/postgres/agentcatalog)")
+	for _, rule := range append([]storeRule{actionStoreRule}, portTypeStoreRules...) {
+		t.Run(filepath.Base(rule.dir), func(t *testing.T) {
+			requireStoreNeutral(t, rule,
+				"the action types and the approval's and revert's port types name a store's fields and resources by "+
+					"action.FieldRef and action.ResourceRef; the store's adapter writes and reads them "+
+					"(for Postgres, internal/platform/postgres/agentcatalog)")
+		})
+	}
 }
 
 func TestPIIDomainIsStoreNeutral(t *testing.T) {
@@ -477,7 +492,7 @@ func TestPIIDomainIsStoreNeutral(t *testing.T) {
 
 func TestRevertDomainIsStoreNeutral(t *testing.T) {
 	requireStoreNeutral(t, revertStoreRule,
-		"the revert domain reaches its store only through Records, Undo and Proofs and decides on action.RevertRefusalError; "+
+		"the revert domain reaches its store only through Records, Undo and Proofs and decides on revertstore.RevertRefusalError; "+
 			"map the store's answers in its adapter (for Postgres, internal/platform/postgres/store/revert.go)")
 }
 
@@ -489,7 +504,7 @@ func TestPluginDomainIsStoreNeutral(t *testing.T) {
 }
 
 func TestApprovalDomainIsStoreNeutral(t *testing.T) {
-	const hint = "the approval domain reaches its store only through Records, Holds and Proofs, decides on action.ApprovalRefusalError " +
+	const hint = "the approval domain reaches its store only through Records, Holds and Proofs, decides on approvalstore.ApprovalRefusalError " +
 		"and passes the held request on unread; map the store's answers in its adapter (for Postgres, internal/platform/postgres/store/approvals.go)"
 	requireStoreNeutral(t, approvalStoreRule, hint)
 }
@@ -585,6 +600,7 @@ import (
 	gm "` + modulePath + `/internal/core/guardmodel"
 	"` + modulePath + `/internal/core/guidance"
 	"` + modulePath + `/internal/core/revert"
+	"` + modulePath + `/internal/core/revertstore"
 	"` + modulePath + `/internal/core/toolresult"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -607,10 +623,10 @@ var (
 	_ = guidance.CodeNotFound
 	_ = gm.OutcomePending
 	_ = gm.MaxRejectNote
-	_ = action.RevertTimedOut
-	_ = action.RevertWidenRefused
+	_ = revertstore.RevertTimedOut
+	_ = revertstore.RevertWidenRefused
 	_ = revert.ScopeRun
-	_ *action.RevertRefusalError
+	_ *revertstore.RevertRefusalError
 	_ = "at most 20 runs and 1000 lines"
 	_ = "id 123456, ref abc12345, version v0.1.0"
 	_ = "0193b2c4-57a1-7c3e-9f2d-5e8a1b4c6d7f"
@@ -775,6 +791,7 @@ func TestApprovalStoreRuleCatchesViolations(t *testing.T) {
 import (
 	"` + modulePath + `/internal/core/action"
 	"` + modulePath + `/internal/core/approval"
+	"` + modulePath + `/internal/core/approvalstore"
 	gm "` + modulePath + `/internal/core/guardmodel"
 	g "` + modulePath + `/internal/core/guidance"
 	"` + modulePath + `/internal/core/toolresult"
@@ -802,8 +819,8 @@ var (
 	// Allowed: the approval's own names, and Basalt's cap.
 	_ = g.CodeStoreError
 	_ = gm.MaxHeldLinesBytes
-	_ = action.ApprovalRevealRefused
-	_ *action.ApprovalRefusalError
+	_ = approvalstore.ApprovalRevealRefused
+	_ *approvalstore.ApprovalRefusalError
 	_ = approval.ParseBinding
 	_ = "sqlite"
 	_ = "the held request"

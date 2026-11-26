@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
@@ -25,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
@@ -379,7 +379,7 @@ func TestRequestRevertReissueLink(t *testing.T) {
 	var r revert.Request
 	require.Equal(t, http.StatusOK, p.get("/api/v1/reverts/"+id, secret, &r))
 
-	var out action.AppliedRevert
+	var out revertstore.AppliedRevert
 	require.Equal(t, http.StatusOK, p.post("/api/v1/reverts/"+id+"/apply", pageOrigin, secret, p.signRevertPage(id, secret, env.person), &out))
 	body = requestRevert(t, env.h, map[string]any{"revertId": id, "reissueLink": true})
 	require.Equal(t, "APPLIED", body["status"])

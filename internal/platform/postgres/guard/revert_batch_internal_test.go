@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 )
 
 // TestDecodeBatchResultMapsSQLStateToStoreCode: apply_revert_batch answers
@@ -23,9 +23,9 @@ func TestDecodeBatchResultMapsSQLStateToStoreCode(t *testing.T) {
 		]}`)
 	got, err := decodeBatchResult(raw)
 	require.NoError(t, err)
-	require.Equal(t, action.BatchResult{
+	require.Equal(t, revertstore.BatchResult{
 		RevertID: id, Batch: 2, Status: "APPLYING", Restored: 5, Skipped: 2, Pending: 7,
-		Items: []action.BatchItem{
+		Items: []revertstore.BatchItem{
 			{Line: 3, Outcome: "SKIPPED", Conflict: "KEY_TAKEN", StoreCode: "23505"},
 			{Line: 4, Outcome: "SKIPPED", Conflict: "CHANGED_AFTER"},
 			{Line: 5, Outcome: "RESTORED"},

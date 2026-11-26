@@ -14,13 +14,13 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
@@ -39,7 +39,7 @@ func zeroCounter(a *passkey.Assertion) {
 type widenEnv struct {
 	scopeTask
 	p    *passkeytest.Authenticator
-	prep action.PreparedRevert
+	prep revertstore.PreparedRevert
 }
 
 func newWidenEnv(t *testing.T) widenEnv {
@@ -87,11 +87,11 @@ func (e widenEnv) proof(t *testing.T, revertID uuid.UUID, sel revert.Select, sec
 	return as, key
 }
 
-func (e widenEnv) widen(t *testing.T, sel revert.Select) action.RescopedRevert {
+func (e widenEnv) widen(t *testing.T, sel revert.Select) revertstore.RescopedRevert {
 	t.Helper()
 	as, key := e.proof(t, e.prep.RevertID, sel, "the page's new secret")
 	out, err := guard.RescopeRevert(context.Background(), e.bot.Conn,
-		action.RescopeRequest{RevertID: e.prep.RevertID, Select: sel, Proof: &as, RescopeKey: key})
+		revertstore.RescopeRequest{RevertID: e.prep.RevertID, Select: sel, Proof: &as, RescopeKey: key})
 	require.NoError(t, err)
 	return out
 }
@@ -139,7 +139,7 @@ func TestRescopeWidenWithProof(t *testing.T) {
 	secret := "the page's new secret"
 	as, key := e.proof(t, e.prep.RevertID, e.every(), secret)
 	out, err := guard.RescopeRevert(ctx, e.bot.Conn,
-		action.RescopeRequest{RevertID: e.prep.RevertID, Select: e.every(), Proof: &as, RescopeKey: key})
+		revertstore.RescopeRequest{RevertID: e.prep.RevertID, Select: e.every(), Proof: &as, RescopeKey: key})
 	require.NoError(t, err)
 
 	b, err := revert.Request{RevertID: out.RevertID, Binding: out.BindingText, Lines: out.Lines}.Check()
@@ -154,14 +154,14 @@ func TestRescopeWidenWithProof(t *testing.T) {
 
 	require.Len(t, out.ScopeToken, 16)
 	require.NotNil(t, out.Catalog)
-	require.Equal(t, []action.CatalogAgent{{Agent: e.bot.Name, Changes: 3}, {Agent: e.helper.Name, Changes: 2}}, sortedAgents(out.Catalog.Agents, e.bot.Name))
+	require.Equal(t, []revertstore.CatalogAgent{{Agent: e.bot.Name, Changes: 3}, {Agent: e.helper.Name, Changes: 2}}, sortedAgents(out.Catalog.Agents, e.bot.Name))
 	runs := map[uuid.UUID]string{}
 	for _, r := range out.Catalog.Runs {
 		runs[r.RunID] = r.Agent
 	}
 	require.Equal(t, map[uuid.UUID]string{e.botA.RunID: e.bot.Name, e.botB.RunID: e.bot.Name, e.help.RunID: e.helper.Name}, runs,
 		"the helper's run outside the task is not in the catalog")
-	require.Equal(t, []action.CatalogTable{{Table: "public.lead_owner", Rows: 2}, {Table: "public.leads", Rows: 3}}, out.Catalog.Tables)
+	require.Equal(t, []revertstore.CatalogTable{{Table: "public.lead_owner", Rows: 2}, {Table: "public.leads", Rows: 3}}, out.Catalog.Tables)
 
 	after := storedRevert(t, e.d, e.prep.RevertID)
 	require.NotEqual(t, before.Nonce, after.Nonce, "the proof consumed the nonce")
@@ -195,11 +195,11 @@ func TestRescopeWidenWithProof(t *testing.T) {
 
 // sortedAgents puts first the agent first, so the comparison does not
 // depend on role name order.
-func sortedAgents(in []action.CatalogAgent, first string) []action.CatalogAgent {
-	out := make([]action.CatalogAgent, 0, len(in))
+func sortedAgents(in []revertstore.CatalogAgent, first string) []revertstore.CatalogAgent {
+	out := make([]revertstore.CatalogAgent, 0, len(in))
 	for _, a := range in {
 		if a.Agent == first {
-			out = append([]action.CatalogAgent{a}, out...)
+			out = append([]revertstore.CatalogAgent{a}, out...)
 			continue
 		}
 		out = append(out, a)
@@ -231,7 +231,7 @@ func TestRescopeWidenRefused(t *testing.T) {
 	ctx := context.Background()
 	id := e.prep.RevertID
 	before := storedRevert(t, e.d, id)
-	other, err := guard.PrepareRevert(ctx, e.bot.Conn, action.Scope{Kind: revert.ScopeRun, ID: e.botA.RunID}, "x")
+	other, err := guard.PrepareRevert(ctx, e.bot.Conn, revertstore.Scope{Kind: revert.ScopeRun, ID: e.botA.RunID}, "x")
 	require.NoError(t, err)
 	both := e.every()
 	both.Agents = []string{e.bot.Name, e.helper.Name}
@@ -243,7 +243,7 @@ func TestRescopeWidenRefused(t *testing.T) {
 	otherRevert, otherRevertKey := e.proof(t, other.RevertID, e.every(), "secret")
 	revertSig, err := e.p.Sign(approval.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, zeroCounter)
 	require.NoError(t, err)
-	cases := map[string]action.RescopeRequest{
+	cases := map[string]revertstore.RescopeRequest{
 		"no proof":                           {Select: e.every()},
 		"a proof over another select":        {Select: e.every(), Proof: &overBoth, RescopeKey: bothKey},
 		"another revert's proof":             {Select: e.every(), Proof: &otherRevert, RescopeKey: otherRevertKey},
@@ -265,7 +265,7 @@ func TestRescopeWidenRefused(t *testing.T) {
 	} {
 		crafted := validProof
 		crafted.Signature = sig
-		cases["a crafted signature, "+name] = action.RescopeRequest{Select: e.every(), Proof: &crafted, RescopeKey: validKey}
+		cases["a crafted signature, "+name] = revertstore.RescopeRequest{Select: e.every(), Proof: &crafted, RescopeKey: validKey}
 	}
 	var text string
 	for name, req := range cases {
@@ -282,7 +282,7 @@ func TestRescopeWidenRefused(t *testing.T) {
 
 	// The person's valid proof still works once its key comes with it.
 	_, err = guard.RescopeRevert(ctx, e.bot.Conn,
-		action.RescopeRequest{RevertID: id, Select: e.every(), Proof: &validProof, RescopeKey: validKey})
+		revertstore.RescopeRequest{RevertID: id, Select: e.every(), Proof: &validProof, RescopeKey: validKey})
 	require.NoError(t, err)
 }
 
@@ -294,7 +294,7 @@ func TestRescopeProbeUniform(t *testing.T) {
 	e := newWidenEnv(t)
 	ctx := context.Background()
 	refused := func(revertID uuid.UUID, sel revert.Select, ids ...uuid.UUID) string {
-		_, err := guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{RevertID: revertID, Select: sel})
+		_, err := guard.RescopeRevert(ctx, e.bot.Conn, revertstore.RescopeRequest{RevertID: revertID, Select: sel})
 		return scopeErrorText(t, err, ids...)
 	}
 	withRun := func(run uuid.UUID) revert.Select {
@@ -312,7 +312,7 @@ func TestRescopeProbeUniform(t *testing.T) {
 	require.Equal(t, runText, refused(e.prep.RevertID, withRun(e.help.RunID), e.help.RunID))
 	require.Equal(t, runText, refused(e.prep.RevertID, withRun(e.helperOutside.RunID), e.helperOutside.RunID))
 	requireWidenRefused(t, func() error {
-		_, err := guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{RevertID: e.prep.RevertID, Select: withRun(e.help.RunID)})
+		_, err := guard.RescopeRevert(ctx, e.bot.Conn, revertstore.RescopeRequest{RevertID: e.prep.RevertID, Select: withRun(e.help.RunID)})
 		return err
 	}())
 	// A second task: bot wrote leads, the helper lead_owner. The helper's
@@ -326,7 +326,7 @@ func TestRescopeProbeUniform(t *testing.T) {
 		require.NoError(t, guard.StartRun(ctx, w.a.Conn, in))
 		require.NoError(t, guardtest.Guarded(ctx, w.a.Conn, in, w.stmt))
 	}
-	second, err := guard.PrepareRevert(ctx, e.bot.Conn, action.Scope{Kind: revert.ScopeTask, ID: task}, "x")
+	second, err := guard.PrepareRevert(ctx, e.bot.Conn, revertstore.Scope{Kind: revert.ScopeTask, ID: task}, "x")
 	require.NoError(t, err)
 	tableText := func(table string) string {
 		s := withTable(table)
@@ -338,7 +338,7 @@ func TestRescopeProbeUniform(t *testing.T) {
 	require.Equal(t, theirTable, tableText("public.payroll"))
 	require.Contains(t, theirTable, guard.RevertWidenRefused)
 
-	theirRevert, err := guard.PrepareRevert(ctx, e.helper.Conn, action.Scope{Kind: revert.ScopeRun, ID: e.help.RunID}, "x")
+	theirRevert, err := guard.PrepareRevert(ctx, e.helper.Conn, revertstore.Scope{Kind: revert.ScopeRun, ID: e.help.RunID}, "x")
 	require.NoError(t, err)
 	unknown := uuid.Must(uuid.NewV7())
 	sel := revert.Select{Scope: revert.ScopeRun, ScopeID: e.help.RunID, Agents: []string{e.bot.Name}}
@@ -357,7 +357,7 @@ func TestRescopeNonceReplay(t *testing.T) {
 	e := newWidenEnv(t)
 	ctx := context.Background()
 	as, key := e.proof(t, e.prep.RevertID, e.every(), "secret")
-	req := action.RescopeRequest{RevertID: e.prep.RevertID, Select: e.every(), Proof: &as, RescopeKey: key}
+	req := revertstore.RescopeRequest{RevertID: e.prep.RevertID, Select: e.every(), Proof: &as, RescopeKey: key}
 	_, err := guard.RescopeRevert(ctx, e.bot.Conn, req)
 	require.NoError(t, err)
 	_, err = guard.RescopeRevert(ctx, e.bot.Conn, req)
@@ -369,7 +369,7 @@ func TestRescopeNonceReplay(t *testing.T) {
 	_, err = guard.ResetRevert(ctx, e.bot.Conn, e.prep.RevertID)
 	require.NoError(t, err)
 	_, err = guard.RescopeRevert(ctx, e.bot.Conn,
-		action.RescopeRequest{RevertID: e.prep.RevertID, Select: e.every(), Proof: &held, RescopeKey: heldKey})
+		revertstore.RescopeRequest{RevertID: e.prep.RevertID, Select: e.every(), Proof: &held, RescopeKey: heldKey})
 	requireWidenRefused(t, err)
 	require.Len(t, ledgerDetails(t, e.d, "REVERT_RESCOPED"), 1)
 }
@@ -385,7 +385,7 @@ func TestRescopeTokenAfterCeiling(t *testing.T) {
 	leadsOnly := e.own()
 	leadsOnly.Resources = []string{"public.leads"}
 
-	out, err := guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{RevertID: id, Select: leadsOnly})
+	out, err := guard.RescopeRevert(ctx, e.bot.Conn, revertstore.RescopeRequest{RevertID: id, Select: leadsOnly})
 	require.NoError(t, err)
 	require.Nil(t, out.Catalog, "own work gets no catalog")
 	require.Empty(t, out.ScopeToken)
@@ -400,11 +400,11 @@ func TestRescopeTokenAfterCeiling(t *testing.T) {
 	token := []byte(widened.ScopeToken)
 
 	// Own work, without the token: refused.
-	_, err = guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{RevertID: id, Select: leadsOnly})
+	_, err = guard.RescopeRevert(ctx, e.bot.Conn, revertstore.RescopeRequest{RevertID: id, Select: leadsOnly})
 	requireWidenRefused(t, err)
 	// Inside the ceiling with the token: the helper's leads only.
 	helperLeads := revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Name}, Resources: []string{"public.leads"}}
-	out, err = guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{RevertID: id, Select: helperLeads, Token: token})
+	out, err = guard.RescopeRevert(ctx, e.bot.Conn, revertstore.RescopeRequest{RevertID: id, Select: helperLeads, Token: token})
 	require.NoError(t, err)
 	require.NotNil(t, out.Catalog)
 	require.Empty(t, out.ScopeToken, "only a proof returns a token")
@@ -413,10 +413,10 @@ func TestRescopeTokenAfterCeiling(t *testing.T) {
 	require.Equal(t, 1, b.Rows)
 	require.Equal(t, map[string]int{e.helper.Name: 1}, b.AgentRows)
 	// Own work with the token: back inside the ceiling.
-	_, err = guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{RevertID: id, Select: leadsOnly, Token: token})
+	_, err = guard.RescopeRevert(ctx, e.bot.Conn, revertstore.RescopeRequest{RevertID: id, Select: leadsOnly, Token: token})
 	require.NoError(t, err)
 
-	for name, req := range map[string]action.RescopeRequest{
+	for name, req := range map[string]revertstore.RescopeRequest{
 		"a wrong token":                 {Select: helperLeads, Token: make([]byte, 16)},
 		"outside the ceiling (a table)": {Select: e.own(), Token: token},
 		"wider than the ceiling":        {Select: e.every(), Token: token},
@@ -446,7 +446,7 @@ func TestRescopeMembership(t *testing.T) {
 	try := func(sel revert.Select) error {
 		as, key := e.proof(t, e.prep.RevertID, sel, "secret")
 		_, err := guard.RescopeRevert(context.Background(), e.bot.Conn,
-			action.RescopeRequest{RevertID: e.prep.RevertID, Select: sel, Proof: &as, RescopeKey: key})
+			revertstore.RescopeRequest{RevertID: e.prep.RevertID, Select: sel, Proof: &as, RescopeKey: key})
 		return err
 	}
 	run := e.every()
@@ -462,7 +462,7 @@ func TestRescopeMembership(t *testing.T) {
 	// The agent's own unrelated run: own work, but not this revert's scope.
 	outside := newRun(t, e.bot, "elsewhere")
 	require.NoError(t, guardtest.Guarded(ctx, e.bot.Conn, outside, `UPDATE public.leads SET status = 'o' WHERE id = 35`))
-	_, err := guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{
+	_, err := guard.RescopeRevert(ctx, e.bot.Conn, revertstore.RescopeRequest{
 		RevertID: e.prep.RevertID,
 		Select:   revert.Select{Scope: revert.ScopeRun, ScopeID: outside.RunID, Agents: []string{e.bot.Name}},
 	})
@@ -506,7 +506,7 @@ func TestResetRevert(t *testing.T) {
 
 	// The old token no longer reaches anything wider than own work.
 	_, err = guard.RescopeRevert(ctx, e.bot.Conn,
-		action.RescopeRequest{RevertID: id, Select: e.every(), Token: widened.ScopeToken})
+		revertstore.RescopeRequest{RevertID: id, Select: e.every(), Token: widened.ScopeToken})
 	requireWidenRefused(t, err)
 
 	// Signed, expired, applied: refused by rescope and reset alike.
@@ -515,13 +515,13 @@ func TestResetRevert(t *testing.T) {
 		"expired": `UPDATE basalt_meta.reverts SET expires_at = now() - interval '1 second' WHERE revert_id = $1`,
 		"applied": `UPDATE basalt_meta.reverts SET applied_at = now() WHERE revert_id = $1`,
 	} {
-		prep, err := guard.PrepareRevert(ctx, e.bot.Conn, action.Scope{Kind: revert.ScopeRun, ID: e.botA.RunID}, name)
+		prep, err := guard.PrepareRevert(ctx, e.bot.Conn, revertstore.Scope{Kind: revert.ScopeRun, ID: e.botA.RunID}, name)
 		require.NoError(t, err)
 		e.d.Exec(t, sql, prep.RevertID)
 		_, err = guard.ResetRevert(ctx, e.bot.Conn, prep.RevertID)
 		code, _ := guard.CodeOf(err)
 		require.Contains(t, []guard.Code{guard.CodeRevertInvalid, guard.CodeRevertExpired}, code, name)
-		_, err = guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{
+		_, err = guard.RescopeRevert(ctx, e.bot.Conn, revertstore.RescopeRequest{
 			RevertID: prep.RevertID,
 			Select:   revert.Select{Scope: revert.ScopeRun, ScopeID: e.botA.RunID, Agents: []string{e.bot.Name}},
 		})
@@ -540,7 +540,7 @@ func TestRescopeInvalidatesEarlierSignature(t *testing.T) {
 	require.NoError(t, err)
 	leadsOnly := e.own()
 	leadsOnly.Resources = []string{"public.leads"}
-	_, err = guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{RevertID: e.prep.RevertID, Select: leadsOnly})
+	_, err = guard.RescopeRevert(ctx, e.bot.Conn, revertstore.RescopeRequest{RevertID: e.prep.RevertID, Select: leadsOnly})
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, e.bot.Conn, e.prep.RevertID, sig)
 	requireCode(t, err, guard.CodeRevertInvalid)
@@ -561,9 +561,9 @@ func TestUndoWidenedRevertRefused(t *testing.T) {
 	applied, err := guard.ApplyRevert(ctx, e.bot.Conn, e.prep.RevertID, sig)
 	require.NoError(t, err)
 
-	undo := action.Scope{Kind: revert.ScopeChange, ID: applied.ChangeID}
+	undo := revertstore.Scope{Kind: revert.ScopeChange, ID: applied.ChangeID}
 	unknown := uuid.Must(uuid.NewV7())
-	none := action.Scope{Kind: revert.ScopeChange, ID: unknown}
+	none := revertstore.Scope{Kind: revert.ScopeChange, ID: unknown}
 	_, err = guard.PreviewRevert(ctx, e.bot.Conn, undo)
 	requireScopeRefused(t, err, guard.ScopeNotOwnChange)
 	_, errNone := guard.PreviewRevert(ctx, e.bot.Conn, none)
@@ -571,12 +571,12 @@ func TestUndoWidenedRevertRefused(t *testing.T) {
 	_, err = guard.PrepareRevert(ctx, e.bot.Conn, undo, "redo")
 	requireScopeRefused(t, err, guard.ScopeNotOwnChange)
 	// Nor through rescope_revert of a pending revert, without a proof.
-	pending, err := guard.PrepareRevert(ctx, e.bot.Conn, action.Scope{
+	pending, err := guard.PrepareRevert(ctx, e.bot.Conn, revertstore.Scope{
 		Kind: revert.ScopeRun,
 		ID:   newRunWith(t, e.bot, `UPDATE public.leads SET status = 'p' WHERE id = 37`),
 	}, "x")
 	require.NoError(t, err)
-	_, err = guard.RescopeRevert(ctx, e.bot.Conn, action.RescopeRequest{
+	_, err = guard.RescopeRevert(ctx, e.bot.Conn, revertstore.RescopeRequest{
 		RevertID: pending.RevertID,
 		Select:   revert.Select{Scope: revert.ScopeChange, ScopeID: applied.ChangeID, Agents: []string{e.bot.Name}},
 	})
@@ -584,7 +584,7 @@ func TestUndoWidenedRevertRefused(t *testing.T) {
 
 	// An own, not widened revert can still be undone.
 	ownApplied := revertScope(t, e.bot, e.p, revert.ScopeRun, newRunWith(t, e.bot, `UPDATE public.leads SET status = 'z' WHERE id = 36`))
-	lines, err := guard.PreviewRevert(ctx, e.bot.Conn, action.Scope{Kind: revert.ScopeChange, ID: ownApplied.ChangeID})
+	lines, err := guard.PreviewRevert(ctx, e.bot.Conn, revertstore.Scope{Kind: revert.ScopeChange, ID: ownApplied.ChangeID})
 	require.NoError(t, err)
 	require.Len(t, lines, 1)
 }

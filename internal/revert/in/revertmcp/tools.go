@@ -20,6 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -66,16 +67,16 @@ func (a scopeIDs) hasFilters() bool { return a.Runs != nil || a.Resources != nil
 // the resource names pass through as the agent wrote them. Whether each name
 // is well formed, and whether each run and resource is the agent's own, the
 // store checks, and the engine maps its refusal (scopeRefused).
-func (a scopeIDs) filtered(scope action.Scope) (action.Scope, error) {
+func (a scopeIDs) filtered(scope revertstore.Scope) (revertstore.Scope, error) {
 	if a.Runs != nil && scope.Kind != revert.ScopeTask {
-		return action.Scope{}, &guidance.ArgumentError{Reason: guidance.ReasonScopeFilter, Message: "invalid arguments: runs goes only with " +
+		return revertstore.Scope{}, &guidance.ArgumentError{Reason: guidance.ReasonScopeFilter, Message: "invalid arguments: runs goes only with " +
 			"taskId, nothing was prepared: a change or a run is one run already. Narrow it with resources"}
 	}
 	if len(a.Runs) > revert.MaxFilter || len(a.Resources) > revert.MaxFilter {
-		return action.Scope{}, revertsvc.ScopeFilterCapped()
+		return revertstore.Scope{}, revertsvc.ScopeFilterCapped()
 	}
 	if (a.Runs != nil && len(a.Runs) == 0) || (a.Resources != nil && len(a.Resources) == 0) {
-		return action.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: runs and resources list at least one entry; leave " +
+		return revertstore.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: runs and resources list at least one entry; leave " +
 			"a filter out for all of your work in the scope"}
 	}
 	for _, id := range a.Runs {
@@ -86,24 +87,24 @@ func (a scopeIDs) filtered(scope action.Scope) (action.Scope, error) {
 }
 
 // named returns the scopes the arguments name.
-func (a scopeIDs) named() []action.Scope {
-	var out []action.Scope
+func (a scopeIDs) named() []revertstore.Scope {
+	var out []revertstore.Scope
 	for _, s := range []struct {
 		kind revert.Scope
 		id   string
 	}{{revert.ScopeChange, a.ChangeID}, {revert.ScopeRun, a.RunID}, {revert.ScopeTask, a.TaskID}} {
 		if s.id != "" {
-			out = append(out, action.Scope{Kind: s.kind, ID: uuid.MustParse(s.id)})
+			out = append(out, revertstore.Scope{Kind: s.kind, ID: uuid.MustParse(s.id)})
 		}
 	}
 	return out
 }
 
 // scope returns the one scope the arguments name.
-func (a previewRevertArgs) scope() (action.Scope, error) {
+func (a previewRevertArgs) scope() (revertstore.Scope, error) {
 	out := a.named()
 	if len(out) != 1 {
-		return action.Scope{}, &guidance.ArgumentError{Message: "name exactly one of changeId, runId, taskId"}
+		return revertstore.Scope{}, &guidance.ArgumentError{Message: "name exactly one of changeId, runId, taskId"}
 	}
 	return a.filtered(out[0])
 }
@@ -204,18 +205,18 @@ type requestRevertArgs struct {
 
 // requestScope returns the request form's one scope, checking the
 // argument combinations the schema cannot express.
-func (a requestRevertArgs) requestScope() (action.Scope, error) {
+func (a requestRevertArgs) requestScope() (revertstore.Scope, error) {
 	if a.WaitForSignature != nil || a.ReissueLink != nil {
-		return action.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: waitForSignature and reissueLink go only with " +
+		return revertstore.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: waitForSignature and reissueLink go only with " +
 			"revertId; a new request returns the link at once, for you to show the person before anyone can sign"}
 	}
 	out := a.named()
 	if len(out) != 1 {
-		return action.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: name exactly one of changeId, runId, taskId (with intent), " +
+		return revertstore.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: name exactly one of changeId, runId, taskId (with intent), " +
 			"or only revertId"}
 	}
 	if a.Intent == "" {
-		return action.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: intent is required with changeId, runId or taskId: why the person " +
+		return revertstore.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: intent is required with changeId, runId or taskId: why the person " +
 			"reverts, in their words, in 1 to 500 characters; it is shown on the revert page they sign"}
 	}
 	return a.filtered(out[0])
@@ -440,15 +441,15 @@ type applyRevertBatchArgs struct {
 }
 
 type batchResultDTO struct {
-	RevertID      string                `json:"revertId"`
-	Batch         int                   `json:"batch"`
-	Status        string                `json:"status"`
-	Restored      int                   `json:"restored"`
-	Skipped       int                   `json:"skipped"`
-	Pending       int                   `json:"pending"`
-	Items         []action.BatchItem    `json:"items"`
-	PersonMessage string                `json:"personMessage,omitempty"`
-	NextSteps     []toolresult.NextStep `json:"nextSteps,omitempty"`
+	RevertID      string                  `json:"revertId"`
+	Batch         int                     `json:"batch"`
+	Status        string                  `json:"status"`
+	Restored      int                     `json:"restored"`
+	Skipped       int                     `json:"skipped"`
+	Pending       int                     `json:"pending"`
+	Items         []revertstore.BatchItem `json:"items"`
+	PersonMessage string                  `json:"personMessage,omitempty"`
+	NextSteps     []toolresult.NextStep   `json:"nextSteps,omitempty"`
 }
 
 func (h handlers) applyRevertBatch(ctx context.Context, raw json.RawMessage) (any, error) {

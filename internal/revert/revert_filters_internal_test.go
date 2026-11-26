@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -21,10 +21,10 @@ import (
 func TestRevertStepsKeepTheFilters(t *testing.T) {
 	t.Parallel()
 	run := uuid.MustParse(caseRunID)
-	scope := action.Scope{Kind: revert.ScopeTask, ID: run, Runs: []uuid.UUID{run}, Resources: []string{"public.leads", "public.lead_owner"}}
+	scope := revertstore.Scope{Kind: revert.ScopeTask, ID: run, Runs: []uuid.UUID{run}, Resources: []string{"public.leads", "public.lead_owner"}}
 	require.Equal(t, map[string]any{"taskId": caseRunID, "runs": []string{caseRunID}, "resources": []string{"public.leads", "public.lead_owner"}},
 		scopeArgs(scope))
-	require.Equal(t, map[string]any{"runId": caseRunID}, scopeArgs(action.Scope{Kind: revert.ScopeRun, ID: run}))
+	require.Equal(t, map[string]any{"runId": caseRunID}, scopeArgs(revertstore.Scope{Kind: revert.ScopeRun, ID: run}))
 
 	msg, steps, err := newService(t, "linux", "").previewGuidance(RevertPreview{Scope: scope, Rows: 2})
 	require.NoError(t, err)
@@ -49,13 +49,13 @@ func TestRevertStepsKeepTheFilters(t *testing.T) {
 // reason the catalog's next steps are keyed by.
 func TestScopeRefusedGivesTheFilterReasons(t *testing.T) {
 	t.Parallel()
-	scope := action.Scope{Kind: revert.ScopeRun, ID: uuid.MustParse(caseRunID)}
-	refuse := func(reason action.RevertReason, detail string) error {
-		return scopeRefused(scope, action.RevertRefusalError{Reason: reason, Detail: detail})
+	scope := revertstore.Scope{Kind: revert.ScopeRun, ID: uuid.MustParse(caseRunID)}
+	refuse := func(reason revertstore.RevertReason, detail string) error {
+		return scopeRefused(scope, revertstore.RevertRefusalError{Reason: reason, Detail: detail})
 	}
 
 	var ae *guidance.ArgumentError
-	require.ErrorAs(t, refuse(action.RevertFilter, "public.ghost has no change of yours in this scope"), &ae)
+	require.ErrorAs(t, refuse(revertstore.RevertFilter, "public.ghost has no change of yours in this scope"), &ae)
 	require.Equal(t, guidance.ReasonScopeFilter, ae.Reason)
 	require.Equal(t, "the revert filter names work that is not yours, nothing was prepared: public.ghost has no change of yours "+
 		"in this scope. runs lists only your own runs in the task, and resources only resources you wrote in this scope; run_history "+
@@ -63,14 +63,14 @@ func TestScopeRefusedGivesTheFilterReasons(t *testing.T) {
 
 	// A name the store cannot use says nothing of whose work it names: the
 	// store's text, without "not yours".
-	require.ErrorAs(t, refuse(action.RevertFilterName, "leads is not a schema.table name"), &ae)
+	require.ErrorAs(t, refuse(revertstore.RevertFilterName, "leads is not a schema.table name"), &ae)
 	require.Equal(t, guidance.ReasonScopeFilter, ae.Reason)
 	require.Equal(t, "the revert filter is not valid, nothing was prepared: leads is not a schema.table name", ae.Message)
 
-	require.ErrorAs(t, refuse(action.RevertFilterCap, ""), &ae)
+	require.ErrorAs(t, refuse(revertstore.RevertFilterCap, ""), &ae)
 	require.Equal(t, guidance.ReasonScopeFilterCap, ae.Reason)
 
 	var te *toolresult.ToolError
-	require.ErrorAs(t, refuse(action.RevertNotOwnRun, ""), &te)
+	require.ErrorAs(t, refuse(revertstore.RevertNotOwnRun, ""), &te)
 	require.Equal(t, guidance.CodeNotFound, te.Code)
 }

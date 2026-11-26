@@ -15,10 +15,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
@@ -59,7 +61,7 @@ func newRaceEnv(t *testing.T) raceEnv {
 type heldDelete struct {
 	in     action.Intent
 	params []any
-	held   action.Held
+	held   approvalstore.Held
 }
 
 func (e raceEnv) hold(t *testing.T, lead int) heldDelete {
@@ -71,7 +73,7 @@ func (e raceEnv) hold(t *testing.T, lead int) heldDelete {
 	req := action.Request{Text: dropLeadSQL, Params: params}
 	p, err := e.store.Preview(ctx, in, req)
 	require.NoError(t, err)
-	held, err := e.store.Hold(ctx, in, action.HoldRequest{Op: action.OpDelete, Request: req, Assigned: p.Assigned, Lines: p.Lines})
+	held, err := e.store.Hold(ctx, in, approvalstore.HoldRequest{Op: action.OpDelete, Request: req, Assigned: p.Assigned, Lines: p.Lines})
 	require.NoError(t, err)
 	return heldDelete{in: in, params: params, held: held}
 }
@@ -126,7 +128,7 @@ func (e raceEnv) revealApproval(h heldDelete, as passkey.Assertion, key []byte) 
 	for _, p := range h.params {
 		req.Params = append(req.Params, json.RawMessage(p.(json.Number)))
 	}
-	return e.store.RevealHeld(context.Background(), h.held.ApprovalID, action.HeldRun{Intent: h.in, Request: req}, as, key)
+	return e.store.RevealHeld(context.Background(), h.held.ApprovalID, approvalstore.HeldRun{Intent: h.in, Request: req}, as, key)
 }
 
 // lockRow locks one row of a basalt_meta table in a transaction on its own
@@ -274,11 +276,11 @@ func TestRevealRacesTheApproval(t *testing.T) {
 func TestRevealRacesTheRevertSignature(t *testing.T) {
 	t.Parallel()
 	e := newRaceEnv(t)
-	prepared := func(lead int) action.PreparedRevert {
+	prepared := func(lead int) revertstore.PreparedRevert {
 		h := e.hold(t, lead)
 		require.NoError(t, e.sign(h, e.signature(t, h)))
 		require.NoError(t, e.apply(h))
-		prep, err := e.store.PrepareRevert(context.Background(), action.Scope{Kind: revert.ScopeRun, ID: h.in.RunID}, "Undo it", time.Minute)
+		prep, err := e.store.PrepareRevert(context.Background(), revertstore.Scope{Kind: revert.ScopeRun, ID: h.in.RunID}, "Undo it", time.Minute)
 		require.NoError(t, err)
 		return prep
 	}
@@ -288,26 +290,28 @@ func TestRevealRacesTheRevertSignature(t *testing.T) {
 		key   []byte
 		sig   passkey.Assertion
 	}
-	made := func(prep action.PreparedRevert) signed {
+	made := func(prep revertstore.PreparedRevert) signed {
 		as, key := e.proof(t, approval.KindRevert, prep.RevertID, "reverts", "revert_id")
 		sig, err := e.person.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 		require.NoError(t, err)
 		return signed{proof: as, key: key, sig: sig}
 	}
-	reveal := func(prep action.PreparedRevert, m signed) (action.RevealedRevert, error) {
+	reveal := func(prep revertstore.PreparedRevert, m signed) (revertstore.RevealedRevert, error) {
 		return e.store.RevealRevertRows(context.Background(), prep.RevertID, m.proof, m.key)
 	}
-	signRevert := func(prep action.PreparedRevert, m signed) error {
+	signRevert := func(prep revertstore.PreparedRevert, m signed) error {
 		_, err := e.store.ApplyRevert(context.Background(), prep.RevertID, m.sig)
 		return err
 	}
-	lock := func(prep action.PreparedRevert) func() { return e.lockRow(t, "reverts", "revert_id", prep.RevertID) }
+	lock := func(prep revertstore.PreparedRevert) func() {
+		return e.lockRow(t, "reverts", "revert_id", prep.RevertID)
+	}
 
 	// The reveal first: it shows the rows; the signature after it runs the
 	// revert.
 	prep := prepared(20)
 	m := made(prep)
-	var out action.RevealedRevert
+	var out revertstore.RevealedRevert
 	errReveal, errSign := e.race(t, lock(prep), func() error {
 		var err error
 		out, err = reveal(prep, m)

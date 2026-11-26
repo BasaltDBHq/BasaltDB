@@ -9,6 +9,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
@@ -43,7 +44,7 @@ type Records interface {
 	// RevertedBy is the change record of the latest revert that covered scope
 	// (a revert's own change, which request_revert accepts to redo the work),
 	// or uuid.Nil when none did.
-	RevertedBy(ctx context.Context, scope action.Scope) (uuid.UUID, error)
+	RevertedBy(ctx context.Context, scope revertstore.Scope) (uuid.UUID, error)
 	HasChange(ctx context.Context, id uuid.UUID) (bool, error)
 	// HasTaskRun reports whether the agent has a run with this task id.
 	HasTaskRun(ctx context.Context, id uuid.UUID) (bool, error)
@@ -61,14 +62,14 @@ type Undo interface {
 	// PreviewRevert reads one page of the preview of scope, after the line
 	// whose hash is after, with the preview's totals and large values left
 	// out.
-	PreviewRevert(ctx context.Context, scope action.Scope, after string, limit int) (action.PreviewPage, error)
-	PrepareRevert(ctx context.Context, scope action.Scope, intent string, timeout time.Duration) (action.PreparedRevert, error)
+	PreviewRevert(ctx context.Context, scope revertstore.Scope, after string, limit int) (revertstore.PreviewPage, error)
+	PrepareRevert(ctx context.Context, scope revertstore.Scope, intent string, timeout time.Duration) (revertstore.PreparedRevert, error)
 	// ResetRevert puts a pending revert back to the proposal for the agent's
 	// reissue, canceled past timeout.
-	ResetRevert(ctx context.Context, id uuid.UUID, timeout time.Duration) (action.RescopedRevert, error)
+	ResetRevert(ctx context.Context, id uuid.UUID, timeout time.Duration) (revertstore.RescopedRevert, error)
 	// ApplyRevertBatch applies lines of a plan the person signed; the store
 	// checks each line against that plan.
-	ApplyRevertBatch(ctx context.Context, id uuid.UUID, lines []int) (action.BatchResult, error)
+	ApplyRevertBatch(ctx context.Context, id uuid.UUID, lines []int) (revertstore.BatchResult, error)
 }
 
 // Proofs is the person's side: the page's calls, through the local pages or
@@ -76,16 +77,16 @@ type Undo interface {
 // only relays an assertion the person's page made, and the store verifies
 // the signature.
 type Proofs interface {
-	ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (action.AppliedRevert, error)
+	ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (revertstore.AppliedRevert, error)
 	// RescopeRevert changes a pending revert's scope for the person,
 	// canceled past timeout.
-	RescopeRevert(ctx context.Context, req action.RescopeRequest, timeout time.Duration) (action.RescopedRevert, error)
+	RescopeRevert(ctx context.Context, req revertstore.RescopeRequest, timeout time.Duration) (revertstore.RescopedRevert, error)
 	// RejectRevert marks a pending revert REJECTED for the person, with the
 	// scope token of a widened revert (nil before a widen).
-	RejectRevert(ctx context.Context, id uuid.UUID, note string, token []byte) (action.RejectedRevert, error)
+	RejectRevert(ctx context.Context, id uuid.UUID, note string, token []byte) (revertstore.RejectedRevert, error)
 	// RevealRevertRows returns the values of a revert's redacted lines for
 	// the person's reveal proof.
-	RevealRevertRows(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) (action.RevealedRevert, error)
+	RevealRevertRows(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) (revertstore.RevealedRevert, error)
 }
 
 // Store is a store with all three sides of a revert, as the wiring builds a

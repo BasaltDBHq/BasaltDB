@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/textrule/textruletest"
@@ -61,7 +62,7 @@ func (s *memStore) FindApproval(_ context.Context, id uuid.UUID) (action.Approva
 	s.count("FindApproval")
 	a, ok := s.approvals[id]
 	if !ok {
-		return action.Approval{}, &action.ApprovalRefusalError{Reason: action.ApprovalNotFound, Err: fmt.Errorf("no held write %s of %s", id, memAgent)}
+		return action.Approval{}, &approvalstore.ApprovalRefusalError{Reason: approvalstore.ApprovalNotFound, Err: fmt.Errorf("no held write %s of %s", id, memAgent)}
 	}
 	return a.rec, nil
 }
@@ -110,26 +111,26 @@ func (s *memStore) heldLines(r memRequest, params []any) ([]string, []string) {
 	return assigned, lines
 }
 
-func (s *memStore) Preview(_ context.Context, _ action.Intent, req agentstore.Request) (action.HeldPreview, error) {
+func (s *memStore) Preview(_ context.Context, _ action.Intent, req agentstore.Request) (approvalstore.HeldPreview, error) {
 	s.saw("Preview", req.Text)
 	r, err := parseRequest(req.Text)
 	if err != nil {
-		return action.HeldPreview{}, err
+		return approvalstore.HeldPreview{}, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.count("Preview")
 	assigned, lines := s.heldLines(r, req.Params)
-	return action.HeldPreview{Assigned: assigned, Lines: lines}, nil
+	return approvalstore.HeldPreview{Assigned: assigned, Lines: lines}, nil
 }
 
-func (s *memStore) Hold(_ context.Context, in action.Intent, hr action.HoldRequest) (action.Held, error) {
+func (s *memStore) Hold(_ context.Context, in action.Intent, hr approvalstore.HoldRequest) (approvalstore.Held, error) {
 	s.saw("Hold", hr.Request.Text)
 	params := make([]json.RawMessage, 0, len(hr.Request.Params))
 	for _, p := range hr.Request.Params {
 		raw, err := json.Marshal(p)
 		if err != nil {
-			return action.Held{}, err
+			return approvalstore.Held{}, err
 		}
 		params = append(params, raw)
 	}
@@ -145,11 +146,11 @@ func (s *memStore) Hold(_ context.Context, in action.Intent, hr action.HoldReque
 		AssignedFields: hr.Assigned, Rows: len(hr.Lines), RowsHash: approval.RowsHash(hr.Lines), ExpiresAt: expires,
 	})
 	if err != nil {
-		return action.Held{}, err
+		return approvalstore.Held{}, err
 	}
 	rawParams, err := json.Marshal(params)
 	if err != nil {
-		return action.Held{}, err
+		return approvalstore.Held{}, err
 	}
 	s.approvals[id] = &memApproval{rec: action.Approval{
 		ID: id, RunID: in.RunID, TaskID: uuid.NullUUID{UUID: in.TaskID, Valid: in.TaskID != uuid.Nil}, Intent: in.Text,
@@ -157,7 +158,7 @@ func (s *memStore) Hold(_ context.Context, in action.Intent, hr action.HoldReque
 		Assigned: hr.Assigned, Rows: len(hr.Lines), Status: action.ApprovalPending, CreatedAt: time.Now().UTC(),
 		ExpiresAt: expires, BindingText: binding, Lines: hr.Lines,
 	}}
-	return action.Held{ApprovalID: id, BindingText: binding, ExpiresAt: expires}, nil
+	return approvalstore.Held{ApprovalID: id, BindingText: binding, ExpiresAt: expires}, nil
 }
 
 // Proofs.
@@ -175,7 +176,7 @@ func (s *memStore) SubmitApproval(_ context.Context, id uuid.UUID, a passkey.Ass
 	s.count("SubmitApproval")
 	ap, ok := s.approvals[id]
 	if !ok {
-		return time.Time{}, &action.ApprovalRefusalError{Reason: action.ApprovalNotFound, Err: fmt.Errorf("no held write %s", id)}
+		return time.Time{}, &approvalstore.ApprovalRefusalError{Reason: approvalstore.ApprovalNotFound, Err: fmt.Errorf("no held write %s", id)}
 	}
 	if !slices.Equal(a.Signature, personAssertion(ap.rec.BindingText).Signature) {
 		if s.asPostgres {
@@ -195,7 +196,7 @@ func (s *memStore) SubmitApproval(_ context.Context, id uuid.UUID, a passkey.Ass
 // reaches it while the service refuses the binding first.
 var errRevealUnsupported = errors.New("the memory store under test reveals no held rows")
 
-func (s *memStore) RevealHeld(_ context.Context, _ uuid.UUID, held action.HeldRun, _ passkey.Assertion, _ []byte) ([]approval.RevealedRow, error) {
+func (s *memStore) RevealHeld(_ context.Context, _ uuid.UUID, held approvalstore.HeldRun, _ passkey.Assertion, _ []byte) ([]approval.RevealedRow, error) {
 	s.saw("RevealHeld", held.Request.Statement)
 	s.mu.Lock()
 	defer s.mu.Unlock()

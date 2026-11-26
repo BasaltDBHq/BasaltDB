@@ -34,6 +34,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/textrule/textruletest"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
@@ -202,21 +203,21 @@ func (s *objectStore) doc(resource, key string) map[string]any {
 // answers to, as its own table test has them: the reason, the guard's text
 // and the SQLSTATE.
 var postgresRefusals = []postgresRefusal{
-	{reason: action.RevertNotFound},
-	{reason: action.RevertNotOwnRun, detail: "the run is not one of yours"},
-	{reason: action.RevertFilter, detail: "public.ghost has no change of yours in this scope"},
-	{reason: action.RevertFilterName, detail: "leads is not a schema.table name"},
-	{reason: action.RevertRowsChanged, detail: "rows changed since the preview; nothing was reverted, prepare the revert again"},
-	{reason: action.RevertTimedOut, code: "57014"},
+	{reason: revertstore.RevertNotFound},
+	{reason: revertstore.RevertNotOwnRun, detail: "the run is not one of yours"},
+	{reason: revertstore.RevertFilter, detail: "public.ghost has no change of yours in this scope"},
+	{reason: revertstore.RevertFilterName, detail: "leads is not a schema.table name"},
+	{reason: revertstore.RevertRowsChanged, detail: "rows changed since the preview; nothing was reverted, prepare the revert again"},
+	{reason: revertstore.RevertTimedOut, code: "57014"},
 }
 
 type postgresRefusal struct {
-	reason       action.RevertReason
+	reason       revertstore.RevertReason
 	detail, code string
 }
 
 // postgresRefusalOf is the Postgres adapter's refusal for reason.
-func postgresRefusalOf(reason action.RevertReason) postgresRefusal {
+func postgresRefusalOf(reason revertstore.RevertReason) postgresRefusal {
 	i := slices.IndexFunc(postgresRefusals, func(p postgresRefusal) bool { return p.reason == reason })
 	if i < 0 {
 		panic("no Postgres refusal for " + reason)
@@ -226,12 +227,12 @@ func postgresRefusalOf(reason action.RevertReason) postgresRefusal {
 
 // refuse is the store's refusal of a call for reason, with its own text
 // and code.
-func (s *objectStore) refuse(reason action.RevertReason, detail, code string) error {
+func (s *objectStore) refuse(reason revertstore.RevertReason, detail, code string) error {
 	if s.asPostgres {
 		pg := postgresRefusalOf(reason)
 		detail, code = pg.detail, pg.code
 	}
-	return &action.RevertRefusalError{
+	return &revertstore.RevertRefusalError{
 		Reason: reason, Detail: detail, StoreCode: code,
 		Err: fmt.Errorf("store refused the revert call: %s", cmp.Or(detail, code, string(reason))),
 	}
@@ -240,10 +241,10 @@ func (s *objectStore) refuse(reason action.RevertReason, detail, code string) er
 // selectChanges are the agent's changes in scope, narrowed to its
 // resources. The store checks the names: their form, and that the agent
 // wrote each one in the scope.
-func (s *objectStore) selectChanges(scope action.Scope) ([]objChange, error) {
+func (s *objectStore) selectChanges(scope revertstore.Scope) ([]objChange, error) {
 	for _, name := range scope.Resources {
 		if !objResourceName.MatchString(name) {
-			return nil, s.refuse(action.RevertFilterName, objFilterNameDetail, "")
+			return nil, s.refuse(revertstore.RevertFilterName, objFilterNameDetail, "")
 		}
 	}
 	var own []objChange
@@ -256,12 +257,12 @@ func (s *objectStore) selectChanges(scope action.Scope) ([]objChange, error) {
 	if len(own) == 0 {
 		switch scope.Kind {
 		case revert.ScopeRun:
-			return nil, s.refuse(action.RevertNotOwnRun, fmt.Sprintf("run %s has no change of %s", scope.ID, objAgent), "")
+			return nil, s.refuse(revertstore.RevertNotOwnRun, fmt.Sprintf("run %s has no change of %s", scope.ID, objAgent), "")
 		case revert.ScopeChange:
-			return nil, s.refuse(action.RevertNotOwnChange, fmt.Sprintf("change %s is not %s's", scope.ID, objAgent), "")
+			return nil, s.refuse(revertstore.RevertNotOwnChange, fmt.Sprintf("change %s is not %s's", scope.ID, objAgent), "")
 		case revert.ScopeTask:
 		}
-		return nil, s.refuse(action.RevertInvalid, "this store reverts a change or a run", "")
+		return nil, s.refuse(revertstore.RevertInvalid, "this store reverts a change or a run", "")
 	}
 	if scope.Resources == nil {
 		return own, nil
@@ -272,7 +273,7 @@ func (s *objectStore) selectChanges(scope action.Scope) ([]objChange, error) {
 	}
 	for _, name := range scope.Resources {
 		if !written[name] {
-			return nil, s.refuse(action.RevertFilter, name+" has no change of yours in this run", "")
+			return nil, s.refuse(revertstore.RevertFilter, name+" has no change of yours in this run", "")
 		}
 	}
 	return slices.DeleteFunc(own, func(c objChange) bool { return !slices.Contains(scope.Resources, c.resource) }), nil
@@ -355,7 +356,7 @@ func (s *objectStore) FindRevert(_ context.Context, id uuid.UUID) (action.Revert
 	s.count("FindRevert")
 	r, ok := s.reverts[id]
 	if !ok {
-		return action.Revert{}, s.refuse(action.RevertNotFound, "", "")
+		return action.Revert{}, s.refuse(revertstore.RevertNotFound, "", "")
 	}
 	out := r.rec
 	out.Lines = slices.Clone(r.rec.Lines)
@@ -368,7 +369,7 @@ func (s *objectStore) RevertLines(_ context.Context, p action.RevertLineParams) 
 	s.count("RevertLines")
 	r, ok := s.reverts[p.RevertID]
 	if !ok {
-		return pagination.Page[action.RevertLine]{}, s.refuse(action.RevertNotFound, "", "")
+		return pagination.Page[action.RevertLine]{}, s.refuse(revertstore.RevertNotFound, "", "")
 	}
 	after := int64(0)
 	if p.Cursor != "" {
@@ -403,7 +404,7 @@ func (s *objectStore) ListOpenReverts(context.Context, action.RevertListParams) 
 	return out, nil
 }
 
-func (s *objectStore) RevertedBy(context.Context, action.Scope) (uuid.UUID, error) {
+func (s *objectStore) RevertedBy(context.Context, revertstore.Scope) (uuid.UUID, error) {
 	return uuid.Nil, nil
 }
 
@@ -427,19 +428,19 @@ func (s *objectStore) RevealNonce(_ context.Context, _ string, id uuid.UUID) ([]
 
 // Undo.
 
-func (s *objectStore) PreviewRevert(_ context.Context, scope action.Scope, after string, limit int) (action.PreviewPage, error) {
+func (s *objectStore) PreviewRevert(_ context.Context, scope revertstore.Scope, after string, limit int) (revertstore.PreviewPage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.count("PreviewRevert")
 	if scope.ID == runSlow {
-		return action.PreviewPage{}, s.refuse(action.RevertTimedOut, "", codeDeadline)
+		return revertstore.PreviewPage{}, s.refuse(revertstore.RevertTimedOut, "", codeDeadline)
 	}
 	changes, err := s.selectChanges(scope)
 	if err != nil {
-		return action.PreviewPage{}, err
+		return revertstore.PreviewPage{}, err
 	}
 	lines := s.planLines(changes)
-	out := action.PreviewPage{Lines: len(lines), CursorFound: after == ""}
+	out := revertstore.PreviewPage{Lines: len(lines), CursorFound: after == ""}
 	start := 0
 	for i, l := range lines {
 		if l.restore {
@@ -451,23 +452,23 @@ func (s *objectStore) PreviewRevert(_ context.Context, scope action.Scope, after
 	}
 	end := min(start+limit, len(lines))
 	for _, l := range lines[start:end] {
-		out.Page = append(out.Page, action.PreviewLine{Text: l.text, Hash: lineHash(l.text)})
+		out.Page = append(out.Page, revertstore.PreviewLine{Text: l.text, Hash: lineHash(l.text)})
 	}
 	out.More = end < len(lines)
 	return out, nil
 }
 
-func (s *objectStore) PrepareRevert(_ context.Context, scope action.Scope, intent string, timeout time.Duration) (action.PreparedRevert, error) {
+func (s *objectStore) PrepareRevert(_ context.Context, scope revertstore.Scope, intent string, timeout time.Duration) (revertstore.PreparedRevert, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.count("PrepareRevert")
 	s.prepareLimits = append(s.prepareLimits, timeout)
 	if scope.ID == runSlow {
-		return action.PreparedRevert{}, s.refuse(action.RevertTimedOut, "", codeDeadline)
+		return revertstore.PreparedRevert{}, s.refuse(revertstore.RevertTimedOut, "", codeDeadline)
 	}
 	changes, err := s.selectChanges(scope)
 	if err != nil {
-		return action.PreparedRevert{}, err
+		return revertstore.PreparedRevert{}, err
 	}
 	lines := s.planLines(changes)
 	texts, restore := make([]string, 0, len(lines)), 0
@@ -479,7 +480,7 @@ func (s *objectStore) PrepareRevert(_ context.Context, scope action.Scope, inten
 		}
 	}
 	if restore == 0 {
-		return action.PreparedRevert{}, s.refuse(action.RevertNothing, "every object changed after the agent", "")
+		return revertstore.PreparedRevert{}, s.refuse(revertstore.RevertNothing, "every object changed after the agent", "")
 	}
 	id := s.nextID()
 	b := revert.Binding{
@@ -491,26 +492,26 @@ func (s *objectStore) PrepareRevert(_ context.Context, scope action.Scope, inten
 	shown := texts
 	if len(texts) > revert.MaxLines {
 		if shown, err = reverttest.Sample(texts); err != nil {
-			return action.PreparedRevert{}, err
+			return revertstore.PreparedRevert{}, err
 		}
 		b.Batched, b.SampleHash = true, approval.RowsHash(shown)
 	}
 	binding, err := textruletest.Text(b)
 	if err != nil {
-		return action.PreparedRevert{}, err
+		return revertstore.PreparedRevert{}, err
 	}
 	s.reverts[id] = &objRevert{lines: lines, rec: action.Revert{
 		ID: id, Status: action.RevertPending, Scope: string(scope.Kind), ScopeID: scope.ID, Intent: intent,
 		Rows: b.Rows, Skipped: b.Skipped, ExpiresAt: b.ExpiresAt, BindingText: binding, Lines: shown,
 		Batched: b.Batched, CreatedAt: objNow,
 	}}
-	return action.PreparedRevert{RevertID: id, BindingText: binding, ExpiresAt: b.ExpiresAt, Batched: b.Batched, LineCount: len(lines)}, nil
+	return revertstore.PreparedRevert{RevertID: id, BindingText: binding, ExpiresAt: b.ExpiresAt, Batched: b.Batched, LineCount: len(lines)}, nil
 }
 
 var errObjUnsupported = errors.New("the object store under test does not reset, rescope, reject or reveal a revert")
 
-func (s *objectStore) ResetRevert(context.Context, uuid.UUID, time.Duration) (action.RescopedRevert, error) {
-	return action.RescopedRevert{}, errObjUnsupported
+func (s *objectStore) ResetRevert(context.Context, uuid.UUID, time.Duration) (revertstore.RescopedRevert, error) {
+	return revertstore.RescopedRevert{}, errObjUnsupported
 }
 
 // applyLine applies one line: the object goes back to its earlier version,
@@ -549,28 +550,28 @@ func (r *objRevert) progress() {
 	}
 }
 
-func (s *objectStore) ApplyRevertBatch(_ context.Context, id uuid.UUID, nos []int) (action.BatchResult, error) {
+func (s *objectStore) ApplyRevertBatch(_ context.Context, id uuid.UUID, nos []int) (revertstore.BatchResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.count("ApplyRevertBatch")
 	r, ok := s.reverts[id]
 	if !ok {
-		return action.BatchResult{}, s.refuse(action.RevertNotFound, "", "")
+		return revertstore.BatchResult{}, s.refuse(revertstore.RevertNotFound, "", "")
 	}
 	if r.rec.Status != action.RevertApplying {
-		return action.BatchResult{}, fmt.Errorf("revert %s is %s, not applying", id, r.rec.Status)
+		return revertstore.BatchResult{}, fmt.Errorf("revert %s is %s, not applying", id, r.rec.Status)
 	}
 	r.rec.Batches++
-	res := action.BatchResult{RevertID: id, Batch: r.rec.Batches}
+	res := revertstore.BatchResult{RevertID: id, Batch: r.rec.Batches}
 	for _, no := range nos {
 		if no < 1 || no > len(r.lines) {
-			return action.BatchResult{}, fmt.Errorf("revert %s has no line %d", id, no)
+			return revertstore.BatchResult{}, fmt.Errorf("revert %s has no line %d", id, no)
 		}
 		l := &r.lines[no-1]
 		if l.outcome == guardmodel.OutcomePending {
 			s.applyLine(l, r.rec.Batches)
 		}
-		res.Items = append(res.Items, action.BatchItem{Line: no, Outcome: l.outcome, Conflict: l.conflict, StoreCode: l.code})
+		res.Items = append(res.Items, revertstore.BatchItem{Line: no, Outcome: l.outcome, Conflict: l.conflict, StoreCode: l.code})
 	}
 	r.progress()
 	if r.rec.Progress.Pending == 0 {
@@ -592,18 +593,18 @@ func personAssertion(binding string) passkey.Assertion {
 	}
 }
 
-func (s *objectStore) ApplyRevert(_ context.Context, id uuid.UUID, a passkey.Assertion) (action.AppliedRevert, error) {
+func (s *objectStore) ApplyRevert(_ context.Context, id uuid.UUID, a passkey.Assertion) (revertstore.AppliedRevert, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.count("ApplyRevert")
 	r, ok := s.reverts[id]
 	switch {
 	case !ok:
-		return action.AppliedRevert{}, s.refuse(action.RevertSignature, "no such revert", "")
+		return revertstore.AppliedRevert{}, s.refuse(revertstore.RevertSignature, "no such revert", "")
 	case r.rec.Status != action.RevertPending:
-		return action.AppliedRevert{}, s.refuse(action.RevertAlreadySigned, "the revert is "+r.rec.Status, "")
+		return revertstore.AppliedRevert{}, s.refuse(revertstore.RevertAlreadySigned, "the revert is "+r.rec.Status, "")
 	case !slices.Equal(a.Signature, personAssertion(r.rec.BindingText).Signature):
-		return action.AppliedRevert{}, s.refuse(action.RevertSignature, "the passkey's signature does not match the binding", "")
+		return revertstore.AppliedRevert{}, s.refuse(revertstore.RevertSignature, "the passkey's signature does not match the binding", "")
 	}
 	if !r.rec.Batched {
 		var changed []string
@@ -613,7 +614,7 @@ func (s *objectStore) ApplyRevert(_ context.Context, id uuid.UUID, a passkey.Ass
 			}
 		}
 		if changed != nil {
-			return action.AppliedRevert{}, s.refuse(action.RevertRowsChanged,
+			return revertstore.AppliedRevert{}, s.refuse(revertstore.RevertRowsChanged,
 				"objects changed since the preview: "+strings.Join(changed, ", ")+"; nothing was reverted", "")
 		}
 	}
@@ -623,25 +624,25 @@ func (s *objectStore) ApplyRevert(_ context.Context, id uuid.UUID, a passkey.Ass
 		applyBy := objNow.Add(revert.ApplyWindow)
 		r.rec.Status, r.rec.ApplyBy = action.RevertApplying, &applyBy
 		r.progress()
-		return action.AppliedRevert{ChangeID: change, Batched: true, Pending: r.rec.Progress.Pending, ApplyBy: &applyBy}, nil
+		return revertstore.AppliedRevert{ChangeID: change, Batched: true, Pending: r.rec.Progress.Pending, ApplyBy: &applyBy}, nil
 	}
 	for i := range r.lines {
 		s.applyLine(&r.lines[i], 0)
 	}
 	r.rec.Status = action.RevertApplied
-	return action.AppliedRevert{ChangeID: change, Rows: r.rec.Rows, Skipped: r.rec.Skipped}, nil
+	return revertstore.AppliedRevert{ChangeID: change, Rows: r.rec.Rows, Skipped: r.rec.Skipped}, nil
 }
 
-func (s *objectStore) RescopeRevert(context.Context, action.RescopeRequest, time.Duration) (action.RescopedRevert, error) {
-	return action.RescopedRevert{}, errObjUnsupported
+func (s *objectStore) RescopeRevert(context.Context, revertstore.RescopeRequest, time.Duration) (revertstore.RescopedRevert, error) {
+	return revertstore.RescopedRevert{}, errObjUnsupported
 }
 
-func (s *objectStore) RejectRevert(context.Context, uuid.UUID, string, []byte) (action.RejectedRevert, error) {
-	return action.RejectedRevert{}, errObjUnsupported
+func (s *objectStore) RejectRevert(context.Context, uuid.UUID, string, []byte) (revertstore.RejectedRevert, error) {
+	return revertstore.RejectedRevert{}, errObjUnsupported
 }
 
-func (s *objectStore) RevealRevertRows(context.Context, uuid.UUID, passkey.Assertion, []byte) (action.RevealedRevert, error) {
-	return action.RevealedRevert{}, errObjUnsupported
+func (s *objectStore) RevealRevertRows(context.Context, uuid.UUID, passkey.Assertion, []byte) (revertstore.RevealedRevert, error) {
+	return revertstore.RevealedRevert{}, errObjUnsupported
 }
 
 // seedObjects is the agent's work the tests revert, and what people did
@@ -807,7 +808,7 @@ func (h *objHarness) mustCall(name string, args map[string]any) map[string]any {
 // personSigns is the person on the revert page the agent's link opens:
 // the page reads the request, checks it against the binding, and posts
 // the signed response.
-func (h *objHarness) personSigns(revertURL string) (revert.Request, revert.Binding, action.AppliedRevert, linksvc.Receipt, error) {
+func (h *objHarness) personSigns(revertURL string) (revert.Request, revert.Binding, revertstore.AppliedRevert, linksvc.Receipt, error) {
 	h.t.Helper()
 	u, err := url.Parse(revertURL)
 	require.NoError(h.t, err)
@@ -982,7 +983,7 @@ func TestObjectStoreAppliesABatchedPlanThroughThePorts(t *testing.T) {
 // into it, and the store's own text and code for it.
 type refusalCase struct {
 	name   string
-	reason action.RevertReason
+	reason revertstore.RevertReason
 	// detail and code are the object store's; the Postgres adapter's are in
 	// postgresRefusals. shown: the answer's message shows the detail.
 	detail, code string
@@ -1007,47 +1008,47 @@ func refusalCases() []refusalCase {
 	missing := uuid.MustParse("0193a4c2-7d1e-7c3a-9f00-0000000000ff").String()
 	return []refusalCase{
 		{
-			name: "request_revert: a resource name the store cannot use", reason: action.RevertFilterName, detail: objFilterNameDetail, shown: true,
+			name: "request_revert: a resource name the store cannot use", reason: revertstore.RevertFilterName, detail: objFilterNameDetail, shown: true,
 			run: request(map[string]any{"runId": runPhotos.String(), "resources": []string{"public.photos"}}),
 		},
 		{
-			name: "preview_revert: a resource name the store cannot use", reason: action.RevertFilterName, detail: objFilterNameDetail, shown: true,
+			name: "preview_revert: a resource name the store cannot use", reason: revertstore.RevertFilterName, detail: objFilterNameDetail, shown: true,
 			run: preview(map[string]any{"runId": runPhotos.String(), "resources": []string{"photos"}}),
 		},
 		{
-			name: "request_revert: a resource the agent did not write", reason: action.RevertFilter, shown: true,
+			name: "request_revert: a resource the agent did not write", reason: revertstore.RevertFilter, shown: true,
 			detail: "media/videos has no change of yours in this run",
 			run:    request(map[string]any{"runId": runPhotos.String(), "resources": []string{"media/videos"}}),
 		},
 		{
-			name: "request_revert: another agent's run", reason: action.RevertNotOwnRun,
+			name: "request_revert: another agent's run", reason: revertstore.RevertNotOwnRun,
 			detail: fmt.Sprintf("run %s has no change of %s", runOther, objAgent),
 			run:    request(map[string]any{"runId": runOther.String()}),
 		},
 		{
-			name: "request_revert: the store's time limit", reason: action.RevertTimedOut, code: codeDeadline,
+			name: "request_revert: the store's time limit", reason: revertstore.RevertTimedOut, code: codeDeadline,
 			run: request(map[string]any{"runId": runSlow.String()}),
 		},
 		{
-			name: "preview_revert: the store's time limit", reason: action.RevertTimedOut, code: codeDeadline,
+			name: "preview_revert: the store's time limit", reason: revertstore.RevertTimedOut, code: codeDeadline,
 			run: preview(map[string]any{"runId": runSlow.String()}),
 		},
 		{
-			name: "revert_plan: a revert the agent did not prepare", reason: action.RevertNotFound,
+			name: "revert_plan: a revert the agent did not prepare", reason: revertstore.RevertNotFound,
 			run: func(h *objHarness) *toolresult.ToolError {
 				_, te := h.call("revert_plan", map[string]any{"revertId": missing})
 				return te
 			},
 		},
 		{
-			name: "request_revert: wait for a revert the agent did not prepare", reason: action.RevertNotFound,
+			name: "request_revert: wait for a revert the agent did not prepare", reason: revertstore.RevertNotFound,
 			run: func(h *objHarness) *toolresult.ToolError {
 				_, te := h.call("request_revert", map[string]any{"revertId": missing, "waitForSignature": 0})
 				return te
 			},
 		},
 		{
-			name: "the person's apply: an object changed since the preview", reason: action.RevertRowsChanged, shown: true,
+			name: "the person's apply: an object changed since the preview", reason: revertstore.RevertRowsChanged, shown: true,
 			detail: "objects changed since the preview: media/photos p1; nothing was reverted",
 			run: func(h *objHarness) *toolresult.ToolError {
 				requested := h.mustCall("request_revert", map[string]any{
@@ -1094,7 +1095,7 @@ func TestObjectStoreRefusalsGiveThePostgresAnswers(t *testing.T) {
 			require.Equal(t, wantMessage, got.Message)
 			require.Equal(t, pg.code, want.StoreCode)
 			require.Equal(t, c.code, got.StoreCode, "the store's own code, passed on as it is")
-			if c.reason == action.RevertTimedOut && strings.Contains(c.name, "request_revert") {
+			if c.reason == revertstore.RevertTimedOut && strings.Contains(c.name, "request_revert") {
 				require.Contains(t, got.Message, strconv.Itoa(int(objPrepareLimit.Seconds()))+" seconds", "the store's own time limit")
 			}
 		})

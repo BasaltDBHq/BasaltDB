@@ -1,4 +1,4 @@
-package action
+package approvalstore
 
 import (
 	"errors"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 )
 
@@ -13,7 +14,7 @@ import (
 // intent it was held in, from the binding's shared part, and the binding's
 // request as the person signed it, which only the store reads.
 type HeldRun struct {
-	Intent  Intent
+	Intent  action.Intent
 	Request approval.HeldRequest
 }
 
@@ -23,8 +24,8 @@ type HeldRun struct {
 // the preview lines the person signs, both from the store's preview
 // (HeldPreview).
 type HoldRequest struct {
-	Op       Op
-	Request  Request
+	Op       action.Op
+	Request  action.Request
 	Assigned []string
 	Lines    []string
 }

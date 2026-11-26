@@ -1,4 +1,4 @@
-package cli
+package osservice
 
 import (
 	"bufio"
@@ -16,9 +16,9 @@ const probeIOLimit = 2 * time.Second
 // probeInit is the MCP initialize request the probe sends.
 const probeInit = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"basalt-init","version":"0"}}}` + "\n"
 
-// ProbeOnce connects to the agent's socket, sends initialize and checks
+// probeOnce connects to the agent's socket, sends initialize and checks
 // the engine names itself.
-func ProbeOnce(socket string) error {
+func probeOnce(socket string) error {
 	conn, err := net.DialTimeout("unix", socket, probeIOLimit)
 	if err != nil {
 		return err

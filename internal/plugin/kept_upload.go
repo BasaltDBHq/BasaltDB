@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -47,14 +46,14 @@ func (s *Store) Begin(uid uint32) (Upload, error) {
 		return Upload{}, refused(ReasonTooManyUploads, "%d plugin uploads are already open on this engine; "+
 			"they expire %s after they began: try again then", s.lim.OpenUploads, UploadTTL)
 	}
-	if err := os.MkdirAll(s.uploadsDir(), uploadDirMode); err != nil {
+	if err := s.files.MkdirAll(s.uploadsDir(), uploadDirMode); err != nil {
 		return Upload{}, err
 	}
-	if err := checkOwnDir(s.uploadsDir()); err != nil {
+	if err := s.checkOwnDir(s.uploadsDir()); err != nil {
 		return Upload{}, refused(ReasonUnsafePath, "%s", err)
 	}
 	id := uuid.New() //nolint:forbidigo // baseline: a UUIDv4 on the wire; move to internal/lib/uniqueid
-	if err := os.Mkdir(filepath.Join(s.uploadsDir(), id.String()), uploadDirMode); err != nil {
+	if err := s.files.Mkdir(filepath.Join(s.uploadsDir(), id.String()), uploadDirMode); err != nil {
 		return Upload{}, err
 	}
 	u := &upload{id: id, uid: uid, expires: s.now().Add(UploadTTL).UTC().Truncate(time.Second), sizes: map[string]int64{}}
@@ -76,7 +75,7 @@ func (s *Store) expireLocked() {
 // dropLocked removes upload id from memory and disk. s.mu is held.
 func (s *Store) dropLocked(id uuid.UUID) {
 	delete(s.uploads, id)
-	_ = os.RemoveAll(filepath.Join(s.uploadsDir(), id.String()))
+	_ = s.files.RemoveAll(filepath.Join(s.uploadsDir(), id.String()))
 }
 
 // usedLocked is the bytes the copies and the open uploads take. s.mu is
@@ -187,7 +186,7 @@ func dirClash(sizes map[string]int64, p string) bool {
 // bytes the engine wrote, never followed through a link, never a device or
 // a FIFO.
 func (s *Store) writePart(u *upload, p string, offset int64, b []byte) error {
-	root, err := os.OpenRoot(filepath.Join(s.uploadsDir(), u.id.String()))
+	root, err := s.files.OpenRoot(filepath.Join(s.uploadsDir(), u.id.String()))
 	if err != nil {
 		return refused(ReasonUnsafePath, "the upload's directory cannot be opened")
 	}
@@ -211,7 +210,7 @@ func (s *Store) writePart(u *upload, p string, offset int64, b []byte) error {
 		}
 	}
 	name := filepath.FromSlash(p)
-	flags := os.O_WRONLY | syscall.O_NOFOLLOW | syscall.O_NONBLOCK
+	flags := os.O_WRONLY | s.files.NoFollow()
 	if offset == 0 {
 		flags |= os.O_CREATE | os.O_EXCL
 	} else {
@@ -226,7 +225,7 @@ func (s *Store) writePart(u *upload, p string, offset int64, b []byte) error {
 	if err != nil || !fi.Mode().IsRegular() {
 		return unsafe("is not a regular file")
 	}
-	if st, ok := fi.Sys().(*syscall.Stat_t); !ok || st.Nlink != 1 || fi.Size() != offset {
+	if links, ok := s.files.Links(fi); !ok || links != 1 || fi.Size() != offset {
 		return unsafe("is not the file the engine wrote")
 	}
 	if _, err := f.Write(b); err != nil {
@@ -269,7 +268,7 @@ func (t *Taken) Release() {
 // holds), so staging installs them with mode 0755, as a same-user install
 // keeps a source's executable files.
 func (t *Taken) MarkExecutables(paths []string) error {
-	root, err := os.OpenRoot(t.Dir)
+	root, err := t.s.files.OpenRoot(t.Dir)
 	if err != nil {
 		return refused(ReasonUnsafePath, "the upload's directory cannot be opened")
 	}
@@ -290,12 +289,4 @@ func (s *Store) Open() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.uploads)
-}
-
-func ownerOf(fi fs.FileInfo) (uint32, bool) {
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		return 0, false
-	}
-	return st.Uid, true
 }

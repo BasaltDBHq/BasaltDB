@@ -7,7 +7,6 @@ import (
 	"errors"
 	"log/slog"
 	"maps"
-	"os"
 	"slices"
 	"sync"
 	"time"
@@ -116,7 +115,7 @@ func newPluginWatch(ep *Plugins, cfg config.Config, path string, ledgers map[str
 	w := &pluginWatch{
 		ep: ep, start: cfg, path: path, ledgers: ledgers, log: ep.log, now: time.Now,
 		eff: cfg, checks: map[pluginmodel.EntryKey]cachedCheck{}, backoff: map[string]agentBackoff{},
-		running: map[pluginmodel.EntryKey]runningEntry{}, trust: trustedKeys(cfg, path, ep.log),
+		running: map[pluginmodel.EntryKey]runningEntry{}, trust: trustedKeys(ep.o.Ports.Files, cfg, path, ep.log),
 		onDisk: cfg.Plugins,
 	}
 	ep.mu.Lock()
@@ -167,7 +166,7 @@ func (w *pluginWatch) step(ctx context.Context) {
 	var kept []byte
 	if w.ep.kept != nil {
 		var err error
-		if kept, err = os.ReadFile(w.ep.kept.EntriesPath()); err != nil {
+		if kept, err = w.ep.o.Ports.Files.ReadFile(w.ep.kept.EntriesPath()); err != nil {
 			kept = []byte(err.Error())
 		}
 	}
@@ -248,7 +247,7 @@ func (w *pluginWatch) serviceKept() bool {
 // runs when the entries file or engine.json (for a name clash) changed, or
 // the agents are due.
 func (w *pluginWatch) stepKept(ctx context.Context) {
-	raw, err := os.ReadFile(w.ep.kept.EntriesPath())
+	raw, err := w.ep.o.Ports.Files.ReadFile(w.ep.kept.EntriesPath())
 	if err != nil {
 		raw = []byte(err.Error())
 	}
@@ -678,7 +677,7 @@ func (ep *Plugins) Serve(ctx context.Context, cfg config.Config, configPath stri
 	}
 	// The notifier hooks follow what is served; they stop before the
 	// plugins drain.
-	f := newPluginFeed(ep.host, ep.servedEntries, ledgers, ep.o.stateDir, ep.o.Ports.WriteFeedCursor, ep.senders, ep.o.clock, ep.log)
+	f := newPluginFeed(ep.host, ep.servedEntries, ledgers, ep.o.stateDir, ep.o.Ports.WriteFeedCursor, ep.o.Ports.ReadFeedCursor, ep.senders, ep.o.clock, ep.log)
 	if ep.o.feedTiming != nil {
 		f.timing = *ep.o.feedTiming
 	}

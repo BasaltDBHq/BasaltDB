@@ -38,7 +38,7 @@ func uploadRequests(t *testing.T) (*Requests, *Store, string) {
 	dir, err := os.MkdirTemp("", "bu")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	store, err := NewPluginhost(filepath.Join(dir, "state"), time.Now)
+	store, err := NewPluginhost(testFiles, filepath.Join(dir, "state"), time.Now)
 	require.NoError(t, err)
 	p := &Requests{uids: map[string]uint32{"bot": keptPerson, "other": keptOtherUID}, admitted: []uint32{keptPerson}}
 	p.kept.Store(&KeptPlugins{ports: testPorts, store: store})

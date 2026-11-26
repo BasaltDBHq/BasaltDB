@@ -88,7 +88,7 @@ func (f *pluginFixture) installCopyOver(instance, hooks, transport string, signe
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(src, SignatureFile), sig, 0o644))
 	}
-	v, err := installCopy(src, f.root, instance, f.trust, pluginmodel.ModeSameUser, RequireApproval(!signed))
+	v, err := installCopy(src, f.root, instance, f.trust, RequireApproval(!signed))
 	require.NoError(t, err)
 	// The longest timeout: the plugin is this test binary, built with -race.
 	return config.Plugin{Name: "acme-ner", Instance: instance, ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: []string{}, TimeoutMs: config.MaxPluginTimeoutMs}
@@ -735,7 +735,7 @@ func (f *pluginFixture) installRemote() config.Plugin {
 }
 `
 	require.NoError(t, os.WriteFile(filepath.Join(src, ManifestFile), []byte(manifest), 0o644))
-	v, err := installCopy(src, f.root, "default", f.trust, pluginmodel.ModeSameUser, RequireApproval(true))
+	v, err := installCopy(src, f.root, "default", f.trust, RequireApproval(true))
 	require.NoError(t, err)
 	return config.Plugin{Name: "acme-ner", Instance: "default", ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: []string{}}
 }
@@ -755,7 +755,7 @@ func TestRequiredEntryDeniedWithoutALedger(t *testing.T) {
 	ledgers := map[string]AgentLedger{
 		"product_a": {ports: testPorts, db: l.dbs["product_a"].db, admit: func(context.Context) error { return ErrNotAdmitted }},
 	}
-	RecordEvents(context.Background(), f.cfg, f.configPath, ep, ledgers, slog.New(slog.DiscardHandler))
+	RecordEvents(context.Background(), testFiles, f.cfg, f.configPath, ep, ledgers, slog.New(slog.DiscardHandler))
 	require.Empty(t, servedTo(ep, p.Key()))
 	require.Empty(t, ep.entries)
 	for _, a := range []string{"product_a", "client_x"} {
@@ -777,7 +777,7 @@ func TestWithheldEntryBlocksNoAgentCall(t *testing.T) {
 	p := f.installApproval(feedHooks, "bot")
 	ep := f.plugins(nil)
 	svc, ledgers := runtimeOf(t, a, ep)
-	RecordEvents(ctx, f.cfg, f.configPath, ep, ledgers, slog.New(slog.DiscardHandler))
+	RecordEvents(ctx, testFiles, f.cfg, f.configPath, ep, ledgers, slog.New(slog.DiscardHandler))
 	require.Empty(t, servedTo(ep, p.Key()))
 
 	require.NoError(t, svc.Admit(ctx))

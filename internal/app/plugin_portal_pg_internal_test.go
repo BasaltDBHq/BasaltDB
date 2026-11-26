@@ -44,6 +44,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginfs"
 )
 
 // portalPerson is the person's OS user id in these tests: any id but the
@@ -95,7 +96,7 @@ func newPortalFixture(t *testing.T, name string, set func(*config.Config)) *port
 	if set != nil {
 		set(&f.cfg)
 	}
-	f.store, err = plugin.NewPluginhost(state, time.Now)
+	f.store, err = plugin.NewPluginhost(pluginfs.Files{}, state, time.Now)
 	require.NoError(t, err)
 	f.s = plugin.NewKeptPlugins(f.store, f.cfg, configPath, agents, slog.New(slog.DiscardHandler), pluginPorts)
 	f.pk, err = passkeytest.New(passkey.Production)

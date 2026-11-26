@@ -275,7 +275,7 @@ func (e *feedEnv) start() {
 
 func (e *feedEnv) startWith(ledgers map[string]AgentLedger) {
 	e.t.Helper()
-	f := newPluginFeed(e.host, e.served, ledgers, e.stateDir, testPorts.WriteFeedCursor, newPluginSenders(e.host, time.Now), RealClock(), e.log)
+	f := newPluginFeed(e.host, e.served, ledgers, e.stateDir, testPorts.WriteFeedCursor, testPorts.ReadFeedCursor, newPluginSenders(e.host, time.Now), RealClock(), e.log)
 	f.timing = fastFeed
 	e.feed = f
 	ctx, cancel := context.WithCancel(context.Background())

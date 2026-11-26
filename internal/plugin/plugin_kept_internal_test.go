@@ -107,7 +107,7 @@ func newKeptFixture(t *testing.T, names []string, scoped ...string) *keptFixture
 	raw, err := json.Marshal(f.cfg)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(f.configPath, raw, 0o600))
-	store, err := NewPluginhost(f.state, time.Now)
+	store, err := NewPluginhost(testFiles, f.state, time.Now)
 	require.NoError(t, err)
 	f.s = &KeptPlugins{
 		ports: testPorts,

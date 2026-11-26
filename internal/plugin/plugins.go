@@ -227,7 +227,7 @@ func NewFor(cfg config.Config, configPath string, o Options, log *slog.Logger) *
 	}
 	dir := filepath.Dir(configPath)
 	root, rootErr := Root(ep.mode, o.goos, dir)
-	trust, trustErr := NewTrustStore(ep.mode, o.goos, dir)
+	trust, trustErr := NewTrustStore(o.Ports.Files, ep.mode, o.goos, dir)
 	ep.root, ep.trust = root, trust
 	ep.rootErr = errors.Join(rootErr, trustErr)
 	for _, p := range configured {

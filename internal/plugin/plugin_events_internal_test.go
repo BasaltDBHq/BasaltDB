@@ -90,7 +90,7 @@ func withheldBy(ctx context.Context, want pluginWant, ledgers map[string]AgentLe
 
 func (l pluginLedgers) record(t *testing.T, f *pluginFixture, ep *Plugins) {
 	t.Helper()
-	RecordEvents(context.Background(), f.cfg, f.configPath, ep, l.dbs, slog.New(slog.DiscardHandler))
+	RecordEvents(context.Background(), testFiles, f.cfg, f.configPath, ep, l.dbs, slog.New(slog.DiscardHandler))
 }
 
 // A served entry is recorded PLUGIN_ENABLED once in each listed agent's
@@ -218,7 +218,7 @@ func TestChangedEntryWritesChanged(t *testing.T) {
 	l := newPluginLedgers(t, f)
 	ep := f.plugins(nil)
 	discard := slog.New(slog.DiscardHandler)
-	want := wantedPlugins(f.cfg, ep, trustedKeys(f.cfg, f.configPath, discard))
+	want := wantedPlugins(f.cfg, ep, trustedKeys(testFiles, f.cfg, f.configPath, discard))
 	require.Empty(t, withheldBy(context.Background(), want, l.dbs, discard))
 	d := want.served["product_a"][p.Key()]
 	d.Egress = []string{"ner.acme.example:443"}
@@ -288,7 +288,7 @@ func TestUnrecordedEntryIsNotServed(t *testing.T) {
 	l := newPluginLedgers(t, f)
 	broken := map[string]AgentLedger{"product_a": l.dbs["product_a"], "client_x": {ports: testPorts, db: l.d.Admin}} // not an agent role: refused
 	ep := f.plugins(nil)
-	RecordEvents(context.Background(), f.cfg, f.configPath, ep, broken, slog.New(slog.DiscardHandler))
+	RecordEvents(context.Background(), testFiles, f.cfg, f.configPath, ep, broken, slog.New(slog.DiscardHandler))
 	require.Empty(t, l.events(t, "client_x"))
 	require.Equal(t, []string{"PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED"}, kindsOf(l.events(t, "product_a")))
 
@@ -306,7 +306,7 @@ func TestUnrecordedEntryIsNotServed(t *testing.T) {
 	solo := newPluginFixture(t)
 	q := solo.install("default", dial.TransportStdio, "client_x")
 	ep = solo.plugins(nil)
-	RecordEvents(context.Background(), solo.cfg, solo.configPath, ep, map[string]AgentLedger{}, slog.New(slog.DiscardHandler))
+	RecordEvents(context.Background(), testFiles, solo.cfg, solo.configPath, ep, map[string]AgentLedger{}, slog.New(slog.DiscardHandler))
 	require.Empty(t, ep.entries)
 	probs = ep.pluginProblems("client_x")
 	require.Equal(t, []string{problemPluginUnavailable}, codes(probs))
@@ -544,7 +544,7 @@ func TestUnrecordedTrustKeyWithholdsItsEntries(t *testing.T) {
 		"product_a": {ports: testPorts, db: refuseTrustKey{Querier: pgxOf(l.dbs["product_a"].db), keyID: v.SignerKeyID}},
 		"client_x":  l.dbs["client_x"],
 	}
-	RecordEvents(context.Background(), f.cfg, f.configPath, ep, ledgers, slog.New(slog.DiscardHandler))
+	RecordEvents(context.Background(), testFiles, f.cfg, f.configPath, ep, ledgers, slog.New(slog.DiscardHandler))
 
 	rows := l.events(t, "product_a")
 	require.Equal(t, []string{"PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED"}, kindsOf(rows), "only the other key and its entry")
@@ -653,7 +653,7 @@ func TestTrustRemovedOnVersion3IsOnlyLogged(t *testing.T) {
 		"product_a": {ports: testPorts, db: refuseKind{Querier: pgxOf(l.dbs["product_a"].db), kind: guardmodel.PluginTrustRemoved}},
 		"client_x":  l.dbs["client_x"],
 	}
-	RecordEvents(context.Background(), f.cfg, f.configPath, ep, v3, slog.New(slog.DiscardHandler))
+	RecordEvents(context.Background(), testFiles, f.cfg, f.configPath, ep, v3, slog.New(slog.DiscardHandler))
 	require.Empty(t, ep.unrecordedFor(p.Key(), "product_a"))
 	require.Equal(t, []string{"PLUGIN_TRUST_ADDED", "PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED"}, kindsOf(l.events(t, "product_a")))
 }

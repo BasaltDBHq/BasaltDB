@@ -55,7 +55,7 @@ type UnitSource struct {
 func osUnitSource(p Ports) *UnitSource {
 	return &UnitSource{
 		ReadUnit: func(path string) ([]byte, error) {
-			f, err := os.Open(path)
+			f, err := p.Files.OpenFile(path, os.O_RDONLY, 0)
 			if err != nil {
 				return nil, err
 			}

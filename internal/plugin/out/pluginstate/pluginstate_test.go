@@ -32,3 +32,14 @@ func TestWriteFeedCursorMakesTheDirectoryAndAPrivateFile(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, entries, 1, "no temporary file left behind")
 }
+
+func TestReadFeedCursorReadsWhatWasWritten(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "plugin-cursors", "slack", "main")
+	_, err := pluginstate.ReadFeedCursor(dir, "bot.json")
+	require.ErrorIs(t, err, os.ErrNotExist)
+	require.NoError(t, pluginstate.WriteFeedCursor(dir, "bot.json", []byte(`{"seq":3}`)))
+	raw, err := pluginstate.ReadFeedCursor(dir, "bot.json")
+	require.NoError(t, err)
+	require.Equal(t, `{"seq":3}`, string(raw))
+}

@@ -766,7 +766,7 @@ func (s *KeptPlugins) listed(p config.Plugin, source string, scope Scope, reader
 		root, err = Root(trustMode, s.goos, filepath.Dir(s.configPath))
 		if err == nil {
 			var trust TrustStore
-			trust, err = NewTrustStore(trustMode, s.goos, filepath.Dir(s.configPath))
+			trust, err = NewTrustStore(s.ports.Files, trustMode, s.goos, filepath.Dir(s.configPath))
 			if err == nil {
 				v, err = Verify(root, k, p.ManifestSHA256, trust, trustMode)
 			}
@@ -891,8 +891,8 @@ func (r *keptApprovalReader) stateOf(agent string, k pluginmodel.EntryKey) Plugi
 // are swept. A store that cannot be opened is logged and nil: no
 // engine-kept entry is served, and the person socket answers the plugin
 // methods UNKNOWN_METHOD.
-func OpenKeptStore(cfg config.Config, stateDir string, log *slog.Logger) *Store {
-	store, err := NewPluginhost(stateDir, time.Now)
+func OpenKeptStore(files Files, cfg config.Config, stateDir string, log *slog.Logger) *Store {
+	store, err := NewPluginhost(files, stateDir, time.Now)
 	if err != nil {
 		log.Error("engine-kept plugins are not served: the state directory cannot hold them", "err", err)
 		return nil

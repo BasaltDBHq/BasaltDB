@@ -16,10 +16,25 @@ import (
 
 // fileReads are the calls that open or read a file by path: the plugin
 // package reads engine.json only through Ports.ReadConfig (as root, the
-// engine's hardened read), so every other one must be listed here.
+// engine's hardened read), so every other one must be listed here. "files"
+// is the Files port, whatever value holds it (a field or a parameter named
+// files or Files).
 var fileReads = map[string]map[string]bool{
 	"os":     {"ReadFile": true, "Open": true, "OpenFile": true},
 	"config": {"Load": true, "LoadOpen": true, "LoadOpenRaw": true, "LoadNoFollow": true},
+	"files":  {"ReadFile": true, "OpenFile": true, "OpenRoot": true},
+}
+
+// isFilesPort reports whether x names the Files port: an identifier or a
+// field selector named files or Files.
+func isFilesPort(x ast.Expr) bool {
+	switch x := x.(type) {
+	case *ast.Ident:
+		return x.Name == "files" || x.Name == "Files"
+	case *ast.SelectorExpr:
+		return x.Sel.Name == "files" || x.Sel.Name == "Files"
+	}
+	return false
 }
 
 // pluginFileReads are the only places in the plugin package's own sources
@@ -27,16 +42,19 @@ var fileReads = map[string]map[string]bool{
 // by path, as file:function:package.call(path argument), with why none is
 // engine.json.
 var pluginFileReads = map[string]string{
-	"install.go:copyFile:os.OpenFile(dst)":                                                  "creates a copy's file in the plugin root (O_EXCL)",
-	"install.go:writeNew:os.OpenFile(p)":                                                    "creates a new file in the plugin root (O_EXCL)",
-	"kept_entries.go:readEntries:os.OpenFile(p)":                                            "the engine-kept entries file in the state directory, no link followed",
-	"plugin_feed.go:load:os.ReadFile(filepath.Join(r.cursorDir(), r.pair.agent+\".json\"))": "a feed cursor in the state directory",
-	"plugin_watch.go:step:os.ReadFile(w.ep.kept.EntriesPath())":                             "the engine-kept entries file, for its change",
-	"plugin_watch.go:stepKept:os.ReadFile(w.ep.kept.EntriesPath())":                         "the engine-kept entries file, for its change",
-	"plugins_service.go:osUnitSource:os.Open(path)":                                         "a service plugin's systemd or launchd unit file",
-	"trust.go:readNoFollow:os.OpenFile(path)":                                               "a copy's manifest or signature, no link followed",
-	"trust.go:readOwned:os.OpenFile(path)":                                                  "a key in the trust store, no link followed, owner checked",
-	"verify.go:checkFileHash:os.OpenFile(p)":                                                "a copy's file in the plugin root, no link followed",
+	"install.go:Stage:files.OpenRoot(src)":                                                  "the plugin source directory the person named, opened as a root",
+	"install.go:copyFile:files.OpenFile(dst)":                                               "creates a copy's file in the plugin root (O_EXCL)",
+	"install.go:writeNew:files.OpenFile(p)":                                                 "creates a new file in the plugin root (O_EXCL)",
+	"kept_entries.go:Manifest:files.OpenRoot(t.Dir)":                                        "an upload's directory in the state directory, opened as a root",
+	"kept_entries.go:readEntries:files.OpenFile(p)":                                         "the engine-kept entries file in the state directory, no link followed",
+	"kept_upload.go:MarkExecutables:files.OpenRoot(t.Dir)":                                  "an upload's directory in the state directory, opened as a root",
+	"kept_upload.go:writePart:files.OpenRoot(filepath.Join(s.uploadsDir(), u.id.String()))": "an upload's directory in the state directory, opened as a root",
+	"plugin_watch.go:step:files.ReadFile(w.ep.kept.EntriesPath())":                          "the engine-kept entries file, for its change",
+	"plugin_watch.go:stepKept:files.ReadFile(w.ep.kept.EntriesPath())":                      "the engine-kept entries file, for its change",
+	"plugins_service.go:osUnitSource:files.OpenFile(path)":                                  "a service plugin's systemd or launchd unit file",
+	"trust.go:readNoFollow:files.OpenFile(path)":                                            "a copy's manifest or signature, no link followed",
+	"trust.go:readOwned:files.OpenFile(path)":                                               "a key in the trust store, no link followed, owner checked",
+	"verify.go:checkFileHash:files.OpenFile(p)":                                             "a copy's file in the plugin root, no link followed",
 }
 
 // fileReadsIn lists the calls of fileReads in f, as name:function:pkg.call.
@@ -64,6 +82,11 @@ func fileReadsIn(name string, f *ast.File) []string {
 		sel, ok := n.(*ast.SelectorExpr)
 		if !ok {
 			return "", false
+		}
+		if isFilesPort(sel.X) && fileReads["files"][sel.Sel.Name] {
+			if id, ok := sel.X.(*ast.Ident); !ok || names[id.Name] == "" {
+				return "files." + sel.Sel.Name, true
+			}
 		}
 		id, ok := sel.X.(*ast.Ident)
 		if !ok {
@@ -172,4 +195,10 @@ func a() { stdos.ReadFile("p"); cfg.LoadOpenRaw("p", nil) }
 import "os"
 func a() { os.Stat("p"); os.WriteFile("p", nil, 0) }
 `)))
+	require.Equal(t, []string{"x.go:a:files.ReadFile(\"p\")", "x.go:b:files.OpenFile(path)", "x.go:c:files.OpenRoot(dir)"},
+		fileReadsIn("x.go", parse(`package p
+func a(files Files) { files.ReadFile("p"); files.Lstat("p") }
+func b() { s.files.OpenFile(path, 0, 0) }
+func c() { ep.o.Ports.Files.OpenRoot(dir) }
+`)), "a read through the Files port is seen")
 }

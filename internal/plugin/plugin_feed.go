@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log/slog"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"time"
@@ -61,10 +60,12 @@ type pluginFeed struct {
 	dir string
 	// writeCursor writes a cursor file (Ports.WriteFeedCursor).
 	writeCursor func(dir, name string, raw []byte) error
-	senders     *pluginSenders
-	clock       Clock
-	log         *slog.Logger
-	timing      feedTiming
+	// readCursor reads a cursor file (Ports.ReadFeedCursor).
+	readCursor func(dir, name string) ([]byte, error)
+	senders    *pluginSenders
+	clock      Clock
+	log        *slog.Logger
+	timing     feedTiming
 
 	// reads lets one feed read run per agent at a time, so the feed takes
 	// at most one connection of an agent's pool.
@@ -82,10 +83,11 @@ type feedPair struct {
 // keeping cursors under stateDir, written with writeCursor; with no
 // stateDir it feeds nothing and only keeps the senders.
 func newPluginFeed(host *Host, served func() []pluginmodel.Entry, ledgers map[string]AgentLedger, stateDir string,
-	writeCursor func(dir, name string, raw []byte) error, senders *pluginSenders, clock Clock, log *slog.Logger,
+	writeCursor func(dir, name string, raw []byte) error, readCursor func(dir, name string) ([]byte, error),
+	senders *pluginSenders, clock Clock, log *slog.Logger,
 ) *pluginFeed {
-	if host == nil || served == nil || writeCursor == nil || senders == nil || clock == nil || log == nil {
-		panic("engine: the plugin feed needs a host, the served entries, a cursor writer, senders, a clock and a log")
+	if host == nil || served == nil || writeCursor == nil || readCursor == nil || senders == nil || clock == nil || log == nil {
+		panic("engine: the plugin feed needs a host, the served entries, a cursor writer and reader, senders, a clock and a log")
 	}
 	dir := ""
 	if stateDir != "" {
@@ -96,7 +98,7 @@ func newPluginFeed(host *Host, served func() []pluginmodel.Entry, ledgers map[st
 		reads[name] = make(chan struct{}, 1)
 	}
 	return &pluginFeed{
-		host: host, served: served, ledgers: ledgers, dir: dir, writeCursor: writeCursor,
+		host: host, served: served, ledgers: ledgers, dir: dir, writeCursor: writeCursor, readCursor: readCursor,
 		senders: senders, clock: clock, log: log, timing: defaultFeedTiming,
 		reads: reads, readers: map[feedPair]*feedReader{},
 	}
@@ -532,7 +534,7 @@ func (r *feedReader) moveTo(install uuid.UUID, seq int64) {
 
 // load reads the cursor file; a missing or unreadable one leaves no cursor.
 func (r *feedReader) load() {
-	raw, err := os.ReadFile(filepath.Join(r.cursorDir(), r.pair.agent+".json"))
+	raw, err := r.f.readCursor(r.cursorDir(), r.pair.agent+".json")
 	if err != nil {
 		return
 	}

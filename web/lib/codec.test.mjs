@@ -283,22 +283,23 @@ test("the engine's request may carry revealNonce; a bad one is refused", async (
   await assert.rejects(checkApprovalRequest({ ...req, revealNonce: nonce.slice(0, 21) + "B" }), CodeError);
 });
 
-test("the engine's request may carry the column order, for display only, each name once", async () => {
+test("the engine's request may carry the field order, for display only, each name once", async () => {
   const { approvalId, binding, lines } = fixtures.request;
   const req = { approvalId, binding, lines };
-  const got = await checkApprovalRequest({ ...req, columns: { "public.leads": ["id", "name", "id", "status"] } });
-  assert.deepEqual([...got.columns], [["public.leads", ["id", "name", "status"]]]);
+  const got = await checkApprovalRequest({ ...req, fields: { "public.leads": ["id", "name", "id", "status"] } });
+  assert.deepEqual([...got.fields], [["public.leads", ["id", "name", "status"]]]);
   const bare = await checkApprovalRequest(req);
-  assert.equal(bare.columns.size, 0);
-  for (const columns of [[], null, { t: "id" }, { t: [""] }, { t: [1] }]) {
-    await assert.rejects(checkApprovalRequest({ ...req, columns }), CodeError, JSON.stringify(columns));
+  assert.equal(bare.fields.size, 0);
+  for (const fields of [[], null, { t: "id" }, { t: [""] }, { t: [1] }]) {
+    await assert.rejects(checkApprovalRequest({ ...req, fields }), CodeError, JSON.stringify(fields));
   }
+  await assert.rejects(checkApprovalRequest({ ...req, columns: { "public.leads": ["id"] } }), CodeError, "the old name columns is refused");
   await assert.rejects(checkApprovalRequest({ ...req, agentName: "bot" }), CodeError, "no agentName: the page derives it from the signed role");
 });
 
-test("a long link carries no columns: format 2 has no place for them", async () => {
+test("a long link carries no fields: format 2 has no place for them", async () => {
   const req = await parseApprovalRequest(fixtures.request.fragment);
-  assert.equal(req.columns.size, 0);
+  assert.equal(req.fields.size, 0);
 });
 
 // rehashed is the fixture's approval request with its lines and binding

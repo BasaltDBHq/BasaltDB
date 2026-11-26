@@ -21,7 +21,7 @@ import (
 func TestRevertStepsKeepTheFilters(t *testing.T) {
 	t.Parallel()
 	run := uuid.MustParse(caseRunID)
-	scope := action.Scope{Kind: revert.ScopeTask, ID: run, Runs: []uuid.UUID{run}, Tables: []string{"public.leads", "public.lead_owner"}}
+	scope := action.Scope{Kind: revert.ScopeTask, ID: run, Runs: []uuid.UUID{run}, Resources: []string{"public.leads", "public.lead_owner"}}
 	require.Equal(t, map[string]any{"taskId": caseRunID, "runs": []string{caseRunID}, "resources": []string{"public.leads", "public.lead_owner"}},
 		scopeArgs(scope))
 	require.Equal(t, map[string]any{"runId": caseRunID}, scopeArgs(action.Scope{Kind: revert.ScopeRun, ID: run}))
@@ -29,7 +29,7 @@ func TestRevertStepsKeepTheFilters(t *testing.T) {
 	msg, steps, err := newService(t, "linux", "").previewGuidance(RevertPreview{Scope: scope, Rows: 2})
 	require.NoError(t, err)
 	require.Equal(t, scopeArgs(scope), steps[1].Arguments, "the request the person agrees to is the one previewed")
-	require.Contains(t, msg, "task "+caseRunID+", only 1 of its runs and tables public·leads and 1 more would restore")
+	require.Contains(t, msg, "task "+caseRunID+", only 1 of its runs and resources public·leads and 1 more would restore")
 	require.NotContains(t, msg, "basalt ", "the person runs no command")
 
 	r := revertOf(t, "Undo", []string{changedAfterLine}, false)
@@ -39,7 +39,7 @@ func TestRevertStepsKeepTheFilters(t *testing.T) {
 	var te *toolresult.ToolError
 	require.True(t, errors.As(newService(t, "linux", "").rowsChanged(r, "rows changed since"), &te))
 	require.Equal(t, want, te.NextSteps[0].Arguments)
-	require.Contains(t, te.PersonMessage, "run "+caseRunID+", only table public·lead_owner, so nothing was reverted")
+	require.Contains(t, te.PersonMessage, "run "+caseRunID+", only resource public·lead_owner, so nothing was reverted")
 
 	r.BindingText = ""
 	require.Equal(t, map[string]any{"runId": caseRunID}, expiredSteps(r)[1].Arguments, "a widened revert's binding is hidden")

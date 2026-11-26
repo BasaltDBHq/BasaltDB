@@ -196,8 +196,11 @@ func (t TrustStore) Add(pemBytes []byte) (keyID string, added bool, err error) {
 	if err != nil {
 		return "", false, err
 	}
-	if err := pluginhostWriteFileAtomic(t.dir, id+trustFileExt, canonical, keyFileMode); err != nil {
-		return "", false, err
+	// A trusted key records the person's decision: the directory is synced
+	// so it survives a crash.
+	path := filepath.Join(t.dir, id+trustFileExt)
+	if err := atomicfile.Write(path, canonical, atomicfile.Options{Mode: keyFileMode, SyncDir: true}); err != nil {
+		return "", false, pluginmodel.PathRefusal(path, "cannot be written")
 	}
 	return id, true, nil
 }
@@ -287,16 +290,6 @@ func chain(base, p string) []string {
 		out = append(out, cur)
 	}
 	return out
-}
-
-// pluginhostWriteFileAtomic writes name in dir through a temporary file and
-// a rename, with mode set explicitly.
-func pluginhostWriteFileAtomic(dir, name string, b []byte, mode os.FileMode) error {
-	path := filepath.Join(dir, name)
-	if err := atomicfile.Write(path, b, atomicfile.Options{Mode: mode}); err != nil {
-		return pluginmodel.PathRefusal(path, "cannot be written")
-	}
-	return nil
 }
 
 // readOwned is readNoFollow that also applies the path rule to the file it

@@ -115,7 +115,7 @@
       },
       "personMessage": {
         "type": "string",
-        "description": "with approvalId, the receipt line to show the person verbatim (CONTRACT.md, Vault channel, Receipts): what the person approved, as Postgres records it, or why there is no receipt. Absent on a write that was not held."
+        "description": "with approvalId, the receipt line to show the person verbatim (CONTRACT.md, Vault channel, Receipts): what the person approved, as the store records it, or why there is no receipt. Absent on a write that was not held."
       },
       "links": {
         "type": "array",

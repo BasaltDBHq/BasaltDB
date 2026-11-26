@@ -241,7 +241,7 @@ func (s *objectStore) refuse(reason action.RevertReason, detail, code string) er
 // resources. The store checks the names: their form, and that the agent
 // wrote each one in the scope.
 func (s *objectStore) selectChanges(scope action.Scope) ([]objChange, error) {
-	for _, name := range scope.Tables {
+	for _, name := range scope.Resources {
 		if !objResourceName.MatchString(name) {
 			return nil, s.refuse(action.RevertFilterName, objFilterNameDetail, "")
 		}
@@ -263,19 +263,19 @@ func (s *objectStore) selectChanges(scope action.Scope) ([]objChange, error) {
 		}
 		return nil, s.refuse(action.RevertInvalid, "this store reverts a change or a run", "")
 	}
-	if scope.Tables == nil {
+	if scope.Resources == nil {
 		return own, nil
 	}
 	written := map[string]bool{}
 	for _, c := range own {
 		written[c.resource] = true
 	}
-	for _, name := range scope.Tables {
+	for _, name := range scope.Resources {
 		if !written[name] {
 			return nil, s.refuse(action.RevertFilter, name+" has no change of yours in this run", "")
 		}
 	}
-	return slices.DeleteFunc(own, func(c objChange) bool { return !slices.Contains(scope.Tables, c.resource) }), nil
+	return slices.DeleteFunc(own, func(c objChange) bool { return !slices.Contains(scope.Resources, c.resource) }), nil
 }
 
 func rawJSON(v map[string]any) json.RawMessage {
@@ -484,7 +484,7 @@ func (s *objectStore) PrepareRevert(_ context.Context, scope action.Scope, inten
 	id := s.nextID()
 	b := revert.Binding{
 		Kind: revert.KindRevert, RevertID: id, Store: approval.BindingStore{Kind: objStoreKind, Name: "media-archive"},
-		Select: revert.Select{Scope: scope.Kind, ScopeID: scope.ID, Agents: []string{approval.AgentName(objAgent)}, Runs: scope.Runs, Resources: scope.Tables},
+		Select: revert.Select{Scope: scope.Kind, ScopeID: scope.ID, Agents: []string{approval.AgentName(objAgent)}, Runs: scope.Runs, Resources: scope.Resources},
 		Intent: intent, Rows: restore, Skipped: len(lines) - restore, RowsHash: approval.RowsHash(texts),
 		ExpiresAt: objNow.Add(time.Hour), RequestedBy: approval.AgentName(objAgent),
 	}

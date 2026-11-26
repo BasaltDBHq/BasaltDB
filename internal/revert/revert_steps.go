@@ -140,8 +140,8 @@ func scopeArgs(scope action.Scope) map[string]any {
 		}
 		args["runs"] = runs
 	}
-	if len(scope.Tables) > 0 {
-		args["resources"] = scope.Tables
+	if len(scope.Resources) > 0 {
+		args["resources"] = scope.Resources
 	}
 	return args
 }
@@ -165,26 +165,26 @@ func proposalOf(r action.Revert) action.Scope {
 		// scope alone, and the page shows the person what a new request holds.
 		return scope
 	}
-	scope.Runs, scope.Tables = b.Select.Runs, b.Select.Resources
+	scope.Runs, scope.Resources = b.Select.Runs, b.Select.Resources
 	return scope
 }
 
-// maxFilterTableChars is how much of a filter's first table name a
+// maxFilterResourceChars is how much of a filter's first resource name a
 // person's message shows; the page shows them all.
-const maxFilterTableChars = 32
+const maxFilterResourceChars = 32
 
-// filterText names scope's runs and tables filters for a person, "" when it
-// has none: the count of runs, the first table and how many more.
+// filterText names scope's runs and resources filters for a person, "" when
+// it has none: the count of runs, the first resource and how many more.
 func filterText(scope action.Scope) string {
 	var parts []string
 	if n := len(scope.Runs); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d of its runs", n))
 	}
-	switch n := len(scope.Tables); {
+	switch n := len(scope.Resources); {
 	case n == 1:
-		parts = append(parts, "table "+guidance.Shown(scope.Tables[0], maxFilterTableChars))
+		parts = append(parts, "resource "+guidance.Shown(scope.Resources[0], maxFilterResourceChars))
 	case n > 1:
-		parts = append(parts, fmt.Sprintf("tables %s and %d more", guidance.Shown(scope.Tables[0], maxFilterTableChars), n-1))
+		parts = append(parts, fmt.Sprintf("resources %s and %d more", guidance.Shown(scope.Resources[0], maxFilterResourceChars), n-1))
 	}
 	if len(parts) == 0 {
 		return ""

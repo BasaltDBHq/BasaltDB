@@ -120,7 +120,7 @@ func TestRevertFiltersNarrowTheProposal(t *testing.T) {
 	require.Equal(t, map[string]any{"taskId": env.taskID, "runs": []any{env.run1}, "resources": []any{"public.leads"}}, step["arguments"],
 		"the request the steps lead to is the one previewed, filters included")
 	msg := str(t, body["personMessage"])
-	require.Contains(t, msg, "task "+env.taskID+", only 1 of its runs and table public·leads would restore 1 rows", msg)
+	require.Contains(t, msg, "task "+env.taskID+", only 1 of its runs and resource public·leads would restore 1 rows", msg)
 	require.NotContains(t, msg, "basalt ", "the person runs no command")
 
 	for _, tc := range []struct {
@@ -134,7 +134,7 @@ func TestRevertFiltersNarrowTheProposal(t *testing.T) {
 			map[string]any{"runId": env.run1, "resources": []any{"public.lead_owner"}},
 			revert.ScopeRun, nil,
 			[]string{"public.lead_owner"},
-			"Revert of run " + env.run1 + ", only table public·lead_owner: 1 rows to restore",
+			"Revert of run " + env.run1 + ", only resource public·lead_owner: 1 rows to restore",
 		},
 		{
 			map[string]any{"taskId": env.taskID, "runs": []any{env.run2}},

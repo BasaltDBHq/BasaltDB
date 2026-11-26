@@ -119,7 +119,10 @@ func TestToolErrorMapping(t *testing.T) {
 		{context.DeadlineExceeded, guidance.CodeUnavailable, guidance.ReasonDatabaseUnreachable, ""},
 		{fmt.Errorf("list: %w", ledger.ErrInvalidParams), guidance.CodeInvalidArgument, "", ""},
 		{guard.ErrInvalidIntent, guidance.CodeInvalidArgument, "", ""},
-		{fmt.Errorf("list: %w: invalid cursor: missing id", ledger.ErrInvalidParams), guidance.CodeInvalidArgument, guidance.ReasonStaleCursor, ""},
+		{fmt.Errorf("list: %w: %w: missing id", ledger.ErrInvalidParams, pagination.ErrStaleCursor), guidance.CodeInvalidArgument, guidance.ReasonStaleCursor, ""},
+		{pagination.StaleCursor("not a search cursor"), guidance.CodeInvalidArgument, guidance.ReasonStaleCursor, ""},
+		// The reason comes from the typed error, never from the text.
+		{fmt.Errorf("list: %w: invalid cursor: missing id", ledger.ErrInvalidParams), guidance.CodeInvalidArgument, "", ""},
 		{store.MapError(&pgconn.PgError{Code: "BS007", Message: "NOT_ALLOWED", Detail: "table public.t has no primary key"}), guidance.CodeStatementRefused, guidance.ReasonNoPrimaryKey, "BS007"},
 		{errors.New("password=hunter2 something broke"), guidance.CodeInternal, "", ""},
 	}

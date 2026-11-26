@@ -141,13 +141,9 @@ func (s *Store) Update(cfg config.Config, change func([]config.Plugin) ([]config
 	if err != nil {
 		return err
 	}
-	return writeAtomic(s.stateDir, EntriesFile, append(raw, '\n'))
-}
-
-// writeAtomic writes name in dir whole: a new temporary file, synced, then
-// renamed into place, mode 0600.
-func writeAtomic(dir, name string, raw []byte) error {
-	return atomicfile.Write(filepath.Join(dir, name), raw, atomicfile.Options{Mode: privateFile})
+	// The entries record the person's approvals: the directory is synced so
+	// a written approval survives a crash.
+	return atomicfile.Write(filepath.Join(s.stateDir, EntriesFile), append(raw, '\n'), atomicfile.Options{Mode: privateFile, SyncDir: true})
 }
 
 // Stage checks the taken upload as a copy of entry (name, instance): it

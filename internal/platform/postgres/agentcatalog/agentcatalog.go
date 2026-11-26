@@ -107,9 +107,24 @@ func (c Catalog) Search(ctx context.Context, q string, exclude []agentstore.Fiel
 	}
 	out := make([]agentstore.Match, len(ms))
 	for i, m := range ms {
-		out[i] = agentstore.Match{Resource: pgResource(m.Relation), Rank: m.Rank, Matched: m.Matched}
+		out[i] = agentstore.Match{Resource: pgResource(m.Relation), Rank: m.Rank, Matched: pgMatched(m.Matched)}
 	}
 	return out, nil
+}
+
+// pgMatched is a match's reason in the store-neutral words: the catalog's
+// "table", "schema" and "column <name>" are "resource", "namespace" and
+// "field <name>"; "comment" stays.
+func pgMatched(m string) string {
+	switch {
+	case m == "table":
+		return "resource"
+	case m == "schema":
+		return "namespace"
+	case strings.HasPrefix(m, "column "):
+		return "field " + strings.TrimPrefix(m, "column ")
+	}
+	return m
 }
 
 func (c Catalog) Structure(ctx context.Context) ([]string, error) { return c.pg.Structure(ctx) }

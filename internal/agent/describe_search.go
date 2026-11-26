@@ -8,7 +8,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
-	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
@@ -88,7 +87,7 @@ func encodeSearchCursor(c agentstore.Cursor) string {
 
 // decodeSearchCursor reads a cursor describe returned for a search.
 func decodeSearchCursor(cursor string) (agentstore.Cursor, error) {
-	stale := &guidance.ArgumentError{Message: "invalid arguments: the cursor is not one describe returned for a search", Reason: guidance.ReasonStaleCursor}
+	stale := pagination.StaleCursor("invalid arguments: the cursor is not one describe returned for a search")
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
 		return agentstore.Cursor{}, stale

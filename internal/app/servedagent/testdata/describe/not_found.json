@@ -1,7 +1,7 @@
 {
   "code": "NOT_FOUND",
   "docsUrl": "https://docs.basaltvault.app/reference/errors/#not-found",
-  "message": "\"shop.audit\" is not a table this agent can read: it does not exist, or the agent has no access to it",
+  "message": "\"shop.audit\" is not a resource this agent can read: it does not exist, or the agent has no access to it",
   "nextSteps": [
     {
       "action": "CALL_TOOL",
@@ -9,25 +9,25 @@
       "arguments": {
         "query": "audit"
       },
-      "text": "Search for the table by name: it may be spelled differently or sit in another schema.",
+      "text": "Search for the resource by name: it may be spelled differently or sit in another namespace.",
       "tool": "describe"
     },
     {
       "action": "ASK_PERSON",
       "actor": "AGENT",
-      "text": "Tell the person the table was not found or is not granted to you, and ask whether you should have it."
+      "text": "Tell the person the resource was not found or is not granted to you, and ask whether you should have it."
     },
     {
       "action": "TELL_AGENT",
       "actor": "PERSON",
-      "text": "Tell the agent to add the table once you decide it should have it, or which table to use instead."
+      "text": "Tell the agent to add the resource once you decide it should have it, or which resource to use instead."
     },
     {
       "action": "RUN_COMMAND",
       "actor": "AGENT",
       "command": "basalt init --agent bot",
-      "text": "When the person tells you to add it, run this and show them the link it prints, where they grant the table."
+      "text": "When the person tells you to add it, run this and show them the link it prints, where they grant the resource."
     }
   ],
-  "personMessage": "The agent asked for a table it cannot see: it does not exist, or the agent may not read it. An agent uses one database; a table in another database needs its own agent. To give the agent a table, tell it: it gives you a link where you pick the tables."
+  "personMessage": "The agent asked for a resource it cannot see: it does not exist, or the agent may not read it. An agent uses one database; a resource in another database needs its own agent. To give the agent a resource, tell it: it gives you a link where you pick the resources."
 }

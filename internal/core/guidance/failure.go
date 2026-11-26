@@ -41,7 +41,7 @@ func DescribeTimeoutText(f Failure) string {
 	case f.Arg(ArgQuery) != "":
 		return "Search with a longer, more specific query so the catalog answers in time, then call describe again."
 	case f.Arg(ArgResource) != "":
-		return "The catalog was slow: call describe for this table once more, or search with a query for the columns you need."
+		return "The catalog was slow: call describe for this resource once more, or search with a query for the fields you need."
 	}
 	return "The catalog was slow: call describe once more, or search with a query for the resources you need."
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 // Feed timing (CONTRACT.md, Plugins, Notifier messages, Limits and numbers).
@@ -519,7 +520,12 @@ func (r *feedReader) moveTo(install uuid.UUID, seq int64) {
 	r.cur = &feedCursor{InstallID: install, Seq: seq}
 	raw, err := json.Marshal(r.cur)
 	if err == nil {
-		err = writeFileAtomic(r.cursorDir(), r.pair.agent+".json", raw)
+		err = os.MkdirAll(r.cursorDir(), stateDirMode)
+	}
+	if err == nil {
+		// A cursor lost in a crash replays events, which at least once
+		// allows: no directory sync.
+		err = atomicfile.Write(filepath.Join(r.cursorDir(), r.pair.agent+".json"), raw, atomicfile.Options{Mode: privateFile})
 	}
 	if err != nil {
 		r.log.Warn("plugin feed cursor not written; after a restart the events since its last write come again", "err", err)

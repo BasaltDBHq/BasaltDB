@@ -81,7 +81,7 @@ func (a scopeIDs) filtered(scope action.Scope) (action.Scope, error) {
 	for _, id := range a.Runs {
 		scope.Runs = append(scope.Runs, uuid.MustParse(id))
 	}
-	scope.Tables = a.Resources
+	scope.Resources = a.Resources
 	return scope, nil
 }
 

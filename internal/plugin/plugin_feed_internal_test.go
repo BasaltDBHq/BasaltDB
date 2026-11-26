@@ -696,7 +696,8 @@ func TestNewInstallStartsAtHead(t *testing.T) {
 	old, err := json.Marshal(feedCursor{InstallID: uuid.Must(uuid.NewV7()), Seq: 1})
 	require.NoError(t, err)
 	for _, k := range []pluginmodel.EntryKey{p.key, q.key} {
-		require.NoError(t, writeFileAtomic(filepath.Join(dir, k.Name, k.Instance), "product_a.json", old))
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, k.Name, k.Instance), 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, k.Name, k.Instance, "product_a.json"), old, 0o600))
 	}
 	e.applied("product_a")
 	enabled := e.recordServed(p.key, guardmodel.PluginEnabled)

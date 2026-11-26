@@ -62,7 +62,7 @@ Every package under `internal/` sits in one of the layers above. A new domain, o
 
 These rules sit beside the layer table. The last two are review rules; the others are checked by the goldens, the contract tests or depguard.
 
-- **Services may depend on services, one way.** Today: `agent` → `approval`, `ledger`, `links`, `pii`, `revert`; `approval` → `links`, `revert`; `revert` → `links`; `plugin` → `links`, `status`; `status` → `handoff`. Go refuses a cycle, and archtest compares this list with the imports, so a new edge is a change here. Before adding an edge, check whether what you need is shared wording for the agent, which belongs in `core/guidance`.
+- **Services may depend on services, one way.** Today: `agent` → `approval`, `ledger`, `links`, `pii`, `revert`; `approval` → `links`, `revert`; `revert` → `links`; `handoff` → `setup` (the login proof); `plugin` → `links`, `status`; `status` → `handoff`. Go refuses a cycle, and archtest compares this list with the imports, so a new edge is a change here. Before adding an edge, check whether what you need is shared wording for the agent, which belongs in `core/guidance`.
 - **The consumer declares the port.** The package that calls a port defines the interface, with one method per question it asks. Where `internal/app` implements a port, the method is a one-line forward.
 - **An inbound adapter only translates.** It decodes a request, calls one service and encodes the answer. A domain's MCP package exports `Tools(port, mount)`; `internal/app` composes every domain's tools in a fixed order and wraps each one once with the admin-credential refusal.
 - **Code lives with its callers and its data,** not with the topic in its name. A builder that only the status report uses stays in `internal/status`, even if it talks about setup.
@@ -196,14 +196,14 @@ A new core package adds a row to the register below, and the test fails until it
 
 Every package directly under `internal/core` has one row: its area, its kind, the rule above that admitted it (1, 2 or 3), the standard-library packages beyond the pure set that it may import, and its codec functions.
 
-A codec function is a function of a decision package that only decodes, parses or checks the format of its input. Any layer may call it, because it decides nothing. List a function only if it is that: one that decides allowed, held, refused, valid, a scope or a plan stays a decision. Only a decision package has the column filled. The test fails if a listed function does not exist.
+A codec function is a function of a decision package that only encodes, decodes, parses or checks the format of its input. Any layer may call it, because it decides nothing. List a function only if it is that: one that decides allowed, held, refused, valid, a scope or a plan stays a decision. Only a decision package has the column filled. The test fails if a listed function does not exist.
 
 | Package | Area | Kind | Admitted by | Extra imports | Codec functions |
 |---|---|---|---|---|---|
 | `sqlguard` | SQL policy | decision | 1 | - | - |
 | `approval` | approvals | decision | 1 | - | `DecodeResponse`, `DecodePluginResponse`, `CheckTexts` |
 | `revert` | reverts | decision | 1 | - | `ParseBinding`, `DecodeResponse` |
-| `passkey` | approvals and reverts | decision | 1 | - | `PublicKeyFromXY` |
+| `passkey` | approvals and reverts | decision | 1 | - | `PublicKeyFromXY`, `CheckCode` |
 | `pii` | PII handling | decision | 1 | - | `CheckDictionarySize`, `OpenDictionary`, `NewKeys` |
 | `chainpin` | ledger | decision | 1 | - | `CheckName` |
 | `action` | ledger | types | 2 | - | - |

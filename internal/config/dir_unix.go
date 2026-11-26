@@ -5,13 +5,13 @@ package config
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/ownerfile"
 )
 
 // LockAt is LockFile on the lock file name in d, a directory a root process
@@ -96,41 +96,27 @@ func ReadCredentialAt(d Dir, name string) (string, os.FileInfo, error) {
 }
 
 // ReadCredentialAtLimit is ReadCredentialAt for a file of at most limit
-// bytes, counted as stored (before the surrounding space is trimmed).
+// bytes, counted as stored (before the surrounding space is trimmed). The
+// checks are ownerfile's, on the file opened relative to d.
 func ReadCredentialAtLimit(d Dir, name string, limit int) (string, os.FileInfo, error) {
 	path := filepath.Join(d.Path(), name)
 	owner, err := d.Owner()
 	if err != nil {
 		return "", nil, err
 	}
-	f, err := OpenPlainAt(d, name, nil)
+	f, err := d.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return "", nil, err
 	}
 	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return "", nil, err
+	rules := ownerfile.Rules{
+		Owners:    []int{os.Geteuid(), owner},
+		OwnerName: fmt.Sprintf("this process's user or uid %d (the owner of %s)", owner, d.Path()),
+		MaxBytes:  int64(limit),
 	}
-	if fi.Mode().Perm()&credentialPermMask != 0 {
-		return "", nil, fmt.Errorf("credential file %s is mode %o; it must be readable by the engine's user only (0600)", path, fi.Mode().Perm())
-	}
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		return "", nil, errors.New("cannot read the file's owner")
-	}
-	if uid := int(st.Uid); uid != os.Geteuid() && uid != owner {
-		return "", nil, fmt.Errorf("credential file %s is owned by uid %d, not this process's user or uid %d (the owner of %s)", path, uid, owner, d.Path())
-	}
-	raw, err := io.ReadAll(io.LimitReader(f, int64(limit)+1))
-	if err != nil {
-		return "", nil, err
-	}
-	dsn := strings.TrimSpace(string(raw))
-	if dsn == "" || len(raw) > limit {
-		return "", nil, fmt.Errorf("credential file %s is empty or too large", path)
-	}
-	return dsn, fi, nil
+	raw, fi, err := ownerfile.ReadOpen(f, rules)
+	defer clear(raw)
+	return credentialText(path, raw, fi, err)
 }
 
 // SameFileAt reports whether name in d still names the file fi describes,

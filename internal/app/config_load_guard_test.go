@@ -64,7 +64,7 @@ var plainConfigLoads = map[string]string{
 	"internal/setup/in/localsetup/reset.go:engineConfig:Load":           "the setup page's reset, after refusing an engine that runs as root",
 	"internal/app/setup.go:agentServiceSpec:UpsertedVault":              "the hardened read: root opens the existing config through openEngineFile",
 	"internal/handoff/pathfiles.go:ClearSetup:ClearSetup":               "the engine's hand-off, as the engine's user",
-	"internal/handoff/setupfiles.go:change:UpdateConfig":                "the engine's hand-off, as the engine's user",
+	"internal/handoff/setupfiles.go:change:UpdateConfig":                "never as root: a root engine never collects an address (ErrEngineAsRoot), so the confirm step that writes the config is never reached",
 	"internal/setup/in/localsetup/agentjobs.go:forget:RemoveAgents":     "a removal, after configuredAgent refused an engine that runs as root",
 	"internal/setup/in/localsetup/run.go:writeConfig:UpsertAgentVault":  "an engine with no config writes its first engine.json; WaitsForConfig never waits as root",
 	"internal/setup/in/setupcli/remote.go:writeConfig:UpsertAgentVault": "not as root: as root the upsert goes through the config directory opened without following links (configDir)",

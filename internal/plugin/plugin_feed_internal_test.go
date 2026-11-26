@@ -368,10 +368,11 @@ func (e *feedEnv) installID() uuid.UUID {
 // waitSeqs waits until p received exactly want for agent, in order.
 func waitSeqs(t *testing.T, p *feedPlugin, agent string, want ...int64) {
 	t.Helper()
-	for deadline := time.Now().Add(10 * time.Second); !slices.Equal(p.seqsFor(agent), want) && time.Now().Before(deadline); {
+	got := p.seqsFor(agent)
+	for deadline := time.Now().Add(10 * time.Second); !slices.Equal(got, want) && time.Now().Before(deadline); got = p.seqsFor(agent) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	require.Equal(t, want, p.seqsFor(agent), "for %s", agent)
+	require.Equal(t, want, got, "for %s", agent)
 }
 
 func (g gotEvent) afterSeq() (int64, bool) {

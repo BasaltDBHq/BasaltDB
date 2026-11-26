@@ -64,6 +64,9 @@ func TestRegister(t *testing.T) {
 	for _, p := range checkRegister(pkgs, reg) {
 		t.Error(p)
 	}
+	for _, p := range checkTestHelpers(pkgs) {
+		t.Error(p)
+	}
 }
 
 // TestArchitecture fails on a violation the baseline does not list and on a
@@ -266,7 +269,15 @@ func TestRulesCatchViolations(t *testing.T) {
 		"internal/status/s_test.go":                "package status\n\n" + imp("github.com/jackc/pgx/v5"),
 		"internal/status/out/pgadapter/p.go":       "package pgadapter\n\n" + imp("github.com/jackc/pgx/v5"),
 		"internal/oddball/o.go":                    "package oddball\n",
-		"ARCHITECTURE.md":                          "| `sqlguard` | sql | decision | 1 | - | `Other` |\n| `leaky` | x | types | 2 | - | - |\n| `rnd` | x | codec | 3 | `crypto/rand` | - |\n| `granted` | x | codec | 3 | - | - |\n| `setupcode` | x | codec | 3 | `net` | - |\n| `textrule` | x | types | 2 | - | - |\n",
+		"internal/core/textrule/t.go":              "package textrule\n",
+		"internal/agent/loadtest/l.go":             "package loadtest\n\n" + imp(m+"internal/platform/db"),
+		"internal/core/fake/faketest/f.go":         "package faketest\n\n" + imp("os"),
+		"internal/core/leakytest/l.go":             "package leakytest\n\n" + imp("os"),
+		"cmd/loadtest/main.go":                     "package main\n\n" + imp(m+"internal/platform/db") + "func main() {}\n",
+		"internal/agent/agenttest/main.go":         "package main\n\n" + imp(m+"internal/platform/db") + "func main() {}\n",
+		"internal/platform/vault/v.go":             "package vault\n",
+		"internal/approval/a.go":                   "package approval\n\n" + imp(m+"internal/agent/loadtest"),
+		"ARCHITECTURE.md":                          "| `leakytest` | x | types | 2 | - | - |\n| `sqlguard` | sql | decision | 1 | - | `Other` |\n| `leaky` | x | types | 2 | - | - |\n| `rnd` | x | codec | 3 | `crypto/rand` | - |\n| `granted` | x | codec | 3 | - | - |\n| `setupcode` | x | codec | 3 | `net` | - |\n| `textrule` | x | types | 2 | - | - |\n",
 	}
 	root := fixture(t, files)
 	reg, err := parseRegister(filepath.Join(root, "ARCHITECTURE.md"))
@@ -294,9 +305,14 @@ func TestRulesCatchViolations(t *testing.T) {
 			"s.go imports github.com/jackc/pgx/v5/pgconn (a service reaches the database and the network through a port)",
 			"s.go imports net/http (a service reaches the database and the network through a port)",
 		},
-		"internal/oddball":        {"package is under internal/ but not in a layer"},
-		"internal/core/granted":   {"r.go imports crypto/rand (core must stay pure)"},
-		"internal/core/setupcode": {"a.go uses net.Dial (the register grants net for JoinHostPort only)"},
+		"internal/oddball":            {"package is under internal/ but not in a layer"},
+		"internal/agent/loadtest":     {"imports internal/platform/db"},
+		"internal/core/fake/faketest": {"f.go imports os (core must stay pure)"},
+		"internal/core/leakytest":     {"l.go imports os (core must stay pure)"},
+		"cmd/loadtest":                {"imports internal/platform/db"},
+		"internal/agent/agenttest":    {"imports internal/platform/db"},
+		"internal/core/granted":       {"r.go imports crypto/rand (core must stay pure)"},
+		"internal/core/setupcode":     {"a.go uses net.Dial (the register grants net for JoinHostPort only)"},
 		"internal/core/leaky": {
 			"l.go calls time.Now (core must stay pure)",
 			"l.go calls time.Since (core must stay pure)",

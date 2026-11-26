@@ -54,7 +54,7 @@ Three more rules sit on top of the table, all in `internal/testkit/archtest`.
 
 One import that looks like it crosses a domain on purpose: `internal/approval/in/approvalmcp` imports `internal/revert/in/revertmcp` for the pending-revert item. The approval domain holds a revert (the approval service's `PendingEntry` carries a `revert.PendingRevert`), and the MCP item that lists it is the revert tool's type. It is an inbound adapter importing another inbound adapter, which the table allows.
 
-Test files and the test helper packages are exempt from the layer rules, core purity and the decision rule. A test helper is named `<x>test` and sits next to `<x>` (`guardtest`, `mcptest`, `passkeytest`, `textruletest`, the core test oracles), or sits under `internal/testkit` or `internal/plugin/out/plugintransport/testnotifier`; the test finds them by that name, with no list to keep. No other non-test file imports a test helper (`TestArchitecture`); the smoke programs under `scripts/` may.
+Test files and the test helper packages are exempt from the layer rules, core purity and the decision rule. A test helper is named `<x>test` and sits in package `<x>` (`guardtest`, `passkeytest`, `textruletest`, the core test oracles), or sits under `internal/testkit` or `internal/plugin/out/plugintransport/testnotifier`; the test finds them by that shape. A program (`package main`, anything under `cmd/`) is never a helper by its name, and the three helpers that sit elsewhere (`mcptest`, `pagetest`, `adaptertest`) are named in the test. No other non-test file imports a test helper (`TestArchitecture`); the smoke programs under `scripts/` may.
 
 Every package under `internal/` sits in one of the layers above. A new domain, or any other new top-level directory under `internal/`, needs a row here and an entry in the test.
 
@@ -226,7 +226,7 @@ A codec function is a function of a decision package that only decodes, parses o
 
 ## Known violations
 
-The code does not meet every rule yet. `internal/testkit/archtest/baseline/` lists what is left, one file per importing package. A violation that is not listed fails the test, and so does a listed one that no longer exists: remove the line when you fix it, or run `go test ./internal/testkit/archtest -update`, which removes the fixed lines and never adds one. The baseline only shrinks: CI fails a pull request that adds a line to a baseline its base branch already has (`scripts/baseline-shrink.sh`, which reads the baselines from `scripts/shrink-only.txt`).
+The code does not meet every rule yet. `internal/testkit/archtest/baseline/` lists what is left, one file per importing package. A violation that is not listed fails the test, and so does a listed one that no longer exists: remove the line when you fix it, or run `go test ./internal/testkit/archtest -update`, which removes the fixed lines and never adds one. The baseline only shrinks: CI fails a pull request that adds a line to a baseline its base branch already has (`scripts/baseline-shrink.sh`, which reads the baselines from `scripts/shrink-only.txt`). A change that moves code and so renames a line lists the pair in `scripts/baseline-renames.txt`, which is empty once the renames are on master.
 
 ## Where is a feature
 

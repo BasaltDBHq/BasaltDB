@@ -130,31 +130,84 @@ func layerOf(rel string) string {
 	return "other"
 }
 
-// testHelperRoots are the test helper trees that do not end in "test": the
-// shared test kit, and the notifier plugin the plugin transport's tests run.
+// testHelperRoots are the test helper trees that are not named for the
+// package they fake: the shared test kit, and the notifier plugin the plugin
+// transport's tests run.
 var testHelperRoots = []string{
 	"internal/testkit",
 	"internal/plugin/out/plugintransport/testnotifier",
 }
 
-// isTestHelper reports whether the package at rel is a test helper: a
-// package only tests import (fakes, fixtures, the core test oracles). A
-// helper is named <x>test and sits beside <x>, or sits under a
-// testHelperRoots entry; a package below a helper is one too. Helpers are
-// exempt from the layer rules, core purity and the decision rule, and no
-// other non-test file may import one.
-func isTestHelper(rel string) bool {
+// testHelperBesides are the <x>test helpers that sit in a package other than
+// <x>: the MCP server's test client, the Vault's page fake and the plugin
+// adapters' test kit.
+var testHelperBesides = []string{
+	"internal/platform/mcpserver/mcptest",
+	"internal/platform/vault/pagetest",
+	"internal/plugin/out/plugintransport/adaptertest",
+}
+
+// isTestHelper reports whether the package at rel, among pkgs, is a test
+// helper: a package only tests import (fakes, fixtures, the core test
+// oracles). A helper sits under a testHelperRoots entry, or is named <x>test
+// and sits in package <x> (x/xtest), or is a testHelperBesides entry; a
+// package below a helper is one too. A program (package main, or anything
+// under cmd/) is never a helper by its name. Helpers are exempt from the
+// layer rules, core purity and the decision rule, and no other non-test file
+// may import one.
+func isTestHelper(pkgs map[string]*goPkg, rel string) bool {
 	for _, h := range testHelperRoots {
 		if rel == h || strings.HasPrefix(rel, h+"/") {
 			return true
 		}
 	}
-	for _, seg := range strings.Split(rel, "/") {
-		if len(seg) > len("test") && strings.HasSuffix(seg, "test") {
+	if rel == lCmd || strings.HasPrefix(rel, lCmd+"/") {
+		return false
+	}
+	for p := rel; p != "." && p != "/" && p != ""; p = path.Dir(p) {
+		if namedHelper(pkgs, p) {
 			return true
 		}
 	}
 	return false
+}
+
+// namedHelper reports whether the package at p is a helper by its name.
+func namedHelper(pkgs map[string]*goPkg, p string) bool {
+	pk := pkgs[p]
+	if pk == nil || isMain(pk) {
+		return false
+	}
+	if in(testHelperBesides, p) {
+		return true
+	}
+	base, parent := path.Base(p), path.Dir(p)
+	x, ok := strings.CutSuffix(base, "test")
+	return ok && x != "" && path.Base(parent) == x && pkgs[parent] != nil
+}
+
+// isMain reports whether pk is a program.
+func isMain(pk *goPkg) bool {
+	return len(pk.files) > 0 && pk.files[0].ast.Name.Name == "main"
+}
+
+// checkTestHelpers fails a testHelperRoots or testHelperBesides entry that
+// is no package of the tree.
+func checkTestHelpers(pkgs map[string]*goPkg) []string {
+	var problems []string
+	for _, h := range slices.Concat(testHelperRoots, testHelperBesides) {
+		found := false
+		for rel := range pkgs {
+			if rel == h || strings.HasPrefix(rel, h+"/") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			problems = append(problems, h+" is listed as a test helper but holds no package; remove it")
+		}
+	}
+	return problems
 }
 
 // register is the parsed core register of ARCHITECTURE.md.
@@ -334,7 +387,7 @@ func analyze(root string, reg *register) (violations, error) {
 	for rel, pk := range pkgs {
 		layer := layerOf(rel)
 		for _, f := range pk.files {
-			if isTestHelper(rel) || strings.Contains(rel, "/testdata") {
+			if isTestHelper(pkgs, rel) || strings.Contains(rel, "/testdata") {
 				continue
 			}
 			if layer == lCore {
@@ -346,7 +399,7 @@ func analyze(root string, reg *register) (violations, error) {
 					continue
 				}
 				target := strings.TrimPrefix(ip, modulePath+"/")
-				if isTestHelper(target) {
+				if isTestHelper(pkgs, target) {
 					if layer != lScripts {
 						v.add(rel, "imports "+target+" (a test helper: only test files import it)")
 					}

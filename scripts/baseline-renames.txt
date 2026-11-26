@@ -1,0 +1,2 @@
+# Baseline lines a change renames: "old line<TAB>new line", one per line.
+# scripts/baseline-shrink.sh pairs them; empty once they are on master.

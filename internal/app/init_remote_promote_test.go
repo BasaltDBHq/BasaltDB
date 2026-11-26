@@ -26,7 +26,7 @@ import (
 
 // loggedInConn is a driver connection the tests' recordedHost answers for:
 // nothing is queried through it. The CLI gets it as the shell hands every
-// connection it opens (newPGConn).
+// connection it opens (pgquerier.NeutralConn).
 type loggedInConn struct{ pgquerier.Querier }
 
 func (loggedInConn) Close(context.Context) error { return nil }
@@ -76,7 +76,9 @@ func runRemote(t *testing.T, h setupcli.Host, cfg string, login func(context.Con
 // again.
 func TestInitRemotePromotesPendingOnlyOnceTheSetupIsRecorded(t *testing.T) {
 	t.Parallel()
-	loggedIn := func(context.Context, string) (cli.AgentConn, error) { return newPGConn(loggedInConn{}), nil }
+	loggedIn := func(context.Context, string) (cli.AgentConn, error) {
+		return pgquerier.NeutralConn(loggedInConn{}), nil
+	}
 
 	cfg, credFile := pendingAgent(t)
 	cred, err := os.ReadFile(credFile)
@@ -189,7 +191,7 @@ func (h carrierHost) GuardAgentVersion(ctx context.Context, q setup.Querier) (in
 
 // The agent's login init --remote hands the guard's reads carries the
 // connection the CLI logged in with, which setupHost reads back through
-// pgquerier.Of: the shell's real carrier (newPGConn), not a test double of
+// pgquerier.Of: the shell's real carrier (pgquerier.NeutralConn), not a test double of
 // it.
 func TestInitRemoteHandsTheGuardTheAgentsOwnConnection(t *testing.T) {
 	t.Parallel()
@@ -199,7 +201,7 @@ func TestInitRemoteHandsTheGuardTheAgentsOwnConnection(t *testing.T) {
 	cfg, _ := pendingAgent(t)
 	var got pgquerier.Querier
 	_, err := runRemote(t, carrierHost{recordedHost: recordedHost{recorded: false}, got: &got}, cfg,
-		func(context.Context, string) (cli.AgentConn, error) { return newPGConn(conn), nil })
+		func(context.Context, string) (cli.AgentConn, error) { return pgquerier.NeutralConn(conn), nil })
 	require.NoError(t, err)
 	require.Same(t, conn, got)
 }

@@ -112,19 +112,19 @@ func TestPinnedHostReadsThePinOfTheCurrentTrust(t *testing.T) {
 	pgdial.SetTrust(func() *trustprofile.Set { return set })
 	t.Cleanup(func() { pgdial.SetTrust(nil) })
 
-	host, port, roots, ok := pgdial.PinnedHost(pinnedAdmin + pinnedHost + ":5433/app?sslmode=verify-full")
+	p, ok := pgdial.PinnedHost(pinnedAdmin + pinnedHost + ":5433/app?sslmode=verify-full")
 	require.True(t, ok)
-	require.Equal(t, pinnedHost, host)
-	require.Equal(t, 5433, port)
-	require.Len(t, roots, 1)
-	require.Equal(t, trustprofile.DERSHA256(ca), trustprofile.DERSHA256(roots[0]))
+	require.Equal(t, pinnedHost, p.Host)
+	require.Equal(t, 5433, p.Port)
+	require.Len(t, p.Roots, 1)
+	require.Equal(t, trustprofile.DERSHA256(ca), trustprofile.DERSHA256(p.Roots[0]))
 
 	for _, dsn := range []string{
 		pinnedAdmin + "db.other.example:5432/app?sslmode=verify-full",
 		pinnedAdmin + pinnedHost + ":5432/app?sslmode=require",
 		"postgres://%zz",
 	} {
-		_, _, _, ok := pgdial.PinnedHost(dsn)
+		_, ok := pgdial.PinnedHost(dsn)
 		require.False(t, ok, dsn)
 	}
 }

@@ -116,8 +116,10 @@ type Host interface {
 }
 
 // PinnedHost is a database host a trust profile pins: its name as pinned,
-// its port, and the certificates it is pinned to.
-type PinnedHost struct {
+// its port, and the certificates it is pinned to. An unnamed struct, so
+// the adapter that answers it returns the same type with no import of
+// this package.
+type PinnedHost = struct {
 	Host  string
 	Port  int
 	Roots []*x509.Certificate

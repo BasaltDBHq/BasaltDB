@@ -33,13 +33,14 @@ type FileRoot = interface {
 	// ReadOpen is Files.ReadOpen on name inside the root.
 	ReadOpen(name string, flag int, most int64, check func(fs.FileInfo) error) ([]byte, error)
 	// CopyOut opens name inside the root with flag and Stats that open
-	// file; check gets its details and returns the mode of the copy. It
+	// file; check, which is required (nil is refused before anything is
+	// opened), gets its details and returns the mode of the copy. It
 	// then creates dst (outside the root, O_EXCL, perm), copies the open
 	// file into it, sets mode on the new file, syncs and closes it.
 	CopyOut(name string, flag int, check func(fs.FileInfo) (fs.FileMode, error), dst string, perm fs.FileMode) error
 	// WriteOpen opens name inside the root with flag and perm, Stats that
-	// open file, runs check on its details and, when check passes, writes
-	// data to it.
+	// open file, runs check on its details (no Stat and no check when check
+	// is nil) and, when check passes, writes data to it.
 	WriteOpen(name string, flag int, perm fs.FileMode, check func(fs.FileInfo) error, data []byte) error
 	// Close closes the root.
 	Close() error
@@ -67,7 +68,8 @@ func (Files) ReadOpen(name string, flag int, most int64, check func(fs.FileInfo)
 }
 
 // HashOpen opens name with flag, Stats the open file, runs check on its
-// details and returns the SHA-256 of the whole open file, then closes it.
+// details (no Stat and no check when check is nil) and returns the SHA-256
+// of the whole open file, then closes it.
 func (Files) HashOpen(name string, flag int, check func(fs.FileInfo) error) ([]byte, error) {
 	f, err := os.OpenFile(name, flag, 0)
 	if err != nil {
@@ -115,6 +117,9 @@ func (r root) ReadOpen(name string, flag int, most int64, check func(fs.FileInfo
 }
 
 func (r root) CopyOut(name string, flag int, check func(fs.FileInfo) (fs.FileMode, error), dst string, perm fs.FileMode) error {
+	if check == nil {
+		return errNoCheck
+	}
 	in, err := r.r.OpenFile(name, flag, 0)
 	if err != nil {
 		return stepError(OpOpen, name, err)
@@ -154,8 +159,15 @@ func (r root) WriteOpen(name string, flag int, perm fs.FileMode, check func(fs.F
 	return nil
 }
 
-// statChecked Stats the open file f and runs check on its details.
+// errNoCheck: CopyOut takes the copy's mode from its check, so it needs one.
+var errNoCheck = errors.New("pluginfs: CopyOut needs a check")
+
+// statChecked Stats the open file f and runs check on its details; with no
+// check it does neither.
 func statChecked(f *os.File, name string, check func(fs.FileInfo) error) error {
+	if check == nil {
+		return nil
+	}
 	fi, err := f.Stat()
 	if err != nil {
 		return stepError(OpStat, name, err)
@@ -163,13 +175,10 @@ func statChecked(f *os.File, name string, check func(fs.FileInfo) error) error {
 	return check(fi)
 }
 
-// readChecked runs statChecked on f (unless check is nil) and reads up to
-// most bytes from it.
+// readChecked runs statChecked on f and reads up to most bytes from it.
 func readChecked(f *os.File, name string, most int64, check func(fs.FileInfo) error) ([]byte, error) {
-	if check != nil {
-		if err := statChecked(f, name, check); err != nil {
-			return nil, err
-		}
+	if err := statChecked(f, name, check); err != nil {
+		return nil, err
 	}
 	b, err := io.ReadAll(io.LimitReader(f, most))
 	if err != nil {

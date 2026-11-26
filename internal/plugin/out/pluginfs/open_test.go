@@ -217,3 +217,105 @@ func TestRootWriteOpenChecksBeforeWriting(t *testing.T) {
 	require.Equal(t, pluginfs.OpOpen, stepOf(t, err))
 	require.True(t, errors.Is(err, fs.ErrExist) || errors.Is(err, syscall.EEXIST))
 }
+
+// swapIn renames a file holding other over p: a path check after this
+// would see other, the open file is still the original.
+func swapIn(t *testing.T, p string, other []byte) {
+	t.Helper()
+	tmp := p + ".swap"
+	require.NoError(t, os.WriteFile(tmp, other, 0o600))
+	require.NoError(t, os.Rename(tmp, p))
+}
+
+func TestOpenFileStepsUseTheFileCheckedNotTheSwappedPath(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	files := pluginfs.Files{}
+	p := filepath.Join(dir, "f")
+
+	require.NoError(t, os.WriteFile(p, []byte("original"), 0o600))
+	b, err := files.ReadOpen(p, os.O_RDONLY|files.NoFollow(), 100, func(fs.FileInfo) error {
+		swapIn(t, p, []byte("swapped"))
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, "original", string(b), "ReadOpen reads the file it checked")
+
+	require.NoError(t, os.WriteFile(p, []byte("original"), 0o600))
+	sum, err := files.HashOpen(p, os.O_RDONLY|files.NoFollow(), func(fs.FileInfo) error {
+		swapIn(t, p, []byte("swapped"))
+		return nil
+	})
+	require.NoError(t, err)
+	want := sha256.Sum256([]byte("original"))
+	require.Equal(t, want[:], sum, "HashOpen hashes the file it checked")
+
+	r, err := files.OpenRoot(dir)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, r.Close()) }()
+
+	require.NoError(t, os.WriteFile(p, []byte("original"), 0o600))
+	b, err = r.ReadOpen("f", os.O_RDONLY|files.NoFollow(), 100, func(fs.FileInfo) error {
+		swapIn(t, p, []byte("swapped"))
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, "original", string(b), "FileRoot.ReadOpen reads the file it checked")
+
+	require.NoError(t, os.WriteFile(p, []byte("original"), 0o600))
+	out := filepath.Join(t.TempDir(), "copy")
+	require.NoError(t, r.CopyOut("f", os.O_RDONLY|files.NoFollow(), func(fs.FileInfo) (fs.FileMode, error) {
+		swapIn(t, p, []byte("swapped"))
+		return 0o644, nil
+	}, out, 0o644))
+	raw, err := os.ReadFile(out)
+	require.NoError(t, err)
+	require.Equal(t, "original", string(raw), "CopyOut copies the file it checked")
+
+	// WriteOpen writes to the inode it checked: a second link keeps it
+	// reachable after the swap.
+	require.NoError(t, os.WriteFile(p, []byte("ab"), 0o600))
+	kept := filepath.Join(dir, "kept")
+	require.NoError(t, os.Link(p, kept))
+	require.NoError(t, r.WriteOpen("f", os.O_WRONLY|files.NoFollow()|os.O_APPEND, 0o600, func(fs.FileInfo) error {
+		swapIn(t, p, []byte("swapped"))
+		return nil
+	}, []byte("cd")))
+	raw, err = os.ReadFile(kept)
+	require.NoError(t, err)
+	require.Equal(t, "abcd", string(raw), "WriteOpen writes to the file it checked")
+	raw, err = os.ReadFile(p)
+	require.NoError(t, err)
+	require.Equal(t, "swapped", string(raw), "the file swapped in is not written")
+}
+
+func TestANilCheckSkipsTheCheckExceptForCopyOut(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	files := pluginfs.Files{}
+	p := filepath.Join(dir, "f")
+	require.NoError(t, os.WriteFile(p, []byte("x"), 0o600))
+
+	sum, err := files.HashOpen(p, os.O_RDONLY, nil)
+	require.NoError(t, err)
+	want := sha256.Sum256([]byte("x"))
+	require.Equal(t, want[:], sum)
+
+	r, err := files.OpenRoot(dir)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, r.Close()) }()
+	require.NoError(t, r.WriteOpen("f", os.O_WRONLY|os.O_APPEND, 0o600, nil, []byte("y")))
+	raw, err := os.ReadFile(p)
+	require.NoError(t, err)
+	require.Equal(t, "xy", string(raw))
+
+	// CopyOut takes the copy's mode from its check: without one it opens
+	// nothing and creates nothing.
+	out := filepath.Join(dir, "copy")
+	err = r.CopyOut("f", os.O_RDONLY, nil, out, 0o644)
+	require.Error(t, err)
+	var pe *fs.PathError
+	require.False(t, errors.As(err, &pe), "no step ran")
+	_, err = os.Lstat(out)
+	require.ErrorIs(t, err, fs.ErrNotExist)
+}

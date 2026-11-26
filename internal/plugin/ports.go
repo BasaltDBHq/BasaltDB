@@ -2,7 +2,6 @@ package plugin
 
 import (
 	"context"
-	"errors"
 	"io"
 	"io/fs"
 	"time"
@@ -109,7 +108,8 @@ type Files interface {
 	// bytes from it and closes it.
 	ReadOpen(name string, flag int, most int64, check func(fs.FileInfo) error) ([]byte, error)
 	// HashOpen opens name with flag, Stats the open file, runs check on its
-	// details and returns the SHA-256 of the whole open file.
+	// details (no Stat and no check when check is nil) and returns the
+	// SHA-256 of the whole open file.
 	HashOpen(name string, flag int, check func(fs.FileInfo) error) ([]byte, error)
 	// WriteNew creates name, which must not exist (O_EXCL, mode), writes data
 	// to it, sets mode on it, syncs it when sync is set and closes it.
@@ -158,13 +158,14 @@ type FileRoot = interface {
 	// ReadOpen is Files.ReadOpen on name inside the root.
 	ReadOpen(name string, flag int, most int64, check func(fs.FileInfo) error) ([]byte, error)
 	// CopyOut opens name inside the root with flag and Stats that open
-	// file; check gets its details and returns the mode of the copy. It
+	// file; check, which is required (nil is refused before anything is
+	// opened), gets its details and returns the mode of the copy. It
 	// then creates dst (outside the root, O_EXCL, perm), copies the open
 	// file into it, sets mode on the new file, syncs and closes it.
 	CopyOut(name string, flag int, check func(fs.FileInfo) (fs.FileMode, error), dst string, perm fs.FileMode) error
 	// WriteOpen opens name inside the root with flag and perm, Stats that
-	// open file, runs check on its details and, when check passes, writes
-	// data to it.
+	// open file, runs check on its details (no Stat and no check when check
+	// is nil) and, when check passes, writes data to it.
 	WriteOpen(name string, flag int, perm fs.FileMode, check func(fs.FileInfo) error, data []byte) error
 	// Close closes the root.
 	Close() error
@@ -181,10 +182,17 @@ const (
 )
 
 // failedStep is the step an open-file method failed in, "" when err is no
-// step's failure (an error the service's own check returned).
+// step's failure. Only the error the adapter returns for a step counts: an
+// *fs.PathError itself, not one wrapped inside another error, whose Op is
+// one of the five steps. An error the service's own check returned, even one
+// that wraps an os error, is never taken for a step.
 func failedStep(err error) string {
-	var pe *fs.PathError
-	if errors.As(err, &pe) {
+	pe, ok := err.(*fs.PathError) //nolint:errorlint // the adapter's own error only, never one a check wrapped
+	if !ok {
+		return ""
+	}
+	switch pe.Op {
+	case opOpen, opStat, opRead, opCreate, opWrite:
 		return pe.Op
 	}
 	return ""

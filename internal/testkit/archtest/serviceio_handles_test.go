@@ -29,7 +29,8 @@ import (
 // handleGOOS are the systems the engine ships on. Each domain root package
 // is type-checked once per system and the findings are joined, so the answer
 // is the same on every machine that runs the test.
-var handleGOOS = []string{"linux", "darwin"}
+// GOARCH is pinned per system, so the host's does not change the answer.
+var handleGOOS = []struct{ goos, goarch string }{{"linux", "amd64"}, {"darwin", "arm64"}}
 
 const handleIOBaseline = "serviceio_handles_baseline.txt"
 
@@ -59,10 +60,10 @@ func handleIO(root string) (handleScan, error) {
 	}
 	slices.Sort(paths)
 	seen := map[string]bool{}
-	for _, goos := range handleGOOS {
-		lines, n, h, err := handleIOFor(root, goos, paths)
+	for _, sys := range handleGOOS {
+		lines, n, h, err := handleIOFor(root, sys.goos, sys.goarch, paths)
 		if err != nil {
-			return scan, fmt.Errorf("GOOS=%s: %w", goos, err)
+			return scan, fmt.Errorf("GOOS=%s GOARCH=%s: %w", sys.goos, sys.goarch, err)
 		}
 		for _, l := range lines {
 			seen[l] = true
@@ -88,11 +89,11 @@ type listedPkg struct {
 
 // handleIOFor type-checks paths for one GOOS: the packages they import come
 // from the export data go list builds, the packages themselves from source.
-func handleIOFor(root, goos string, paths []string) (lines []string, packages, handles int, err error) {
+func handleIOFor(root, goos, goarch string, paths []string) (lines []string, packages, handles int, err error) {
 	args := append([]string{"list", "-e", "-export", "-deps", "-json=ImportPath,Dir,GoFiles,CgoFiles,Export,Error"}, paths...)
 	cmd := exec.Command("go", args...)
 	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "GOOS="+goos, "CGO_ENABLED=0")
+	cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH="+goarch, "CGO_ENABLED=0")
 	out, err := cmd.Output()
 	if err != nil {
 		var exit *exec.ExitError
@@ -148,15 +149,17 @@ func handleIOFor(root, goos string, paths []string) (lines []string, packages, h
 		info := &types.Info{
 			Types:      map[ast.Expr]types.TypeAndValue{},
 			Uses:       map[*ast.Ident]types.Object{},
+			Defs:       map[*ast.Ident]types.Object{},
 			Selections: map[*ast.SelectorExpr]*types.Selection{},
 		}
-		if _, err := (&types.Config{Importer: imp}).Check(p.ImportPath, fset, files, info); err != nil {
+		self, err := (&types.Config{Importer: imp}).Check(p.ImportPath, fset, files, info)
+		if err != nil {
 			return nil, 0, 0, fmt.Errorf("type-check %s: %w", p.ImportPath, err)
 		}
 		packages++
 		for i, f := range files {
 			for _, d := range f.Decls {
-				handles += handleUses(info, d, func(n ast.Node, what string) {
+				handles += handleUses(info, self, d, func(n ast.Node, what string) {
 					found = append(found, rel+": "+p.GoFiles[i]+": "+declName(d, n)+": "+what)
 				})
 			}
@@ -166,9 +169,26 @@ func handleIOFor(root, goos string, paths []string) (lines []string, packages, h
 }
 
 // handleUses reports each handle I/O in d to report and returns how many
-// expressions of handle type it saw.
-func handleUses(info *types.Info, d ast.Decl, report func(ast.Node, string)) (handles int) {
+// expressions of handle type it saw. self is the package d is in.
+func handleUses(info *types.Info, self *types.Package, d ast.Decl, report func(ast.Node, string)) (handles int) {
+	// toInterface reports a handle v that lands in a target of interface
+	// type: the interface's methods read or write through it.
+	toInterfaceType := func(at ast.Node, vt, target types.Type, how string) {
+		if target == nil || !isHandle(vt) || !types.IsInterface(target) {
+			return
+		}
+		report(at, how+" "+types.TypeString(vt, pkgName)+" as "+types.TypeString(target, pkgName))
+	}
+	toInterface := func(v ast.Expr, target types.Type, how string) {
+		toInterfaceType(v, info.TypeOf(v), target, how)
+	}
+	var stack []ast.Node
 	ast.Inspect(d, func(n ast.Node) bool {
+		if n == nil {
+			stack = stack[:len(stack)-1]
+			return true
+		}
+		stack = append(stack, n)
 		if x, ok := n.(ast.Expr); ok && isHandle(info.TypeOf(x)) {
 			handles++
 		}
@@ -184,25 +204,134 @@ func handleUses(info *types.Info, d ast.Decl, report func(ast.Node, string)) (ha
 			}
 		case *ast.CallExpr:
 			if tv, ok := info.Types[x.Fun]; ok && tv.IsType() {
-				return true // a conversion
+				if len(x.Args) == 1 {
+					toInterface(x.Args[0], tv.Type, "converts")
+				}
+				return true
 			}
 			sig, ok := info.TypeOf(x.Fun).Underlying().(*types.Signature)
 			if !ok {
 				return true
 			}
+			foreign := foreignFunc(info, self, x.Fun)
 			for i, arg := range x.Args {
 				at := info.TypeOf(arg)
 				if !isHandle(at) {
 					continue
 				}
-				if pt := paramType(sig, i, x.Ellipsis.IsValid()); pt != nil && types.IsInterface(pt) {
+				pt := paramType(sig, i, x.Ellipsis.IsValid())
+				if (pt != nil && types.IsInterface(pt)) || foreign {
 					report(arg, "passes "+types.TypeString(at, pkgName)+" to "+handleCallee(info, x.Fun))
+				}
+			}
+		case *ast.AssignStmt:
+			if len(x.Lhs) == len(x.Rhs) {
+				for i, r := range x.Rhs {
+					toInterface(r, info.TypeOf(x.Lhs[i]), "assigns")
+				}
+			} else if tuple, ok := info.TypeOf(x.Rhs[0]).(*types.Tuple); ok && len(x.Rhs) == 1 && tuple.Len() == len(x.Lhs) {
+				for i, l := range x.Lhs {
+					toInterfaceType(x.Rhs[0], tuple.At(i).Type(), info.TypeOf(l), "assigns")
+				}
+			}
+		case *ast.ValueSpec:
+			if x.Type != nil {
+				for _, v := range x.Values {
+					toInterface(v, info.TypeOf(x.Type), "declares")
+				}
+			}
+		case *ast.ReturnStmt:
+			if res := enclosingResults(info, stack); res != nil && res.Len() == len(x.Results) {
+				for i, r := range x.Results {
+					toInterface(r, res.At(i).Type(), "returns")
+				}
+			}
+		case *ast.CompositeLit:
+			t := info.TypeOf(x)
+			if t == nil {
+				return true
+			}
+			switch u := t.Underlying().(type) {
+			case *types.Struct:
+				for i, e := range x.Elts {
+					if kv, ok := e.(*ast.KeyValueExpr); ok {
+						if k, ok := kv.Key.(*ast.Ident); ok {
+							if f, ok := info.Uses[k].(*types.Var); ok {
+								toInterface(kv.Value, f.Type(), "puts")
+							}
+						}
+					} else if i < u.NumFields() {
+						toInterface(e, u.Field(i).Type(), "puts")
+					}
+				}
+			case *types.Slice, *types.Array, *types.Map:
+				elem := u.(interface{ Elem() types.Type }).Elem()
+				for _, e := range x.Elts {
+					if kv, ok := e.(*ast.KeyValueExpr); ok {
+						e = kv.Value
+					}
+					toInterface(e, elem, "puts")
 				}
 			}
 		}
 		return true
 	})
 	return handles
+}
+
+// enclosingResults are the results of the innermost function in stack
+// (the path from the declaration to the current node).
+func enclosingResults(info *types.Info, stack []ast.Node) *types.Tuple {
+	for i := len(stack) - 1; i >= 0; i-- {
+		var t types.Type
+		switch f := stack[i].(type) {
+		case *ast.FuncLit:
+			t = info.TypeOf(f)
+		case *ast.FuncDecl:
+			if o := info.Defs[f.Name]; o != nil {
+				t = o.Type()
+			}
+		default:
+			continue
+		}
+		if sig, ok := t.(*types.Signature); ok {
+			return sig.Results()
+		}
+		return nil
+	}
+	return nil
+}
+
+// foreignFunc reports whether fun names a declared function or method of
+// another package that is not an interface method: one that takes a handle
+// does I/O with it outside a port. Port methods, func-typed fields and
+// helpers of the same package are not foreign.
+func foreignFunc(info *types.Info, self *types.Package, fun ast.Expr) bool {
+	fun = ast.Unparen(fun)
+	switch f := fun.(type) {
+	case *ast.IndexExpr:
+		fun = f.X
+	case *ast.IndexListExpr:
+		fun = f.X
+	}
+	var id *ast.Ident
+	switch f := fun.(type) {
+	case *ast.Ident:
+		id = f
+	case *ast.SelectorExpr:
+		id = f.Sel
+	}
+	if id == nil {
+		return false
+	}
+	fn, ok := info.Uses[id].(*types.Func)
+	if !ok || fn.Pkg() == nil || fn.Pkg() == self {
+		return false
+	}
+	if recv := fn.Type().(*types.Signature).Recv(); recv != nil && types.IsInterface(recv.Type()) {
+		return false
+	}
+	return true
 }
 
 func pkgName(p *types.Package) string { return p.Name() }
@@ -356,7 +485,9 @@ func TestHandleIOCatchesViolations(t *testing.T) {
 	root := fixture(t, map[string]string{
 		"go.mod": handleProbeMod,
 		"internal/lib/files/f.go": "package files\n\nimport \"os\"\n\n" +
-			"func Open(name string) (*os.File, error) { return os.Open(name) }\n",
+			"func Open(name string) (*os.File, error) { return os.Open(name) }\n\n" +
+			"func Check(f *os.File) error { _, err := f.Stat(); return err }\n\n" +
+			"type Checker struct{}\n\nfunc (Checker) Check(f *os.File) {}\n",
 		"internal/ledger/ports.go": "package ledger\n\nimport \"os\"\n\n" +
 			"type Files interface {\n\tOpen(name string) (*os.File, error)\n\tOpenRoot(dir string) (*os.Root, error)\n}\n\n" +
 			"type wrapped struct{ *os.File }\n",
@@ -369,6 +500,19 @@ func TestHandleIOCatchesViolations(t *testing.T) {
 			"func Buffered(f *os.File) *bufio.Reader { return bufio.NewReader(f) }\n\n" +
 			"func Module() { f, _ := files.Open(\"x\"); _, _ = f.Stat() }\n\n" +
 			"func Keep(f *os.File) *os.File { return keep(f) }\n\nfunc keep(f *os.File) *os.File { return f }\n",
+		"internal/ledger/conv.go": "package ledger\n\nimport (\n\t\"io\"\n\t\"os\"\n\n\t\"" + m + "internal/lib/files\"\n)\n\n" +
+			"type Port interface{ Take(f *os.File) }\n\n" +
+			"type Deps struct {\n\tTake func(f *os.File)\n\tPort Port\n}\n\n" +
+			"type sink struct {\n\tr io.Reader\n\tf *os.File\n}\n\n" +
+			"func Foreign(f *os.File) error { files.Checker{}.Check(f); return files.Check(f) }\n\n" +
+			"func Allowed(d Deps, f *os.File) { d.Take(f); d.Port.Take(f); _ = keep(f) }\n\n" +
+			"func Assign(f *os.File) { var r io.Reader; r = f; _ = r }\n\n" +
+			"func AssignTuple() { var r io.Reader; var err error; r, err = files.Open(\"x\"); _, _ = r, err }\n\n" +
+			"func Typed(f *os.File) { var w io.Writer = f; _ = w }\n\n" +
+			"func Return(f *os.File) io.Closer { return f }\n\n" +
+			"func ReturnLit(f *os.File) func() (io.Reader, error) { return func() (io.Reader, error) { return f, nil } }\n\n" +
+			"func Lit(f *os.File) (sink, []io.Reader, map[string]any, sink) {\n\treturn sink{r: f, f: f}, []io.Reader{f}, map[string]any{\"f\": f}, sink{f, f}\n}\n\n" +
+			"func Convert(f *os.File) { _ = io.Reader(f) }\n",
 		"internal/ledger/l_linux.go":  "//go:build linux\n\npackage ledger\n\nimport \"os\"\n\nfunc OnLinux(f *os.File) { _ = f.Sync() }\n",
 		"internal/ledger/l_darwin.go": "//go:build darwin\n\npackage ledger\n\nimport \"os\"\n\nfunc OnDarwin(f *os.File) { _ = f.Sync() }\n",
 		"internal/ledger/out/disk/d.go": "package disk\n\nimport \"os\"\n\n" +
@@ -379,6 +523,16 @@ func TestHandleIOCatchesViolations(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
+		"internal/ledger: conv.go: Assign: assigns *os.File as io.Reader",
+		"internal/ledger: conv.go: AssignTuple: assigns *os.File as io.Reader",
+		"internal/ledger: conv.go: Convert: converts *os.File as io.Reader",
+		"internal/ledger: conv.go: Foreign: passes *os.File to (internal/lib/files.Checker).Check",
+		"internal/ledger: conv.go: Foreign: passes *os.File to internal/lib/files.Check",
+		"internal/ledger: conv.go: Lit: puts *os.File as any",
+		"internal/ledger: conv.go: Lit: puts *os.File as io.Reader (3 times)",
+		"internal/ledger: conv.go: Return: returns *os.File as io.Closer",
+		"internal/ledger: conv.go: ReturnLit: returns *os.File as io.Reader",
+		"internal/ledger: conv.go: Typed: declares *os.File as io.Writer",
 		"internal/ledger: h.go: Buffered: passes *os.File to bufio.NewReader",
 		"internal/ledger: h.go: Copy: (*os.File).Close",
 		"internal/ledger: h.go: Copy: passes *os.File to io.Copy",

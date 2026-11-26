@@ -6,6 +6,7 @@
 internal/testkit/archtest/baseline
 internal/testkit/archtest/serviceio_baseline.txt
 internal/testkit/archtest/serviceio_handles_baseline.txt
+internal/testkit/archtest/serviceio_lookups_baseline.txt
 internal/testkit/archtest/shape_baseline.txt
 scripts/deadcode-allowlist.txt
 internal/testkit/archtest/storeports_baseline.txt

@@ -1,0 +1,9 @@
+internal/handoff agent_status_setup_finish.go: os/user.Current
+internal/plugin plugins_service.go: os/user.Current
+internal/plugin plugins_service.go: os/user.Lookup
+internal/plugin plugins_service.go: os/user.LookupGroup
+internal/plugin problem.go: os/user.Lookup
+internal/plugin problem.go: os/user.LookupGroup
+internal/setup checks.go: os/user.Lookup
+internal/setup local_run.go: os/user.Lookup
+internal/setup local_run.go: os/user.LookupId

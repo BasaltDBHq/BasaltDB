@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/google/uuid"
@@ -220,7 +221,7 @@ func (d *pluginDelivery) forAgent(name string) linksvc.LinkDeliverer {
 // returns at once whatever the plugins and the database do. A full buffer
 // drops the notice; the agent's answer has the link all the same.
 func (a agentDeliverer) DeliverLink(n linksvc.LinkNotice) {
-	id, err := uuid.NewV7() //nolint:forbidigo // baseline: move to internal/lib/uniqueid
+	id, err := uniqueid.NewUUID()
 	if err != nil {
 		return
 	}

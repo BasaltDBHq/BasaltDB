@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-var update = flag.Bool("update", false, "remove the baseline/ lines that are no longer violated (it never adds one)")
+var update = flag.Bool("update", false, "remove the baseline lines that are no longer violated (it never adds one)")
 
 // moduleRoot finds the directory with go.mod above the test's directory.
 func moduleRoot(t *testing.T) string {
@@ -84,7 +84,7 @@ func TestArchitecture(t *testing.T) {
 	dir := filepath.Join(root, "internal", "testkit", "archtest", "baseline")
 
 	if *update {
-		for _, l := range shrinkBaseline(t, dir, got) {
+		for _, l := range shrinkBaselineDir(t, dir, got) {
 			t.Errorf("%s\n\tnew violation; fix it (-update only removes baseline lines, it never adds one)", l)
 		}
 		return
@@ -134,11 +134,11 @@ func TestArchitecture(t *testing.T) {
 }
 
 // fixture writes a small module and returns its root.
-// shrinkBaseline rewrites the baseline in dir to the lines that are both
+// shrinkBaselineDir rewrites the baseline in dir to the lines that are both
 // listed and still violated: a fixed violation leaves it, and a new one is
 // never added. It returns the violations the baseline does not list, as
 // "pkg: line", for the caller to fail on.
-func shrinkBaseline(t *testing.T, dir string, got violations) []string {
+func shrinkBaselineDir(t *testing.T, dir string, got violations) []string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
 	if err != nil && !os.IsNotExist(err) {
@@ -186,12 +186,12 @@ func shrinkBaseline(t *testing.T, dir string, got violations) []string {
 
 // -update removes the fixed lines and files and adds nothing: a new
 // violation, in a listed package or a new one, is returned, not written.
-func TestShrinkBaselineNeverAdds(t *testing.T) {
+func TestShrinkBaselineDirNeverAdds(t *testing.T) {
 	dir := fixture(t, map[string]string{
 		"internal_a.txt": "fixed\nkept\n",
 		"internal_b.txt": "gone\n",
 	})
-	refused := shrinkBaseline(t, dir, violations{
+	refused := shrinkBaselineDir(t, dir, violations{
 		"internal/a": {"kept", "new in a"},
 		"internal/c": {"new in c"},
 	})

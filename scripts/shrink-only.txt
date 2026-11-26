@@ -4,3 +4,4 @@
 # its base branch already has, or a file to such a directory. The pull
 # request that adds a check creates its baseline in full and lists it here.
 internal/testkit/archtest/baseline
+internal/testkit/archtest/serviceio_baseline.txt

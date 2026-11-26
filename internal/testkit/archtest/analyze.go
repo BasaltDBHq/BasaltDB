@@ -156,6 +156,42 @@ var testHelperBesides = []string{
 // layer rules, core purity and the decision rule, and no other non-test file
 // may import one.
 func isTestHelper(pkgs map[string]*goPkg, rel string) bool {
+	return testHelper(rel, func(p string) (bool, bool) {
+		pk := pkgs[p]
+		return pk != nil, pk != nil && isMain(pk)
+	})
+}
+
+// isTestHelperFS is isTestHelper for the module tree in fsys, for checks
+// that read a package graph rather than load the tree.
+func isTestHelperFS(fsys fs.FS, rel string) bool {
+	return testHelper(rel, func(p string) (bool, bool) {
+		entries, err := fs.ReadDir(fsys, p)
+		if err != nil {
+			return false, false
+		}
+		for _, e := range entries {
+			n := e.Name()
+			if e.IsDir() || !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
+				continue
+			}
+			src, err := fs.ReadFile(fsys, path.Join(p, n))
+			if err != nil {
+				return false, false
+			}
+			f, err := parser.ParseFile(token.NewFileSet(), n, src, parser.PackageClauseOnly)
+			if err != nil {
+				return false, false
+			}
+			return true, f.Name.Name == "main"
+		}
+		return false, false
+	})
+}
+
+// testHelper is isTestHelper over pkg, which reports whether a path is a
+// package of the tree and whether it is a program.
+func testHelper(rel string, pkg func(string) (exists, main bool)) bool {
 	for _, h := range testHelperRoots {
 		if rel == h || strings.HasPrefix(rel, h+"/") {
 			return true
@@ -165,7 +201,7 @@ func isTestHelper(pkgs map[string]*goPkg, rel string) bool {
 		return false
 	}
 	for p := rel; p != "." && p != "/" && p != ""; p = path.Dir(p) {
-		if namedHelper(pkgs, p) {
+		if namedHelper(p, pkg) {
 			return true
 		}
 	}
@@ -173,9 +209,9 @@ func isTestHelper(pkgs map[string]*goPkg, rel string) bool {
 }
 
 // namedHelper reports whether the package at p is a helper by its name.
-func namedHelper(pkgs map[string]*goPkg, p string) bool {
-	pk := pkgs[p]
-	if pk == nil || isMain(pk) {
+func namedHelper(p string, pkg func(string) (exists, main bool)) bool {
+	exists, isProgram := pkg(p)
+	if !exists || isProgram {
 		return false
 	}
 	if in(testHelperBesides, p) {
@@ -183,7 +219,8 @@ func namedHelper(pkgs map[string]*goPkg, p string) bool {
 	}
 	base, parent := path.Base(p), path.Dir(p)
 	x, ok := strings.CutSuffix(base, "test")
-	return ok && x != "" && path.Base(parent) == x && pkgs[parent] != nil
+	parentExists, _ := pkg(parent)
+	return ok && x != "" && path.Base(parent) == x && parentExists
 }
 
 // isMain reports whether pk is a program.

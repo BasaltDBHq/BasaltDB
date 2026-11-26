@@ -1,0 +1,42 @@
+{
+  "approval": {
+    "maxRows": 50
+  },
+  "revert": {
+    "maxLines": 1000,
+    "maxBatch": 200,
+    "applyHours": 24
+  },
+  "links": {
+    "maxFragmentLength": 1048576,
+    "maxInflatedBytes": 1048576
+  },
+  "passkey": {
+    "challengeBytes": 32,
+    "userIdBytes": 16,
+    "maxLabelBytes": 64
+  },
+  "agentName": {
+    "maxLength": 50,
+    "accepted": [
+      "a",
+      "agent",
+      "agent_1",
+      "a9",
+      "a_",
+      "z0_9",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "refused": [
+      "",
+      "1agent",
+      "_agent",
+      "Agent",
+      "agent-1",
+      "agent 1",
+      "agent.1",
+      "agént",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+  }
+}

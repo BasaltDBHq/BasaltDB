@@ -26,6 +26,10 @@ lint: deps ## Run golangci-lint (includes formatters check and a config check)
 vet: ## go vet
 	@go vet ./...
 
+.PHONY: deadcode
+deadcode: bin/deadcode ## Fail on dead code not in scripts/deadcode-allowlist.txt, and on entries there that are no longer dead (linux and darwin)
+	@sh scripts/deadcode.sh $(CURDIR)/bin/deadcode
+
 .PHONY: test
 test: bin/gotestsum portal-build ## Race tests (gotestsum; builds dist/portal first so TestPortalBuildMatchesEmbed never skips)
 	@$(GOTESTSUM) --format pkgname-and-test-fails --hide-summary=skipped -- -race -count=1 -timeout 15m $(PKG)
@@ -106,9 +110,11 @@ install-sh-check: ## POSIX syntax, default repo, and archive names for install.s
 	@sh -n scripts/require-v-tag.sh
 	@sh -n scripts/release-notes.sh
 	@sh -n scripts/rc-gate.sh
+	@sh -n scripts/baseline-shrink.sh
 	@sh scripts/release-kind_test.sh
 	@sh scripts/release-notes_test.sh
 	@sh scripts/rc-gate_test.sh
+	@sh scripts/baseline-shrink_test.sh
 	@test "$$(grep -Fc 'GORELEASER_CURRENT_TAG: $${{ github.ref_name }}' .github/workflows/release.yml)" -eq 2
 	@grep -Fq 'tags: ["v*"]' .github/workflows/release.yml
 	@if grep -E '^[[:space:]]*(branches|workflow_dispatch):' .github/workflows/release.yml; then echo 'release.yml must not trigger on branches or workflow_dispatch' >&2; exit 1; fi
@@ -179,4 +185,4 @@ portal-verify: ## Compare the hosted portal with the pages this build embeds and
 	@go run ./scripts/portal-verify --manifest web/portal.sha256
 
 .PHONY: ci
-ci: lint vet shard-check install-sh-check npm-check web-check portal-build test ## Same steps as the GitHub check job
+ci: lint vet deadcode shard-check install-sh-check npm-check web-check portal-build test ## Same steps as the GitHub check job

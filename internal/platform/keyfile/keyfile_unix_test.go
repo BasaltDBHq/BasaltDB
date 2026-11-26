@@ -14,27 +14,22 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 )
 
-func TestLoadKeysRefusesASecondHardLinkAndLeavesIt(t *testing.T) {
+func TestLoadOrCreateKeysRefusesASecondHardLinkAndLeavesIt(t *testing.T) {
 	t.Parallel()
 	path, _ := writeValid(t)
 	other := filepath.Join(t.TempDir(), "elsewhere")
 	require.NoError(t, os.Link(path, other))
-	for _, load := range []func() error{
-		func() error { _, err := LoadKeys(path); return err },
-		func() error { _, err := LoadOrCreateKeys(path, time.Now); return err },
-	} {
-		err := load()
-		require.ErrorIs(t, err, channel.ErrKeyFile)
-		require.ErrorContains(t, err, "more than one hard link")
-	}
-	_, err := os.Lstat(other)
+	_, err := LoadOrCreateKeys(path, time.Now)
+	require.ErrorIs(t, err, channel.ErrKeyFile)
+	require.ErrorContains(t, err, "more than one hard link")
+	_, err = os.Lstat(other)
 	require.NoError(t, err, "the refused file is left as it is")
 	require.NoError(t, os.Remove(other))
-	_, err = LoadKeys(path)
+	_, err = LoadOrCreateKeys(path, time.Now)
 	require.NoError(t, err)
 }
 
-func TestLoadKeysRefusesAFIFOWithoutBlocking(t *testing.T) {
+func TestLoadOrCreateKeysRefusesAFIFOWithoutBlocking(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), channel.KeyFileName)
 	require.NoError(t, syscall.Mkfifo(path, 0o600))

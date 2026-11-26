@@ -16,7 +16,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 // Feed timing (CONTRACT.md, Plugins, Notifier messages, Limits and numbers).
@@ -59,11 +58,13 @@ type pluginFeed struct {
 	served  func() []pluginmodel.Entry
 	ledgers map[string]AgentLedger
 	// dir is <stateDir>/plugin-cursors.
-	dir     string
-	senders *pluginSenders
-	clock   Clock
-	log     *slog.Logger
-	timing  feedTiming
+	dir string
+	// writeCursor writes a cursor file (Ports.WriteFeedCursor).
+	writeCursor func(dir, name string, raw []byte) error
+	senders     *pluginSenders
+	clock       Clock
+	log         *slog.Logger
+	timing      feedTiming
 
 	// reads lets one feed read run per agent at a time, so the feed takes
 	// at most one connection of an agent's pool.
@@ -78,13 +79,13 @@ type feedPair struct {
 }
 
 // newPluginFeed feeds the entries served returns, with the agents' ledgers,
-// keeping cursors under stateDir; with no stateDir it feeds nothing and
-// only keeps the senders.
+// keeping cursors under stateDir, written with writeCursor; with no
+// stateDir it feeds nothing and only keeps the senders.
 func newPluginFeed(host *Host, served func() []pluginmodel.Entry, ledgers map[string]AgentLedger, stateDir string,
-	senders *pluginSenders, clock Clock, log *slog.Logger,
+	writeCursor func(dir, name string, raw []byte) error, senders *pluginSenders, clock Clock, log *slog.Logger,
 ) *pluginFeed {
-	if host == nil || served == nil || senders == nil || clock == nil || log == nil {
-		panic("engine: the plugin feed needs a host, the served entries, senders, a clock and a log")
+	if host == nil || served == nil || writeCursor == nil || senders == nil || clock == nil || log == nil {
+		panic("engine: the plugin feed needs a host, the served entries, a cursor writer, senders, a clock and a log")
 	}
 	dir := ""
 	if stateDir != "" {
@@ -95,7 +96,7 @@ func newPluginFeed(host *Host, served func() []pluginmodel.Entry, ledgers map[st
 		reads[name] = make(chan struct{}, 1)
 	}
 	return &pluginFeed{
-		host: host, served: served, ledgers: ledgers, dir: dir,
+		host: host, served: served, ledgers: ledgers, dir: dir, writeCursor: writeCursor,
 		senders: senders, clock: clock, log: log, timing: defaultFeedTiming,
 		reads: reads, readers: map[feedPair]*feedReader{},
 	}
@@ -520,12 +521,9 @@ func (r *feedReader) moveTo(install uuid.UUID, seq int64) {
 	r.cur = &feedCursor{InstallID: install, Seq: seq}
 	raw, err := json.Marshal(r.cur)
 	if err == nil {
-		err = os.MkdirAll(r.cursorDir(), stateDirMode)
-	}
-	if err == nil {
 		// A cursor lost in a crash replays events, which at least once
 		// allows: no directory sync.
-		err = atomicfile.Write(filepath.Join(r.cursorDir(), r.pair.agent+".json"), raw, atomicfile.Options{Mode: privateFile})
+		err = r.f.writeCursor(r.cursorDir(), r.pair.agent+".json", raw)
 	}
 	if err != nil {
 		r.log.Warn("plugin feed cursor not written; after a restart the events since its last write come again", "err", err)

@@ -53,7 +53,7 @@ func (s *Store) Begin(uid uint32) (Upload, error) {
 	if err := checkOwnDir(s.uploadsDir()); err != nil {
 		return Upload{}, refused(ReasonUnsafePath, "%s", err)
 	}
-	id := uuid.New()
+	id := uuid.New() //nolint:forbidigo // baseline: a UUIDv4 on the wire; move to internal/lib/uniqueid
 	if err := os.Mkdir(filepath.Join(s.uploadsDir(), id.String()), uploadDirMode); err != nil {
 		return Upload{}, err
 	}

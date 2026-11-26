@@ -51,7 +51,7 @@ func TestLoadOrCreateKeysMakesA0600FileOnceAndReusesIt(t *testing.T) {
 	require.Equal(t, k1.EngineID(), k2.EngineID())
 	require.Equal(t, k1.BoxPublicKeySPKI(), k2.BoxPublicKeySPKI())
 	require.Equal(t, fixedNow().UTC().Truncate(time.Second), k2.CreatedAt())
-	k3, err := LoadKeys(path)
+	k3, err := LoadOrCreateKeys(path, time.Now)
 	require.NoError(t, err)
 	require.Equal(t, k1.EngineID(), k3.EngineID())
 
@@ -128,7 +128,7 @@ func TestLoadOrCreateKeysKeepsTheFirstOfTwoConcurrentStarts(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	k, err := LoadKeys(path)
+	k, err := LoadOrCreateKeys(path, time.Now)
 	require.NoError(t, err)
 	for i, id := range ids {
 		require.Equal(t, k.EngineID(), id, i)
@@ -136,15 +136,6 @@ func TestLoadOrCreateKeysKeepsTheFirstOfTwoConcurrentStarts(t *testing.T) {
 	entries, err := os.ReadDir(filepath.Dir(path))
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
-}
-
-func TestLoadKeysNeverCreates(t *testing.T) {
-	t.Parallel()
-	path := keyPath(t)
-	_, err := LoadKeys(path)
-	require.ErrorIs(t, err, channel.ErrKeyFile)
-	_, err = os.Lstat(path)
-	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 // writeValid writes a valid key file at a fresh path and returns the path
@@ -181,7 +172,7 @@ func rewrite(t *testing.T, path string, file map[string]any) {
 	require.NoError(t, os.WriteFile(path, raw, 0o600))
 }
 
-func TestLoadKeysRefusesAWideModeAndLeavesIt(t *testing.T) {
+func TestLoadOrCreateKeysRefusesAWideModeAndLeavesIt(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == goosWindows {
 		t.Skip("POSIX modes")
@@ -198,7 +189,7 @@ func TestLoadKeysRefusesAWideModeAndLeavesIt(t *testing.T) {
 	}
 }
 
-func TestLoadKeysRefusesASymlinkOrADirectory(t *testing.T) {
+func TestLoadOrCreateKeysRefusesASymlinkOrADirectory(t *testing.T) {
 	t.Parallel()
 	target, _ := writeValid(t)
 	link := keyPath(t)
@@ -222,7 +213,7 @@ func TestLoadKeysRefusesASymlinkOrADirectory(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
-func TestLoadKeysRefusesAnInvalidFileAndLeavesIt(t *testing.T) {
+func TestLoadOrCreateKeysRefusesAnInvalidFileAndLeavesIt(t *testing.T) {
 	t.Parallel()
 	_, otherFile := writeValid(t)
 	p384, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
@@ -272,9 +263,9 @@ func TestLoadKeysRefusesAnInvalidFileAndLeavesIt(t *testing.T) {
 	}
 }
 
-// TestLoadKeysRefusesABoxKeySignedByAnotherKey: the box key's signature is checked,
+// TestLoadOrCreateKeysRefusesABoxKeySignedByAnotherKey: the box key's signature is checked,
 // so a box key swapped in with its own self-made signature is refused.
-func TestLoadKeysRefusesABoxKeySignedByAnotherKey(t *testing.T) {
+func TestLoadOrCreateKeysRefusesABoxKeySignedByAnotherKey(t *testing.T) {
 	t.Parallel()
 	path, file := writeValid(t)
 	strangerRaw, stranger, err := channel.NewKeyFile(time.Now)
@@ -312,7 +303,7 @@ func TestLoadOrCreateKeysFailsWhenItCannotWrite(t *testing.T) {
 	require.ErrorIs(t, err, channel.ErrKeyFile)
 }
 
-func TestLoadKeysRefusesAStateDirectoryOthersCanWrite(t *testing.T) {
+func TestLoadOrCreateKeysRefusesAStateDirectoryOthersCanWrite(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == goosWindows {
 		t.Skip("POSIX modes")
@@ -323,8 +314,6 @@ func TestLoadKeysRefusesAStateDirectoryOthersCanWrite(t *testing.T) {
 		require.NoError(t, os.Chmod(dir, mode))
 		err := requireRefusedUntouched(t, path, mode)
 		require.ErrorContains(t, err, "state directory")
-		_, err = LoadKeys(path)
-		require.ErrorIs(t, err, channel.ErrKeyFile, mode)
 
 		fresh := filepath.Join(dir, "fresh-"+channel.KeyFileName)
 		_, err = LoadOrCreateKeys(fresh, time.Now)
@@ -336,18 +325,18 @@ func TestLoadKeysRefusesAStateDirectoryOthersCanWrite(t *testing.T) {
 	// Read-only for group and others is fine.
 	path, _ := writeValid(t)
 	require.NoError(t, os.Chmod(filepath.Dir(path), 0o755))
-	_, err := LoadKeys(path)
+	_, err := LoadOrCreateKeys(path, time.Now)
 	require.NoError(t, err)
 }
 
-func TestLoadKeysRefusesAStateDirectoryThatIsALink(t *testing.T) {
+func TestLoadOrCreateKeysRefusesAStateDirectoryThatIsALink(t *testing.T) {
 	t.Parallel()
 	path, _ := writeValid(t)
 	link := filepath.Join(t.TempDir(), "state")
 	if err := os.Symlink(filepath.Dir(path), link); err != nil {
 		t.Skip("no symlinks here")
 	}
-	_, err := LoadKeys(filepath.Join(link, channel.KeyFileName))
+	_, err := LoadOrCreateKeys(filepath.Join(link, channel.KeyFileName), time.Now)
 	require.ErrorIs(t, err, channel.ErrKeyFile)
 	require.ErrorContains(t, err, "not a link")
 }

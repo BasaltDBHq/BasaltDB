@@ -19,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pluginledger"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginpath"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginstate"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/child"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
 )
@@ -44,7 +45,8 @@ var pluginPorts = plugin.Ports{
 	NewUnitHost: func(host servicespec.PluginHost) plugin.UnitHost {
 		return osservice.NewPluginUnitHost(host)
 	},
-	ReadConfig: readEngineConfig,
+	ReadConfig:      readEngineConfig,
+	WriteFeedCursor: pluginstate.WriteFeedCursor,
 }
 
 // readEngineConfig is the plugin watch's read of engine.json: the engine

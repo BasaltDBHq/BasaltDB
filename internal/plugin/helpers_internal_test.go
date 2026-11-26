@@ -30,6 +30,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pluginledger"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginstate"
 )
 
 // demoTables are the tables the demo database's agents may reach.
@@ -134,6 +135,7 @@ var testPorts = Ports{
 	ReadConfig: func(euid int, path string) (config.Config, []byte, error) {
 		return cli.ReadEngineConfigAs(trustedOpener{}, euid, path)
 	},
+	WriteFeedCursor: pluginstate.WriteFeedCursor,
 }
 
 // trustedOpener is the app shell's hardened open (osservice.OpenTrustedFile).

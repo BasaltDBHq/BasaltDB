@@ -1,3 +1,0 @@
-internal/setup binary.go: path/filepath.EvalSymlinks
-internal/setup rotations.go: os.Lstat
-internal/status portalcheck.go: internal/lib/atomicfile.Write

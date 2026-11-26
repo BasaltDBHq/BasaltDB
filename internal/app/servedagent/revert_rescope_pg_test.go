@@ -27,7 +27,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
@@ -35,6 +34,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
@@ -242,8 +242,8 @@ func revertPath(id uuid.UUID) string { return "/api/v1/reverts/" + id.String() }
 
 // scopeAnswer is the scope route's 200 answer as the page reads it.
 type scopeAnswer struct {
-	Request revert.Request        `json:"request"`
-	Catalog *action.RevertCatalog `json:"catalog"`
+	Request revert.Request             `json:"request"`
+	Catalog *revertstore.RevertCatalog `json:"catalog"`
 }
 
 // A widen with the person's proof rotates the revert's link to the page's
@@ -581,9 +581,9 @@ func TestConcurrentRescopesKeepTheLatest(t *testing.T) {
 // statement timeout cancels it.
 type slowReverts struct{ app.SQLStore }
 
-func (slowReverts) RescopeRevert(context.Context, action.RescopeRequest, time.Duration) (action.RescopedRevert, error) {
+func (slowReverts) RescopeRevert(context.Context, revertstore.RescopeRequest, time.Duration) (revertstore.RescopedRevert, error) {
 	canceled := store.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"})
-	return action.RescopedRevert{}, &action.RevertRefusalError{Reason: action.RevertTimedOut, StoreCode: "57014", Err: canceled}
+	return revertstore.RescopedRevert{}, &revertstore.RevertRefusalError{Reason: revertstore.RevertTimedOut, StoreCode: "57014", Err: canceled}
 }
 
 // A rescope past 100 seconds is 504 QUERY_TIMEOUT TIME_LIMIT, with what the

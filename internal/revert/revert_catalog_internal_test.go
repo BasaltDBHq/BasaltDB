@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/textrule/textruletest"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
@@ -76,11 +77,11 @@ func plainFunc(f func() error) func(*testing.T, *testService) error {
 	return func(*testing.T, *testService) error { return f() }
 }
 
-func nothingToRevert(tool string, lines []string, reason action.RevertReason, detail string, by uuid.UUID) func(*testing.T, *testService) error {
+func nothingToRevert(tool string, lines []string, reason revertstore.RevertReason, detail string, by uuid.UUID) func(*testing.T, *testService) error {
 	return func(t *testing.T, s *testService) error {
 		svc := s.with(withStore(catalogReverts{lines: lines, by: by}))
-		scope := action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}
-		return svc.nothingToRevert(context.Background(), tool, scope, action.RevertRefusalError{Reason: reason, Detail: detail})
+		scope := revertstore.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}
+		return svc.nothingToRevert(context.Background(), tool, scope, revertstore.RevertRefusalError{Reason: reason, Detail: detail})
 	}
 }
 
@@ -114,7 +115,7 @@ func catalogCases() map[string]catalogCase {
 	revertArgs := map[string]any{"revertId": caseRevertID}
 	timeoutRevert := func(tool string) func(*testing.T, *testService) error {
 		return func(t *testing.T, s *testService) error {
-			return s.prepareTimeout(tool, action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, "57014")
+			return s.prepareTimeout(tool, revertstore.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, "57014")
 		}
 	}
 	return map[string]catalogCase{
@@ -162,24 +163,24 @@ func catalogCases() map[string]catalogCase {
 		stepcatalogtest.CaseKey("NOTHING_TO_REVERT", "READS_ONLY", ""): {
 			"request_revert",
 			map[string]any{"runId": caseRunID, "intent": "Undo"},
-			nothingToRevert("request_revert", nil, action.RevertReadsOnly, "the run changed no rows", uuid.Nil),
+			nothingToRevert("request_revert", nil, revertstore.RevertReadsOnly, "the run changed no rows", uuid.Nil),
 		},
 		stepcatalogtest.CaseKey("NOTHING_TO_REVERT", "ALL_CHANGED_BY_PEOPLE", ""): {
 			"preview_revert",
 			map[string]any{"runId": caseRunID},
-			nothingToRevert("preview_revert", []string{changedAfterLine}, action.RevertNothing, "every line skipped", uuid.Nil),
+			nothingToRevert("preview_revert", []string{changedAfterLine}, revertstore.RevertNothing, "every line skipped", uuid.Nil),
 		},
 		stepcatalogtest.CaseKey("NOTHING_TO_REVERT", "ALREADY_REVERTED", ""): {
 			"preview_revert",
 			map[string]any{"runId": caseRunID},
-			nothingToRevert("preview_revert", []string{alreadyRevertedLine}, action.RevertNothing, "every line skipped", uuid.MustParse(caseChangeID)),
+			nothingToRevert("preview_revert", []string{alreadyRevertedLine}, revertstore.RevertNothing, "every line skipped", uuid.MustParse(caseChangeID)),
 		},
 		stepcatalogtest.CaseKey("NOT_FOUND", "REVERT", ""): {"request_revert", revertArgs, plainFunc(func() error { return revertNotFound(uuid.MustParse(caseRevertID)) })},
 		stepcatalogtest.CaseKey("NOT_FOUND", "TASK", ""): {
 			"preview_revert",
 			map[string]any{"taskId": caseRunID},
 			plainFunc(func() error {
-				return notOwnTask(action.Scope{Kind: "TASK", ID: uuid.MustParse(caseRunID)})
+				return notOwnTask(revertstore.Scope{Kind: "TASK", ID: uuid.MustParse(caseRunID)})
 			}),
 		},
 	}
@@ -249,7 +250,7 @@ func caseBatchedRevert(t *testing.T, status string) action.Revert {
 func planItems(outcome string, nos ...int) []RevertPlanLine {
 	out := make([]RevertPlanLine, 0, len(nos))
 	for _, n := range nos {
-		out = append(out, RevertPlanLine{RevertLine: action.RevertLine{No: n, Outcome: outcome}})
+		out = append(out, RevertPlanLine{RevertLine: revertstore.RevertLine{No: n, Outcome: outcome}})
 	}
 	return out
 }
@@ -272,8 +273,8 @@ func planGuidanceOf(t *testing.T, s *Service, r action.Revert, items []RevertPla
 // catalog the use case builds.
 func resultCases() map[string]resultCase {
 	revertArgs := map[string]any{"revertId": caseRevertID}
-	run := action.Scope{Kind: revert.ScopeRun, ID: uuid.MustParse(caseRunID)}
-	task := action.Scope{Kind: revert.ScopeTask, ID: uuid.MustParse(caseRunID)}
+	run := revertstore.Scope{Kind: revert.ScopeRun, ID: uuid.MustParse(caseRunID)}
+	task := revertstore.Scope{Kind: revert.ScopeTask, ID: uuid.MustParse(caseRunID)}
 	state := func(status string) func(*testing.T, *testService) (string, []toolresult.Link, []toolresult.NextStep) {
 		return func(t *testing.T, s *testService) (string, []toolresult.Link, []toolresult.NextStep) {
 			out, err := s.revertState(context.Background(), caseRevertWith(t, status))
@@ -283,7 +284,7 @@ func resultCases() map[string]resultCase {
 	}
 	batch := func(status string) func(*testing.T, *testService) (string, []toolresult.Link, []toolresult.NextStep) {
 		return func(t *testing.T, s *testService) (string, []toolresult.Link, []toolresult.NextStep) {
-			person, steps, err := s.batchGuidance(action.BatchResult{
+			person, steps, err := s.batchGuidance(revertstore.BatchResult{
 				RevertID: uuid.MustParse(caseRevertID), Batch: 5, Status: status, Restored: 1000, Skipped: 9,
 			})
 			require.NoError(t, err)

@@ -9,9 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -41,11 +38,11 @@ func (s *Service) hostOf(a config.Agent) (agentHost, error) {
 	if err != nil {
 		return agentHost{}, refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
 	}
-	pc, err := pgconn.ParseConfig(dsn)
+	pc, err := s.be.ParseTarget(dsn)
 	if err != nil {
 		return agentHost{}, refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
 	}
-	h := agentHost{host: trustprofile.NormalizeHost(pc.Host), port: int(pc.Port), database: pc.Database}
+	h := agentHost{host: trustprofile.NormalizeHost(pc.Host), port: pc.Port, database: pc.Database}
 	if p := s.opts.Profiles().For(h.host); p != nil && p.Name == trustprofile.PinName(h.host) {
 		h.pin = p
 	}
@@ -168,7 +165,7 @@ func (s *Service) readTrust(ctx context.Context, j agentJob) (trustCase, error) 
 
 // openTrust logs in with the admin string, verify-full against that one
 // certificate: the new one the person trusted, or the engine's pin.
-func (s *Service) openTrust(ctx context.Context, j agentJob, tc trustCase) (*pgx.Conn, error) {
+func (s *Service) openTrust(ctx context.Context, j agentJob, tc trustCase) (Conn, error) {
 	prof := tc.pin
 	if tc.changed {
 		prof = tc.next
@@ -186,7 +183,7 @@ func (s *Service) openTrust(ctx context.Context, j agentJob, tc trustCase) (*pgx
 
 // trustPlan reads in tx what the fix would do, after the checks every fix
 // makes: for MISMATCH the ledger's record, which must name another pin.
-func (s *Service) trustPlan(ctx context.Context, tx pgx.Tx, j agentJob, tc trustCase) (CheckAnswer, error) {
+func (s *Service) trustPlan(ctx context.Context, tx Tx, j agentJob, tc trustCase) (CheckAnswer, error) {
 	database, err := s.fixDatabase(ctx, tx, j)
 	if err != nil {
 		return CheckAnswer{}, err
@@ -195,9 +192,9 @@ func (s *Service) trustPlan(ctx context.Context, tx pgx.Tx, j agentJob, tc trust
 		return fixAnswer(database, []string{fmt.Sprintf("This replaces the certificate BasaltDB trusts for %s.", tc.host)},
 			recordSQL(tc.host, tc.port, tc.seen.SHA256)), nil
 	}
-	recorded, ok, err := s.be.RecordedTrustPinTx(ctx, tx, j.names, tc.host, tc.port)
+	recorded, ok, err := s.be.RecordedTrustPinTx(ctx, tx.Port(), j.names, tc.host, tc.port)
 	if err != nil {
-		return CheckAnswer{}, setupFailed("read the recorded trust pin", err)
+		return CheckAnswer{}, s.setupFailed("read the recorded trust pin", err)
 	}
 	if !ok || pinHolds(tc.pin, recorded) {
 		return CheckAnswer{}, nothingToFix()
@@ -228,7 +225,7 @@ func (s *Service) checkTrust(ctx context.Context, j agentJob) (CheckAnswer, erro
 	defer conn.Close(context.WithoutCancel(ctx))
 	tx, err := conn.Begin(ctx)
 	if err != nil {
-		return CheckAnswer{}, setupFailed("begin", err)
+		return CheckAnswer{}, s.setupFailed("begin", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	out, err := s.trustPlan(ctx, tx, j, tc)
@@ -253,7 +250,7 @@ func (s *Service) runTrust(ctx context.Context, j agentJob) (RunAnswer, error) {
 	}
 	defer conn.Close(context.WithoutCancel(ctx))
 	var database, sha string
-	err = inTx(ctx, conn, func(tx pgx.Tx) error {
+	err = s.inTx(ctx, conn, func(tx Tx) error {
 		plan, err := s.trustPlan(ctx, tx, j, tc)
 		if err != nil {
 			return err
@@ -266,8 +263,8 @@ func (s *Service) runTrust(ctx context.Context, j agentJob) (RunAnswer, error) {
 			}
 			sha = plan.Pinned
 		}
-		if err := s.be.RecordTrustPin(ctx, s.be.Port(tx), tc.host, tc.port, sha); err != nil {
-			return setupFailed("record the trust pin", err)
+		if err := s.be.RecordTrustPin(ctx, tx.Port(), tc.host, tc.port, sha); err != nil {
+			return s.setupFailed("record the trust pin", err)
 		}
 		if !tc.changed {
 			now, err := s.hostOf(j.agent)
@@ -285,7 +282,7 @@ func (s *Service) runTrust(ctx context.Context, j agentJob) (RunAnswer, error) {
 		return nil
 	})
 	if err != nil {
-		return RunAnswer{}, timeLimit(ctx, AsRefusal(err))
+		return RunAnswer{}, timeLimit(ctx, s.asRefusal(err))
 	}
 	line := fmt.Sprintf("certificate SHA-256 %s recorded for %s in the database %s", sha, tc.host, database)
 	if tc.changed {

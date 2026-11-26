@@ -20,6 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 )
@@ -424,14 +425,14 @@ func refusalCases() []refusalCase {
 		},
 		{
 			name: "request_revert: a resource name the store cannot use",
-			own:  memFilterNameDetail, pg: postgresRevertRefusal(action.RevertFilterName).Detail,
+			own:  memFilterNameDetail, pg: postgresRevertRefusal(revertstore.RevertFilterName).Detail,
 			run: revertCall(guidance.ToolRequestRevert, func(h *harness) map[string]any {
 				return map[string]any{"runId": writtenRun(h).String(), "resources": []string{"public.customers"}}
 			}),
 		},
 		{
 			name: "preview_revert: a resource the agent did not write",
-			own:  "shop/orders has no change of yours in this run", pg: postgresRevertRefusal(action.RevertFilter).Detail,
+			own:  "shop/orders has no change of yours in this run", pg: postgresRevertRefusal(revertstore.RevertFilter).Detail,
 			run: revertCall(guidance.ToolPreviewRevert, func(h *harness) map[string]any {
 				return map[string]any{"runId": writtenRun(h).String(), "resources": []string{colOrders}}
 			}),
@@ -443,7 +444,7 @@ func refusalCases() []refusalCase {
 			}),
 		},
 		{
-			name: "request_revert: the store's time limit", code: codeDeadline, pgCode: postgresRevertRefusal(action.RevertTimedOut).StoreCode,
+			name: "request_revert: the store's time limit", code: codeDeadline, pgCode: postgresRevertRefusal(revertstore.RevertTimedOut).StoreCode,
 			run: revertCall(guidance.ToolRequestRevert, func(h *harness) map[string]any {
 				require.NoError(h.t, h.store.StartRun(context.Background(), action.Intent{RunID: slowRun, Text: "slow"}))
 				return map[string]any{"runId": slowRun.String()}

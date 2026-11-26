@@ -6,9 +6,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -147,7 +144,7 @@ func (s *Service) Doctor(ctx context.Context, req DoctorRequest) (DoctorAnswer, 
 	}
 	defer conn.Close(context.WithoutCancel(ctx))
 	if err := s.readDoctor(ctx, conn, a, &out); err != nil {
-		return DoctorAnswer{}, timeLimit(ctx, setupFailed("read the doctor checks", err))
+		return DoctorAnswer{}, timeLimit(ctx, s.setupFailed("read the doctor checks", err))
 	}
 	return out, nil
 }
@@ -159,7 +156,7 @@ var errNoLogin = errors.New("the agent cannot log in")
 // not on out and returns errNoLogin. A certificate that does not verify
 // is never answered with a login: the chain is read with the handshake
 // alone, and a pinned host presenting another chain top is CHANGED.
-func (s *Service) agentLogin(ctx context.Context, a config.Agent, out *DoctorAnswer) (*pgx.Conn, error) {
+func (s *Service) agentLogin(ctx context.Context, a config.Agent, out *DoctorAnswer) (Conn, error) {
 	rejected := &DoctorLogin{Code: action.ReasonCredentialRejected, Message: "The database refuses the agent's credential, or this engine has none for it."}
 	dsn, err := s.be.ReadCredential(a.Store.CredentialFile)
 	if err != nil {
@@ -170,7 +167,6 @@ func (s *Service) agentLogin(ctx context.Context, a config.Agent, out *DoctorAns
 	if err == nil {
 		return conn, nil
 	}
-	var pg *pgconn.PgError
 	switch {
 	case ctx.Err() != nil:
 		return nil, refuse(CodeTimeLimit, "The check ran out of time.")
@@ -179,7 +175,7 @@ func (s *Service) agentLogin(ctx context.Context, a config.Agent, out *DoctorAns
 			return nil, errNoLogin
 		}
 		out.Login = &DoctorLogin{Code: CodeCertificateNotVerified, Message: "The database's TLS certificate does not verify, so the agent cannot connect."}
-	case errors.As(err, &pg) && len(pg.Code) >= 2 && pg.Code[:2] == "28":
+	case loginRefused(err):
 		out.Login = rejected
 	default:
 		out.Login = &DoctorLogin{Code: action.ReasonDatabaseUnreachable, Message: "The database cannot be reached with the agent's credential."}
@@ -212,11 +208,13 @@ func (s *Service) certificateChanged(ctx context.Context, a config.Agent, out *D
 // readDoctor reads, on the agent's connection, metadata only: the
 // database's name, the guard, the ledger's pin, the unlabeled columns and
 // the passkeys. A row that cannot be read stays UNKNOWN.
-func (s *Service) readDoctor(ctx context.Context, conn *pgx.Conn, a config.Agent, out *DoctorAnswer) error {
-	if err := conn.QueryRow(ctx, `SELECT pg_catalog.current_database()::text`).Scan(&out.Database); err != nil {
+func (s *Service) readDoctor(ctx context.Context, conn Conn, a config.Agent, out *DoctorAnswer) error {
+	database, err := s.be.CurrentDatabase(ctx, conn.Port())
+	if err != nil {
 		return err
 	}
-	st, err := s.be.AgentStatus(ctx, s.be.Port(conn), s.be.Migrations())
+	out.Database = database
+	st, err := s.be.AgentStatus(ctx, conn.Port(), s.be.Migrations())
 	if err != nil {
 		return err
 	}
@@ -225,7 +223,7 @@ func (s *Service) readDoctor(ctx context.Context, conn *pgx.Conn, a config.Agent
 		return nil
 	}
 	if h, err := s.hostOf(a); err == nil && h.pin != nil {
-		if rec, ok, err := s.be.RecordedTrustPin(ctx, s.be.Port(conn), h.host, h.port); err == nil && ok && !pinHolds(h.pin, rec) {
+		if rec, ok, err := s.be.RecordedTrustPin(ctx, conn.Port(), h.host, h.port); err == nil && ok && !pinHolds(h.pin, rec) {
 			out.Certificate = DoctorCertificate{State: StateMismatch, Host: h.host, Port: h.port, Pinned: pinnedSHA(h.pin, ""), Recorded: rec}
 		}
 	}
@@ -251,9 +249,9 @@ func (s *Service) guardRow(st guardmodel.Status) DoctorGuard {
 
 // doctorLabels counts the columns pii_unclassified() returns for the
 // agent's role with why NEW or UNCLASSIFIED, and names the first 20.
-func (s *Service) doctorLabels(ctx context.Context, conn *pgx.Conn) DoctorLabels {
+func (s *Service) doctorLabels(ctx context.Context, conn Conn) DoctorLabels {
 	out := DoctorLabels{State: StateUnknown, Columns: []string{}}
-	cols, err := s.be.PIIUnclassified(ctx, s.be.Port(conn))
+	cols, err := s.be.PIIUnclassified(ctx, conn.Port())
 	if err != nil {
 		return out
 	}
@@ -276,9 +274,9 @@ func (s *Service) doctorLabels(ctx context.Context, conn *pgx.Conn) DoctorLabels
 // doctorPasskeys lists the active passkeys the agent's role may read
 // (agent_passkeys), at most 100, oldest first. OK when one has this page's
 // origin.
-func (s *Service) doctorPasskeys(ctx context.Context, conn *pgx.Conn) DoctorPasskeys {
+func (s *Service) doctorPasskeys(ctx context.Context, conn Conn) DoctorPasskeys {
 	out := DoctorPasskeys{State: StateUnknown, Items: []DoctorPasskey{}}
-	keys, err := s.be.ListPasskeys(ctx, s.be.Port(conn))
+	keys, err := s.be.ListPasskeys(ctx, conn.Port())
 	if err != nil {
 		return out
 	}

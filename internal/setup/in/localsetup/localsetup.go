@@ -17,9 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
@@ -170,7 +167,7 @@ type Options struct {
 	// Now is the clock (time.Now outside tests).
 	Now func() time.Time
 	// Dial opens the admin connection (Backend.Connect outside tests).
-	Dial func(ctx context.Context, dsn string) (*pgx.Conn, error)
+	Dial func(ctx context.Context, dsn string) (Conn, error)
 	// Users looks OS users up (the OS outside tests).
 	Users Users
 	// Prefix is the roles' prefix: guardmodel.DefaultPrefix outside tests,
@@ -181,15 +178,15 @@ type Options struct {
 	// (the engine loads engine.json only at its start).
 	Configured bool
 	// DialPinned opens the admin connection trusting only the pin's
-	// certificate for its host (pinnedDial outside tests).
-	DialPinned func(ctx context.Context, dsn string, pin *trustprofile.Profile) (*pgx.Conn, error)
+	// certificate for its host (Backend.ConnectPinned outside tests).
+	DialPinned func(ctx context.Context, dsn string, pin *trustprofile.Profile) (Conn, error)
 	// Profiles are the trust profiles in force (Backend.Trust outside tests).
 	Profiles func() *trustprofile.Set
 	// Probe reads the chain a host presents (trustpin.Fetch outside tests).
 	Probe func(ctx context.Context, host string, port int) ([]*x509.Certificate, error)
 	// SampleColumn reads a column's sample for the check's suggestions
 	// (the classifier's sampler outside tests).
-	SampleColumn func(ctx context.Context, conn *pgx.Conn, col pii.Column) (pii.Sample, error)
+	SampleColumn func(ctx context.Context, conn Conn, col pii.Column) (pii.Sample, error)
 	// Euid is this process's effective user id (os.Geteuid outside tests).
 	Euid func() int
 	// CredentialChanged tells the running engine an agent's new password,
@@ -233,7 +230,7 @@ func New(o Options) (*Service, error) {
 		o.Prefix = guardmodel.DefaultPrefix
 	}
 	if o.DialPinned == nil {
-		o.DialPinned = pinnedDial(o.Backend)
+		o.DialPinned = o.Backend.ConnectPinned
 	}
 	if o.Profiles == nil {
 		o.Profiles = o.Backend.Trust
@@ -364,12 +361,12 @@ func (s *Service) checkAdminURL(raw, role string) (string, error) {
 // sameTarget: two connection strings, as the driver parses them (query
 // parameters included), name the same host and port (the host compared in
 // lowercase) and the same database.
-func sameTarget(a, b string) bool {
-	ca, err := pgconn.ParseConfig(a)
+func (s *Service) sameTarget(a, b string) bool {
+	ca, err := s.be.ParseTarget(a)
 	if err != nil {
 		return false
 	}
-	cb, err := pgconn.ParseConfig(b)
+	cb, err := s.be.ParseTarget(b)
 	if err != nil {
 		return false
 	}
@@ -378,7 +375,7 @@ func sameTarget(a, b string) bool {
 }
 
 // connect opens the admin connection; a failure is a fixed refusal.
-func (s *Service) connect(ctx context.Context, admin string) (*pgx.Conn, error) {
+func (s *Service) connect(ctx context.Context, admin string) (Conn, error) {
 	conn, err := s.opts.Dial(ctx, admin)
 	if err != nil {
 		return nil, s.connectError(ctx, err)
@@ -388,7 +385,7 @@ func (s *Service) connect(ctx context.Context, admin string) (*pgx.Conn, error) 
 
 // open opens the admin connection of j: a real install may pin the
 // database's certificate (connectAdmin).
-func (s *Service) open(ctx context.Context, req Request) (*pgx.Conn, *pin, error) {
+func (s *Service) open(ctx context.Context, req Request) (Conn, *pin, error) {
 	if req.Demo {
 		conn, err := s.connect(ctx, req.DatabaseURL)
 		return conn, nil, err
@@ -422,12 +419,12 @@ type planned struct {
 // every row-level security question were answered ALL_ROWS, the page's
 // answer; a run passes the person's. The caller rolls tx back (check) or
 // commits (run).
-func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database string, answers []Answer) (planned, error) {
+func (s *Service) plan(ctx context.Context, tx Tx, j job, password, database string, answers []Answer) (planned, error) {
 	prefix := s.opts.Prefix
 	names := guardmodel.Names{Prefix: prefix}
-	installed, err := s.be.InstalledPrefix(ctx, s.be.Port(tx))
+	installed, err := s.be.InstalledPrefix(ctx, tx.Port())
 	if err != nil {
-		return planned{}, setupFailed("read the guard prefix", err)
+		return planned{}, s.setupFailed("read the guard prefix", err)
 	}
 	if installed != "" && installed != prefix {
 		return planned{}, refuse(CodePrefixMismatch, "This database's Basalt uses the prefix "+installed+", not "+prefix+".")
@@ -435,9 +432,9 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 	if err := s.usable(ctx, tx); err != nil {
 		return planned{}, err
 	}
-	exists, err := s.be.AgentRoleExists(ctx, s.be.Port(tx), names, j.req.Agent)
+	exists, err := s.be.AgentRoleExists(ctx, tx.Port(), names, j.req.Agent)
 	if err != nil {
-		return planned{}, setupFailed("read the agent role", err)
+		return planned{}, s.setupFailed("read the agent role", err)
 	}
 	var p planned
 	if exists {
@@ -450,9 +447,9 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 			// typed on the page allows a new one, as it allows REPAIR. The
 			// install's adopt checks still refuse anything but a plain agent
 			// role.
-			var member bool
-			if err := tx.QueryRow(ctx, `SELECT pg_catalog.pg_has_role($1, $2, 'MEMBER')`, j.role, names.Agents()).Scan(&member); err != nil {
-				return planned{}, setupFailed("read the agent role membership", err)
+			member, err := s.be.IsMember(ctx, tx.Port(), j.role, names.Agents())
+			if err != nil {
+				return planned{}, s.setupFailed("read the agent role membership", err)
 			}
 			if !member {
 				return planned{}, refuse(CodeRoleExists, fmt.Sprintf("The database already has the role %s. An install never takes over a role outside BasaltDB's agents.", j.role))
@@ -471,13 +468,13 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 	}
 	opts := guardmodel.InitOptions{Names: names}
 	if j.req.Demo {
-		if p.seeded, err = s.be.SeedDemo(ctx, tx); err != nil {
-			return planned{}, setupFailed("seed the sample data", err)
+		if p.seeded, err = s.be.SeedDemo(ctx, tx.Port()); err != nil {
+			return planned{}, s.setupFailed("seed the sample data", err)
 		}
 		spec.Write = s.be.DemoTables()
 	} else {
-		if p.list, err = readListing(ctx, s.be.Port(tx), j.schemas); err != nil {
-			return planned{}, setupFailed("read the tables", err)
+		if p.list, err = s.readListing(ctx, tx.Port(), j.schemas); err != nil {
+			return planned{}, s.setupFailed("read the tables", err)
 		}
 		if j.picks == nil {
 			return p, nil // the listing call
@@ -486,9 +483,9 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 			return planned{}, err
 		}
 		spec.Write, spec.Read = p.write, p.read
-		blind, err := s.be.AgentBlindTables(ctx, s.be.Port(tx), names, spec)
+		blind, err := s.be.AgentBlindTables(ctx, tx.Port(), names, spec)
 		if err != nil {
-			return planned{}, setupFailed("read the tables without row-level security", err)
+			return planned{}, s.setupFailed("read the tables without row-level security", err)
 		}
 		p.questions = questions(blind, j.req.Agent)
 		if answers == nil {
@@ -500,8 +497,8 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 		p.answers = answers
 	}
 	opts.Agent = spec
-	if p.script, err = s.be.PlanInit(ctx, s.be.Port(tx), opts); err != nil {
-		return planned{}, setupFailed("plan the install", err)
+	if p.script, err = s.be.PlanInit(ctx, tx.Port(), opts); err != nil {
+		return planned{}, s.setupFailed("plan the install", err)
 	}
 	return p, nil
 }
@@ -522,7 +519,7 @@ func (s *Service) ownRole(ctx context.Context, j job, database string) bool {
 	// The kept credential must be for the server and database this run's
 	// admin string names, before it is tried at all: a role of the same
 	// name on another server is never taken over.
-	if !sameTarget(dsn, j.req.DatabaseURL) {
+	if !s.sameTarget(dsn, j.req.DatabaseURL) {
 		return false
 	}
 	conn, err := s.opts.Dial(ctx, dsn)
@@ -530,8 +527,8 @@ func (s *Service) ownRole(ctx context.Context, j job, database string) bool {
 		return false
 	}
 	defer conn.Close(context.WithoutCancel(ctx))
-	var user, db string
-	if err := conn.QueryRow(ctx, `SELECT current_user::text, pg_catalog.current_database()::text`).Scan(&user, &db); err != nil {
+	user, db, err := s.be.CurrentUserAndDatabase(ctx, conn.Port())
+	if err != nil {
 		return false
 	}
 	return user == j.role && db == database
@@ -539,13 +536,13 @@ func (s *Service) ownRole(ctx context.Context, j job, database string) bool {
 
 // usable refuses GUARD_UNUSABLE for a basalt_meta this build cannot
 // install over or update, before anything is planned or changed.
-func (s *Service) usable(ctx context.Context, tx pgx.Tx) error {
-	err := s.be.CheckUsable(ctx, s.be.Port(tx))
+func (s *Service) usable(ctx context.Context, tx Tx) error {
+	err := s.be.CheckUsable(ctx, tx.Port())
 	switch {
 	case s.be.UnusableInstall(err):
 		return refuse(CodeGuardUnusable, "This database has an older BasaltDB install that this version cannot use. Remove it first, then set up again: "+s.be.RemoveOldInstallDoc()+" says how. Nothing changed.")
 	case err != nil:
-		return setupFailed("read the installed guard", err)
+		return s.setupFailed("read the installed guard", err)
 	}
 	return nil
 }
@@ -553,11 +550,27 @@ func (s *Service) usable(ctx context.Context, tx pgx.Tx) error {
 // setupFailed is SETUP_FAILED for err at step: the person's message names
 // the Postgres error code and the step when the database refused it, and
 // Cause carries the redacted message for the engine's log.
-func setupFailed(step string, err error) *RefusalError {
-	c := causeOf(step, err)
+func (s *Service) setupFailed(step string, err error) *RefusalError {
+	return failed(step, err, s.be.DatabaseError)
+}
+
+// failed is SETUP_FAILED for err at step, its cause read with describe
+// (causeOf).
+func failed(step string, err error, describe describeError) *RefusalError {
+	c := causeOf(step, err, describe)
 	r := refuse(CodeSetupFailed, setup.FailedMessage(c.Step, c.SQLState))
 	r.Cause = c
 	return r
+}
+
+// refused is err as the refusal the page answers with (asRefusal); nil
+// stays nil. Every call the page makes returns its error through it, so
+// the page's AsRefusal only ever finds a refusal.
+func (s *Service) refused(err error) error {
+	if err == nil {
+		return nil
+	}
+	return s.asRefusal(err)
 }
 
 // Check reads what an install would do. It changes nothing.
@@ -565,7 +578,7 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 	given := req.DatabaseURL
 	req.DatabaseURL = s.verifyByDefault(given)
 	a, err := s.check(ctx, req)
-	return a, scrub(scrub(err, given), req.DatabaseURL)
+	return a, scrub(scrub(s.refused(err), given), req.DatabaseURL)
 }
 
 // verifyByDefault is the admin string the check and the run use: with
@@ -594,7 +607,7 @@ func (s *Service) check(ctx context.Context, req Request) (CheckAnswer, error) {
 	defer conn.Close(context.WithoutCancel(ctx))
 	tx, err := conn.Begin(ctx)
 	if err != nil {
-		return CheckAnswer{}, setupFailed("begin", err)
+		return CheckAnswer{}, s.setupFailed("begin", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	database, err := s.currentDatabase(ctx, tx)
@@ -612,7 +625,7 @@ func (s *Service) check(ctx context.Context, req Request) (CheckAnswer, error) {
 	}
 	needed, err := passkeyNeeded(ctx, s.be, tx, s.opts.Origin)
 	if err != nil {
-		return CheckAnswer{}, timeLimit(ctx, setupFailed("read the passkeys", err))
+		return CheckAnswer{}, timeLimit(ctx, s.setupFailed("read the passkeys", err))
 	}
 	if !req.Demo && j.picks == nil {
 		out, err := listingAnswer(j, database, p, needed)
@@ -624,7 +637,7 @@ func (s *Service) check(ctx context.Context, req Request) (CheckAnswer, error) {
 	}
 	ch, err := s.challenge(req, bound{database: database, host: j.host, picks: picksKey(j.picks), answers: answersKey(p.answers), classes: classesKey(req), trustRoot: req.TrustRoot})
 	if err != nil {
-		return CheckAnswer{}, setupFailed("make the passkey challenge", err)
+		return CheckAnswer{}, s.setupFailed("make the passkey challenge", err)
 	}
 	if !req.Demo {
 		out := CheckAnswer{
@@ -640,7 +653,7 @@ func (s *Service) check(ctx context.Context, req Request) (CheckAnswer, error) {
 		// read and sampled on the connection.
 		_ = tx.Rollback(context.WithoutCancel(ctx))
 		if out.Columns, out.ColumnsMore, err = s.columns(ctx, conn, j); err != nil {
-			return CheckAnswer{}, timeLimit(ctx, setupFailed("read the columns", err))
+			return CheckAnswer{}, timeLimit(ctx, s.setupFailed("read the columns", err))
 		}
 		return out, nil
 	}
@@ -678,26 +691,25 @@ func listingAnswer(j job, database string, p planned, needed bool) (CheckAnswer,
 
 // currentDatabase is the name of the database the connection reached, as
 // the server says it: never a name read from the admin string.
-func (s *Service) currentDatabase(ctx context.Context, tx pgx.Tx) (string, error) {
-	name, err := s.be.CurrentDatabase(ctx, s.be.Port(tx))
+func (s *Service) currentDatabase(ctx context.Context, tx Tx) (string, error) {
+	name, err := s.be.CurrentDatabase(ctx, tx.Port())
 	if err != nil {
-		return "", setupFailed("read the database name", err)
+		return "", s.setupFailed("read the database name", err)
 	}
 	return name, nil
 }
 
 // passkeyNeeded: the database has no active passkey for origin (none at
 // all on a fresh database, whose passkeys table does not exist yet).
-func passkeyNeeded(ctx context.Context, b Backend, tx pgx.Tx, origin string) (bool, error) {
+func passkeyNeeded(ctx context.Context, b Backend, tx Tx, origin string) (bool, error) {
 	// A savepoint: on a fresh database the lookup fails and must not abort tx.
 	sub, err := tx.Begin(ctx)
 	if err != nil {
 		return false, err
 	}
 	defer func() { _ = sub.Rollback(context.WithoutCancel(ctx)) }()
-	has, err := b.HasPasskeyFor(ctx, b.Port(sub), origin)
-	var pg *pgconn.PgError
-	if errors.As(err, &pg) && (pg.Code == "42P01" || pg.Code == "3F000") {
+	has, err := b.HasPasskeyFor(ctx, sub.Port(), origin)
+	if code := setup.SQLStateOf(err); code == "42P01" || code == "3F000" {
 		return true, nil // basalt_meta or its passkeys table does not exist yet
 	}
 	return !has, err

@@ -10,6 +10,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 )
 
 // RevertRequest is the revert request of a revert this agent's role
@@ -70,24 +71,24 @@ func (rc *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret strin
 // RelayRevert applies the person's signed revert (apply_revert): the store
 // verifies the signature and runs the revert, or for a large plan records
 // it for the agent's batches.
-func (rc *Service) RelayRevert(ctx context.Context, r revert.Response) (action.AppliedRevert, linksvc.Receipt, error) {
+func (rc *Service) RelayRevert(ctx context.Context, r revert.Response) (revertstore.AppliedRevert, linksvc.Receipt, error) {
 	open, err := rc.openRevert(ctx, r.RevertID)
 	if err != nil {
-		return action.AppliedRevert{}, linksvc.Receipt{}, err
+		return revertstore.AppliedRevert{}, linksvc.Receipt{}, err
 	}
 	applied, err := rc.store.Proofs.ApplyRevert(ctx, r.RevertID, r.Assertion())
 	if err != nil {
-		return action.AppliedRevert{}, linksvc.Receipt{}, rc.applyRevertError(ctx, open, err)
+		return revertstore.AppliedRevert{}, linksvc.Receipt{}, rc.applyRevertError(ctx, open, err)
 	}
 	// The store accepted the signature: the receipt names the revert as
 	// the store records it now.
 	signed, err := rc.store.Records.FindRevert(ctx, r.RevertID)
 	if err != nil {
-		return action.AppliedRevert{}, linksvc.Receipt{}, err
+		return revertstore.AppliedRevert{}, linksvc.Receipt{}, err
 	}
 	receipt, err := rc.revertReceipt(signed)
 	if err != nil {
-		return action.AppliedRevert{}, linksvc.Receipt{}, err
+		return revertstore.AppliedRevert{}, linksvc.Receipt{}, err
 	}
 	return applied, receipt, nil
 }
@@ -99,7 +100,7 @@ func (rc *Service) openRevert(ctx context.Context, id uuid.UUID) (action.Revert,
 		return action.Revert{}, err
 	}
 	r, err := rc.store.Records.FindRevert(ctx, id)
-	if refusalOf(err).Reason == action.RevertNotFound {
+	if refusalOf(err).Reason == revertstore.RevertNotFound {
 		return action.Revert{}, linksvc.ErrNotThisAgent
 	}
 	if err != nil {

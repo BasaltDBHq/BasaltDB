@@ -9,6 +9,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -28,7 +29,7 @@ type StoreSet struct {
 // data.
 type Records interface {
 	FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error)
-	ListApprovals(ctx context.Context, p action.ApprovalListParams) (pagination.Page[action.Approval], error)
+	ListApprovals(ctx context.Context, p approvalstore.ApprovalListParams) (pagination.Page[action.Approval], error)
 	Passkeys(ctx context.Context) ([]passkey.Credential, error)
 	// RevealNonce is the reveal nonce of an approval or revert the role
 	// holds (approval.KindApprove or approval.KindRevert).
@@ -41,11 +42,11 @@ type Holds interface {
 	// returns its lines and the fields whose new values the person's
 	// approval binds. It refuses a write that cannot be run again the same
 	// way with an *action.RefusalError (NOT_REPEATABLE), and marks an error
-	// of the preview run as *action.PreviewFailedError; any other error (the
+	// of the preview run as *approvalstore.PreviewFailedError; any other error (the
 	// store's catalog read failing) comes unmarked.
-	Preview(ctx context.Context, in action.Intent, req agentstore.Request) (action.HeldPreview, error)
+	Preview(ctx context.Context, in action.Intent, req agentstore.Request) (approvalstore.HeldPreview, error)
 	// Hold stores a held write for the person's approval.
-	Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error)
+	Hold(ctx context.Context, in action.Intent, r approvalstore.HoldRequest) (approvalstore.Held, error)
 }
 
 // Proofs is the person's side: the page's calls, through the local pages or

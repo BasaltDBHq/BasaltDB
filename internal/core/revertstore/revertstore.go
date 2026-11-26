@@ -1,4 +1,4 @@
-package action
+package revertstore
 
 import (
 	"errors"
@@ -9,6 +9,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
 // The revert types name the signed-message codecs (revert, passkey,
@@ -253,4 +254,25 @@ type RejectedRevert struct {
 type RevealedRevert struct {
 	Rows        []approval.RevealedRow `json:"rows"`
 	RowsChanged bool                   `json:"rowsChanged"`
+}
+
+// RevertLine is one line of a batched plan: its number (execution order),
+// the signed text, and what happened to it. StoreCode is the store's own
+// error code for a skipped line, when it has one. Batch is nil while
+// pending.
+type RevertLine struct {
+	No        int
+	Text      string
+	Outcome   string
+	Conflict  string
+	StoreCode string
+	Batch     *int
+}
+
+// RevertLineParams lists a batched plan's lines in number order. Outcome
+// "" lists every line.
+type RevertLineParams struct {
+	pagination.Params
+	RevertID uuid.UUID
+	Outcome  string
 }

@@ -5,9 +5,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
@@ -28,7 +28,7 @@ func (s *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret string
 // verifies the signature and runs the revert, or for a large plan records
 // it for the agent's batches.
 // RelayRevert is the revert use case's RelayRevert.
-func (s *Service) RelayRevert(ctx context.Context, r revert.Response) (action.AppliedRevert, linksvc.Receipt, error) {
+func (s *Service) RelayRevert(ctx context.Context, r revert.Response) (revertstore.AppliedRevert, linksvc.Receipt, error) {
 	return s.revert.RelayRevert(ctx, r)
 }
 

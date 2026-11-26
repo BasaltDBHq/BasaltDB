@@ -27,6 +27,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
@@ -254,7 +255,7 @@ func pageID(t *testing.T, link string) (uuid.UUID, string) {
 // personSignsRevert is the person on the revert page the agent's link
 // opens: the page reads the request, checks it against the binding, and
 // posts the signed response.
-func (h *harness) personSignsRevert(link string) (revert.Request, revert.Binding, action.AppliedRevert, error) {
+func (h *harness) personSignsRevert(link string) (revert.Request, revert.Binding, revertstore.AppliedRevert, error) {
 	h.t.Helper()
 	id, secret := pageID(h.t, link)
 	req, err := h.revert.RevertRequest(context.Background(), id, secret)

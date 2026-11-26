@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -77,7 +78,7 @@ func (ac *Service) ListPending(ctx context.Context, p PendingParams) (pagination
 	var entries []PendingEntry
 	more := false
 	if p.Kind != guidance.KindRevert && p.Status != action.RevertApplying {
-		page, err := ac.store.Records.ListApprovals(ctx, action.ApprovalListParams{Params: p.Params, RunID: p.RunID, Status: p.Status})
+		page, err := ac.store.Records.ListApprovals(ctx, approvalstore.ApprovalListParams{Params: p.Params, RunID: p.RunID, Status: p.Status})
 		if err != nil {
 			return pagination.Page[PendingEntry]{}, err
 		}

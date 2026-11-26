@@ -10,6 +10,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -102,7 +103,7 @@ func (rc *Service) applyBatchSteps(plan RevertPlan) ([]toolresult.NextStep, erro
 
 // batchGuidance is what apply_revert_batch adds to a batch's result: more
 // lines to read, or the plan's end.
-func (rc *Service) batchGuidance(res action.BatchResult) (string, []toolresult.NextStep, error) {
+func (rc *Service) batchGuidance(res revertstore.BatchResult) (string, []toolresult.NextStep, error) {
 	if res.Status != action.RevertApplied {
 		return "", applyingSteps(res.RevertID), nil
 	}

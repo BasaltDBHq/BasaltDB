@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 )
@@ -16,15 +17,15 @@ import (
 // errStore is the store's own error a refusal wraps in these tests.
 var errStore = errors.New("the store's own text")
 
-func refused(reason action.ApprovalReason) error {
-	return &action.ApprovalRefusalError{Reason: reason, Err: errStore}
+func refused(reason approvalstore.ApprovalReason) error {
+	return &approvalstore.ApprovalRefusalError{Reason: reason, Err: errStore}
 }
 
 // missingStore holds no approval: the store refuses every find NOT_FOUND.
 type missingStore struct{ catalogStore }
 
 func (missingStore) FindApproval(context.Context, uuid.UUID) (action.Approval, error) {
-	return action.Approval{}, refused(action.ApprovalNotFound)
+	return action.Approval{}, refused(approvalstore.ApprovalNotFound)
 }
 
 // An approval the store does not find is the page's ErrNotThisAgent, for
@@ -54,23 +55,23 @@ func TestRevealApprovalErrorByReason(t *testing.T) {
 
 	t.Run("reveal refused", func(t *testing.T) {
 		t.Parallel()
-		pe := pageError(t, ac.revealApprovalError(refused(action.ApprovalRevealRefused), link))
+		pe := pageError(t, ac.revealApprovalError(refused(approvalstore.ApprovalRevealRefused), link))
 		require.Equal(t, guidance.CodeApprovalInvalid, pe.Code)
 		require.Equal(t, guidance.ReasonRevealRefused, pe.Reason)
 	})
 	t.Run("rows changed", func(t *testing.T) {
 		t.Parallel()
-		pe := pageError(t, ac.revealApprovalError(refused(action.ApprovalRevealRowsChanged), link))
+		pe := pageError(t, ac.revealApprovalError(refused(approvalstore.ApprovalRevealRowsChanged), link))
 		require.Equal(t, guidance.CodeApprovalInvalid, pe.Code)
 		require.Equal(t, guidance.ReasonRowsChanged, pe.Reason)
 	})
 	t.Run("not found", func(t *testing.T) {
 		t.Parallel()
-		require.ErrorIs(t, ac.revealApprovalError(refused(action.ApprovalNotFound), link), linksvc.ErrNotThisAgent)
+		require.ErrorIs(t, ac.revealApprovalError(refused(approvalstore.ApprovalNotFound), link), linksvc.ErrNotThisAgent)
 	})
 	t.Run("not open", func(t *testing.T) {
 		t.Parallel()
-		pe := pageError(t, ac.revealApprovalError(refused(action.ApprovalNotOpen), link))
+		pe := pageError(t, ac.revealApprovalError(refused(approvalstore.ApprovalNotOpen), link))
 		require.Equal(t, guidance.CodeApprovalInvalid, pe.Code)
 		require.Equal(t, "the hidden rows cannot be shown: the approval was signed or used meanwhile", pe.Message)
 	})

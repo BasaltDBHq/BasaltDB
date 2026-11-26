@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -123,15 +124,15 @@ func (rc *Service) revokeRejected(ctx context.Context, id uuid.UUID) {
 func (rc *Service) rejectError(r action.Revert, heldToken bool, err error) error {
 	refused := refusalOf(err)
 	switch {
-	case refused.Reason == action.RevertWidenRefused && heldToken:
+	case refused.Reason == revertstore.RevertWidenRefused && heldToken:
 		return rc.personScopeGone(r)
-	case refused.Reason == action.RevertWidenRefused:
+	case refused.Reason == revertstore.RevertWidenRefused:
 		return rejectRefused()
-	case refused.Reason == action.RevertNotFound:
+	case refused.Reason == revertstore.RevertNotFound:
 		return linksvc.ErrNotThisAgent
-	case refused.Reason == action.RevertExpiredReason:
+	case refused.Reason == revertstore.RevertExpiredReason:
 		return rc.revertExpired(r)
-	case refused.Reason == action.RevertNotPending:
+	case refused.Reason == revertstore.RevertNotPending:
 		return &guidance.PageError{ToolError: &toolresult.ToolError{
 			Code:          guidance.CodeRevertInvalid,
 			Message:       "the revert can no longer be rejected: it was signed or rejected meanwhile",

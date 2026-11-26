@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -19,6 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
+	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
@@ -51,7 +51,7 @@ type revealEnv struct {
 	a    *guardtest.Agent
 	p    *passkeytest.Authenticator
 	in   guard.Intent
-	prep action.PreparedRevert
+	prep revertstore.PreparedRevert
 }
 
 func newRevealEnv(t *testing.T) revealEnv {
@@ -63,7 +63,7 @@ func newRevealEnv(t *testing.T) revealEnv {
 	// The person's passkey is a synced one from here on: its counter stays
 	// 0, so only the nonce stops a replay.
 	d.Exec(t, `UPDATE basalt_meta.passkeys SET sign_count = 0`)
-	prep, err := guard.PrepareRevert(context.Background(), a.Conn, action.Scope{Kind: revert.ScopeRun, ID: e.in.RunID}, "Undo it")
+	prep, err := guard.PrepareRevert(context.Background(), a.Conn, revertstore.Scope{Kind: revert.ScopeRun, ID: e.in.RunID}, "Undo it")
 	require.NoError(t, err)
 	e.prep = prep
 	require.Len(t, redactedLines(t, prep.Lines), 4)
@@ -183,7 +183,7 @@ func TestRevealRevertRows(t *testing.T) {
 	require.Nil(t, guardVerify(t, e.d))
 }
 
-func rowsText(out action.RevealedRevert) string {
+func rowsText(out revertstore.RevealedRevert) string {
 	parts := make([]string, 0, len(out.Rows))
 	for _, r := range out.Rows {
 		parts = append(parts, r.Row)
@@ -208,7 +208,7 @@ func TestRevealRevertRowsRefused(t *testing.T) {
 	}
 	valid := sign(revealChallenge(t, approval.KindRevert, id, nonce, key, hash))
 	otherHash := sha256.Sum256([]byte("another rowsHash"))
-	other, err := guard.PrepareRevert(ctx, e.a.Conn, action.Scope{Kind: revert.ScopeRun, ID: e.in.RunID}, "again")
+	other, err := guard.PrepareRevert(ctx, e.a.Conn, revertstore.Scope{Kind: revert.ScopeRun, ID: e.in.RunID}, "again")
 	require.NoError(t, err)
 	widenKey, err := revert.RescopeKey([]byte("secret"))
 	require.NoError(t, err)
@@ -411,7 +411,7 @@ func TestRevealRevertRowsMatchTheTable(t *testing.T) {
 	e := revealEnv{d: d, a: a, p: person(t, d), in: newRun(t, a, "Drop parent 1")}
 	approvedWrite(t, a, e.p, e.in, `DELETE FROM public.parents WHERE id = $1`, []any{1}, []string{})
 	d.Exec(t, `UPDATE basalt_meta.passkeys SET sign_count = 0`)
-	prep, err := guard.PrepareRevert(context.Background(), a.Conn, action.Scope{Kind: revert.ScopeRun, ID: e.in.RunID}, "Undo it")
+	prep, err := guard.PrepareRevert(context.Background(), a.Conn, revertstore.Scope{Kind: revert.ScopeRun, ID: e.in.RunID}, "Undo it")
 	require.NoError(t, err)
 	e.prep = prep
 	want := redactedLines(t, prep.Lines)

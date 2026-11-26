@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
+	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -20,39 +21,39 @@ import (
 // what the service sent it.
 type holdStore struct {
 	catalogStore
-	preview    action.HeldPreview
+	preview    approvalstore.HeldPreview
 	previewErr error
 	holdErr    error
 
 	previewed []agentstore.Request
-	held      []action.HoldRequest
+	held      []approvalstore.HoldRequest
 }
 
-func (s *holdStore) Preview(_ context.Context, _ action.Intent, req agentstore.Request) (action.HeldPreview, error) {
+func (s *holdStore) Preview(_ context.Context, _ action.Intent, req agentstore.Request) (approvalstore.HeldPreview, error) {
 	s.previewed = append(s.previewed, req)
 	return s.preview, s.previewErr
 }
 
-func (s *holdStore) Hold(_ context.Context, _ action.Intent, r action.HoldRequest) (action.Held, error) {
+func (s *holdStore) Hold(_ context.Context, _ action.Intent, r approvalstore.HoldRequest) (approvalstore.Held, error) {
 	s.held = append(s.held, r)
 	if s.holdErr != nil {
-		return action.Held{}, s.holdErr
+		return approvalstore.Held{}, s.holdErr
 	}
-	return action.Held{ApprovalID: uuid.Must(uuid.NewV7()), BindingText: "binding"}, nil
+	return approvalstore.Held{ApprovalID: uuid.Must(uuid.NewV7()), BindingText: "binding"}, nil
 }
 
 // The service previews through the store, checks the lines and holds with
 // the request as the agent sent it, Basalt's op and the preview's fields.
 func TestHoldPassesTheRequestOnUnread(t *testing.T) {
 	t.Parallel()
-	st := &holdStore{preview: action.HeldPreview{Assigned: []string{"status"}, Lines: []string{`{"op":"UPDATE"}`}}}
+	st := &holdStore{preview: approvalstore.HeldPreview{Assigned: []string{"status"}, Lines: []string{`{"op":"UPDATE"}`}}}
 	ac := newService(t, "linux", "", func(s *settings) { s.store = st })
 	req := agentstore.Request{Text: `{"filter": {"status": "open"}}`, Params: []any{1}}
 
 	held, err := ac.Hold(context.Background(), action.Intent{Text: "close"}, req, action.OpUpdate)
 	require.NoError(t, err)
 	require.Equal(t, []agentstore.Request{req}, st.previewed)
-	require.Equal(t, []action.HoldRequest{{Op: action.OpUpdate, Request: req, Assigned: []string{"status"}, Lines: st.preview.Lines}}, st.held)
+	require.Equal(t, []approvalstore.HoldRequest{{Op: action.OpUpdate, Request: req, Assigned: []string{"status"}, Lines: st.preview.Lines}}, st.held)
 	require.Equal(t, st.preview.Lines, held.Lines)
 	require.Equal(t, "binding", held.BindingText)
 }
@@ -78,13 +79,13 @@ func TestHoldExits(t *testing.T) {
 	}{
 		{name: "not repeatable", store: holdStore{previewErr: notRepeatable}, want: notRepeatable, refusal: true},
 		{name: "catalog read failing", store: holdStore{previewErr: catalog}, want: catalog},
-		{name: "preview run failing", store: holdStore{previewErr: &action.PreviewFailedError{Err: run}}, want: run, refusal: true},
-		{name: "no rows now", store: holdStore{preview: action.HeldPreview{Lines: nil}}, code: guidance.CodeStoreError},
-		{name: "over the cap", store: holdStore{preview: action.HeldPreview{Lines: over}}, code: guidance.CodeStatementRefused, refusal: true},
+		{name: "preview run failing", store: holdStore{previewErr: &approvalstore.PreviewFailedError{Err: run}}, want: run, refusal: true},
+		{name: "no rows now", store: holdStore{preview: approvalstore.HeldPreview{Lines: nil}}, code: guidance.CodeStoreError},
+		{name: "over the cap", store: holdStore{preview: approvalstore.HeldPreview{Lines: over}}, code: guidance.CodeStatementRefused, refusal: true},
 		// Unreachable in practice: admission refuses a guard from before the
 		// 64 MiB cap (64 KiB a line) before any hold. Not a regression.
-		{name: "the hold failing on a long line", store: holdStore{preview: action.HeldPreview{Lines: []string{strings.Repeat("x", 64<<10+1)}}, holdErr: olderGuard}, want: olderGuard, holds: 1},
-		{name: "the guard's own cap", store: holdStore{preview: action.HeldPreview{Lines: line}, holdErr: guardTooLarge}, want: guardTooLarge, holds: 1},
+		{name: "the hold failing on a long line", store: holdStore{preview: approvalstore.HeldPreview{Lines: []string{strings.Repeat("x", 64<<10+1)}}, holdErr: olderGuard}, want: olderGuard, holds: 1},
+		{name: "the guard's own cap", store: holdStore{preview: approvalstore.HeldPreview{Lines: line}, holdErr: guardTooLarge}, want: guardTooLarge, holds: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

@@ -7,9 +7,6 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
@@ -37,15 +34,13 @@ func (s *Service) repairable(ctx context.Context, j agentJob) (string, error) {
 		return "", refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
 	}
 	conn, err := s.opts.Dial(ctx, dsn)
-	var pg *pgconn.PgError
 	switch {
 	case err == nil:
 		defer conn.Close(context.WithoutCancel(ctx))
-		var user string
-		if err := conn.QueryRow(ctx, `SELECT current_user::text`).Scan(&user); err == nil && user == j.role {
+		if user, err := s.be.CurrentUser(ctx, conn.Port()); err == nil && user == j.role {
 			return "", nothingToFix()
 		}
-	case errors.As(err, &pg) && len(pg.Code) >= 2 && pg.Code[:2] == "28":
+	case loginRefused(err):
 		// The database refuses the credential: the fix applies.
 	case s.be.CertificateNotVerified(err):
 		return "", refuse(CodeCertificateNotVerified, "The database's TLS certificate could not be verified, so the agent's login was not tried. Check the certificate first; nothing changed.")
@@ -59,7 +54,7 @@ func (s *Service) repairable(ctx context.Context, j agentJob) (string, error) {
 func (s *Service) repairPlan(j agentJob, password string) (guardmodel.Script, []string, error) {
 	script, err := s.be.RepairScript(j.names, j.req.Agent, password, statementTimeout.Milliseconds())
 	if err != nil {
-		return guardmodel.Script{}, nil, setupFailed("plan the repair", err)
+		return guardmodel.Script{}, nil, s.setupFailed("plan the repair", err)
 	}
 	lines := []string{fmt.Sprintf("This sets a new password for %s. Only this computer's BasaltDB knows it.", j.role)}
 	if j.missing {
@@ -79,7 +74,7 @@ func (s *Service) checkRepair(ctx context.Context, j agentJob) (CheckAnswer, err
 	defer conn.Close(context.WithoutCancel(ctx))
 	tx, err := conn.Begin(ctx)
 	if err != nil {
-		return CheckAnswer{}, setupFailed("begin", err)
+		return CheckAnswer{}, s.setupFailed("begin", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	database, err := s.fixDatabase(ctx, tx, j)
@@ -122,7 +117,7 @@ func (s *Service) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) 
 	defer conn.Close(context.WithoutCancel(ctx))
 	var database string
 	wrote := false
-	err = inTx(ctx, conn, func(tx pgx.Tx) error {
+	err = s.inTx(ctx, conn, func(tx Tx) error {
 		if database, err = s.fixDatabase(ctx, tx, j); err != nil {
 			return err
 		}
@@ -130,7 +125,7 @@ func (s *Service) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) 
 		if err != nil {
 			return err
 		}
-		if err := setup.ApplyInitTx(ctx, s.be, s.be.Port(tx), script); err != nil {
+		if err := setup.ApplyInitTx(ctx, s.be, tx.Port(), script); err != nil {
 			return refuse(CodeSetupFailed, fmt.Sprintf("The role %s is not a plain agent role this admin can repair (elevated attributes, other memberships, owned objects or settings it cannot reset). Nothing changed.", j.role))
 		}
 		wrote = true
@@ -151,7 +146,7 @@ func (s *Service) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) 
 		case wrote:
 			_ = config.WriteFile(credFile, old) // the role keeps its old password
 		}
-		return RunAnswer{}, timeLimit(ctx, AsRefusal(err))
+		return RunAnswer{}, timeLimit(ctx, s.asRefusal(err))
 	}
 	s.opts.CredentialChanged(j.req.Agent, password)
 	return RunAnswer{

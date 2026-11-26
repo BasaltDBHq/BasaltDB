@@ -13,7 +13,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
-	"github.com/basaltdbhq/basaltdb/internal/testkit/configtest"
 )
 
 const finishSetupID = "0193a4c2-7d1e-7c3a-9f00-0000000000e5"
@@ -32,8 +31,10 @@ func TestClearSetupClearsOnlyThatSetup(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "engine.json")
 	bot, other := pendingAgent("bot"), pendingAgent("other")
-	require.NoError(t, configtest.UpsertAgent(path, config.Settings{SocketDir: "/run/basalt", OperatedBy: "AGENT", PagesURL: links.Portal}, bot))
-	require.NoError(t, configtest.UpsertAgent(path, config.Settings{}, other))
+	_, err := config.UpsertAgentVault(path, config.Settings{SocketDir: "/run/basalt", OperatedBy: "AGENT", PagesURL: links.Portal}, bot)
+	require.NoError(t, err)
+	_, err = config.UpsertAgentVault(path, config.Settings{}, other)
+	require.NoError(t, err)
 
 	// Another setup id (init --remote made a new code meanwhile): unchanged.
 	cleared, err := config.ClearSetup(path, "bot", "0193a4c2-7d1e-7c3a-9f00-0000000000ff")
@@ -64,10 +65,11 @@ func TestClearSetupRefusesALinkedConfig(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	target := filepath.Join(dir, "real.json")
-	require.NoError(t, configtest.UpsertAgent(target, config.Settings{SocketDir: "/run/basalt"}, pendingAgent("bot")))
+	_, err := config.UpsertAgentVault(target, config.Settings{SocketDir: "/run/basalt"}, pendingAgent("bot"))
+	require.NoError(t, err)
 	link := filepath.Join(dir, "engine.json")
 	require.NoError(t, os.Symlink(target, link))
-	_, err := config.ClearSetup(link, "bot", finishSetupID)
+	_, err = config.ClearSetup(link, "bot", finishSetupID)
 	require.Error(t, err)
 	c, err := config.Load(target)
 	require.NoError(t, err)
@@ -82,14 +84,16 @@ func TestClearSetupAndAnUpsertOfAnotherAgentBothLand(t *testing.T) {
 	for i := range rounds {
 		path := filepath.Join(t.TempDir(), "engine.json")
 		a, b := pendingAgent("a"), pendingAgent("b")
-		require.NoError(t, configtest.UpsertAgent(path, config.Settings{SocketDir: "/run/basalt"}, a))
-		require.NoError(t, configtest.UpsertAgent(path, config.Settings{}, b))
+		_, err := config.UpsertAgentVault(path, config.Settings{SocketDir: "/run/basalt"}, a)
+		require.NoError(t, err)
+		_, err = config.UpsertAgentVault(path, config.Settings{}, b)
+		require.NoError(t, err)
 
 		b.OSUser = "other_bot"
 		var wg sync.WaitGroup
 		var clearErr, upsertErr error
 		wg.Go(func() { _, clearErr = config.ClearSetup(path, "a", finishSetupID) })
-		wg.Go(func() { upsertErr = configtest.UpsertAgent(path, config.Settings{}, b) })
+		wg.Go(func() { _, upsertErr = config.UpsertAgentVault(path, config.Settings{}, b) })
 		wg.Wait()
 		require.NoError(t, clearErr, "round %d", i)
 		require.NoError(t, upsertErr, "round %d", i)

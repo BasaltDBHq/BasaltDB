@@ -14,7 +14,6 @@ internal/core/linkcodec.inflate  # Decode's inflate, for the same tests
 internal/core/passkey.VerifyAssertion  # test oracle of the guard's signature check, shared by approvaltest and passkey's tests; needs passkey's unexported parsers
 internal/handoff.Repin.Done  # read by handoff's and app's repin tests; a method on Repin's unexported state
 internal/handoff.Repin.Problem  # read by handoff's and app's repin tests; a method on Repin's unexported state
-internal/lib/logredact.NewJSONHandler  # shared by the redaction tests of links, vault, plugin, app and logredact; needs logredact's unexported options
 internal/platform/postgres/guard.AppendTestMigrations  # guardtest's hook; rewrites guard's unexported migration list
 internal/platform/postgres/guard.KeepTestMigrationsUpTo  # guardtest's hook; rewrites guard's unexported migration list
 internal/platform/postgres/guard.PreviewRevert  # test oracle shared by guard's and store's Postgres tests; needs guard's unexported scope SQL

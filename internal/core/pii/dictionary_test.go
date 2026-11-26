@@ -515,14 +515,30 @@ func TestDictionaryTwoWordNameMatchesReversed(t *testing.T) {
 	byBuild := openDict(t, t.TempDir(), k, dictOptions())
 	require.NoError(t, buildWith(t, byBuild, []value{name, long, addr}))
 	for kind, d := range map[string]*pii.FuseDictionary{"delta": byDelta, "build": byBuild} {
-		for _, in := range []string{"Tamm Alice", "TAMM Alice", "Alice Tamm", "tamm alice"} {
+		for _, in := range []string{"Tamm, Alice", "TAMM Alice", "Alice Tamm", "tamm alice"} {
 			typ, ok := d.Lookup(k.GenericHash(in))
 			require.True(t, ok, "%s %q", kind, in)
 			require.Equal(t, pii.EntityPersonName, typ, "%s %q", kind, in)
 		}
-		for _, in := range []string{"Kask Liis Mari", "Kask Mari Liis", "Lane Fixture"} {
+		for _, in := range []string{"Kask Liis Mari", "Kask, Mari Liis", "Lane Fixture"} {
 			_, ok := d.Lookup(k.GenericHash(in))
 			require.False(t, ok, "%s %q", kind, in)
 		}
 	}
+}
+
+// Known limits of the reversed order: a pair of ordinary words reversed is
+// still a match (it errs toward privacy), and a hyphen or an apostrophe
+// splits a word, so such a name has three words and no reversed form.
+func TestReversedNameKnownLimits(t *testing.T) {
+	k := newKeys(t, testMaster)
+	d := openDict(t, t.TempDir(), k, dictOptions())
+	require.NoError(t, d.Add(pii.EntityPersonName, "Will Smith", ""))
+	require.NoError(t, d.Add(pii.EntityPersonName, "Mari-Liis Kask", ""))
+	_, ok := d.Lookup(k.GenericHash("Smith will"))
+	require.True(t, ok)
+	_, ok = d.Lookup(k.GenericHash("Mari-Liis Kask"))
+	require.True(t, ok)
+	_, ok = d.Lookup(k.GenericHash("Kask, Mari-Liis"))
+	require.False(t, ok)
 }

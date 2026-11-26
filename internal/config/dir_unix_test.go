@@ -13,7 +13,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
-	"github.com/basaltdbhq/basaltdb/internal/testkit/configtest"
 )
 
 // realDir is a temporary directory with no symlink on its path.
@@ -46,7 +45,8 @@ func TestUpsertAgentVaultAtStaysInTheOpenedDirectory(t *testing.T) {
 	require.NoError(t, os.Mkdir(cfgDir, 0o700))
 	require.NoError(t, os.Mkdir(elsewhere, 0o700))
 	cfg := filepath.Join(cfgDir, "engine.json")
-	require.NoError(t, configtest.UpsertAgent(cfg, config.Settings{SocketDir: "/run/basalt"}, config.Agent{Name: "one", OSUser: "bot", Store: config.PostgresStore("/c/one.url")}))
+	_, err := config.UpsertAgentVault(cfg, config.Settings{SocketDir: "/run/basalt"}, config.Agent{Name: "one", OSUser: "bot", Store: config.PostgresStore("/c/one.url")})
+	require.NoError(t, err)
 	d := openDir(t, cfgDir)
 
 	// The swap: the config directory moves away and a symlink takes its
@@ -55,7 +55,7 @@ func TestUpsertAgentVaultAtStaysInTheOpenedDirectory(t *testing.T) {
 	require.NoError(t, os.Rename(cfgDir, moved))
 	require.NoError(t, os.Symlink(elsewhere, cfgDir))
 
-	_, err := config.UpsertAgentVaultAt(d, "engine.json", trustedCheck, -1, config.Settings{}, config.Agent{Name: "two", OSUser: "bot", Store: config.PostgresStore("/c/two.url")})
+	_, err = config.UpsertAgentVaultAt(d, "engine.json", trustedCheck, -1, config.Settings{}, config.Agent{Name: "two", OSUser: "bot", Store: config.PostgresStore("/c/two.url")})
 	require.NoError(t, err)
 	entries, err := os.ReadDir(elsewhere)
 	require.NoError(t, err)
@@ -80,7 +80,8 @@ func TestUpsertAgentVaultAtRefusesAnUntrustedConfig(t *testing.T) {
 	dir := realDir(t)
 	d := openDir(t, dir)
 	cfg := filepath.Join(dir, "engine.json")
-	require.NoError(t, configtest.UpsertAgent(cfg, config.Settings{SocketDir: "/run/basalt"}, config.Agent{Name: "one", OSUser: "bot", Store: config.PostgresStore("/c/one.url")}))
+	_, err := config.UpsertAgentVault(cfg, config.Settings{SocketDir: "/run/basalt"}, config.Agent{Name: "one", OSUser: "bot", Store: config.PostgresStore("/c/one.url")})
+	require.NoError(t, err)
 	before, err := os.ReadFile(cfg)
 	require.NoError(t, err)
 

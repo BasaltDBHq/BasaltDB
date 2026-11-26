@@ -6,10 +6,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
-	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -27,15 +25,6 @@ type Service struct {
 	approvals ApprovalReads
 	// failure maps an error to the tool's error body for a page answer.
 	failure func(tool string, args map[string]any, err error) *toolresult.ToolError
-}
-
-// ApprovalReads is the part of the approval group that delivery reads.
-type ApprovalReads interface {
-	Passkeys(ctx context.Context) ([]passkey.Credential, error)
-	FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error)
-	// HasColumns says whether the pages can show the resources' field order.
-	HasColumns() bool
-	ColumnOrder(ctx context.Context, resources []string) (map[string][]string, error)
 }
 
 func New(core Core, deps *Deps, approvals ApprovalReads,

@@ -39,29 +39,6 @@ const (
 // budget can hold even at 16-bit fingerprints; the previous base stays.
 var ErrScanOverBudget = errors.New("pii: the scan found more values than pii.maxMemoryMB can hold; the previous dictionary stays")
 
-// Builder is the dictionary the scan rebuilds (corepii.FuseDictionary).
-type Builder interface {
-	StartBuild() (*corepii.DictionaryBuild, error)
-	RebuildNeeded() <-chan struct{}
-}
-
-// Fields reads the values of one agent's fields for the dictionary scan,
-// with the agent's own credential (decision M51-2) and statement timeout
-// (the store's adapter: pgpii.Fields).
-type Fields interface {
-	// Read pages through t's fields, pageRows rows at a time. value gets
-	// each non-null value of t.Fields[field] as the read path hands it: a
-	// JSON value as json.RawMessage, any other as its text (string). A
-	// json.RawMessage's bytes are the adapter's and valid only during the
-	// call: value must copy what it keeps, never the bytes themselves. page
-	// gets each page's row count, after that page's read has let go of its
-	// connection, so the rate limit's sleep never holds one. An error of
-	// value or page is returned as is. A resource the scan should skip
-	// fails with piistore.ErrUnreadable or piistore.ErrTooSlow, wrapping
-	// the store's error.
-	Read(ctx context.Context, t piistore.ScanTarget, pageRows int, value func(field int, v any) error, page func(rows int) error) error
-}
-
 // ScanSource is one agent whose readable IDENTIFIER fields the scan reads.
 type ScanSource struct {
 	Agent string

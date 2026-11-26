@@ -42,15 +42,6 @@ type LinkNotice struct {
 	Link string
 }
 
-// LinkDeliverer takes the notice of an answer the agent is about to get, or
-// of a write just held whose call waits for the person. DeliverLink must
-// return at once: it runs on the agent's call, after the answer that holds
-// the link is built, and nothing it does may delay or change the call's
-// answer. It returns nothing, so the answer cannot depend on it.
-type LinkDeliverer interface {
-	DeliverLink(n LinkNotice)
-}
-
 // noticeHeadlineMax is deliver.schema.json's longest headline.
 const noticeHeadlineMax = 1000
 

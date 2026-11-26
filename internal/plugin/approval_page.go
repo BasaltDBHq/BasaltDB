@@ -23,19 +23,6 @@ import (
 // link comes with request_plugin's result. The relay decides nothing:
 // the guard verifies the passkey signature in the agent's store.
 
-// PluginApprovalStore is the guard's plugin approvals on the agent's own
-// credential (schema version Plugin.ApprovalsVersion).
-type PluginApprovalStore interface {
-	// ReadPluginApproval is one plugin approval the role may see, and false
-	// when there is none. Its texts are set only for the role that opened
-	// it.
-	ReadPluginApproval(ctx context.Context, id uuid.UUID) (guardmodel.PluginApprovalRecord, bool, error)
-	// SubmitPluginApproval relays the person's assertion; the guard
-	// verifies it and records the approval. A refusal is a
-	// *pluginmodel.ApprovalRefusalError.
-	SubmitPluginApproval(ctx context.Context, r guardmodel.PluginApprovalResponse) (time.Time, error)
-}
-
 // PluginApprovalRequest is the request of a pending plugin approval this
 // agent's role opened: its binding and settings texts as the guard built
 // them, and the database's passkeys.

@@ -26,25 +26,6 @@ const (
 	maxWarnedFields = 4096
 )
 
-// Classes is the store's classification of one agent's fields, read on the
-// agent's credential.
-type Classes interface {
-	// Snapshot reads the marks and the classes in one consistent read,
-	// begun after the call: the marks first, then the classes.
-	Snapshot(ctx context.Context) (piistore.Snapshot, error)
-	// Marks reads the marks alone.
-	Marks(ctx context.Context) (piistore.Marks, error)
-	// Unclassified lists the fields the agent can read that need a person.
-	Unclassified(ctx context.Context) ([]piistore.Unclassified, error)
-	// ResourceOf is the resource that holds ref, for a ref the map does not
-	// know. ref is never empty.
-	ResourceOf(ref action.FieldRef) action.ResourceRef
-	// Shared is true for a source others may share a load with (a pool),
-	// false inside a caller's transaction (a write's RETURNING), which
-	// reads alone, on its own connection.
-	Shared() bool
-}
-
 // Class is one field's class.
 type Class struct {
 	Namespace, Resource, Field string

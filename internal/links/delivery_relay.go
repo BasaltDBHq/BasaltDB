@@ -10,17 +10,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 )
 
-// LinkRelay registers portal short links with the Vault (CONTRACT.md, Vault
-// channel, The engine's socket to the Vault). *vault.Client is the one
-// implementation outside tests.
-type LinkRelay interface {
-	// Connected reports whether the engine's socket is READY.
-	Connected() bool
-	// Register routes token to this engine until expiresAt; any error
-	// means the link must not be handed over.
-	Register(ctx context.Context, token channel.LinkToken, expiresAt time.Time) error
-}
-
 // RelayLink is a new portal short link over the Vault (CONTRACT.md, Vault
 // channel), or "" to fall back. Only while the socket is READY: the engine
 // issues the link's secret, registers the token derived from it (never the

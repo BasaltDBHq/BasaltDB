@@ -6,11 +6,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 )
 
-// Store maps the store's errors to contract errors.
-type Store interface {
-	MapError(err error) error
-}
-
 // StoreClasses is the agent's PII classification read on its credential
 // (BoundMap), with its errors mapped like the store's, so the agent
 // service sees contract errors.

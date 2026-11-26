@@ -30,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The next step of `APPROVAL_INVALID` `DIFFERENT_WRITE` now repeats the held write's large integer params exactly. They were rounded through a float, so sending the step as it was refused the write again.
 - A tool call that panics and could not save a crash report now answers `INTERNAL` with a `personMessage` that says so, as every `INTERNAL` error does; it had none.
 - A list cursor the engine did not return now gets `INVALID_ARGUMENT` reason `STALE_CURSOR` from every paged tool. A cursor whose id was not a valid id reached the database from `run_history` and `list_pending` and came back as `STORE_ERROR`, with steps to fix a statement the agent never wrote; `list_runs` already refused it.
+- The engine's key files (`channel.json`, `pii.key`) and a remote plugin entry's `auth.credentialFile` are refused when the file has a second hard link, as an agent's credential file already was: another link is another path to the same secret. Every key and credential file is now read with the same checks, and must belong to the user the engine runs as. A kept plugin approval, a trusted plugin key and `last-stop.json` now survive a crash right after they are written.
 
 ## [0.1.0-alpha] - 2026-11-24
 

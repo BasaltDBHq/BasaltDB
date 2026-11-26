@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // The files basalt init --remote keeps next to an agent's credential file
@@ -68,9 +70,13 @@ type Finisher struct {
 	// Parse reads a credential's target and password. Its error is
 	// replaced, since a parse error can echo the URL and its password.
 	Parse func(dsn string) (LoginTarget, string, error)
-	// Connect logs in with dsn. A refused login is one LoginRefused
-	// reports.
+	// Connect logs in with dsn. A refused login is one setup.LoginRefused
+	// reports, read through Errors.
 	Connect func(ctx context.Context, dsn string) (AgentLogin, error)
+	// Errors reads the server's message of a refused login (Supabase's
+	// pooler not knowing the role); internal/app gives the Postgres
+	// adapter's. It is read only for an internal_error answer.
+	Errors setup.DBErrors
 	// Password is what the pool logs in with; Reset drops its connections
 	// so the next ones log in with a promoted password.
 	Password interface{ Set(string) }
@@ -125,7 +131,7 @@ func (f *Finisher) PendingRecorded(ctx context.Context, id uuid.UUID) (recorded,
 	defer cancel()
 	conn, err := f.Connect(ctx, dsn)
 	switch {
-	case LoginRefused(err):
+	case setup.LoginRefused(f.Errors, err):
 		return false, false, nil // the person has not run the code yet
 	case err != nil:
 		return false, false, err

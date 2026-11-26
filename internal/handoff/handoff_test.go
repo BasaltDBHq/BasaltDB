@@ -819,7 +819,7 @@ func TestSavedConnStringVerifiesSupabaseHost(t *testing.T) {
 	}
 	var pg *pgconn.PgError
 	require.ErrorAs(t, login(host), &pg)
-	require.Equal(t, sqlstateInvalidPassword, pg.Code)
+	require.Equal(t, "28P01", pg.Code) // invalid_password
 	require.Equal(t, ReasonTLSNotVerified, reasonOf(login("db.otherprojectref000000.supabase.co")))
 
 	// In production the engine opens it with Supabase's real root.

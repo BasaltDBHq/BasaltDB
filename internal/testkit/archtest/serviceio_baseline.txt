@@ -37,6 +37,7 @@ internal/handoff pathfiles.go: internal/config.SameCredentialFile
 internal/handoff pathfiles.go: os.Lstat
 internal/handoff pathfiles.go: os.Rename
 internal/handoff probe.go: net.Dialer
+internal/handoff probe.go: pkg/trustpin.Fetch
 internal/handoff setupfiles.go: internal/config.LoadNoFollow
 internal/handoff setupfiles.go: internal/config.LockFile
 internal/handoff setupfiles.go: internal/config.ReadOwnCredential

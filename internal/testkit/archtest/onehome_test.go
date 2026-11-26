@@ -234,7 +234,7 @@ var personTimeAllowed = map[string]string{
 	`internal/setup/in/setupcli/remote.go: layout "2006-01-02 15:04" (2 times)`: "the remote setup's two messages format the expiry themselves",
 	`internal/setup/setuprun.go: layout "2006-01-02 15:04"`:                     "the expired-code refusal formats the expiry itself",
 	`internal/setup/engine.go: layout "2006-01-02 15:04"`:                       "UTCMinute, a copy of guidance.PersonTime",
-	`internal/plugin/plugin_approvals.go: layout "2006-01-02 15:04" (2 times)`:  "the plugin approval messages format the deadline themselves",
+	`internal/plugin/approvals.go: layout "2006-01-02 15:04" (2 times)`:         "the plugin approval messages format the deadline themselves",
 }
 
 func TestPersonTimesUseOneLayout(t *testing.T) {

@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
-
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -19,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 )
 
 // PreviewRevertParams are preview_revert's validated arguments: the scope
@@ -719,4 +718,37 @@ func (rc *Service) notifyRevert(ctx context.Context, r action.Revert, n revertLi
 	if err := rc.delivery.NotifyRevertTo(context.WithoutCancel(ctx), sent); err != nil {
 		rc.core.Log.Error("notify revert", "revertId", r.ID, "err", err)
 	}
+}
+
+// Service is the revert use case: previewing, planning, requesting, applying,
+// rescoping, rejecting and revealing a revert. It holds a reference to the
+// shared core group and to its own RevertDeps, holds a copy of the revert's
+// store set, and owns the reverts the person
+// rescoped through this engine. What it needs from the other use cases it names
+// as small ports of its own.
+type Service struct {
+	core     Core
+	store    StoreSet
+	deps     *Deps
+	runs     RunFinder
+	delivery Delivery
+	describe Describe
+	admit    Admitter
+	// rescopes are the reverts the person rescoped through this engine, in
+	// memory only (CONTRACT.md, Rescope, widen and reject).
+	rescopes *rescopes
+}
+
+// New returns the service over core and the revert's store set. It panics
+// on a set with a nil port, since the service reads the store only through
+// them, and on a set without a prepare time limit, which a store may read
+// as no limit at all.
+func New(core Core, store StoreSet, deps *Deps, runs RunFinder, delivery Delivery, describe Describe, admit Admitter) *Service {
+	if missing := store.missingPorts(); len(missing) > 0 {
+		panic("revert: store set missing ports: " + strings.Join(missing, ", "))
+	}
+	if store.Limits.Prepare <= 0 {
+		panic("revert: store set has no prepare time limit")
+	}
+	return &Service{core: core, store: store, deps: deps, runs: runs, delivery: delivery, describe: describe, admit: admit, rescopes: newRescopes()}
 }

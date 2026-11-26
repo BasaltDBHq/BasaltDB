@@ -64,7 +64,7 @@ These rules sit beside the layer table. The last two are review rules; the other
 
 - **Services may depend on services, one way.** Today: `agent` → `approval`, `ledger`, `links`, `pii`, `revert`; `approval` → `links`, `revert`; `revert` → `links`; `handoff` → `setup` (the login proof); `plugin` → `links`, `status`; `status` → `handoff`. Go refuses a cycle, and archtest compares this list with the imports, so a new edge is a change here. Before adding an edge, check whether what you need is shared wording for the agent, which belongs in `core/guidance`.
 - **A service gets every port in its constructor, named `New`.** No service is handed a dependency after it is built: archtest fails an exported `Set*` method on a domain's `Service`. A use case that only reads another domain's data reads it through the store's adapter, which `internal/app` passes in, not through that domain's service: delivery reads the approval records and the column order from the store, and revert reads the statement timeout from the store's limits. So no two services ask each other, and `internal/app` builds them in one order: `status` → `links` → `revert` → `approval` → `agent` → `plugin`. A loop that is truly two-way gets one named late connection, written here; there is none today.
-- **The consumer declares the port.** The package that calls a port defines the interface, with one method per question it asks. A domain declares its ports in `ports.go`; a store-neutral domain's store ports may stay in `store.go`. Where `internal/app` implements a port, the method is a one-line forward.
+- **The consumer declares the port.** The package that calls a port defines the interface, with one method per question it asks. A domain declares its ports in `ports.go`; a store-neutral domain's store ports may stay in `store.go`. In a domain's root no file is named after the domain, the `Service` type is in `service.go` and `Core` and `Deps` are in `deps.go` (archtest `TestShapes`). Where `internal/app` implements a port, the method is a one-line forward.
 - **An inbound adapter only translates.** It decodes a request, calls one service and encodes the answer. A domain's MCP package exports `Tools(port, mount)`; `internal/app` composes every domain's tools in a fixed order and wraps each one once with the admin-credential refusal. The degraded tool sets (`statusmcp.EngineDown` while the engine is down, `handoffmcp.ConnectOnly` while a connect-only setup waits) give app a `Call(tool)`, and app serves and wraps them the same way.
 - **Code lives with its callers and its data,** not with the topic in its name. A builder that only the status report uses stays in `internal/status`, even if it talks about setup.
 - **Type names that reach output never change.** The validator prints an argument struct's Go type name in MCP errors (`Key: 'confirmArgs.Database' …`), and the served goldens pin it. Never rename, export or alias an args or DTO struct, and look for `%T` and reflection before renaming any type.
@@ -241,8 +241,8 @@ A baseline that `scripts/shrink-only.txt` registers is never deleted, only empti
 
 | Step | Where |
 |---|---|
-| MCP tools `request_revert`, `preview_revert`, `revert_plan`, `apply_revert_batch` | `internal/revert/in/revertmcp/tools.go`; the use case in `internal/revert/revert_service.go`, `revert_rescope.go` |
-| Next steps for the agent | `internal/revert/revert_steps.go` |
+| MCP tools `request_revert`, `preview_revert`, `revert_plan`, `apply_revert_batch` | `internal/revert/in/revertmcp/tools.go`; the use case in `internal/revert/service.go`, `rescope.go` |
+| Next steps for the agent | `internal/revert/steps.go` |
 | Revert code and authorisation line | `internal/core/revert` |
 | Passkey signature check | `internal/core/passkey` |
 | Revert SQL, verified inside Postgres | `internal/platform/postgres/guard/revert.go`, `rescope.go`, `schema/006_reverts.sql` |
@@ -253,11 +253,11 @@ A baseline that `scripts/shrink-only.txt` registers is never deleted, only empti
 
 | Step | Where |
 |---|---|
-| A write is held; the agent is told how to wait | `internal/agent/write_hold.go`, `internal/approval/approval_flow.go`, `approval_pending.go`, `internal/links/delivery_deliver.go` |
+| A write is held; the agent is told how to wait | `internal/agent/write_hold.go`, `internal/approval/flow.go`, `pending.go`, `internal/links/deliver.go` |
 | MCP tool `list_pending` | `internal/approval/in/approvalmcp/tools.go` |
 | Approval code and the line the person signs | `internal/core/approval` |
 | Passkey signature check | `internal/core/passkey` |
 | Approval SQL, verified inside Postgres | `internal/platform/postgres/guard/approval.go`, `schema/005_approvals.sql` |
 | Ledger side | `internal/platform/postgres/ledger/approvals.go` |
 | The person's page | `internal/platform/pageserver/pages.go`, `internal/approval/in/approvalpage` |
-| Plugin approvals | `internal/plugin/plugin_approvals.go`, `internal/core/approval/plugin.go` |
+| Plugin approvals | `internal/plugin/approvals.go`, `internal/core/approval/plugin.go` |

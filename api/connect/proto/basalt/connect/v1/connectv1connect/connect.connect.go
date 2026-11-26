@@ -4,9 +4,9 @@
 // anywhere of its own. For a connect-only setup code it holds the
 // database's address (never the password) in memory for up to 30 minutes:
 // from CheckSetup, for the bot's engine to test that it can reach it (the
-// reach check), and from RunSetup, until the engine collects it. Planned:
-// no part of BasaltDB serves it yet; the engine calls CollectAddress and
-// ReportReach.
+// reach check), and from RunSetup, until the engine collects it. The
+// portal's pages make the setup, hand-off and removal calls; the engine
+// calls CollectAddress and ReportReach.
 //
 // Field names are snake_case here; the proto3 JSON names, which the connect
 // page sends and reads, are their camelCase forms. Byte values are strings

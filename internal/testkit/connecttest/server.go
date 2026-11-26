@@ -594,7 +594,7 @@ func fromSetup(e *setup.Error) *refusalError {
 	case "NOT_A_SETUP_CODE", "INVALID", "UNSUPPORTED_FORMAT", "DAMAGED", "EXPIRED", "SETUP_ID_IN_FUTURE", "EXPIRY_TOO_FAR", "GUARD_TOO_OLD":
 		return &refusalError{connect.CodeInvalidArgument, e.Code, e.Message}
 	case "BINARY_TOO_OLD":
-		return &refusalError{connect.CodeUnavailable, e.Code, "Basalt Vault is being updated: try again shortly, or use the laptop command."}
+		return &refusalError{connect.CodeUnavailable, e.Code, "Basalt Vault is being updated: try again shortly."}
 	case setup.CodeTargetMismatch, "PREFIX_MISMATCH", codeUsed, "SUPERSEDED", "ROLE_EXISTS", "ROLE_MISSING", setup.CodeEngineRevoked, setup.CodeTablesMissing,
 		setup.CodeNoTables, setup.CodeTablesChanged, setup.CodeClassesChanged, setup.CodeGuardUnusable,
 		setup.CodeSetupUnconfirmed:

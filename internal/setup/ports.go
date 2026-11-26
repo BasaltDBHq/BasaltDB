@@ -125,10 +125,10 @@ type ContractBackend interface {
 	// and RollbackTx end it (a rollback after a commit is a no-op).
 	BeginTx(ctx context.Context, q Querier) (Querier, error)
 	CommitTx(ctx context.Context, tx Querier) error
+	RollbackTx(ctx context.Context, tx Querier) error
 	// BeginFunc runs fn in a transaction on the connection q runs on:
 	// committed when fn returns nil, rolled back when it returns an error.
 	BeginFunc(ctx context.Context, q Querier, fn func(tx Querier) error) error
-	RollbackTx(ctx context.Context, tx Querier) error
 	// CommitAnswered reports whether a failed commit's outcome is known:
 	// answered with an error, turned into a rollback, or never sent.
 	CommitAnswered(err error) bool

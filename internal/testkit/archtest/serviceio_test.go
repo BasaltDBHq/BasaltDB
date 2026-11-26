@@ -76,7 +76,7 @@ var serviceIOBanned = map[string][]string{
 		// read the config
 		"Load", "LoadNoFollow", "LoadOpenRaw", "Discover",
 		// write the config
-		"UpsertAgent", "UpsertAgentVault", "UpsertAgentVaultAt", "UpsertedVault",
+		"UpsertAgentVault", "UpsertAgentVaultAt", "UpsertedVault",
 		"ClearSetup", "ClearSetupAt", "UpdateConfig", "WriteFile", "RemoveAgents",
 		// read a credential file
 		"ReadCredential", "ReadCredentialAt", "ReadCredentialAtLimit",

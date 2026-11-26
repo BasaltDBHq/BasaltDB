@@ -22,7 +22,7 @@ const configImport = "github.com/basaltdbhq/basaltdb/internal/config"
 // change it. The *At variants, which take an opened directory, are not.
 var configLoaders = map[string]bool{
 	"Load": true, "LoadOpenRaw": true, "LoadNoFollow": true,
-	"UpsertAgent": true, "UpsertAgentVault": true, "UpsertedVault": true,
+	"UpsertAgentVault": true, "UpsertedVault": true,
 	"ClearSetup": true, "UpdateConfig": true, "RemoveAgents": true,
 }
 

@@ -196,7 +196,12 @@ type PluginApprovalResponse struct {
 
 // NewPluginApprovalResponse wraps an assertion for approvalID.
 func NewPluginApprovalResponse(approvalID uuid.UUID, a passkey.Assertion) PluginApprovalResponse {
-	return PluginApprovalResponse{ApprovalID: approvalID, SignedAssertion: passkey.SignedAssertionOf(a)}
+	return PluginApprovalResponse{ApprovalID: approvalID, SignedAssertion: passkey.SignedAssertion{
+		CredentialID:      a.CredentialID,
+		AuthenticatorData: a.AuthenticatorData,
+		ClientDataJSON:    a.ClientDataJSON,
+		Signature:         a.Signature,
+	}}
 }
 
 // Signed returns the approval id and the assertion.

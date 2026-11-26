@@ -8,6 +8,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 )
 
 // fromCompact is the request a format 2 link carries, its id read from the
@@ -37,7 +38,7 @@ func ParseRequest(fragment string) (approval.Request, approval.Binding, error) {
 
 // NewResponse wraps an assertion for approvalID.
 func NewResponse(approvalID uuid.UUID, a passkey.Assertion) approval.Response {
-	return approval.Response{ApprovalID: approvalID, SignedAssertion: passkey.SignedAssertionOf(a)}
+	return approval.Response{ApprovalID: approvalID, SignedAssertion: passkeytest.Signed(a)}
 }
 
 // Verify checks a response against the binding text it should sign and the

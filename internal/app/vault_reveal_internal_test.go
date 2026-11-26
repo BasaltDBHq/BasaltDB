@@ -267,7 +267,7 @@ func TestRevealRoutes(t *testing.T) {
 	// normal answer, since the signature took the row first.
 	sig, err := e.person.Sign(approval.Challenge(rreq.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	_, _, err = e.svc.RelayRevert(ctx, revert.Response{RevertID: e.revert.RevertID, SignedAssertion: passkey.SignedAssertionOf(sig)})
+	_, _, err = e.svc.RelayRevert(ctx, revert.Response{RevertID: e.revert.RevertID, SignedAssertion: passkeytest.Signed(sig)})
 	require.NoError(t, err)
 	late, _ := e.body(t, approval.KindRevert, e.revert.RevertID, rreq.RevealNonce, rb.RowsHash)
 	status, out = viaLoopback(http.MethodPost, revertPath+"/reveal", s.secret, late)

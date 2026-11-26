@@ -16,16 +16,6 @@ type SignedAssertion struct {
 	Signature         Bytes `json:"signature"`
 }
 
-// SignedAssertionOf is assertion a in the pages' JSON.
-func SignedAssertionOf(a Assertion) SignedAssertion {
-	return SignedAssertion{
-		CredentialID:      a.CredentialID,
-		AuthenticatorData: a.AuthenticatorData,
-		ClientDataJSON:    a.ClientDataJSON,
-		Signature:         a.Signature,
-	}
-}
-
 // Assertion returns the WebAuthn assertion the response carries.
 func (s SignedAssertion) Assertion() Assertion {
 	return Assertion{

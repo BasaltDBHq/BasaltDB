@@ -106,8 +106,9 @@ Read **this file before implementing**; do not introduce conventions that confli
 
 ## Tooling
 
-- **Makefile** is the entry point (`.misc/make/tools.Makefile` pins tools into `./bin`, `make help` via `help.Makefile`). Targets include `help`, `deps`, `lint`, `fmt`, `vet`, `test`, `test-cover`, `build`, `mocks`, `ci`.
+- **Makefile** is the entry point (`.misc/make/tools.Makefile` pins tools into `./bin`, `make help` via `help.Makefile`). Targets include `help`, `deps`, `lint`, `fmt`, `vet`, `test`, `test-cover`, `build`, `mocks`, `deadcode`, `ci`.
 - CI calls the same **`make`** targets; "run exact CI steps" means `make ci`.
 - `make check-provider-roots` reads each built-in trust profile under `pkg/trustprofile/profiles/` (Supabase, Amazon RDS), downloads each roots file from the profile's `source` and compares it with the file's pinned SHA-256. It needs the network and is not in `make ci`; run it before a release. When it fails, check the change is only new roots from the provider, replace the file, and update its `sha256` in the profile and its pin and count in `pkg/trustprofile/builtin_test.go`. A new provider is a new profile there: a JSON file and its PEM files, no Go code.
+- `make deadcode` (in `make ci` and the CI lint job) runs `deadcode` for linux and darwin on `cmd/basalt` and `internal/testkit/pkgroot`, which calls the public API under `pkg/`. The result must equal `scripts/deadcode-allowlist.txt`, which only shrinks: delete new dead code instead of listing it, and delete a line when its function is gone or gets a caller. A new exported function under `pkg/` gets a call in `pkgroot`. `pkgroot` may import only `pkg/` packages, and every module package must be reached by a root unless the script names it as a test helper or a package with no functions.
 - **golangci-lint** v2 (pinned in `tools.Makefile`); config in `.golangci.yml`; fix all findings; `//nolint` only with the specific linter and an explanation.
 - Do not commit local `data/`, `tmp/` or credentials.

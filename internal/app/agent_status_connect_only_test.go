@@ -147,7 +147,7 @@ func TestConnectOnlyWaitingServesOnlyStatus(t *testing.T) {
 	t.Parallel()
 	h := &fakeHandoff{st: handoff.State{Setup: connectOnlySetup(statusNow.Add(time.Hour)), Phase: handoff.PhaseWaiting}}
 	c := connectOnlyServer(t, mcpcontract.OperatedByAgent, h)
-	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, c.Tools()...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, degradedTools(c.Call)...)
 
 	r, err := c.Status(context.Background())
 	require.NoError(t, err)
@@ -164,7 +164,7 @@ func TestConnectOnlyWaitingServesOnlyStatus(t *testing.T) {
 	require.NotContains(t, p.PersonMessage, "basalt init --setup-code", "no laptop command for a connect-only code")
 	requireStatusSchema(t, statusToolContract(t), r)
 
-	for _, tool := range c.Tools() {
+	for _, tool := range degradedTools(c.Call) {
 		if tool.Name == guidance.ToolStatus || tool.Name == guidance.ToolConfirmDatabase {
 			continue
 		}
@@ -220,7 +220,7 @@ func TestConnectOnlyConfirmDatabase(t *testing.T) {
 	db := caseDatabase
 	h := &fakeHandoff{st: handoff.State{Setup: connectOnlySetup(statusNow.Add(time.Hour)), Phase: handoff.PhaseConfirm, Database: &db}}
 	c := connectOnlyServer(t, mcpcontract.OperatedByAgent, h)
-	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, c.Tools()...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, degradedTools(c.Call)...)
 
 	r, err := c.Status(context.Background())
 	require.NoError(t, err)

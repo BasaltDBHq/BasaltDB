@@ -93,7 +93,7 @@ func startShimWith(t *testing.T, socket string, opts shim.Options) (*client, <-c
 	// valid name passes app's checks, so they are guidance.NewCommands' own.
 	cmds := guidance.NewCommands("bot", "", config.DefaultPath("linux"), "linux", testServiceManager())
 	down := statusmcp.EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
-	fallback := statusmcp.NewServer(down, app.Instructions)
+	fallback := app.NewEngineDownServer(down)
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	done := make(chan error, 1)

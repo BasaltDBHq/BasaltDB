@@ -105,13 +105,19 @@ func runMCP(ctx context.Context, args []string, io cli.Stdio) int {
 	return enginecli.RunMCPOn(ctx, args, io, osHost{}, engineCLIHost{})
 }
 
+// NewEngineDownServer is down's engine-down tools served as basalt mcp's
+// own MCP server, with the agent's instructions; app wraps each tool once.
+func NewEngineDownServer(down statusmcp.EngineDown) statusmcp.Server {
+	return statusmcp.NewServer(down, Instructions, degradedTools(down.Call))
+}
+
 // engineDownServer is what basalt mcp answers while the engine is down.
 func engineDownServer(name, configPath string, log *slog.Logger) (statusmcp.Server, error) {
 	down, err := statusmcp.LoadEngineDown(name, configPath, AgentServiceManager(), agentEngineHost(), log)
 	if err != nil {
 		return statusmcp.Server{}, err
 	}
-	return statusmcp.NewServer(down, Instructions), nil
+	return NewEngineDownServer(down), nil
 }
 
 // runService is basalt service for the command table.

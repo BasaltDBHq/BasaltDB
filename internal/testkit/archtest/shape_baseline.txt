@@ -1,4 +1,0 @@
-internal/handoff/in/handoffmcp: connect_only.go: ConnectOnly.Tools returns []mcpserver.Tool (export one func Tools(port, mount) []mcpserver.Tool)
-internal/handoff/in/handoffmcp: connect_only.go: ConnectOnly.Tools uses mcpserver.RefuseAdminCredential (internal/app wraps every tool once)
-internal/status/in/statusmcp: enginedown.go: EngineDown.Tools returns []mcpserver.Tool (export one func Tools(port, mount) []mcpserver.Tool)
-internal/status/in/statusmcp: enginedown.go: EngineDown.Tools uses mcpserver.RefuseAdminCredential (internal/app wraps every tool once)

@@ -53,7 +53,7 @@ func (engineCLIHost) EngineDown(name, configPath string, log *slog.Logger) (stat
 }
 
 func (engineCLIHost) NewEngineDownServer(down statusmcp.EngineDown) shim.Fallback {
-	return statusmcp.NewServer(down, Instructions)
+	return NewEngineDownServer(down)
 }
 
 func (engineCLIHost) SocketAgents(dir string) []string {

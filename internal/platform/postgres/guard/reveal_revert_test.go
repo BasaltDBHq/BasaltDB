@@ -256,11 +256,11 @@ func TestRevealRevertRowsRefused(t *testing.T) {
 	// Another agent's revert and an unknown one read alike.
 	helper := e.d.NewAgent(t, "helper", leads, leads)
 	_, theirs := guard.RevealRevertRows(ctx, helper.Conn, id, valid, key)
-	requireRevertInvalid(t, theirs, "no such revert")
+	requireRevertRefused(t, theirs, guard.RevertNotFound, "no such revert")
 	_, unknown := guard.RevealRevertRows(ctx, e.a.Conn, uuid.Must(uuid.NewV7()), valid, key)
 	require.Equal(t, scopeErrorText(t, theirs, id), scopeErrorText(t, unknown))
 	_, err = guard.RevealNonce(ctx, helper.Conn, approval.KindRevert, id)
-	requireRevertInvalid(t, err, "no such revert")
+	requireRevertRefused(t, err, guard.RevertNotFound, "no such revert")
 	_, err = guard.RevealNonce(ctx, e.a.Conn, "OTHER", id)
 	requireCode(t, err, guard.CodeLedgerInputInvalid)
 }

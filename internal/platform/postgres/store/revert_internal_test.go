@@ -102,7 +102,8 @@ func TestRevertRefusalsPerCall(t *testing.T) {
 		{"apply: rows changed words, untyped", applyRevertRefusal, revertInvalid(rowsChanged), revertstore.RevertSignature, rowsChanged, ""},
 		{"apply: passkey revoked words, untyped", applyRevertRefusal, revertInvalid("passkey revoked"), revertstore.RevertSignature, "passkey revoked", ""},
 		{"apply: already words, untyped", applyRevertRefusal, revertInvalid(applied), revertstore.RevertSignature, applied, ""},
-		{"apply: no such revert", applyRevertRefusal, revertInvalid(noSuchRevert), revertstore.RevertSignature, noSuchRevert, ""},
+		{"apply: no such revert", applyRevertRefusal, revertRefused("NO_SUCH_REVERT", noSuchRevert), revertstore.RevertSignature, noSuchRevert, ""},
+		{"apply: no such revert, any hint", applyRevertRefusal, revertRefused("NO_SUCH_REVERT", "x"), revertstore.RevertSignature, "x", ""},
 		{"apply: rejected", applyRevertRefusal, revertInvalid(rejected), revertstore.RevertSignature, rejected, ""},
 		{"apply: bad signature", applyRevertRefusal, revertInvalid("signature does not verify"), revertstore.RevertSignature, "signature does not verify", ""},
 		{"apply: time limit", applyRevertRefusal, statementTimeout(), "", "", ""},
@@ -115,12 +116,16 @@ func TestRevertRefusalsPerCall(t *testing.T) {
 		{"rescope: widen refused", rescopeRevertRefusal, revertInvalid("WIDEN_REFUSED"), revertstore.RevertWidenRefused, "WIDEN_REFUSED", ""},
 		{"rescope: expired", rescopeRevertRefusal, revertExpired(), revertstore.RevertExpiredReason, "", ""},
 		{"rescope: time limit", rescopeRevertRefusal, statementTimeout(), revertstore.RevertTimedOut, "", "57014"},
-		{"rescope: no such revert", rescopeRevertRefusal, revertInvalid(noSuchRevert), "", "", ""},
+		{"rescope: no such revert", rescopeRevertRefusal, revertRefused("NO_SUCH_REVERT", noSuchRevert), "", "", ""},
 		{"rescope: already signed", rescopeRevertRefusal, revertInvalid(signedScope), "", "", ""},
 		{"rescope: every row skipped", rescopeRevertRefusal, guardErr("BS009", "NOTHING_TO_REVERT", allSkipped, ""), "", "", ""},
 
 		{"reject: widen refused", rejectRevertRefusal, revertInvalid("WIDEN_REFUSED"), revertstore.RevertWidenRefused, "WIDEN_REFUSED", ""},
-		{"reject: no such revert", rejectRevertRefusal, revertInvalid(noSuchRevert), revertstore.RevertNotFound, noSuchRevert, ""},
+		{"reject: no such revert", rejectRevertRefusal, revertRefused("NO_SUCH_REVERT", noSuchRevert), revertstore.RevertNotFound, noSuchRevert, ""},
+		{"reject: no such revert, any hint", rejectRevertRefusal, revertRefused("NO_SUCH_REVERT", "x"), revertstore.RevertNotFound, "x", ""},
+		// Told apart by the detail, never the words: the sentence as the
+		// detail, as a guard before version 13 gave it, is not pending.
+		{"reject: no such revert words, untyped", rejectRevertRefusal, revertInvalid(noSuchRevert), revertstore.RevertNotPending, noSuchRevert, ""},
 		{"reject: expired", rejectRevertRefusal, revertExpired(), revertstore.RevertExpiredReason, "", ""},
 		{"reject: applied", rejectRevertRefusal, revertInvalid(applied), revertstore.RevertNotPending, applied, ""},
 		{"reject: rejected", rejectRevertRefusal, revertInvalid(rejected), revertstore.RevertNotPending, rejected, ""},
@@ -129,7 +134,8 @@ func TestRevertRefusalsPerCall(t *testing.T) {
 		{"reject: note too long", rejectRevertRefusal, guardErr("BS008", "LEDGER_INPUT_INVALID", "a reject note is at most 500 characters", ""), "", "", ""},
 
 		{"reveal: refused", revealRevertRowsRefusal, revertInvalid("REVEAL_REFUSED"), revertstore.RevertRevealRefused, "REVEAL_REFUSED", ""},
-		{"reveal: no such revert", revealRevertRowsRefusal, revertInvalid(noSuchRevert), revertstore.RevertNotFound, noSuchRevert, ""},
+		{"reveal: no such revert", revealRevertRowsRefusal, revertRefused("NO_SUCH_REVERT", noSuchRevert), revertstore.RevertNotFound, noSuchRevert, ""},
+		{"reveal: no such revert words, untyped", revealRevertRowsRefusal, revertInvalid(noSuchRevert), revertstore.RevertNotPending, noSuchRevert, ""},
 		{"reveal: expired", revealRevertRowsRefusal, revertExpired(), revertstore.RevertExpiredReason, "", ""},
 		{"reveal: signed", revealRevertRowsRefusal, revertInvalid("revert already signed"), revertstore.RevertNotPending, "revert already signed", ""},
 		{"reveal: widen refused", revealRevertRowsRefusal, revertInvalid("WIDEN_REFUSED"), revertstore.RevertNotPending, "WIDEN_REFUSED", ""},
@@ -190,6 +196,11 @@ func TestTypedDetailsKeepTheirSentence(t *testing.T) {
 		{"already applied", revertRefused("ALREADY_APPLIED", "revert already applied"), action.CodeRevertInvalid, "REVERT_INVALID: revert already applied", action.ReasonPlanFinished},
 		{"already signed", revertRefused("ALREADY_SIGNED", "revert already signed; the agent applies it in batches"), action.CodeRevertInvalid, "REVERT_INVALID: revert already signed; the agent applies it in batches", action.ReasonPlanFinished},
 		{"passkey revoked", revertRefused("PASSKEY_REVOKED", "passkey revoked"), action.CodeRevertInvalid, "REVERT_INVALID: passkey revoked", action.ReasonBadSignature},
+		{"no such revert", revertRefused("NO_SUCH_REVERT", "no such revert"), action.CodeRevertInvalid, "REVERT_INVALID: no such revert", action.ReasonNotThisAgent},
+		{"no such revert, any hint", revertRefused("NO_SUCH_REVERT", "x"), action.CodeRevertInvalid, "REVERT_INVALID: x", action.ReasonNotThisAgent},
+		// The sentence alone, as a guard before version 13 gave it, is a
+		// signature the guard did not accept: the words no longer matter.
+		{"no such revert words, untyped", revertInvalid("no such revert"), action.CodeRevertInvalid, "REVERT_INVALID: no such revert", action.ReasonBadSignature},
 		// An untyped detail keeps its sentence, a hint said after it.
 		{"every row skipped", guardErr("BS009", "NOTHING_TO_REVERT", "x", "y"), action.CodeNothingToRevert, "NOTHING_TO_REVERT: x (hint: y)", ""},
 	}

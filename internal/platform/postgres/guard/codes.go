@@ -66,6 +66,12 @@ const (
 	RevertRowsChanged = "ROWS_CHANGED"
 )
 
+// RevertNotFound is the detail of REVERT_INVALID for a revert the calling
+// role did not prepare, or none, from every function that looks one up
+// (version 13); the hint is the sentence "no such revert". Another role's
+// revert reads like an unknown id.
+const RevertNotFound = "NO_SUCH_REVERT"
+
 // NothingReadsOnly is the detail of NOTHING_TO_REVERT for a scope that
 // changed no row a revert could restore (version 11); the hint names the
 // scope. Every other NOTHING_TO_REVERT keeps a sentence as its detail.

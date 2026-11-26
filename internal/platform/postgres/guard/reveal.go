@@ -16,7 +16,7 @@ import (
 // (approval.KindApprove) or revert (approval.KindRevert), which the person's
 // reveal proof signs (basalt_meta.reveal_nonce, version 29). Another role's
 // item, or none, is APPROVAL_INVALID "no such approval" or REVERT_INVALID
-// "no such revert".
+// NO_SUCH_REVERT (RevertNotFound).
 func RevealNonce(ctx context.Context, q Querier, kind string, id uuid.UUID) ([]byte, error) {
 	var out []byte
 	// Plain SQL: one function call returning bytea.

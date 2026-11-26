@@ -237,7 +237,7 @@ func TestApplyRefusals(t *testing.T) {
 	})
 	t.Run("an unknown revert", func(t *testing.T) {
 		_, err := guard.ApplyRevert(ctx, a.Conn, uuid.Must(uuid.NewV7()), as)
-		requireRevertInvalid(t, err, "no such revert")
+		requireRevertRefused(t, err, guard.RevertNotFound, "no such revert")
 	})
 	t.Run("a superuser relay", func(t *testing.T) {
 		_, err := guard.ApplyRevert(ctx, d.Admin, prep.RevertID, as)

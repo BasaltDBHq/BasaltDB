@@ -130,3 +130,13 @@ A refused action names the resources its statement names, as a read does, so a s
 | `record_refusal(…, duration_ms int, resources text[])` | Replaces the nine-argument form, which is dropped (`SECURITY DEFINER` and `SET search_path = pg_catalog, pg_temp` kept; `EXECUTE` for `<prefix>_agents`). `resources` are kept in order, a write's target first: the first 100 that are neither empty nor over 1000 bytes, the rest left out rather than refused, so no name keeps a refusal out of the ledger. The change record's `table_name` is the first, the `REFUSED` ledger row's detail gains `resources` (`[]` when none) |
 
 The engine passes a read's `tables` and a refusal's `resources` qualified in the agent's own session ([`record_read`](basalt-meta.md#functions-an-agent-role-may-call)); no guard function changes for reads.
+
+### Schema version 13: refusal cut and no such revert
+
+A refusal is always in the ledger, whatever the length of its texts, and a revert the calling role did not prepare is refused with a code, never a sentence the engine has to match. File `026_refusal_cut_no_such_revert.sql`. **Breaking** (AE-11): the engine reads `NO_SUCH_REVERT`, so it needs this version; an install at version 12 upgrades in place (`basalt init`, then the page it opens). Idempotent.
+
+| Object | Change |
+|---|---|
+| `_cut_text(value text, max int) returns text` | New, internal (no grants), `IMMUTABLE`: `value` when it is `NULL` or at most `max` bytes; otherwise its first whole characters that fit in `max - 3` bytes followed by `...`, so the result is at most `max` bytes and never splits a character, in any server encoding |
+| `record_refusal(…, duration_ms int, resources text[])` | Replaced (`SECURITY DEFINER` and `SET search_path = pg_catalog, pg_temp` kept; `EXECUTE` for `<prefix>_agents`). An `intent` or `reason` over 2000 bytes and a `statement` over 64 KiB are cut with `_cut_text` instead of raising `LEDGER_INPUT_INVALID`, on the change record and in the `REFUSED` ledger row's detail alike, as names over the cap are left out (version 12). `params` over 64 KiB, an unknown `op` or `code` and a negative duration are still refused |
+| `_revert_invalid(detail text)` | Replaced. The detail `no such revert`, a revert the calling role did not prepare or none, is raised through `_revert_refused` with detail `NO_SUCH_REVERT` and hint `no such revert`; every other detail is raised as before. Every function that looks a revert up answers so: `apply_revert`, `apply_revert_batch`, `rescope_revert`, `reset_revert`, `reject_revert`, `revert_nonce`, `reveal_nonce` and `reveal_revert_rows`. The engine reads the code: on `apply_revert` a refused signature, on the page's calls an unknown revert |

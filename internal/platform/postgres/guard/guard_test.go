@@ -325,6 +325,54 @@ func TestRecordRefusalStoresANUL(t *testing.T) {
 	require.Equal(t, 1, count(t, d.Admin, `SELECT count(1)::int FROM basalt_meta.ledger WHERE kind = 'REFUSED' AND change_id = $1`, id))
 }
 
+// TestRecordRefusalCutsOverLongTexts: an intent or reason over 2000 bytes
+// and a statement over 64 KiB are cut with "..." (version 13), never
+// raised on, so a 1 MB statement's refusal is in the ledger. The cut keeps
+// whole characters and fits the limit, the marker included; a text at the
+// limit is kept as it is. The change record and the ledger row hold the
+// same texts.
+func TestRecordRefusalCutsOverLongTexts(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", leads, nil)
+	ctx := context.Background()
+	in := newRun(t, a, "clean up")
+	const prefix = "UPDATE public.leads SET v = '"
+	long := in
+	long.Text = strings.Repeat("é", 1500) // 3000 bytes, two per character
+	id, err := guard.RecordRefusal(ctx, a.Conn, guard.Refusal{
+		Intent: long, Op: "UPDATE", Statement: prefix + strings.Repeat("x", 1<<20) + "'",
+		Code: "STATEMENT_REFUSED", Reason: strings.Repeat("😀", 1000), // 4000 bytes, four per character
+	})
+	require.NoError(t, err)
+
+	var intent, statement, reason string
+	require.NoError(t, d.Admin.QueryRow(ctx,
+		`SELECT intent, statement, reason FROM basalt_meta.changes WHERE change_id = $1`, id).Scan(&intent, &statement, &reason))
+	require.Equal(t, strings.Repeat("é", 998)+"...", intent, "whole characters within 1997 bytes, then the marker")
+	require.Equal(t, strings.Repeat("😀", 499)+"...", reason)
+	require.Equal(t, prefix+strings.Repeat("x", 65536-3-len(prefix))+"...", statement)
+
+	var detail map[string]any
+	require.NoError(t, d.Admin.QueryRow(ctx,
+		`SELECT detail FROM basalt_meta.ledger WHERE kind = 'REFUSED' AND change_id = $1`, id).Scan(&detail))
+	require.Equal(t, intent, detail["intent"])
+	require.Equal(t, statement, detail["statement"])
+	require.Equal(t, reason, detail["reason"])
+
+	// At the limit nothing is cut.
+	atLimit := strings.Repeat("y", 65536)
+	id, err = guard.RecordRefusal(ctx, a.Conn, guard.Refusal{
+		Intent: in, Op: "OTHER", Statement: atLimit, Code: "STATEMENT_REFUSED", Reason: strings.Repeat("r", 2000),
+	})
+	require.NoError(t, err)
+	require.NoError(t, d.Admin.QueryRow(ctx,
+		`SELECT statement, reason FROM basalt_meta.changes WHERE change_id = $1`, id).Scan(&statement, &reason))
+	require.Equal(t, atLimit, statement)
+	require.Equal(t, strings.Repeat("r", 2000), reason)
+	requireIntact(t, a.Conn)
+}
+
 func TestHeartbeat(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)

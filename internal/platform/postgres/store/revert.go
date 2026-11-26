@@ -224,16 +224,10 @@ func (s *Store) revealRevertRowsRaw(ctx context.Context, id uuid.UUID, proof pas
 // refusals (revertstore.RevertRefusalError) after MapError. Each port method has its
 // own mapping, in the order the revert use case told the guard's answers
 // apart: one guard answer means different things on different calls
-// (REVERT_INVALID "no such revert" is an unknown revert on reject and
+// (REVERT_INVALID NO_SUCH_REVERT is an unknown revert on reject and
 // reveal, a refused signature on apply). An answer no mapping names is
-// returned as MapError made it.
-
-// revertNotFoundDetail is the guard's detail for a revert the calling role
-// did not prepare, or none (_revert_lock_pending). The guard gives it no
-// typed detail: _revert_invalid raises the sentence itself, unlike the
-// details of applyReasons, WIDEN_REFUSED and REVEAL_REFUSED. So the match
-// is on the exact sentence until a guard version gives it a code.
-const revertNotFoundDetail = "no such revert"
+// returned as MapError made it. The guard's typed details are matched by
+// code, never by the sentence, which is their hint.
 
 // scopeReasons are the revert reasons of the guard's SCOPE_REFUSED details
 // on a preview or a prepare; any other detail is RevertInvalid. NAME, a
@@ -340,7 +334,8 @@ func prepareRefusal(err error) error {
 // applyRevertRefusal maps ApplyRevert's errors: an expired revert, a
 // signed revert with no row to restore, and every REVERT_INVALID, told
 // apart by the guard's typed detail (applyReasons), the hint the sentence;
-// any other detail is a signature the guard did not accept.
+// NO_SUCH_REVERT and any other detail are a signature the guard did not
+// accept.
 func applyRevertRefusal(err error) error {
 	se := guardAnswer(err)
 	if se == nil {
@@ -357,6 +352,9 @@ func applyRevertRefusal(err error) error {
 	}
 	if reason, ok := applyReasons[se.Detail]; ok {
 		return refusal(err, reason, se.Hint)
+	}
+	if se.Detail == guard.RevertNotFound {
+		return refusal(err, revertstore.RevertSignature, se.Hint)
 	}
 	return refusal(err, revertstore.RevertSignature, se.Detail)
 }
@@ -410,8 +408,8 @@ func pendingRefusal(err error, proofDetail string, proofReason revertstore.Rever
 	switch {
 	case code == guard.CodeRevertInvalid && se.Detail == proofDetail:
 		return refusal(err, proofReason, se.Detail)
-	case code == guard.CodeRevertInvalid && se.Detail == revertNotFoundDetail:
-		return refusal(err, revertstore.RevertNotFound, se.Detail)
+	case code == guard.CodeRevertInvalid && se.Detail == guard.RevertNotFound:
+		return refusal(err, revertstore.RevertNotFound, se.Hint)
 	case code == guard.CodeRevertExpired:
 		return refusal(err, revertstore.RevertExpiredReason, se.Detail)
 	case code == guard.CodeRevertInvalid:

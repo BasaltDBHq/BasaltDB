@@ -213,10 +213,12 @@ type RootConfigDir interface {
 	Close()
 }
 
-// ConnTarget is where a connection string connects.
-type ConnTarget struct {
-	Host string
-	Port int
-	// SystemRoots: TLS is on and the roots are the system's.
+// ConnTarget is where a connection string connects: its first host and
+// port, and SystemRoots, TLS on with the system's roots. It is an alias of
+// the struct itself, so the Postgres adapter (pgdial.ConnTarget) returns it
+// with no import of this package.
+type ConnTarget = struct {
+	Host        string
+	Port        int
 	SystemRoots bool
 }

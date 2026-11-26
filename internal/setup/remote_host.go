@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -33,6 +34,9 @@ type RemoteHost interface {
 	GuardLatestVersion() int
 	// GuardSetupRecorded reports whether the setup with id is recorded.
 	GuardSetupRecorded(ctx context.Context, q Querier, id uuid.UUID) (bool, error)
+	// UpsertAgentVault writes the agent and the vault into the config at
+	// path, by path (config.UpsertAgentVault): init --remote not as root.
+	UpsertAgentVault(path string, s config.Settings, a config.Agent) (config.VaultWritten, error)
 	// LoadOrCreateEngineKeys reads the engine's keys at path, making them
 	// when there are none.
 	LoadOrCreateEngineKeys(path string, now func() time.Time) (*channel.EngineKeys, error)

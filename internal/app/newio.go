@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"golang.org/x/term"
 
 	"github.com/basaltdbhq/basaltdb/internal/handoff/in/handoffcli"
@@ -26,7 +25,7 @@ func newIO(ctx context.Context, std cli.Stdio, getenv func(string) string) *cli.
 		AgentLogin: func(ctx context.Context, dsn string) (cli.AgentConn, error) {
 			return handoffcli.LoginAsAgent(ctx, sh, pgErrors{}, dsn)
 		},
-		Dial: func(ctx context.Context, dsn string) (*pgx.Conn, error) {
+		Dial: func(ctx context.Context, dsn string) (cli.Conn, error) {
 			return cli.Connect(ctx, sh, dsn)
 		},
 		FetchChain: cli.FetchChain,

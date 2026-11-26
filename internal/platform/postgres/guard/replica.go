@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/sqlident"
 )
 
 // Where the database default of session_replication_role comes from, in
@@ -53,7 +55,7 @@ func replicationRoleWarning(ctx context.Context, q Querier) (string, error) {
 		return "", nil
 	}
 	fix := map[string]string{
-		replicaSourceDatabase: fmt.Sprintf("ALTER DATABASE %s RESET session_replication_role;", pgx.Identifier{db}.Sanitize()),
+		replicaSourceDatabase: fmt.Sprintf("ALTER DATABASE %s RESET session_replication_role;", sqlident.Quote(db)),
 		replicaSourceAllRoles: "ALTER ROLE ALL RESET session_replication_role;",
 		replicaSourceServer:   "ALTER SYSTEM RESET session_replication_role; SELECT pg_reload_conf(); (and remove it from postgresql.conf if it is set there)",
 	}[source]

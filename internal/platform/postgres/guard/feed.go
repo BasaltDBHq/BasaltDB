@@ -45,7 +45,7 @@ func ReadFeedRows(ctx context.Context, q Querier, after int64, limit int, f guar
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (guardmodel.FeedRow, error) {
 		var r guardmodel.FeedRow
 		err := row.Scan(&r.Seq, &r.At, &r.Kind, &r.ChangeID, &r.Op, &r.Verb,
-			&r.RunID, &r.TaskID, &r.Table, &r.Rows, &r.CascadedRows,
+			&r.RunID, &r.TaskID, &r.Resource, &r.Rows, &r.CascadedRows,
 			&r.ApprovalID, &r.ExpiresAt, &r.RevertID, &r.Code)
 		return r, err
 	})

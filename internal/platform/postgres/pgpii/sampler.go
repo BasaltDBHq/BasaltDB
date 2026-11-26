@@ -6,9 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
+	"github.com/basaltdbhq/basaltdb/internal/lib/sqlident"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
@@ -86,13 +85,13 @@ type Sampler struct {
 // not read leaves the column unsampled (Sample.Unavailable); any other
 // error fails.
 func (s Sampler) Sample(ctx context.Context, col piistore.Column) (piistore.Sample, error) {
-	ident := pgx.Identifier{col.Name}.Sanitize()
+	ident := sqlident.Quote(col.Name)
 	maxChars := s.MaxChars
 	if maxChars <= 0 {
 		maxChars = maxValueChars
 	}
 	query, args, err := sqlport.Builder.Select(fmt.Sprintf("pg_catalog.left(%s::text, %d)", ident, maxChars)).
-		From(pgx.Identifier{col.Namespace, col.Resource}.Sanitize()).
+		From(sqlident.Quote(col.Namespace, col.Resource)).
 		Where(ident + " IS NOT NULL").
 		Limit(piistore.SampleRows).ToSql()
 	if err != nil {

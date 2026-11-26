@@ -51,6 +51,34 @@ func (n Neutral) QueryRow(ctx context.Context, sql string, args ...any) sqlport.
 	return n.q.QueryRow(ctx, sql, args...)
 }
 
+// Closer is a connection seen through driver-free types: its queries and
+// its close. An unnamed interface, so a package that may not import this
+// one (the CLI) declares the same shape for itself.
+type Closer = interface {
+	sqlport.Port
+	Close(ctx context.Context) error
+}
+
+// Conn is a pgx connection as a Closer: its queries through Neutral, which
+// carries the connection for the adapters that read it back (Of), and its
+// close the connection's own.
+type Conn struct {
+	Neutral
+	close func(context.Context) error
+}
+
+// NeutralConn wraps conn.
+func NeutralConn(conn interface {
+	Querier
+	Close(ctx context.Context) error
+},
+) Conn {
+	return Conn{Neutral: Neutralize(conn), close: conn.Close}
+}
+
+// Close closes the connection Conn wraps.
+func (c Conn) Close(ctx context.Context) error { return c.close(ctx) }
+
 // Unwrap returns the Querier inside q, which must come from Neutralize.
 func Unwrap(q any) Querier {
 	n, ok := q.(Neutral)

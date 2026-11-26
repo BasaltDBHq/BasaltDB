@@ -26,8 +26,9 @@ func (noChecker) Check(string, action.Tool) (action.Statement, error) {
 
 // settings are what a test sets before the service is built.
 type settings struct {
-	core  Core
-	store StoreSet
+	core      Core
+	store     StoreSet
+	approvals Approvals
 }
 
 // option edits the settings a service is built from.
@@ -59,7 +60,7 @@ func newTestService(t *testing.T, goos, configPath string, opts ...option) *Serv
 	for _, opt := range opts {
 		opt(&st)
 	}
-	return New(st.core, st.store, nil, func() *guidance.UpdateInfo { return nil })
+	return New(st.core, st.store, nil, func() *guidance.UpdateInfo { return nil }, nil, st.approvals, nil, nil, nil)
 }
 
 // fakeRLS is a Visibility over fixed hidden tables.

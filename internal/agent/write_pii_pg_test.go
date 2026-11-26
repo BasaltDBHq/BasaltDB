@@ -78,7 +78,7 @@ func piiWriteService(t *testing.T, returned postgres.ReturnedFunc) (*agent.Servi
 		Kind: store.Kind(), Family: agentstore.FamilySQL, Capabilities: store.Capabilities(),
 		Language: sqllang.New(store), Data: pgData{store}, Ledger: store,
 	}
-	return agent.New(core, set, failingObserver{}, func() *guidance.UpdateInfo { return nil }), d
+	return agent.New(core, set, failingObserver{}, func() *guidance.UpdateInfo { return nil }, nil, nil, nil, nil, nil), d
 }
 
 // pgData is the Postgres store as the agent's writes run on it.

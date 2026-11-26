@@ -71,37 +71,20 @@ type RunChecker interface {
 	CheckRun(ctx context.Context, id uuid.UUID) error
 }
 
-// New builds the approval use case over core and the approval's store set.
-// delivery and reverts are the other use cases it asks, and are set after
-// they exist (SetDelivery, SetReverts). It panics on a set with a nil port,
-// since the service reads the store only through them.
-func New(core Core, store StoreSet, deps *Deps, runs RunChecker, admit Admitter) *Service {
+// New builds the approval use case over core and the approval's store set,
+// with the other use cases it asks: the delivery of links and notices and the
+// open reverts. It panics on a set with a nil port, since the service reads
+// the store only through them.
+func New(core Core, store StoreSet, deps *Deps, delivery Delivery, reverts Reverts, runs RunChecker, admit Admitter) *Service {
 	if missing := store.missingPorts(); len(missing) > 0 {
 		panic("approval: store set missing ports: " + strings.Join(missing, ", "))
 	}
-	return &Service{core: core, store: store, deps: deps, runs: runs, admit: admit}
+	return &Service{core: core, store: store, deps: deps, delivery: delivery, reverts: reverts, runs: runs, admit: admit}
 }
 
-// SetDelivery gives the use case the delivery use case it asks.
-func (ac *Service) SetDelivery(d Delivery) { ac.delivery = d }
-
-// SetReverts gives the use case the revert use case it asks.
-func (ac *Service) SetReverts(r Reverts) { ac.reverts = r }
-
-// The reads the delivery use case makes of the approval group (approvalReads).
-
-func (ac *Service) Passkeys(ctx context.Context) ([]passkey.Credential, error) {
-	return ac.store.Records.Passkeys(ctx)
-}
-
+// FindApproval reads one held write of the agent's, for the write use case.
 func (ac *Service) FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error) {
 	return ac.store.Records.FindApproval(ctx, id)
-}
-
-func (ac *Service) HasColumns() bool { return ac.deps.Columns != nil }
-
-func (ac *Service) ColumnOrder(ctx context.Context, resources []string) (map[string][]string, error) {
-	return ac.deps.Columns.ColumnOrder(ctx, resources)
 }
 
 // HeldWrite is a write held for the person's approval, with the preview

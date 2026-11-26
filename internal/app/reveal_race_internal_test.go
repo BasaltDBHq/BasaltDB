@@ -92,7 +92,7 @@ func (e raceEnv) sign(h heldDelete, as passkey.Assertion) error {
 }
 
 func (e raceEnv) apply(h heldDelete) error {
-	_, err := e.store.WriteApproved(context.Background(), h.in, h.held.ApprovalID, action.OpDelete, dropLeadSQL, h.params)
+	_, err := e.store.WriteApproved(context.Background(), h.in, h.held.ApprovalID, action.OpDelete, dropLeadSQL, h.params, nil)
 	return err
 }
 

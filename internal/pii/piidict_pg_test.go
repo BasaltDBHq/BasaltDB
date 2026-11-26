@@ -200,9 +200,9 @@ func resultFields(cols []action.Column) []piistore.ResultField {
 	return out
 }
 
-// returned is obs as the store's returned-rows hook, reading the map in the
-// write's transaction, as internal/app wires it.
-func returned(obs *Observer) postgres.ReturnedFunc {
+// returned is obs as a write hands it its returned rows, reading the map in
+// the write's transaction, as the agent's PII port does in internal/app.
+func returned(obs *Observer) postgres.Returned {
 	return func(ctx context.Context, tx sqlport.Port, cols []action.Column, rows []map[string]any) error {
 		return obs.Observe(ctx, pgpii.ClassesInTx(pgquerier.Unwrap(tx)), resultFields(cols), rows)
 	}
@@ -220,20 +220,19 @@ func TestWriteReturningValuesAreAddedBeforeCommitAndFailClosed(t *testing.T) {
 	ctx := context.Background()
 	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	obs := NewObserver(NewMap(slog.New(slog.DiscardHandler)), dict)
-	store := postgres.NewStore(f.pool, sqlguard.DefaultLimits(), time.Now).WithReturned(returned(obs))
+	store := postgres.NewStore(f.pool, sqlguard.DefaultLimits(), time.Now)
 	in := action.Intent{RunID: uuidV7(t), TaskID: uuidV7(t), Text: "add a customer"}
 	require.NoError(t, store.StartRun(ctx, in))
 	res, err := store.Write(ctx, in, action.OpInsert,
-		`INSERT INTO customers (id, email, name) VALUES (10, 'cy@corp.ee', 'Cy Young') RETURNING id, email, name`, nil)
+		`INSERT INTO customers (id, email, name) VALUES (10, 'cy@corp.ee', 'Cy Young') RETURNING id, email, name`, nil, returned(obs))
 	require.NoError(t, err)
 	require.Len(t, res.Returning, 1)
 	require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "cy@corp.ee", "")))
 
 	// A value the dictionary cannot take rolls the write back.
-	refusing := postgres.NewStore(f.pool, sqlguard.DefaultLimits(), time.Now).
-		WithReturned(returned(NewObserver(NewMap(slog.New(slog.DiscardHandler)), refusingDict{})))
-	_, err = refusing.Write(ctx, in, action.OpInsert,
-		`INSERT INTO customers (id, email) VALUES (11, 'dee@corp.ee') RETURNING email`, nil)
+	refusing := returned(NewObserver(NewMap(slog.New(slog.DiscardHandler)), refusingDict{}))
+	_, err = store.Write(ctx, in, action.OpInsert,
+		`INSERT INTO customers (id, email) VALUES (11, 'dee@corp.ee') RETURNING email`, nil, refusing)
 	require.ErrorIs(t, err, corepii.ErrDeltaFull)
 	require.NotContains(t, err.Error(), "dee@corp.ee", "errors name no value")
 	var n int

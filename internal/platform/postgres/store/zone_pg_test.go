@@ -93,7 +93,7 @@ func write(t *testing.T, store *postgres.Store, sql string) uuid.UUID {
 	ctx := context.Background()
 	in := action.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Tag events"}
 	require.NoError(t, store.StartRun(ctx, in))
-	_, err := store.Write(ctx, in, action.OpUpdate, sql, nil)
+	_, err := store.Write(ctx, in, action.OpUpdate, sql, nil, nil)
 	require.NoError(t, err)
 	return in.RunID
 }

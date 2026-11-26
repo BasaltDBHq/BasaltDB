@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // The store ports: everything the service asks of the agent's store, on the
@@ -48,6 +49,11 @@ type statementChecker interface {
 	Check(sql string, tool action.Tool) (action.Statement, error)
 }
 
+// txRows is how a SQL store hands the rows a write returns to the wiring,
+// inside the write's transaction, before COMMIT: tx is that transaction,
+// driver-free. It is the Postgres store's Returned.
+type txRows = func(ctx context.Context, tx sqlport.Port, cols []action.Column, rows []map[string]any) error
+
 // SQLStore is a store that speaks SQL: the query and write tools run on it.
 type SQLStore interface {
 	agentStore
@@ -57,10 +63,11 @@ type SQLStore interface {
 	// Read runs one read, with the versions of the rows of the statement's
 	// sources it can identify.
 	Read(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error)
-	// Write runs one write through the guard.
-	Write(ctx context.Context, in action.Intent, op action.Op, sql string, params []any) (action.WriteResult, error)
+	// Write runs one write through the guard, handing the rows it returns
+	// to returned before COMMIT.
+	Write(ctx context.Context, in action.Intent, op action.Op, sql string, params []any, returned txRows) (action.WriteResult, error)
 	// WriteApproved is Write under the person's signed approval.
-	WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any) (action.WriteResult, error)
+	WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any, returned txRows) (action.WriteResult, error)
 }
 
 // agentDeps are the agent use case's own ports on the agent's store, which
@@ -143,12 +150,12 @@ func (d agentData) Read(ctx context.Context, req agentstore.Request, stmt action
 	return d.store.Read(ctx, req.Text, req.Params, stmt)
 }
 
-func (d agentData) Write(ctx context.Context, in action.Intent, req agentstore.Request, stmt action.Statement) (action.WriteResult, error) {
-	return d.store.Write(ctx, in, stmt.Op, req.Text, req.Params)
+func (d agentData) Write(ctx context.Context, in action.Intent, req agentstore.Request, stmt action.Statement, returned agentsvc.Returned) (action.WriteResult, error) {
+	return d.store.Write(ctx, in, stmt.Op, req.Text, req.Params, txReturned(returned))
 }
 
-func (d agentData) WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, req agentstore.Request, stmt action.Statement) (action.WriteResult, error) {
-	return d.store.WriteApproved(ctx, in, approvalID, stmt.Op, req.Text, req.Params)
+func (d agentData) WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, req agentstore.Request, stmt action.Statement, returned agentsvc.Returned) (action.WriteResult, error) {
+	return d.store.WriteApproved(ctx, in, approvalID, stmt.Op, req.Text, req.Params, txReturned(returned))
 }
 
 func (d agentData) Limits() action.Limits { return d.limits }

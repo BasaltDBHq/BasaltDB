@@ -668,12 +668,13 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		status.LogGuard(guardCtx, agentProbe{probe}, log)
 	}()
 	// The agent's classification map, and the values of IDENTIFIER columns
-	// it reads added to the dictionary before they leave the engine: query
-	// rows in the service, RETURNING rows inside the write's transaction.
+	// it reads added to the dictionary before they leave the engine, both
+	// through the agent's PII port: query rows after the read, RETURNING
+	// rows inside the write's transaction.
 	classes := pii.NewMap(log.With("component", "pii"))
 	classStore := pgpii.Classes(pool)
 	observer := pii.NewObserver(classes, env.dict)
-	store := postgres.NewStore(budgeted, limits, time.Now).WithReturned(returnedPII(observer))
+	store := postgres.NewStore(budgeted, limits, time.Now)
 	secrets := linkSecrets(env.stateDir, a.Name, log)
 	readRecord := func(ctx context.Context, id string) (*status.EngineRecord, error) {
 		r, err := guard.EngineRecord(ctx, pool, id)

@@ -39,7 +39,6 @@ type PgWiring struct {
 	conns    int32
 	poolCfg  func(*pgxpool.Config)
 	budgeted bool
-	returned postgres.ReturnedFunc
 	deps     []func(*app.Deps, *pgxpool.Pool)
 }
 
@@ -57,9 +56,6 @@ func WithPoolConfig(f func(*pgxpool.Config)) PgOption { return func(w *PgWiring)
 // WithBudget charges every read of a call to its result budget, as the
 // engine runs it.
 func WithBudget() PgOption { return func(w *PgWiring) { w.budgeted = true } }
-
-// WithReturned sets the store's hook for the values a call returned.
-func WithReturned(f postgres.ReturnedFunc) PgOption { return func(w *PgWiring) { w.returned = f } }
 
 // WithDeps changes the service's dependencies after the Postgres ones are
 // filled in, to add optional ones or to wrap a store. It also gets the pool,
@@ -105,9 +101,6 @@ func PgService(t *testing.T, url string, opts ...PgOption) PgEnv {
 		db = resultsize.Budgeted(pool)
 	}
 	store := postgres.NewStore(db, w.limits, time.Now)
-	if w.returned != nil {
-		store = store.WithReturned(w.returned)
-	}
 	reader := postgres.NewReader(db, w.limits, time.Now)
 	d := app.AgentHostDeps()
 	d.Core.Name, d.Core.Log, d.Core.Now = "bot", slog.New(slog.DiscardHandler), time.Now

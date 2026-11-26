@@ -86,6 +86,22 @@ func (noSteps) UnavailableSteps(*guidance.Steps, *toolresult.ToolError, guidance
 	return ""
 }
 
+// approvalReads is what delivery reads of the approval records, from the
+// store; the pages show the rows' field order, as without a column order.
+type approvalReads struct{ approvalsvc.Records }
+
+func (approvalReads) HasColumns() bool { return false }
+
+func (approvalReads) ColumnOrder(context.Context, []string) (map[string][]string, error) {
+	return map[string][]string{}, nil
+}
+
+// statementLimit is the store's statement timeout, which a revert's answer
+// names.
+type statementLimit time.Duration
+
+func (l statementLimit) StatementTimeout() time.Duration { return time.Duration(l) }
+
 func (linkErrors) ApprovalLinkError(te *toolresult.ToolError, _ linksvc.HeldAnswer) *toolresult.ToolError {
 	return te
 }
@@ -143,14 +159,9 @@ func newHarness(t *testing.T, opts ...func(*memStore)) *harness {
 		return observer.Observe(ctx, c, resultFields(cols), rows)
 	}
 
-	approval := approvalsvc.New(
-		approvalsvc.Core{
-			Name: memAgent, Log: logger, Now: time.Now, Commands: cmds, Errors: errs,
-			PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget,
-		},
-		approvalsvc.StoreSet{Records: store, Holds: store, Proofs: store},
-		&approvalsvc.Deps{SortSpec: memSort}, store, admitted{},
-	)
+	// Wired as the app wires them: delivery reads the approval records from
+	// the store, revert reads the statement timeout from the store's limits,
+	// and each use case takes the others it asks in its constructor.
 	delivery := linksvc.New(
 		linksvc.Core{Name: memAgent, Log: logger, Now: time.Now, Commands: cmds, Errors: errs, PagesBase: links.DefaultLocal, PagesOrigin: links.DefaultLocal},
 		&linksvc.Deps{
@@ -158,8 +169,25 @@ func newHarness(t *testing.T, opts ...func(*memStore)) *harness {
 			Relay: linksvc.NoRelay{NotConnected: errMemNotConnected}, VaultConflict: func(error) bool { return false },
 			ErrVaultNotConnected: errMemNotConnected, Receipts: keys,
 		},
-		approval,
+		approvalReads{store},
 		func(_ string, _ map[string]any, err error) *toolresult.ToolError { return errs.ToolError(err) },
+	)
+	rev := revertsvc.New(
+		revertsvc.Core{Name: memAgent, Log: logger, Now: time.Now, Commands: cmds, Errors: errs, PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget},
+		revertsvc.StoreSet{Limits: revertsvc.Limits{Prepare: memPrepareLimit}, Records: store, Undo: store, Proofs: store},
+		&revertsvc.Deps{
+			AfterAnswer:   func(context.Context, func()) bool { return false },
+			RotateSession: func(context.Context, channel.LinkToken) bool { return false },
+		},
+		store, delivery, statementLimit(store.Limits().StatementTimeout), admitted{},
+	)
+	approval := approvalsvc.New(
+		approvalsvc.Core{
+			Name: memAgent, Log: logger, Now: time.Now, Commands: cmds, Errors: errs,
+			PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget,
+		},
+		approvalsvc.StoreSet{Records: store, Holds: store, Proofs: store},
+		&approvalsvc.Deps{SortSpec: memSort}, delivery, rev, store, admitted{},
 	)
 	svc := agent.New(
 		agent.Core{Name: memAgent, Log: logger, Now: time.Now, Commands: cmds, Errors: errs},
@@ -169,19 +197,8 @@ func newHarness(t *testing.T, opts ...func(*memStore)) *harness {
 			Classes: pii.StoreClasses{BoundMap: classes.On(store), Store: store},
 		},
 		agentPII{observer.On(store)}, func() *guidance.UpdateInfo { return nil },
+		delivery, approval, noUpgrade{}, linkErrors{}, noSteps{},
 	)
-	rev := revertsvc.New(
-		revertsvc.Core{Name: memAgent, Log: logger, Now: time.Now, Commands: cmds, Errors: errs, PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget},
-		revertsvc.StoreSet{Limits: revertsvc.Limits{Prepare: memPrepareLimit}, Records: store, Undo: store, Proofs: store},
-		&revertsvc.Deps{
-			AfterAnswer:   func(context.Context, func()) bool { return false },
-			RotateSession: func(context.Context, channel.LinkToken) bool { return false },
-		},
-		store, delivery, svc, admitted{},
-	)
-	approval.SetDelivery(delivery)
-	approval.SetReverts(rev)
-	svc.SetPorts(delivery, approval, noUpgrade{}, linkErrors{}, noSteps{})
 
 	h := &harness{
 		t: t, store: store, agent: svc, approval: approval, revert: rev, delivery: delivery, errors: errs,

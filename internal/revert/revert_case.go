@@ -70,7 +70,8 @@ type Delivery interface {
 	NotifyRevertTo(ctx context.Context, n linksvc.RevertNotice) error
 }
 
-// Describe is what the revert use case reads of the describe use case.
+// Describe is what the revert use case reads of the agent's store: the
+// statement timeout its answers name.
 type Describe interface {
 	StatementTimeout() time.Duration
 }

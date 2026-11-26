@@ -471,8 +471,8 @@ func newDocService(t *testing.T, opts ...docOption) (*agent.Service, *docStore, 
 			Data: store, Catalog: store, Ledger: store, Classes: docClasses{store},
 		},
 		nil, func() *guidance.UpdateInfo { return nil },
+		approvals, approvals, approvals, approvals, approvals,
 	)
-	svc.SetPorts(approvals, approvals, approvals, approvals, approvals)
 	return svc, store, approvals
 }
 
@@ -481,7 +481,6 @@ func TestDocumentStoreRunsTheAgentThroughThePorts(t *testing.T) {
 	ctx := context.Background()
 	svc, store, approvals := newDocService(t)
 	require.Equal(t, docFamily, svc.Family())
-	require.Equal(t, 5*time.Second, svc.StatementTimeout())
 
 	run, err := svc.StartRun(ctx, "move trial customers to pro", uuid.Nil)
 	require.NoError(t, err)

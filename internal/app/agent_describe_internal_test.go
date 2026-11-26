@@ -190,7 +190,7 @@ func describeUseCase(cmds guidance.Commands, cat agentcatalog.Postgres) *agentsv
 		Kind: action.StorePostgres, Family: agentstore.FamilySQL, Language: sqllang.New(noChecker{}),
 		Data: agentData{limits: testLimits()}, Catalog: agentcatalog.New(cat), Classes: fakeClasses{},
 	}
-	return agentsvc.New(agentsvc.Core{Commands: cmds}, set, nil, func() *guidance.UpdateInfo { return nil })
+	return agentsvc.New(agentsvc.Core{Commands: cmds}, set, nil, func() *guidance.UpdateInfo { return nil }, nil, nil, nil, nil, nil)
 }
 
 func ordersCatalog() (*fakeCatalog, fakeClasses) {

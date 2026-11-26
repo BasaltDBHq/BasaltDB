@@ -156,7 +156,7 @@ func newService(edit func(*Core, *Deps)) *Service {
 	if edit != nil {
 		edit(&core, &deps)
 	}
-	return NewService(core, &deps)
+	return New(core, &deps)
 }
 
 // commandsAt are the commands of the agent bot on linux, with the engine

@@ -263,7 +263,7 @@ func (f *pluginFixture) plugins(clock Clock) *Plugins {
 func (f *pluginFixture) pluginsWith(o Options, log *slog.Logger) *Plugins {
 	f.t.Helper()
 	o.SocketBase = f.sockBase
-	return New(f.cfg, f.configPath, o, log)
+	return NewPlugins(f.cfg, f.configPath, o, log)
 }
 
 // runPlugins runs ep until the returned stop is called (or the test ends).
@@ -496,12 +496,12 @@ func TestNoPluginsChangeNothing(t *testing.T) {
 	opts := Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: os.Geteuid()}
 	discard := slog.New(slog.DiscardHandler)
 	missing := filepath.Join(t.TempDir(), "missing", "engine.json")
-	require.Nil(t, New(config.Config{}, missing, opts, discard))
+	require.Nil(t, NewPlugins(config.Config{}, missing, opts, discard))
 	off := config.Config{Plugins: []config.Plugin{
 		{Name: "acme-ner", ManifestSHA256: strings.Repeat("a", 64), Enabled: false, Agents: []string{"a"}},
 		{Name: "acme-ner", Instance: "none", ManifestSHA256: strings.Repeat("a", 64), Enabled: true, Agents: []string{}},
 	}}
-	require.Nil(t, New(off, missing, opts, discard))
+	require.Nil(t, NewPlugins(off, missing, opts, discard))
 	_, err := os.Stat(filepath.Dir(missing))
 	require.True(t, os.IsNotExist(err), "nothing was made on disk")
 }

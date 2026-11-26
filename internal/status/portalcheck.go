@@ -127,9 +127,9 @@ type Checker struct {
 	last *Result
 }
 
-// New returns a checker for the portal at opts.Base. Results are also
+// NewChecker returns a checker for the portal at opts.Base. Results are also
 // written to stateDir (fileName) unless it is empty.
-func New(opts PortalverifyOptions, stateDir string, log *slog.Logger, now func() time.Time) *Checker {
+func NewChecker(opts PortalverifyOptions, stateDir string, log *slog.Logger, now func() time.Time) *Checker {
 	return &Checker{opts: opts, stateDir: stateDir, log: log, now: now, verify: Verify}
 }
 

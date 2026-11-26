@@ -1,0 +1,44 @@
+internal/engine: starter_unix.go: (*starter).start: (*os.File).Close
+internal/plugin: install.go: (*Staged).copyFile: (*os.File).Chmod
+internal/plugin: install.go: (*Staged).copyFile: (*os.File).Close (5 times)
+internal/plugin: install.go: (*Staged).copyFile: (*os.File).Stat
+internal/plugin: install.go: (*Staged).copyFile: (*os.File).Sync
+internal/plugin: install.go: (*Staged).copyFile: (*os.Root).OpenFile
+internal/plugin: install.go: (*Staged).copyFile: passes *os.File to io.Copy (2 times)
+internal/plugin: install.go: Stage: (*os.Root).Close
+internal/plugin: install.go: Stage: (*os.Root).Lstat
+internal/plugin: install.go: noSymlinkBelow: (*os.Root).Lstat
+internal/plugin: install.go: readSource: (*os.File).Close
+internal/plugin: install.go: readSource: (*os.File).Stat
+internal/plugin: install.go: readSource: (*os.Root).OpenFile
+internal/plugin: install.go: readSource: passes *os.File to io.LimitReader
+internal/plugin: install.go: writeNew: (*os.File).Chmod
+internal/plugin: install.go: writeNew: (*os.File).Close (3 times)
+internal/plugin: install.go: writeNew: (*os.File).Write
+internal/plugin: kept_entries.go: (*Store).readEntries: (*os.File).Close
+internal/plugin: kept_entries.go: (*Store).readEntries: (*os.File).Stat
+internal/plugin: kept_entries.go: (*Store).readEntries: passes *os.File to io.LimitReader
+internal/plugin: kept_entries.go: (*Taken).Manifest: (*os.File).Close
+internal/plugin: kept_entries.go: (*Taken).Manifest: (*os.File).Stat
+internal/plugin: kept_entries.go: (*Taken).Manifest: (*os.Root).Close
+internal/plugin: kept_entries.go: (*Taken).Manifest: (*os.Root).OpenFile
+internal/plugin: kept_entries.go: (*Taken).Manifest: passes *os.File to io.LimitReader
+internal/plugin: kept_upload.go: (*Store).writePart: (*os.File).Close
+internal/plugin: kept_upload.go: (*Store).writePart: (*os.File).Stat
+internal/plugin: kept_upload.go: (*Store).writePart: (*os.File).Write
+internal/plugin: kept_upload.go: (*Store).writePart: (*os.Root).Close
+internal/plugin: kept_upload.go: (*Store).writePart: (*os.Root).Lstat
+internal/plugin: kept_upload.go: (*Store).writePart: (*os.Root).Mkdir
+internal/plugin: kept_upload.go: (*Store).writePart: (*os.Root).OpenFile
+internal/plugin: kept_upload.go: (*Taken).MarkExecutables: (*os.Root).Chmod
+internal/plugin: kept_upload.go: (*Taken).MarkExecutables: (*os.Root).Close
+internal/plugin: plugins_service.go: osUnitSource: (*os.File).Close
+internal/plugin: plugins_service.go: osUnitSource: passes *os.File to io.LimitReader
+internal/plugin: trust.go: readNoFollow: (*os.File).Close
+internal/plugin: trust.go: readNoFollow: (*os.File).Stat
+internal/plugin: trust.go: readOpened: passes *os.File to io.LimitReader
+internal/plugin: trust.go: readOwned: (*os.File).Close
+internal/plugin: trust.go: readOwned: (*os.File).Stat
+internal/plugin: verify.go: checkFileHash: (*os.File).Close
+internal/plugin: verify.go: checkFileHash: (*os.File).Stat
+internal/plugin: verify.go: checkFileHash: passes *os.File to io.Copy

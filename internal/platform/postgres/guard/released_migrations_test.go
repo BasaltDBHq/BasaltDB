@@ -17,9 +17,9 @@ import (
 const releasedList = "schema/released.sha256"
 
 // releasedFloor is the newest migration a release has shipped
-// (v0.1.0-alpha-rc.4): every migration up to it must stay listed, so the
-// list only grows. Raise it with the lines a new release adds.
-const releasedFloor = 18
+// (v0.1.0-alpha): every migration up to it must stay listed, so the list
+// only grows. Raise it with the lines a new release adds.
+const releasedFloor = 26
 
 // releasedMigrationProblems reads list (sha256 and file name per line, #
 // comments) and names every listed file in dir that is gone or whose

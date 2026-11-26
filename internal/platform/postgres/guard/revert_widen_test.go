@@ -346,7 +346,7 @@ func TestRescopeProbeUniform(t *testing.T) {
 	theirText := scopeErrorText(t, err, theirRevert.RevertID)
 	_, err = guard.ResetRevert(ctx, e.bot.Conn, unknown)
 	require.Equal(t, scopeErrorText(t, err, unknown), theirText)
-	requireRevertInvalid(t, err, "no such revert")
+	requireRevertRefused(t, err, guard.RevertNotFound, "no such revert")
 }
 
 // A proof is good for one widen: replayed with its key after it was used,

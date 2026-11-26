@@ -28,9 +28,9 @@ func TestRevertNonceForTheRequestingRoleOnly(t *testing.T) {
 	require.Equal(t, nonceOf(t, e.d, e.prep.RevertID), got, "the nonce of the next widen, after a widen too")
 
 	_, other := guard.RevertNonce(ctx, e.helper.Conn, e.prep.RevertID)
-	requireRevertInvalid(t, other, "no such revert")
+	requireRevertRefused(t, other, guard.RevertNotFound, "no such revert")
 	_, unknown := guard.RevertNonce(ctx, e.bot.Conn, uuid.Must(uuid.NewV7()))
-	requireRevertInvalid(t, unknown, "no such revert")
+	requireRevertRefused(t, unknown, guard.RevertNotFound, "no such revert")
 	require.Equal(t, scopeErrorText(t, other, e.prep.RevertID), scopeErrorText(t, unknown), "another agent's revert reads like an unknown one")
 
 	require.False(t, scalarOf[bool](t, e.d.Admin,

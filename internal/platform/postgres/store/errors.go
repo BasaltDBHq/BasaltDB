@@ -149,6 +149,9 @@ func guardReason(code, detail string) string {
 		}
 		return action.ReasonNotAllowed
 	case action.CodeApprovalInvalid:
+		if detail == guard.NoSuchApproval {
+			return action.ReasonNotThisAgent
+		}
 		return detailReason(detail, approvalDetails, action.ReasonBadSignature)
 	case action.CodeRevertInvalid:
 		if reason, ok := revertTypedReasons[detail]; ok {
@@ -160,20 +163,26 @@ func guardReason(code, detail string) string {
 }
 
 // typedSentence reports whether detail is a typed detail of guard code gc
-// whose hint is the guard's sentence (version 11): apply_revert's
-// REVERT_INVALID codes and NOTHING_TO_REVERT READS_ONLY.
+// whose hint is the guard's sentence: apply_revert's REVERT_INVALID codes
+// and NOTHING_TO_REVERT READS_ONLY (version 11), and NO_SUCH_REVERT and
+// NO_SUCH_APPROVAL (version 13).
 func typedSentence(gc guard.Code, detail string) bool {
 	if gc == guard.CodeNothingToRevert {
 		return detail == guard.NothingReadsOnly
+	}
+	if gc == guard.CodeApprovalInvalid {
+		return detail == guard.NoSuchApproval
 	}
 	_, typed := revertTypedReasons[detail]
 	return gc == guard.CodeRevertInvalid && typed
 }
 
-// revertTypedReasons are the catalog reasons of apply_revert's typed
-// REVERT_INVALID details (version 11), the reasons their sentences had: a
-// revoked passkey stays a signature the guard did not accept.
+// revertTypedReasons are the catalog reasons of the guard's typed
+// REVERT_INVALID details (versions 11 and 13), the reasons their sentences
+// had: a revoked passkey stays a signature the guard did not accept, and
+// another role's revert, or none, is not this agent's.
 var revertTypedReasons = map[string]string{
+	guard.RevertNotFound:       action.ReasonNotThisAgent,
 	guard.RevertAlreadyApplied: action.ReasonPlanFinished,
 	guard.RevertAlreadySigned:  action.ReasonPlanFinished,
 	guard.RevertRowsChanged:    action.ReasonRowsChanged,
@@ -192,7 +201,6 @@ var approvalDetails = []detailRule{
 	{"already used", action.ReasonAlreadyUsed},
 	{"already signed", action.ReasonAlreadyUsed},
 	{"another agent", action.ReasonNotThisAgent},
-	{"no such approval", action.ReasonNotThisAgent},
 	{"another run", action.ReasonDifferentWrite},
 	{"differ from the approval", action.ReasonDifferentWrite},
 	{"rows changed", action.ReasonRowsChanged},
@@ -204,7 +212,6 @@ var revertDetails = []detailRule{
 	{"line ", action.ReasonLineInvalid},
 	{"a batch has", action.ReasonLineInvalid},
 	{"the batch names", action.ReasonLineInvalid},
-	{"no such revert", action.ReasonNotThisAgent},
 	{"applied in one call", action.ReasonNotThisAgent},
 	{"not signed this revert", action.ReasonPlanNotSigned},
 	{"already applied", action.ReasonPlanFinished},

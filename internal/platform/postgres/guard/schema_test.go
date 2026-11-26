@@ -21,7 +21,8 @@ func TestSchemaFiles(t *testing.T) {
 		all += m.sql
 	}
 	require.Equal(t, strings.Join(files, ""), all)
-	require.Equal(t, versionRefusalResources, LatestVersion())
+	require.Equal(t, versionRefusalCut, LatestVersion())
+	require.False(t, migrations[versionRefusalCut-1].nonBreaking, "the engine reads NO_SUCH_REVERT")
 	require.False(t, migrations[versionRefusalResources-1].nonBreaking, "the engine calls the new record_refusal")
 	require.False(t, migrations[versionGuardTypedDetails-1].nonBreaking, "the engine reads the typed details")
 	require.False(t, migrations[versionStoreNeutral-1].nonBreaking, "texts in the old form are not read")

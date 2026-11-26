@@ -175,10 +175,6 @@ func (s *Store) passkeysRaw(ctx context.Context) ([]passkey.Credential, error) {
 // their NOT_THIS_AGENT also covers "another agent", which a reveal answers
 // as signed or used meanwhile.
 
-// approvalNotFoundDetail is the guard's detail for an approval the calling
-// role does not hold, or none.
-const approvalNotFoundDetail = "no such approval"
-
 // approvalRefusal is err refused for reason, with the store's text detail.
 func approvalRefusal(err error, reason approvalstore.ApprovalReason, detail string) error {
 	return &approvalstore.ApprovalRefusalError{Reason: reason, Detail: detail, Err: err}
@@ -195,7 +191,8 @@ func findApprovalRefusal(err error) error {
 
 // revealApprovalRefusal maps RevealHeld's errors: an APPROVAL_INVALID
 // whose detail is a failed reveal proof, rows changed since the hold, or
-// an approval the role does not hold, compared for equality in this order;
+// an approval the role does not hold (NO_SUCH_APPROVAL, the hint the
+// sentence), compared for equality in this order;
 // any other APPROVAL_INVALID is an approval signed or used meanwhile.
 func revealApprovalRefusal(err error) error {
 	se := guardAnswer(err)
@@ -207,8 +204,8 @@ func revealApprovalRefusal(err error) error {
 		return approvalRefusal(err, approvalstore.ApprovalRevealRefused, se.Detail)
 	case guard.RevealRowsChanged:
 		return approvalRefusal(err, approvalstore.ApprovalRevealRowsChanged, se.Detail)
-	case approvalNotFoundDetail:
-		return approvalRefusal(err, approvalstore.ApprovalNotFound, se.Detail)
+	case guard.NoSuchApproval:
+		return approvalRefusal(err, approvalstore.ApprovalNotFound, se.Hint)
 	}
 	return approvalRefusal(err, approvalstore.ApprovalNotOpen, se.Detail)
 }

@@ -147,7 +147,9 @@ func catalogCases() map[string]catalogCase {
 		stepcatalogtest.CaseKey("REVERT_INVALID", "NOT_THIS_AGENT", ""): {
 			"apply_revert_batch",
 			map[string]any{"revertId": caseRevertID, "lines": []any{1}},
-			guardRevert("no such revert"),
+			func(*testing.T, *testService) error {
+				return store.MapError(&pgconn.PgError{Code: "BS005", Message: "REVERT_INVALID", Detail: "NO_SUCH_REVERT", Hint: "no such revert"})
+			},
 		},
 		stepcatalogtest.CaseKey("REVERT_INVALID", "ROWS_CHANGED", ""): {"request_revert", revertArgs, func(t *testing.T, s *testService) error {
 			return s.rowsChanged(caseRevert(false), "rows changed")

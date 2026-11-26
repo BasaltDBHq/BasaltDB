@@ -140,7 +140,7 @@ func TestRejectRevertRefusals(t *testing.T) {
 	unknown := uuid.Must(uuid.NewV7())
 	_, errTheirs := guard.RejectRevert(ctx, e.bot.Conn, theirs.RevertID, "", nil)
 	_, errUnknown := guard.RejectRevert(ctx, e.bot.Conn, unknown, "", nil)
-	requireRevertInvalid(t, errUnknown, "no such revert")
+	requireRevertRefused(t, errUnknown, guard.RevertNotFound, "no such revert")
 	require.Equal(t, scopeErrorText(t, errUnknown, unknown), scopeErrorText(t, errTheirs, theirs.RevertID))
 	require.Equal(t, "PENDING", scalarOf[string](t, e.d.Admin,
 		`SELECT CASE WHEN rejected_at IS NULL THEN 'PENDING' ELSE 'REJECTED' END FROM basalt_meta.reverts WHERE revert_id = $1`, theirs.RevertID))

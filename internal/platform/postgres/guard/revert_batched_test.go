@@ -262,8 +262,8 @@ func TestBatchChecks(t *testing.T) {
 		lines  []int
 		detail string
 	}{
-		{"another agent", other.Conn, prep.RevertID, []int{1}, "no such revert"},
-		{"an unknown revert", e.a.Conn, uuid.Must(uuid.NewV7()), []int{1}, "no such revert"},
+		{"another agent", other.Conn, prep.RevertID, []int{1}, guard.RevertNotFound},
+		{"an unknown revert", e.a.Conn, uuid.Must(uuid.NewV7()), []int{1}, guard.RevertNotFound},
 		{"no lines", e.a.Conn, prep.RevertID, []int{}, "1 to 200 lines"},
 		{"over the batch size", e.a.Conn, prep.RevertID, tooMany, "1 to 200 lines"},
 		{"a line twice", e.a.Conn, prep.RevertID, []int{1, 2, 1}, "line 1 twice"},

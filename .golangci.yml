@@ -249,7 +249,7 @@ linters:
     forbidigo:
       analyze-types: true
       forbid:
-        - pattern: ^uuid\.(New|NewString|NewRandom|NewV7)$
+        - pattern: ^uuid\.New
           pkg: ^github\.com/google/uuid$
           msg: generate ids with internal/lib/uniqueid
     errcheck:

@@ -233,20 +233,50 @@ func (s *Service) InATest() int { n := 1; return n }
 // still here. The list only shrinks: an entry whose method is gone, has
 // become a forward or no longer implements a port fails the test.
 var portLogic = map[string]string{
-	"runChecker.CheckRun":        "looks the run up in the ledger and drops the run it found",
-	"agentProbe.ReinstallNotice": "reads the store's reinstalls and renders the ledger's person message",
-	"pgErrors.ServerMessage":     "the setup domain's DBErrors on pgx: unwraps a Postgres server error",
-	"rootConfigDir.Upsert":       "the setup domain's config writer as root: checks the directory's owner before it writes",
-	"rootFiles.ReadCredential":   "the setup domain's credential files as root: reads through the checked read",
-	"rootFiles.Promote":          "the setup domain's credential files as root: checks the pending file before it renames it",
-	"rootFiles.ClearSetup":       "the setup domain's credential files as root: picks the owner before it clears the setup",
-	"rootFiles.Close":            "the setup domain's credential files as root: closes both directories",
+	"runChecker.CheckRun":         "looks the run up in the ledger and drops the run it found",
+	"agentProbe.ReinstallNotice":  "reads the store's reinstalls and renders the ledger's person message",
+	"pgErrors.ServerMessage":      "the setup domain's DBErrors on pgx: unwraps a Postgres server error",
+	"rootConfigDir.Upsert":        "the setup domain's config writer as root: checks the directory's owner before it writes",
+	"rootFiles.ReadCredential":    "the setup domain's credential files as root: reads through the checked read",
+	"rootFiles.Promote":           "the setup domain's credential files as root: checks the pending file before it renames it",
+	"rootFiles.ClearSetup":        "the setup domain's credential files as root: picks the owner before it clears the setup",
+	"rootFiles.Close":             "the setup domain's credential files as root: closes both directories",
+	"EngineDownServer.Abandoned":  "basalt mcp with the engine down: answers each request line itself",
+	"gatedDispatcher.Dispatch":    "the pages API: refuses a request while the engine restarts",
+	"sessionDispatcher.Dispatch":  "the pages API: translates the channel's request and response to the pages' types",
+	"homeSource.Home":             "the home page: caches its read for a short time",
+	"vaultLinks.Live":             "the Vault channel: converts the live relay links",
+	"vaultLinks.Session":          "the Vault channel: converts a relay link and zeroes its key",
+	"osHost.ResolvedExecutable":   "the OS adapter: resolves the binary's path",
+	"osHost.DialogAvailable":      "the OS adapter: checks for the admin dialog",
+	"osHost.AdminDialog":          "the OS adapter: runs the admin dialog",
+	"osHost.SetupState":           "the OS adapter: reads the setup page's state over HTTP",
+	"osHost.EngineBuild":          "the OS adapter: reads the engine's build over HTTP",
+	"osHost.ServiceRuns":          "the OS adapter: reads the service manager's runs",
+	"osHost.Sudo":                 "the OS adapter: runs a command with sudo",
+	"osHost.Run":                  "the OS adapter: runs a command",
+	"osHost.PagesUp":              "the OS adapter: probes the pages over HTTP",
+	"osHost.Probe":                "the OS adapter: probes the engine's socket",
+	"osHost.EngineLog":            "the OS adapter: reads the engine's log",
+	"setupHost.ConnTarget":        "the setup host: parses the connection string's target",
+	"setupHost.OSInstallScript":   "the setup host: reads the binary's source, then builds the install script",
+	"setupHost.OSRestartScript":   "the setup host: reads the binary's source, then builds the restart script",
+	"setupHost.OSOpenTrustedDir":  "the setup host: returns a nil interface on an error",
+	"setupHost.OpenRootConfigDir": "the setup host: returns a nil interface on an error",
+	"setupHost.RootEngineKey":     "the setup host: unwraps the config directory before it reads the key",
 }
 
-// notDomains are the directories under internal/ that are not domains.
-// Every other one is a domain, and the interfaces its root package declares
-// are its ports.
-var notDomains = map[string]bool{"app": true, "config": true, "core": true, "lib": true, "platform": true, "testkit": true}
+// declaresPorts reports whether the package at path, in module, is one whose
+// interfaces app may fill: any package under internal/ but app and testkit
+// (domains, their in/ and out/ adapters, platform, core, lib, config), and
+// any package under pkg/.
+func declaresPorts(module, path string) bool {
+	if rest, ok := strings.CutPrefix(path, module+"/internal/"); ok {
+		top, _, _ := strings.Cut(rest, "/")
+		return top != "app" && top != "testkit"
+	}
+	return strings.HasPrefix(path, module+"/pkg/")
+}
 
 // listedPackage is the part of go list's answer the port scan reads.
 type listedPackage struct {
@@ -260,7 +290,7 @@ type listedPackage struct {
 
 // loadApp type-checks the package in dir, as built for this machine, against
 // its dependencies' export data from go list, and returns it with its files
-// and the root packages of the domains it reaches.
+// and the packages it reaches that declare ports (declaresPorts).
 func loadApp(t *testing.T, dir string) ([]*ast.File, *types.Package, []*types.Package) {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-export", "-deps", "-json=ImportPath,Name,Dir,Export,GoFiles,Module", ".")
@@ -304,10 +334,8 @@ func loadApp(t *testing.T, dir string) ([]*ast.File, *types.Package, []*types.Pa
 	pkg, err := (&types.Config{Importer: imp}).Check(self.ImportPath, fset, files, nil)
 	require.NoError(t, err)
 	var domains []*types.Package
-	prefix := self.Module.Path + "/internal/"
 	for _, p := range pkgs {
-		rest, ok := strings.CutPrefix(p.ImportPath, prefix)
-		if !ok || strings.Contains(rest, "/") || notDomains[rest] {
+		if !declaresPorts(self.Module.Path, p.ImportPath) {
 			continue
 		}
 		d, err := imp.Import(p.ImportPath)
@@ -317,8 +345,8 @@ func loadApp(t *testing.T, dir string) ([]*ast.File, *types.Package, []*types.Pa
 	return files, pkg, domains
 }
 
-// domainPorts are the non-empty, non-generic interface types the domain
-// root packages declare.
+// domainPorts are the non-empty, non-generic interface types the packages
+// declare.
 func domainPorts(domains []*types.Package) []*types.Named {
 	var ports []*types.Named
 	for _, d := range domains {
@@ -398,12 +426,12 @@ func portMethods(files []*ast.File, pkg *types.Package, ports []*types.Named) (m
 // portForwardProblems checks the port scan's answer against list.
 func portForwardProblems(methods, notForward []string, list map[string]string) []string {
 	if len(methods) == 0 {
-		return []string{"the port scan found no app method that implements a domain port: it checks nothing"}
+		return []string{"the port scan found no app method that implements a port: it checks nothing"}
 	}
 	var problems []string
 	for _, key := range notForward {
 		if list[key] == "" {
-			problems = append(problems, key+" implements a domain port and does more than forward: move the logic to the service that owns it and leave a one-line forward")
+			problems = append(problems, key+" implements a port and does more than forward: move the logic to the service that owns it and leave a one-line forward")
 		}
 	}
 	for key := range list {
@@ -417,13 +445,15 @@ func portForwardProblems(methods, notForward []string, list map[string]string) [
 
 // Where internal/app implements a port with a type of its own, the methods
 // that implement it are one-line forwards too: a method of an app type that
-// implements an interface a domain's root package declares is one return or
-// call statement, or is listed in portLogic with a reason. Files for other
-// platforms are not type-checked here; CI runs the test on linux.
+// implements an interface declared outside app (declaresPorts) is one return
+// or call statement, or is listed in portLogic with a reason. The package is
+// type-checked as built for this machine, so files only other platforms
+// build (*_other.go) are not checked; CI runs the test on linux, and darwin
+// gives the same answer.
 func TestPortMethodsOnlyForward(t *testing.T) {
 	files, pkg, domains := loadApp(t, ".")
 	ports := domainPorts(domains)
-	require.NotEmpty(t, ports, "no domain root package declares a port: the scan checks nothing")
+	require.NotEmpty(t, ports, "no package app reaches declares a port: the scan checks nothing")
 	methods, notForward := portMethods(files, pkg, ports)
 	require.Empty(t, portForwardProblems(methods, notForward, portLogic))
 }
@@ -496,11 +526,35 @@ func (s *Service) Tell(int) {}
 	require.Equal(t, []string{"embedded.Tell", "forward.Ask", "forward.Tell", "logic.Ask", "logic.Tell"}, methods)
 	require.Equal(t, []string{"logic.Ask", "logic.Tell"}, notForward)
 	require.Equal(t, []string{
-		"logic.Tell implements a domain port and does more than forward: move the logic to the service that owns it and leave a one-line forward",
+		"logic.Tell implements a port and does more than forward: move the logic to the service that owns it and leave a one-line forward",
 		"portLogic entry gone.Ask matches no port method in app that does more than forward: remove it",
 	}, portForwardProblems(methods, notForward, map[string]string{"logic.Ask": "probe", "gone.Ask": "probe"}))
-	require.Equal(t, []string{"the port scan found no app method that implements a domain port: it checks nothing"},
+	require.Equal(t, []string{"the port scan found no app method that implements a port: it checks nothing"},
 		portForwardProblems(nil, nil, nil))
+}
+
+// declaresPorts takes every package under internal/ but app and testkit,
+// and pkg/.
+func TestDeclaresPorts(t *testing.T) {
+	const m = "example.com/m"
+	for path, want := range map[string]bool{
+		m + "/internal/revert":              true,
+		m + "/internal/revert/in/revertmcp": true,
+		m + "/internal/setup/out/credfiles": true,
+		m + "/internal/platform/cli":        true,
+		m + "/internal/core/guidance":       true,
+		m + "/internal/lib/atomicfile":      true,
+		m + "/internal/config":              true,
+		m + "/pkg/setup":                    true,
+		m + "/internal/app":                 false,
+		m + "/internal/appendix":            true,
+		m + "/internal/testkit/archtest":    false,
+		m + "/cmd/basalt":                   false,
+		m + "/pkgs":                         false,
+		"example.com/other/internal/revert": false,
+	} {
+		require.Equal(t, want, declaresPorts(m, path), path)
+	}
 }
 
 type importerFunc func(path string) (*types.Package, error)

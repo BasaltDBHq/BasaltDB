@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 )
 
 // ErrBadReceipt is every refusal of a receipt: the verifier only says no.
@@ -74,9 +75,7 @@ func parseReceipt(payload []byte) (channel.Receipt, error) {
 		return channel.Receipt{}, err
 	}
 	var r channel.Receipt
-	dec := json.NewDecoder(bytes.NewReader(payload))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&r); err != nil || dec.More() {
+	if err := strictjson.Decode(payload, &r); err != nil {
 		return channel.Receipt{}, ErrBadReceipt
 	}
 	return r, nil

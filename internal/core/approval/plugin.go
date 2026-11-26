@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/textrule"
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 )
 
 // Plugin approvals (CONTRACT.md, Plugins, What a plugin approval binds and
@@ -62,13 +64,10 @@ func ParsePluginBinding(text string) (PluginBinding, error) {
 		return PluginBinding{}, Invalid("plugin binding: %v", err)
 	}
 	var b PluginBinding
-	dec := json.NewDecoder(strings.NewReader(text))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&b); err != nil {
-		return PluginBinding{}, Invalid("plugin binding: %v", err)
-	}
-	if dec.More() {
+	if err := strictjson.Decode([]byte(text), &b); errors.Is(err, strictjson.ErrTrailingData) {
 		return PluginBinding{}, Invalid("plugin binding has data after its end")
+	} else if err != nil {
+		return PluginBinding{}, Invalid("plugin binding: %v", err)
 	}
 	if b.Kind != KindPlugin {
 		return PluginBinding{}, Invalid("binding kind %q is not a plugin approval", b.Kind)

@@ -184,7 +184,7 @@ func TestFeedEventsMatchTheSchema(t *testing.T) {
 	change := uuid.NullUUID{UUID: uuid.Must(uuid.NewV7()), Valid: true}
 	at := time.Date(2026, 11, 19, 6, 2, 11, 513958000, time.UTC)
 	rows := []guardmodel.FeedRow{
-		{Seq: 1, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("INSERT"), Verb: s("INSERT"), RunID: id(), TaskID: id(), Table: s("public.\"we\x01ird\""), Rows: s("3"), CascadedRows: s("2")},
+		{Seq: 1, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("INSERT"), Verb: s("INSERT"), RunID: id(), TaskID: id(), Resource: s("public.\"we\x01ird\""), Rows: s("3"), CascadedRows: s("2")},
 		{Seq: 2, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("DELETE"), Verb: s("DELETE")},
 		{Seq: 3, At: at, Kind: guardmodel.KindRefused, ChangeID: change, Op: s("OTHER"), RunID: id(), TaskID: id(), Code: s("STORE_ERROR")},
 		{Seq: 4, At: at, Kind: guardmodel.KindApprovalPending, ChangeID: change, Op: s("UPDATE"), Verb: s("INSERT"), RunID: id(), ApprovalID: id(), Rows: s("27"), ExpiresAt: s("2026-11-20T06:02:11+00:00")},

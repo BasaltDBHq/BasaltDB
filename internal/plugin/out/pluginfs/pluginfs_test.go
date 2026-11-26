@@ -22,11 +22,11 @@ func TestNoFollowRefusesASymlink(t *testing.T) {
 	require.NoError(t, os.Symlink(target, link))
 	files := pluginfs.Files{}
 	require.Equal(t, syscall.O_NOFOLLOW|syscall.O_NONBLOCK, files.NoFollow())
-	_, err := files.OpenFile(link, os.O_RDONLY|files.NoFollow(), 0)
+	_, err := files.ReadOpen(link, os.O_RDONLY|files.NoFollow(), 10, nil)
 	require.Error(t, err)
-	f, err := files.OpenFile(target, os.O_RDONLY|files.NoFollow(), 0)
+	b, err := files.ReadOpen(target, os.O_RDONLY|files.NoFollow(), 10, nil)
 	require.NoError(t, err)
-	require.NoError(t, f.Close())
+	require.Equal(t, "x", string(b))
 }
 
 func TestOwnerAndLinksReadTheFile(t *testing.T) {

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `engine.json` must hold only its one JSON object. A file with anything after the closing brace, such as a second object, a `//` comment or stray characters, was accepted before. The engine now refuses to start with `config <path>: data after the JSON value`. To fix it, remove everything after the closing `}`.
+
 ### Fixed
 
 - A refused action with a very long statement, intent, reason or parameters is now in the ledger. The guard used to refuse to record it, so the refusal was only in the engine's log; now it keeps the text cut to its limit (2000 bytes for an intent or reason, 64 KiB for a statement) and ending in `...`, and parameters over 64 KiB as `{"cut": true, "bytes": <size>}`. This is guard schema version 13 (breaking): it also refuses a revert or an approval the agent does not have, or one that does not exist, with the code `NO_SUCH_REVERT` or `NO_SUCH_APPROVAL`, which the engine reads in place of the words "no such revert" and "no such approval". The engine needs this version: run `basalt init` again and update the guard on the page it opens.

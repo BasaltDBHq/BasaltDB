@@ -8,6 +8,8 @@ import (
 	pganalyze "github.com/pganalyze/pg_query_go/v6"
 	pgquery "github.com/wasilibs/go-pgquery"
 	"google.golang.org/protobuf/reflect/protoreflect"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/sqlident"
 )
 
 // RowSource is a relation in a read's top-level FROM whose rows the engine
@@ -24,9 +26,9 @@ type RowSource struct {
 // already folded unquoted identifiers, so every part is quoted as is.
 func (s RowSource) RegName() string {
 	if s.Schema == "" {
-		return quoteIdent(s.Name)
+		return sqlident.Quote(s.Name)
 	}
-	return quoteIdent(s.Schema) + "." + quoteIdent(s.Name)
+	return sqlident.Quote(s.Schema, s.Name)
 }
 
 // ref is how the statement names the relation's columns.
@@ -38,10 +40,6 @@ func (s RowSource) ref() []string {
 		return []string{s.Schema, s.Name}
 	}
 	return []string{s.Name}
-}
-
-func quoteIdent(s string) string {
-	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
 // Versioned is a row source that is a guarded table, with its primary key.

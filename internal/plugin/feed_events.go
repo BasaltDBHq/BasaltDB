@@ -146,8 +146,8 @@ func fillFeedData(d *feedData, kind action.StoreKind, r guardmodel.FeedRow) bool
 	switch r.Kind {
 	case guardmodel.KindChange:
 		ok = fill(d.setChange(r), d.setRunTask(r), d.setOp(r, writeOps), d.setStore(kind, r), d.setCounts(r))
-		if ok && r.Table != nil {
-			d.Resource, ok = feedResource(*r.Table)
+		if ok && r.Resource != nil {
+			d.Resource, ok = feedResource(*r.Resource)
 		}
 	case guardmodel.KindRefused:
 		ok = fill(d.setChange(r), d.setRunTask(r), d.setOp(r, refusedOps), d.setStore(kind, r))

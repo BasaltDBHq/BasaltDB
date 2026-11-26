@@ -125,15 +125,15 @@ A statement signed by the engine of what a relayed signature did (VC-22, mitigat
 `wss://relay.basaltvault.app/v1/engines/<engineId>`, compiled into the binary (as the page origins are, CO-8). `vaultUrl` in `engine.json` overrides it for development and tests only, and only with a `ws://` URL on a loopback address (`127.0.0.1`, `[::1]` or `localhost`); anything else is refused when the config is loaded. The engine connects only when `vault` is `ON` and `pagesUrl` is the portal: a passkey with RP ID `localhost` cannot sign on the portal.
 
 1. **Open**, with the header `basalt-engine-key: <signing key SPKI, base64url>`. The Vault refuses (`AUTH_FAILED`) a key that is not a valid P-256 SPKI or does not hash to the path's `engineId`.
-2. **Challenge.** The Vault sends `CHALLENGE` with 32 random bytes: fresh per socket, single use, valid 30 seconds.
+2. **Challenge.** The Vault sends `CHALLENGE` with 32 random bytes: fresh per socket, single use, valid for `CHALLENGE_TTL` ([Limits](#limits)).
 3. **Auth.** The engine answers `AUTH` with `version` 1 and `sig` over `basalt-vault-engine.1\n` + challenge (as sent, base64url) + `\n` + host, where host is the engine's own Vault host (`relay.basaltvault.app`, or the override's `host:port`), never one the Vault names. A bad or late answer: `AUTH_FAILED`.
 4. **Ready.** The Vault sends `READY`. One live socket per engine id: a newer authenticated socket replaces the older, which is closed with `REPLACED`. After every `READY` the engine registers every live link again (registering is idempotent for the same engine), so a Vault that lost its state recovers.
 
-Control messages are text messages, JSON per [`control-message.schema.json`](../api/mcp/vault/control-message.schema.json), at most 4 KiB. Session bytes are binary `ROUTE` messages: `0x01` ‖ `0x10` (type `ROUTE`) ‖ `sid` (16 bytes) ‖ the page's message exactly as received, or the engine's message for the page.
+Control messages are text messages, JSON per [`control-message.schema.json`](../api/mcp/vault/control-message.schema.json), at most `MAX_CONTROL` ([Limits](#limits)). Session bytes are binary `ROUTE` messages: `0x01` ‖ `0x10` (type `ROUTE`) ‖ `sid` (16 bytes) ‖ the page's message exactly as received, or the engine's message for the page.
 
 | Message | Direction | Fields | Meaning |
 |---|---|---|---|
-| `REGISTER_LINK` | engine to Vault | `ref`, `linkToken`, `expiresAt` | Route page sockets for this token to me until `expiresAt` (at most 24 hours and 5 minutes ahead) |
+| `REGISTER_LINK` | engine to Vault | `ref`, `linkToken`, `expiresAt` | Route page sockets for this token to me until `expiresAt` (at most `MAX_EXPIRY_AHEAD` ahead, [Limits](#limits)) |
 | `UNREGISTER_LINK` | engine to Vault | `ref`, `linkToken` | Stop routing it, and close its page sockets with `LINK_UNKNOWN`. Only the engine the token is bound to can: another engine gets `LINK_CONFLICT` and the binding stays. A token that is not registered (or expired) answers `OK` |
 | `OK` | Vault to engine | `ref` | Request `ref` succeeded |
 | `ERROR` | Vault to engine | `ref` (when it answers one), `code` | `LINK_CONFLICT` (another engine registered the token), `LINK_LIMIT` (too many live links), `INVALID_EXPIRY`, `UNKNOWN_SESSION`, `RATE_LIMITED`, `PROTOCOL` |
@@ -179,25 +179,25 @@ A page that ends a session normally closes with 1000. A refusal inside a session
 
 ### Limits
 
-Enforced by the engine and the page (VC-35). The Vault must carry messages up to these sizes, and may apply lower rates of its own (private numbers), never lower sizes. Rate checks come before any public-key operation.
+Enforced by the engine and the page (VC-35). The Vault must carry messages up to these sizes, and may apply lower rates of its own (private numbers), never lower sizes. Rate checks come before any public-key operation. The limits the Vault applies too are named here and valued in [`limits.json`](../api/mcp/vault/limits.json) ([`limits.schema.json`](../api/mcp/vault/limits.schema.json)), which the engine's tests check its constants against.
 
 | Limit | Value | Over it |
 |---|---|---|
 | Handshake message 1 | exactly 99 bytes | `PROTOCOL` |
 | Handshake message 2 | at most 1 024 bytes | `TOO_LARGE` |
-| Frame | at most 32 786 bytes (32 768 of padded plaintext, 2 of header, 16 of tag) | `TOO_LARGE` |
-| `ROUTE` message on the engine's socket | at most 32 804 bytes (a frame plus 18) | `TOO_LARGE` |
-| Control message | at most 4 KiB | `TOO_LARGE` |
+| Frame | at most `MAX_FRAME` (32 768 bytes of padded plaintext, 2 of header, 16 of tag) | `TOO_LARGE` |
+| `ROUTE` message on the engine's socket | at most `MAX_ROUTE` (a frame plus 18 bytes) | `TOO_LARGE` |
+| Control message | at most `MAX_CONTROL` | `TOO_LARGE` |
 | Request body | at most 16 KiB, as on loopback | `413` |
 | Response body | at most 16 MiB | `TOO_LARGE` (page) |
 | Handshake time | 10 seconds from `SESSION_OPEN` (engine) or from opening the socket (page) | `TIMEOUT` |
 | Idle session | 5 minutes without a frame | `TIMEOUT` |
 | Session lifetime | 30 minutes, and never past the link's expiry | `TIMEOUT` |
 | Requests per session | 64 | `RATE_LIMITED` |
-| Open sessions per link | 4 | `SESSION_LIMIT` |
-| Open sessions per engine | 64 | `SESSION_LIMIT` |
-| Handshakes per link | 20 per 10 minutes | `RATE_LIMITED` |
-| Live links the Vault accepts per engine | at least 1 000 | `ERROR` `LINK_LIMIT`; the engine hands over the long link (a plugin approval: `NO_PORTAL_LINK`) |
+| Open sessions per link | `MAX_SESSIONS_PER_LINK` | `SESSION_LIMIT` |
+| Open sessions per engine | `MAX_SESSIONS_PER_ENGINE` | `SESSION_LIMIT` |
+| Handshakes per link | `MAX_HANDSHAKES_PER_LINK` per `HANDSHAKE_WINDOW` | `RATE_LIMITED` |
+| Live links the Vault accepts per engine | at least `MIN_LINKS_PER_ENGINE` | `ERROR` `LINK_LIMIT`; the engine hands over the long link (a plugin approval: `NO_PORTAL_LINK`) |
 
 ### Replay and expiry
 

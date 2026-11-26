@@ -1,7 +1,6 @@
 package plugin
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 )
 
 // Requests serve the agents' request_plugin calls with the
@@ -307,9 +307,7 @@ func (p *Requests) UploadPart(ctx context.Context, caller string, served func() 
 		return PluginUploadPartResult{}, err
 	}
 	var in PluginUploadPartParams
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if dec.Decode(&in) != nil || in.UploadID == uuid.Nil || in.Path == "" {
+	if strictjson.Decode(raw, &in) != nil || in.UploadID == uuid.Nil || in.Path == "" {
 		return PluginUploadPartResult{}, &guidance.ArgumentError{Message: "a part needs uploadId, path, offset and data, and nothing else"}
 	}
 	out, err := k.UploadPart(ctx, uid, in)

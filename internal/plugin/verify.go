@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"maps"
 	"path"
@@ -263,20 +262,24 @@ func checkContents(dir string, m pluginmodel.Manifest, entries []copyEntry, sigO
 // checkFileHash reads a listed file once, refusing a symlink or anything not
 // regular, and compares its SHA-256 with the manifest's.
 func checkFileHash(files Files, p, want string) error {
-	f, err := files.OpenFile(p, noFollowFlags(), 0)
-	if err != nil {
+	sum, err := files.HashOpen(p, noFollowFlags(), func(fi fs.FileInfo) error {
+		if !fi.Mode().IsRegular() {
+			return pluginmodel.PathRefusal(p, "is not a regular file")
+		}
+		return nil
+	})
+	switch failedStep(err) {
+	case opOpen:
 		return pluginmodel.PathRefusal(p, "cannot be opened, or is a symlink")
-	}
-	defer func() { _ = f.Close() }()
-	fi, err := f.Stat()
-	if err != nil || !fi.Mode().IsRegular() {
+	case opStat:
 		return pluginmodel.PathRefusal(p, "is not a regular file")
-	}
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+	case opRead:
 		return pluginmodel.PathRefusal(p, "cannot be read")
 	}
-	if got := fmt.Sprintf("sha256:%x", h.Sum(nil)); got != want {
+	if err != nil {
+		return err
+	}
+	if got := fmt.Sprintf("sha256:%x", sum); got != want {
 		return &pluginmodel.VerifyError{Reason: pluginmodel.RefusedNotTrusted, File: p, Why: "its SHA-256 is not the one the manifest states"}
 	}
 	return nil

@@ -4,9 +4,7 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -293,55 +291,58 @@ func chain(base, p string) []string {
 }
 
 // readOwned is readNoFollow that also applies the path rule to the file it
-// opened: owned by owner and writable by no one else.
+// opened: owned by owner and writable by no one else. The rule, then the
+// type and size, are checked on the open file before it is read.
 func readOwned(files Files, path string, limit int64, owner uint32) ([]byte, error) {
-	f, err := files.OpenFile(path, noFollowFlags(), 0)
-	if err != nil {
+	b, err := files.ReadOpen(path, noFollowFlags(), limit+1, func(fi fs.FileInfo) error {
+		if err := checkStrictInfo(path, fi, owner); err != nil {
+			return err
+		}
+		return checkReadable(fi, path, limit)
+	})
+	if failedStep(err) == opOpen {
 		// A symlink in the trust store is the path rule's refusal.
 		if fi, lerr := files.Lstat(path); lerr == nil && fi.Mode()&fs.ModeSymlink != 0 {
 			return nil, ruleRefusal(path, "is a symlink", pluginmodel.PathSymlink, fi)
 		}
-		return nil, pluginmodel.PathRefusal(path, "cannot be opened, or is a symlink")
 	}
-	defer func() { _ = f.Close() }()
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, pluginmodel.PathRefusal(path, "cannot be read")
-	}
-	if err := checkStrictInfo(path, fi, owner); err != nil {
-		return nil, err
-	}
-	return readOpened(f, fi, path, limit)
+	return readResult(b, err, path, limit)
 }
 
 // readNoFollow reads a regular file, refusing a symlink as its last
 // component, a file larger than limit, and anything not regular. Errors name
 // the path, never the contents.
 func readNoFollow(files Files, path string, limit int64) ([]byte, error) {
-	f, err := files.OpenFile(path, noFollowFlags(), 0)
-	if err != nil {
-		return nil, pluginmodel.PathRefusal(path, "cannot be opened, or is a symlink")
-	}
-	defer func() { _ = f.Close() }()
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, pluginmodel.PathRefusal(path, "cannot be read")
-	}
-	return readOpened(f, fi, path, limit)
+	b, err := files.ReadOpen(path, noFollowFlags(), limit+1, func(fi fs.FileInfo) error {
+		return checkReadable(fi, path, limit)
+	})
+	return readResult(b, err, path, limit)
 }
 
-// readOpened reads an opened file that must be regular and at most limit
-// bytes.
-func readOpened(f *os.File, fi fs.FileInfo, path string, limit int64) ([]byte, error) {
+// checkReadable refuses an opened file that is not regular or is over limit
+// bytes, before it is read.
+func checkReadable(fi fs.FileInfo, path string, limit int64) error {
 	if !fi.Mode().IsRegular() {
-		return nil, pluginmodel.PathRefusal(path, "is not a regular file")
+		return pluginmodel.PathRefusal(path, "is not a regular file")
 	}
 	if fi.Size() > limit {
-		return nil, pluginmodel.PathRefusal(path, "is too large")
+		return pluginmodel.PathRefusal(path, "is too large")
 	}
-	b, err := io.ReadAll(io.LimitReader(f, limit+1))
-	if err != nil {
+	return nil
+}
+
+// readResult is the refusal for a ReadOpen of at most limit+1 bytes of path
+// that failed, or the bytes read: a file that grew past limit while it was
+// read is too large.
+func readResult(b []byte, err error, path string, limit int64) ([]byte, error) {
+	switch failedStep(err) {
+	case opOpen:
+		return nil, pluginmodel.PathRefusal(path, "cannot be opened, or is a symlink")
+	case opStat, opRead:
 		return nil, pluginmodel.PathRefusal(path, "cannot be read")
+	}
+	if err != nil {
+		return nil, err
 	}
 	if int64(len(b)) > limit {
 		return nil, pluginmodel.PathRefusal(path, "is too large")

@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/textrule"
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 )
 
 // KindRevert is the binding kind of a revert authorisation.
@@ -175,9 +175,7 @@ func ParseBinding(text string) (Binding, error) {
 		return Binding{}, Invalid("binding: %v", err)
 	}
 	var b Binding
-	dec := json.NewDecoder(strings.NewReader(text))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&b); err != nil {
+	if err := strictjson.Decode([]byte(text), &b); err != nil {
 		return Binding{}, Invalid("binding: %v", err)
 	}
 	if b.Kind != KindRevert {

@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 )
 
 // Format2 is the prefix after '#' of the one fragment format read.
@@ -86,13 +87,10 @@ func Decode(payload string, v any) error {
 	if !utf8.Valid(raw) {
 		return errors.New("is not UTF-8")
 	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
-		return fmt.Errorf("is not a request: %w", err)
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+	if err := strictjson.Decode(raw, v); errors.Is(err, strictjson.ErrTrailingData) {
 		return fmt.Errorf("JSON %w", errTrailing)
+	} else if err != nil {
+		return fmt.Errorf("is not a request: %w", err)
 	}
 	return nil
 }

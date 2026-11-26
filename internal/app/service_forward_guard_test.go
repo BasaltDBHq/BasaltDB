@@ -529,19 +529,14 @@ var portGlue = map[string]string{
 // still here. The list only shrinks: an entry whose method is gone, has
 // become a forward or no longer implements a port fails the test.
 var portLogic = map[string]string{
-	"pgErrors.ServerMessage":           "the setup domain's DBErrors on pgx: unwraps a Postgres server error",
-	"rootConfigDir.Upsert":             "the setup domain's config writer as root: checks the directory's owner before it writes",
-	"setupHost.ConnTarget":             "the setup host: parses the connection string's target",
-	"setupHost.OSInstallScript":        "the setup host: reads the binary's source, then builds the install script",
-	"setupHost.OSRestartScript":        "the setup host: reads the binary's source, then builds the restart script",
-	"setupHost.OSOpenTrustedDir":       "the setup host: returns a nil interface on an error",
-	"setupHost.OpenRootConfigDir":      "the setup host: returns a nil interface on an error",
-	"setupHost.RootEngineKey":          "the setup host: unwraps the config directory before it reads the key",
-	"engineCLIHost.RunServiceAt":       "forwards to app's runServiceAt, the whole basalt service install command",
-	"setupHost.LoadOrCreateEngineKeys": "forwards to app's loadOrCreateEngineKeys, which reads or creates the channel keys",
-	"setupHost.OpenRootCredFiles":      "forwards to app's openRootCredFiles, which opens the credential files as root",
-	"setupHost.RootTrustedOwner":       "forwards to app's rootTrustedOwner, which checks the config directory's owner",
-	"setupHost.ServerMessage":          "forwards to pgErrors.ServerMessage, which is listed itself",
+	"rootConfigDir.Upsert":        "the setup domain's config writer as root: checks the directory's owner before it writes",
+	"setupHost.ConnTarget":        "the setup host: parses the connection string's target",
+	"setupHost.OSOpenTrustedDir":  "the setup host: returns a nil interface on an error",
+	"setupHost.OpenRootConfigDir": "the setup host: returns a nil interface on an error",
+	"setupHost.RootEngineKey":     "the setup host: unwraps the config directory before it reads the key",
+	"engineCLIHost.RunServiceAt":  "forwards to app's runServiceAt, the whole basalt service install command",
+	"setupHost.OpenRootCredFiles": "forwards to app's openRootCredFiles, which opens the credential files as root",
+	"setupHost.RootTrustedOwner":  "forwards to app's rootTrustedOwner, which checks the config directory's owner",
 }
 
 // declaresPorts reports whether the package at path, in module, is one whose

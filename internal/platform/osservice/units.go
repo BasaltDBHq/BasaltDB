@@ -238,3 +238,23 @@ func xmlEscape(s string) string {
 	_ = xml.EscapeText(&b, []byte(s))
 	return b.String()
 }
+
+// InstallScriptFor is InstallScript for the binary at path, read with
+// ReadSource.
+func InstallScriptFor(goos, path string) (string, error) {
+	src, err := ReadSource(path)
+	if err != nil {
+		return "", err
+	}
+	return InstallScript(goos, src)
+}
+
+// RestartScriptFor is RestartScript for the binary at path, read with
+// ReadSource.
+func RestartScriptFor(goos, path string) (string, error) {
+	src, err := ReadSource(path)
+	if err != nil {
+		return "", err
+	}
+	return RestartScript(goos, src)
+}

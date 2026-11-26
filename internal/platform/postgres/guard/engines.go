@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // maxEngines bounds an engine list: a database records a handful.
@@ -28,7 +29,7 @@ const (
 // ENGINE_RECORDED when it inserts a key. Kept for tests, which run
 // record_engine through it; basalt init runs RecordEngineStatement.
 func RecordEngine(ctx context.Context, q Querier, publicKey []byte) (string, error) {
-	sql, args, err := psql.Select().Column(sq.Expr("basalt_meta.record_engine(?::bytea)", publicKey)).ToSql()
+	sql, args, err := sqlport.Builder.Select().Column(sq.Expr("basalt_meta.record_engine(?::bytea)", publicKey)).ToSql()
 	if err != nil {
 		return "", err
 	}
@@ -42,7 +43,7 @@ func RecordEngine(ctx context.Context, q Querier, publicKey []byte) (string, err
 // for tests of revoke_engine, which the guard still has. Postgres refuses an unknown or already
 // revoked id alike (BS008, ENGINE_UNKNOWN) and appends ENGINE_REVOKED.
 func RevokeEngine(ctx context.Context, q Querier, engineID string) (int, error) {
-	sql, args, err := psql.Select().Column(sq.Expr("basalt_meta.revoke_engine(?::text)", engineID)).ToSql()
+	sql, args, err := sqlport.Builder.Select().Column(sq.Expr("basalt_meta.revoke_engine(?::text)", engineID)).ToSql()
 	if err != nil {
 		return 0, err
 	}
@@ -59,7 +60,7 @@ func Engines(ctx context.Context, q Querier, admin bool) ([]guardmodel.RecordedE
 	if admin {
 		from = "basalt_meta.engines"
 	}
-	sql, args, err := psql.Select("engine_id", "public_key", "recorded_at", "revoked_at").
+	sql, args, err := sqlport.Builder.Select("engine_id", "public_key", "recorded_at", "revoked_at").
 		From(from).
 		OrderBy("recorded_at DESC", "engine_id").
 		Limit(maxEngines).
@@ -94,7 +95,7 @@ func RecordEngineStatement(publicKey []byte, guardVersion int) guardmodel.Statem
 // EngineRecord is engineID's row in basalt_meta.agent_engines, read with an
 // agent's connection: nil when the database does not record it.
 func EngineRecord(ctx context.Context, q Querier, engineID string) (*guardmodel.RecordedEngine, error) {
-	sql, args, err := psql.Select("engine_id", "public_key", "recorded_at", "revoked_at").
+	sql, args, err := sqlport.Builder.Select("engine_id", "public_key", "recorded_at", "revoked_at").
 		From("basalt_meta.agent_engines").
 		Where(sq.Eq{"engine_id": engineID}).
 		ToSql()

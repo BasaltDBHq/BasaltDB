@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // ledgerKind is the ledger's kind column.
@@ -21,7 +22,7 @@ func ReadFeedRows(ctx context.Context, q Querier, after int64, limit int, f guar
 	if limit <= 0 {
 		return nil, nil
 	}
-	b := psql.Select("seq", "at", ledgerKind, "change_id", "op", "verb",
+	b := sqlport.Builder.Select("seq", "at", ledgerKind, "change_id", "op", "verb",
 		"detail ->> 'runId'", "detail ->> 'taskId'", "detail ->> 'resource'", "detail ->> 'rows'", "detail ->> 'cascadedRows'",
 		"detail ->> 'approvalId'", "detail ->> 'expiresAt'", "detail ->> 'revertId'", "detail ->> 'code'").
 		From("basalt_meta.agent_ledger").
@@ -53,7 +54,7 @@ func ReadFeedRows(ctx context.Context, q Querier, after int64, limit int, f guar
 // ChainHeadSeq is the seq of the ledger's last row (basalt_meta.chain_head),
 // 0 for an empty ledger.
 func ChainHeadSeq(ctx context.Context, q Querier) (int64, error) {
-	sql, args, err := psql.Select("seq").From("basalt_meta.chain_head()").ToSql()
+	sql, args, err := sqlport.Builder.Select("seq").From("basalt_meta.chain_head()").ToSql()
 	if err != nil {
 		return 0, err
 	}
@@ -83,7 +84,7 @@ func SeqRetired(ctx context.Context, q Querier, seq int64) (bool, error) {
 // OldestSeqAfter is the seq of the calling agent's oldest ledger row after
 // seq after, false when it has none.
 func OldestSeqAfter(ctx context.Context, q Querier, after int64) (int64, bool, error) {
-	sql, args, err := psql.Select("min(seq)").From("basalt_meta.agent_ledger").Where(sq.Gt{"seq": after}).ToSql()
+	sql, args, err := sqlport.Builder.Select("min(seq)").From("basalt_meta.agent_ledger").Where(sq.Gt{"seq": after}).ToSql()
 	if err != nil {
 		return 0, false, err
 	}
@@ -102,7 +103,7 @@ func OldestSeqAfter(ctx context.Context, q Querier, after int64) (int64, bool, e
 // ledger, in seq order, with their egress and endpoint decoded; a record
 // whose egress or endpoint does not decode has DecodeErr set.
 func PluginEntryEvents(ctx context.Context, q Querier, name, instance string) ([]guardmodel.PluginEntryEvent, error) {
-	sql, args, err := psql.Select("seq", ledgerKind, "detail -> 'egress'", "detail -> 'endpoint'").
+	sql, args, err := sqlport.Builder.Select("seq", ledgerKind, "detail -> 'egress'", "detail -> 'endpoint'").
 		From("basalt_meta.agent_ledger").
 		Where(sq.Eq{ledgerKind: []string{string(guardmodel.PluginEnabled), string(guardmodel.PluginChanged), string(guardmodel.PluginDisabled)}}).
 		Where(sq.Expr("detail ->> 'name' = ?", name)).

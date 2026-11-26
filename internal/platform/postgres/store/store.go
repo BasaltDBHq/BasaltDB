@@ -70,7 +70,7 @@ func (s *Store) WithReturned(f ReturnedFunc) *Store {
 
 // findRunRaw is FindRun before MapError.
 func (s *Store) findRunRaw(ctx context.Context, id uuid.UUID) (action.Run, error) {
-	q, args, err := psql.Select("task_id", "intent").From("basalt_meta.agent_runs").
+	q, args, err := sqlport.Builder.Select("task_id", "intent").From("basalt_meta.agent_runs").
 		Where(sq.Eq{"run_id": id.String()}).ToSql()
 	if err != nil {
 		return action.Run{}, err
@@ -137,7 +137,7 @@ func (s *Store) write(ctx context.Context, op action.Op, sql string, params []an
 }
 
 func (s *Store) countRows(ctx context.Context, tx pgx.Tx, change uuid.UUID, rows *int) error {
-	q, args, err := psql.Select("rows").From("basalt_meta.agent_changes").
+	q, args, err := sqlport.Builder.Select("rows").From("basalt_meta.agent_changes").
 		Where(sq.Eq{"change_id": change.String()}).ToSql()
 	if err != nil {
 		return err

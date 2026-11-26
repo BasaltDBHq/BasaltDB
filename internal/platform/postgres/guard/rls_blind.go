@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // rlsBlindSQL lists the tables where row-level security filters role $1
@@ -109,7 +110,7 @@ func AgentBlindTables(ctx context.Context, q Querier, n guardmodel.Names, spec g
 		if slices.ContainsFunc(out, func(b guardmodel.BlindTable) bool { return b.Table == table }) {
 			continue // a --write table listed in --read too
 		}
-		count, _, err := psql.Select("count(1)").From(table).ToSql()
+		count, _, err := sqlport.Builder.Select("count(1)").From(table).ToSql()
 		if err != nil {
 			return nil, err
 		}

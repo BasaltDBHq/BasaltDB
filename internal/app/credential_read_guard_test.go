@@ -99,8 +99,8 @@ var uncheckedCredentialReads = map[string]string{
 // pgdial.CheckForeignDSN. Listed so the scan is seen to find them.
 var checkedCredentialReads = []string{
 	"internal/setup/out/credfiles/credfiles_unix.go:RootCredFiles.Read:readCredentialFrom",
-	"internal/app/credfiles_unix.go:rootFiles.read:config.ReadCredentialAt",
-	"internal/app/credfiles_unix.go:rootFiles.read:config.ReadCredentialAtLimit",
+	"internal/handoff/out/handofffiles/rootfiles_unix.go:RootFiles.read:config.ReadCredentialAt",
+	"internal/handoff/out/handofffiles/rootfiles_unix.go:RootFiles.read:config.ReadCredentialAtLimit",
 	"internal/app/setupbackend/setupbackend.go:Backend.ReadCredential:config.ReadCredential",
 }
 

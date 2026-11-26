@@ -4,17 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
-	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
-
-var samplePsql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 
 // maxValueChars bounds how much of one value is read: a sample is at most
 // SampleRows values of this many characters, whatever the column holds.
@@ -95,7 +91,7 @@ func (s Sampler) Sample(ctx context.Context, col piistore.Column) (piistore.Samp
 	if maxChars <= 0 {
 		maxChars = maxValueChars
 	}
-	query, args, err := samplePsql.Select(fmt.Sprintf("pg_catalog.left(%s::text, %d)", ident, maxChars)).
+	query, args, err := sqlport.Builder.Select(fmt.Sprintf("pg_catalog.left(%s::text, %d)", ident, maxChars)).
 		From(pgx.Identifier{col.Namespace, col.Resource}.Sanitize()).
 		Where(ident + " IS NOT NULL").
 		Limit(piistore.SampleRows).ToSql()
@@ -104,8 +100,7 @@ func (s Sampler) Sample(ctx context.Context, col piistore.Column) (piistore.Samp
 	}
 	var values []string
 	err = s.ReadOnly(ctx, func(tx sqlport.Port) error {
-		timeout := samplePsql.Select().Column(sq.Expr("set_config('statement_timeout', ?, true)", strconv.FormatInt(s.Timeout.Milliseconds(), 10)))
-		tsql, targs, err := timeout.ToSql()
+		tsql, targs, err := sqlport.StatementTimeoutSQL(s.Timeout)
 		if err != nil {
 			return err
 		}

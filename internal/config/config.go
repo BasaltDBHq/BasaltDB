@@ -21,6 +21,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/lib/ownerfile"
 )
 
@@ -146,7 +147,7 @@ type PII struct {
 
 // PII defaults (CONTRACT.md, PII classification, Engine config).
 const (
-	DefaultPIIMaxMemoryMB       = 512
+	DefaultPIIMaxMemoryMB       = pii.DefaultMaxMemoryMB
 	DefaultPIIScanRowsPerSecond = 20_000
 	// MaxPIIMemoryMB is the largest pii.maxMemoryMB (64 GiB); the validate
 	// tag on PII.MaxMemoryMB holds the same number.

@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"os"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/platform/keyfile"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
@@ -60,7 +60,7 @@ func (setupHost) GuardSetupRecorded(ctx context.Context, q setup.Querier, id uui
 }
 
 func (setupHost) LoadOrCreateEngineKeys(path string, now func() time.Time) (*channel.EngineKeys, error) {
-	return loadOrCreateEngineKeys(path, now)
+	return keyfile.LoadOrCreateKeys(path, now)
 }
 
 func (setupHost) TrustProfileFor(configPath, host string) *trustprofile.Profile {
@@ -82,11 +82,7 @@ func (setupHost) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
 func (setupHost) OSLookupUID(name string) int { return osservice.LookupUID(name) }
 
 func (setupHost) OSInstallScript(goos, binary string) (string, error) {
-	src, err := osservice.ReadSource(binary)
-	if err != nil {
-		return "", err
-	}
-	return osservice.InstallScript(goos, src)
+	return osservice.InstallScriptFor(goos, binary)
 }
 
 func (setupHost) OSRemoveScript(goos string) (string, error) { return osservice.RemoveScript(goos) }
@@ -94,11 +90,7 @@ func (setupHost) OSRemoveScript(goos string) (string, error) { return osservice.
 func (setupHost) OSResetScript(goos string) (string, error) { return osservice.ResetScript(goos) }
 
 func (setupHost) OSRestartScript(goos, binary string) (string, error) {
-	src, err := osservice.ReadSource(binary)
-	if err != nil {
-		return "", err
-	}
-	return osservice.RestartScript(goos, src)
+	return osservice.RestartScriptFor(goos, binary)
 }
 
 func (setupHost) OSServiceBinary(goos string) string { return osservice.ServiceBinary(goos) }
@@ -115,7 +107,7 @@ func (setupHost) ConnTarget(dsn string) (setup.ConnTarget, error) {
 	return setup.ConnTarget{Host: cfg.Host, Port: int(cfg.Port), SystemRoots: cfg.TLSConfig != nil && cfg.TLSConfig.RootCAs == nil}, nil
 }
 
-func (setupHost) ServerMessage(err error) (string, bool) { return pgErrors{}.ServerMessage(err) }
+func (setupHost) ServerMessage(err error) (string, bool) { return pgdial.ServerMessage(err) }
 
 func (setupHost) PathCredFiles() setup.CredFiles { return pathCredFiles{} }
 
@@ -171,10 +163,4 @@ func probeLogin(c *cli.IO) func(context.Context, string) error {
 // pgErrors is setup.DBErrors on pgx's server errors.
 type pgErrors struct{}
 
-func (pgErrors) ServerMessage(err error) (string, bool) {
-	var pg *pgconn.PgError
-	if !errors.As(err, &pg) {
-		return "", false
-	}
-	return pg.Message, true
-}
+func (pgErrors) ServerMessage(err error) (string, bool) { return pgdial.ServerMessage(err) }

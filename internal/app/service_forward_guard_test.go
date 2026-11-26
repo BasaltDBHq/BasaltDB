@@ -516,38 +516,27 @@ func (s *Service) InATest() int { n := 1; return n }
 		serviceForwardProblems(files, methods, notForward, nil, nil))
 }
 
+// portGlue lists the port methods of app types that convert between two
+// adapters which may not import each other, as Type.Method, with the reason
+// each stays: joining two adapters is the composition root's job, as
+// serviceWiring's building is. An entry that matches nothing fails.
+var portGlue = map[string]string{
+	"sessionDispatcher.Dispatch": "the Vault channel (outbound) and the pages API (inbound) may not import each other: app turns the channel's link, request and response into the pages' types and back",
+}
+
 // portLogic lists the methods of other app types that implement a domain
 // port and do more than forward, as Type.Method, with the reason each is
 // still here. The list only shrinks: an entry whose method is gone, has
 // become a forward or no longer implements a port fails the test.
 var portLogic = map[string]string{
-	"pgErrors.ServerMessage":            "the setup domain's DBErrors on pgx: unwraps a Postgres server error",
-	"rootConfigDir.Upsert":              "the setup domain's config writer as root: checks the directory's owner before it writes",
-	"rootFiles.ReadCredential":          "the setup domain's credential files as root: reads through the checked read",
-	"rootFiles.Promote":                 "the setup domain's credential files as root: checks the pending file before it renames it",
-	"rootFiles.ClearSetup":              "the setup domain's credential files as root: picks the owner before it clears the setup",
-	"rootFiles.Close":                   "the setup domain's credential files as root: closes both directories",
-	"sessionDispatcher.Dispatch":        "the pages API: translates the channel's request and response to the pages' types",
-	"setupHost.ConnTarget":              "the setup host: parses the connection string's target",
-	"setupHost.OSInstallScript":         "the setup host: reads the binary's source, then builds the install script",
-	"setupHost.OSRestartScript":         "the setup host: reads the binary's source, then builds the restart script",
-	"setupHost.OSOpenTrustedDir":        "the setup host: returns a nil interface on an error",
-	"setupHost.OpenRootConfigDir":       "the setup host: returns a nil interface on an error",
-	"setupHost.RootEngineKey":           "the setup host: unwraps the config directory before it reads the key",
-	"engineCLIHost.CommandName":         "forwards to app's commandName, which picks the command's name",
-	"engineCLIHost.Fail":                "forwards to app's fail, which prints a command's error",
-	"engineCLIHost.ChildStarter":        "forwards to app's childStarter, which starts the engine as a child",
-	"engineCLIHost.RunServiceAt":        "forwards to app's runServiceAt, the whole basalt service install command",
-	"engineCLIHost.EngineLog":           "forwards to app's engineLog, which builds the engine's logger",
-	"engineCLIHost.EngineDown":          "forwards to app's engineDown, which reads the config for basalt mcp with the engine down",
-	"engineCLIHost.EngineStarter":       "forwards to app's engineStarter, which starts the engine for basalt mcp",
-	"engineCLIHost.NewEngineDownServer": "forwards to app's NewEngineDownServer",
-	"engineHost.NewRecorder":            "forwards to app's newRecorder, the crash recorder",
-	"rootFiles.ReadPending":             "forwards to rootFiles.read, the checked credential read",
-	"setupHost.LoadOrCreateEngineKeys":  "forwards to app's loadOrCreateEngineKeys, which reads or creates the channel keys",
-	"setupHost.OpenRootCredFiles":       "forwards to app's openRootCredFiles, which opens the credential files as root",
-	"setupHost.RootTrustedOwner":        "forwards to app's rootTrustedOwner, which checks the config directory's owner",
-	"setupHost.ServerMessage":           "forwards to pgErrors.ServerMessage, which is listed itself",
+	"rootConfigDir.Upsert":        "the setup domain's config writer as root: checks the directory's owner before it writes",
+	"setupHost.ConnTarget":        "the setup host: parses the connection string's target",
+	"setupHost.OSOpenTrustedDir":  "the setup host: returns a nil interface on an error",
+	"setupHost.OpenRootConfigDir": "the setup host: returns a nil interface on an error",
+	"setupHost.RootEngineKey":     "the setup host: unwraps the config directory before it reads the key",
+	"engineCLIHost.RunServiceAt":  "forwards to app's runServiceAt, the whole basalt service install command",
+	"setupHost.OpenRootCredFiles": "forwards to app's openRootCredFiles, which opens the credential files as root",
+	"setupHost.RootTrustedOwner":  "forwards to app's rootTrustedOwner, which checks the config directory's owner",
 }
 
 // declaresPorts reports whether the package at path, in module, is one whose
@@ -708,20 +697,30 @@ func portMethods(files []*ast.File, pkg *types.Package, ports []*types.Named) (m
 	return methods, notForward
 }
 
-// portForwardProblems checks the port scan's answer against list.
-func portForwardProblems(methods, notForward []string, list map[string]string) []string {
+// portForwardProblems checks the port scan's answer against list (logic
+// waiting to move) and glue (permanent).
+func portForwardProblems(methods, notForward []string, list, glue map[string]string) []string {
 	if len(methods) == 0 {
 		return []string{"the port scan found no app method that implements a port: it checks nothing"}
 	}
 	var problems []string
 	for _, key := range notForward {
-		if list[key] == "" {
+		if list[key] == "" && glue[key] == "" {
 			problems = append(problems, key+" implements a port and does more than forward: move the logic to the service that owns it and leave a one-line forward")
 		}
 	}
+	stale := func(entries map[string]string, what string) {
+		for key := range entries {
+			if !slices.Contains(notForward, key) {
+				problems = append(problems, what+" entry "+key+" matches no port method in app that does more than forward: remove it")
+			}
+		}
+	}
+	stale(list, "portLogic")
+	stale(glue, "portGlue")
 	for key := range list {
-		if !slices.Contains(notForward, key) {
-			problems = append(problems, "portLogic entry "+key+" matches no port method in app that does more than forward: remove it")
+		if glue[key] != "" {
+			problems = append(problems, key+" is in both portLogic and portGlue")
 		}
 	}
 	slices.Sort(problems)
@@ -731,7 +730,8 @@ func portForwardProblems(methods, notForward []string, list map[string]string) [
 // Where internal/app implements a port with a type of its own, the methods
 // that implement it are one-line forwards too: a method of an app type that
 // implements an interface declared outside app (declaresPorts) is one return
-// or call statement, or is listed in portLogic with a reason. The package is
+// or call statement, or is listed in portLogic (logic waiting to move) or
+// portGlue (joining two adapters) with a reason. The package is
 // type-checked as built for this machine, so files only other platforms
 // build (*_other.go) are not checked; CI runs the test on linux, and darwin
 // gives the same answer. A forward into a helper of app's own counts as
@@ -740,11 +740,12 @@ func portForwardProblems(methods, notForward []string, list map[string]string) [
 // Not covered: a method promoted from an embedded field (the embedded type's
 // own methods are checked only if that type is itself a port type of app),
 // calls in a forward's arguments (return s.x.F(helper(v))), a function
-// literal argument of one statement that is itself an if or a switch, and a
-// function-typed field set positionally in a struct literal (T{f, g}).
+// literal argument of one statement that is itself an if or a switch, a
+// function-typed field set positionally in a struct literal (T{f, g}), and
+// one set by a range clause (for _, s.fn = range fns).
 func TestPortMethodsOnlyForward(t *testing.T) {
 	scan := scanApp(t)
-	require.Empty(t, portForwardProblems(scan.portMethods, scan.portNotForward, portLogic))
+	require.Empty(t, portForwardProblems(scan.portMethods, scan.portNotForward, portLogic, portGlue))
 }
 
 // The port scan is proven on a probe: a probe domain declares a port and a
@@ -817,9 +818,13 @@ func (s *Service) Tell(int) {}
 	require.Equal(t, []string{
 		"logic.Tell implements a port and does more than forward: move the logic to the service that owns it and leave a one-line forward",
 		"portLogic entry gone.Ask matches no port method in app that does more than forward: remove it",
-	}, portForwardProblems(methods, notForward, map[string]string{"logic.Ask": "probe", "gone.Ask": "probe"}))
+	}, portForwardProblems(methods, notForward, map[string]string{"logic.Ask": "probe", "gone.Ask": "probe"}, nil))
+	require.Equal(t, []string{
+		"logic.Ask is in both portLogic and portGlue",
+		"portGlue entry forward.Ask matches no port method in app that does more than forward: remove it",
+	}, portForwardProblems(methods, notForward, map[string]string{"logic.Ask": "probe"}, map[string]string{"logic.Ask": "probe", "logic.Tell": "probe", "forward.Ask": "probe"}))
 	require.Equal(t, []string{"the port scan found no app method that implements a port: it checks nothing"},
-		portForwardProblems(nil, nil, nil))
+		portForwardProblems(nil, nil, nil, nil))
 }
 
 // A forward into app's own code is logic: a call of a free function of app,

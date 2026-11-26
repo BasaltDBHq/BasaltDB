@@ -12,6 +12,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // HealthOptions chooses how CheckHealth verifies the chain.
@@ -235,7 +236,7 @@ func CheckHealth(ctx context.Context, q guard.Querier, now time.Time, opts Healt
 	if h.RLSBlind, err = guard.RLSBlindTables(ctx, q, "", nil); err != nil {
 		return Health{}, err
 	}
-	sql, args, err := psql.Select("max(at)").From("basalt_meta.agent_ledger").
+	sql, args, err := sqlport.Builder.Select("max(at)").From("basalt_meta.agent_ledger").
 		Where("kind = ?", string(guard.EventHeartbeat)).ToSql()
 	if err != nil {
 		return Health{}, err
@@ -315,7 +316,7 @@ func verify(ctx context.Context, q guard.Querier, opts HealthOptions) (guard.Cha
 // lastDeadMan is the latest DEAD_MAN row of the past guardmodel.DeadManAfter, and
 // false when there is none.
 func lastDeadMan(ctx context.Context, q guard.Querier, now time.Time) (DeadMan, bool, error) {
-	sql, args, err := psql.Select("at", "coalesce(detail->>'lastHeartbeat', '')",
+	sql, args, err := sqlport.Builder.Select("at", "coalesce(detail->>'lastHeartbeat', '')",
 		"coalesce((detail->>'silentHours')::bigint, 0)").
 		From("basalt_meta.agent_ledger").
 		Where("kind = ?", string(guard.EventDeadMan)).

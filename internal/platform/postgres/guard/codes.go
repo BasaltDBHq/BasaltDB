@@ -72,6 +72,13 @@ const (
 // revert reads like an unknown id.
 const RevertNotFound = "NO_SUCH_REVERT"
 
+// NoSuchApproval is the detail of APPROVAL_INVALID for an approval the
+// calling role does not hold, or none, from every function that looks one
+// up (version 13); the hint is the sentence "no such approval". Another
+// role's approval reads like an unknown id. A plugin approval's is
+// DetailApprovalNotFound.
+const NoSuchApproval = "NO_SUCH_APPROVAL"
+
 // NothingReadsOnly is the detail of NOTHING_TO_REVERT for a scope that
 // changed no row a revert could restore (version 11); the hint names the
 // scope. Every other NOTHING_TO_REVERT keeps a sentence as its detail.

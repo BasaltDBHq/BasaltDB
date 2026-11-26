@@ -94,7 +94,8 @@ func TestApprovalFlow(t *testing.T) {
 	const stmt = `DELETE FROM public.leads WHERE id = $1`
 	params := []any{3}
 
-	requireCode(t, applyApproved(context.Background(), a.Conn, in, uuid.Must(uuid.NewV7()), stmt, params), guard.CodeApprovalInvalid)
+	requireApprovalRefused(t, applyApproved(context.Background(), a.Conn, in, uuid.Must(uuid.NewV7()), stmt, params),
+		guard.NoSuchApproval, "no such approval")
 	err := pgx.BeginFunc(context.Background(), a.Conn, func(tx pgx.Tx) error {
 		if err := guard.BeginGuarded(context.Background(), tx, in, guardtest.Timeout); err != nil {
 			return err

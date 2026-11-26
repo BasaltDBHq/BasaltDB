@@ -13,6 +13,9 @@ import (
 
 func approvalInvalid(detail string) error { return guardErr("BS005", "APPROVAL_INVALID", detail, "") }
 
+// approvalTyped is APPROVAL_INVALID with a typed detail and its sentence.
+func approvalTyped(code, hint string) error { return guardErr("BS005", "APPROVAL_INVALID", code, hint) }
+
 // approvalRefusalRow is one guard answer to one approval call: the refusal
 // the adapter maps it to, or none (reason "") when the service reads the
 // mapped error as it is.
@@ -45,7 +48,11 @@ func TestApprovalRefusalsPerCall(t *testing.T) {
 
 		{"reveal: refused", revealApprovalRefusal, approvalInvalid("REVEAL_REFUSED"), approvalstore.ApprovalRevealRefused, "REVEAL_REFUSED"},
 		{"reveal: rows changed", revealApprovalRefusal, approvalInvalid("ROWS_CHANGED"), approvalstore.ApprovalRevealRowsChanged, "ROWS_CHANGED"},
-		{"reveal: no such approval", revealApprovalRefusal, approvalInvalid(noSuchApproval), approvalstore.ApprovalNotFound, noSuchApproval},
+		{"reveal: no such approval", revealApprovalRefusal, approvalTyped("NO_SUCH_APPROVAL", noSuchApproval), approvalstore.ApprovalNotFound, noSuchApproval},
+		{"reveal: no such approval, any hint", revealApprovalRefusal, approvalTyped("NO_SUCH_APPROVAL", "x"), approvalstore.ApprovalNotFound, "x"},
+		// Told apart by the detail, never the words: the sentence as the
+		// detail, as a guard before version 13 gave it, is not open.
+		{"reveal: no such approval words, untyped", revealApprovalRefusal, approvalInvalid(noSuchApproval), approvalstore.ApprovalNotOpen, noSuchApproval},
 		{"reveal: already approved", revealApprovalRefusal, approvalInvalid(approved), approvalstore.ApprovalNotOpen, approved},
 		{"reveal: already used", revealApprovalRefusal, approvalInvalid(used), approvalstore.ApprovalNotOpen, used},
 		{"reveal: another agent", revealApprovalRefusal, approvalInvalid(anotherAgent), approvalstore.ApprovalNotOpen, anotherAgent},

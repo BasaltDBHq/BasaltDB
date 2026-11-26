@@ -326,8 +326,8 @@ func TestRecordRefusalStoresANUL(t *testing.T) {
 }
 
 // TestRecordRefusalCutsOverLongTexts: an intent or reason over 2000 bytes
-// and a statement over 64 KiB are cut with "..." (version 13), never
-// raised on, so a 1 MB statement's refusal is in the ledger. The cut keeps
+// and a statement over 64 KiB are cut with "...", and params over 64 KiB
+// replaced by a marker (version 13), never raised on, so a 1 MB statement's refusal is in the ledger. The cut keeps
 // whole characters and fits the limit, the marker included; a text at the
 // limit is kept as it is. The change record and the ledger row hold the
 // same texts.
@@ -370,6 +370,27 @@ func TestRecordRefusalCutsOverLongTexts(t *testing.T) {
 		`SELECT statement, reason FROM basalt_meta.changes WHERE change_id = $1`, id).Scan(&statement, &reason))
 	require.Equal(t, atLimit, statement)
 	require.Equal(t, strings.Repeat("r", 2000), reason)
+
+	// Params over 64 KiB, which JSON cannot be cut into, are replaced by a
+	// marker naming their size; params at the limit are kept.
+	big := []any{strings.Repeat("p", 70000)} // ["ppp…"]: 70004 bytes as JSON
+	id, err = guard.RecordRefusal(ctx, a.Conn, guard.Refusal{
+		Intent: in, Op: "INSERT", Statement: "INSERT INTO public.leads VALUES ($1)", Params: big,
+		Code: "STATEMENT_REFUSED", Reason: "refused",
+	})
+	require.NoError(t, err)
+	var params string
+	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT params::text FROM basalt_meta.changes WHERE change_id = $1`, id).Scan(&params))
+	require.JSONEq(t, `{"cut": true, "bytes": 70004}`, params)
+	require.Equal(t, 1, count(t, d.Admin, `SELECT count(1)::int FROM basalt_meta.ledger WHERE kind = 'REFUSED' AND change_id = $1`, id))
+	fits := []any{strings.Repeat("p", 65536-4)} // 65536 bytes as JSON
+	id, err = guard.RecordRefusal(ctx, a.Conn, guard.Refusal{
+		Intent: in, Op: "INSERT", Statement: "INSERT INTO public.leads VALUES ($1)", Params: fits,
+		Code: "STATEMENT_REFUSED", Reason: "refused",
+	})
+	require.NoError(t, err)
+	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT params::text FROM basalt_meta.changes WHERE change_id = $1`, id).Scan(&params))
+	require.JSONEq(t, `["`+fits[0].(string)+`"]`, params)
 	requireIntact(t, a.Conn)
 }
 

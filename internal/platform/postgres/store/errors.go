@@ -149,6 +149,9 @@ func guardReason(code, detail string) string {
 		}
 		return action.ReasonNotAllowed
 	case action.CodeApprovalInvalid:
+		if detail == guard.NoSuchApproval {
+			return action.ReasonNotThisAgent
+		}
 		return detailReason(detail, approvalDetails, action.ReasonBadSignature)
 	case action.CodeRevertInvalid:
 		if reason, ok := revertTypedReasons[detail]; ok {
@@ -161,11 +164,14 @@ func guardReason(code, detail string) string {
 
 // typedSentence reports whether detail is a typed detail of guard code gc
 // whose hint is the guard's sentence: apply_revert's REVERT_INVALID codes
-// and NOTHING_TO_REVERT READS_ONLY (version 11), and NO_SUCH_REVERT
-// (version 13).
+// and NOTHING_TO_REVERT READS_ONLY (version 11), and NO_SUCH_REVERT and
+// NO_SUCH_APPROVAL (version 13).
 func typedSentence(gc guard.Code, detail string) bool {
-	if gc == guard.CodeNothingToRevert {
+	switch gc {
+	case guard.CodeNothingToRevert:
 		return detail == guard.NothingReadsOnly
+	case guard.CodeApprovalInvalid:
+		return detail == guard.NoSuchApproval
 	}
 	_, typed := revertTypedReasons[detail]
 	return gc == guard.CodeRevertInvalid && typed
@@ -195,7 +201,6 @@ var approvalDetails = []detailRule{
 	{"already used", action.ReasonAlreadyUsed},
 	{"already signed", action.ReasonAlreadyUsed},
 	{"another agent", action.ReasonNotThisAgent},
-	{"no such approval", action.ReasonNotThisAgent},
 	{"another run", action.ReasonDifferentWrite},
 	{"differ from the approval", action.ReasonDifferentWrite},
 	{"rows changed", action.ReasonRowsChanged},

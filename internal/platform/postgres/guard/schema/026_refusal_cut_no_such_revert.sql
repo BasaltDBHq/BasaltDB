@@ -1,11 +1,13 @@
--- Version 13: a refusal is always recorded, and a missing revert has a
--- code. record_refusal cuts an intent, statement or reason over its limit
--- and marks the cut with '...' instead of raising, so an over-long text
--- can no longer keep a refusal out of the ledger, as an over-long name
--- cannot (version 12). REVERT_INVALID for a revert the calling role did not
--- prepare, or none, carries the code NO_SUCH_REVERT as its detail and the
--- sentence as its hint, as the codes of version 11 do, so the engine reads
--- the code, never the sentence.
+-- Version 13: a refusal is always recorded, and a missing revert or
+-- approval has a code. record_refusal cuts an intent, statement or reason
+-- over its limit and marks the cut with '...', and replaces params over
+-- 64 KiB with {"cut": true, "bytes": <size>}, instead of raising, so an
+-- over-long text can no longer keep a refusal out of the ledger, as an
+-- over-long name cannot (version 12). REVERT_INVALID for a revert the
+-- calling role did not prepare, or none, carries the code NO_SUCH_REVERT
+-- as its detail and APPROVAL_INVALID for an approval it does not hold, or
+-- none, NO_SUCH_APPROVAL, each with the sentence as its hint, as the codes
+-- of version 11 do, so the engine reads the code, never the sentence.
 
 -- p_value cut to at most p_max bytes, '...' included, without splitting a
 -- character; p_value itself when it fits, NULL for NULL. The limit is in
@@ -42,14 +44,30 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'BS005', MESSAGE = 'REVERT_INVALID', DETAIL = p_detail;
 END $$;
 
+-- APPROVAL_INVALID with detail p_detail. An approval the calling role
+-- does not hold, or none, is raised with the code NO_SUCH_APPROVAL as its
+-- detail and the sentence as its hint; every other detail stays the
+-- sentence. Every function that refuses a missing approval calls this one
+-- with that sentence, so they all answer with the code.
+CREATE OR REPLACE FUNCTION basalt_meta._approval_invalid(p_detail text) RETURNS void
+LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog, pg_temp AS $$
+BEGIN
+    IF p_detail = 'no such approval' THEN
+        RAISE EXCEPTION USING ERRCODE = 'BS005', MESSAGE = 'APPROVAL_INVALID', DETAIL = 'NO_SUCH_APPROVAL', HINT = p_detail;
+    END IF;
+    RAISE EXCEPTION USING ERRCODE = 'BS005', MESSAGE = 'APPROVAL_INVALID', DETAIL = p_detail;
+END $$;
+
 -- A refused action: the engine refused it, or the guard raised and the
 -- transaction rolled back. Written in a new transaction. p_resources are
 -- the resources the statement names, a write's target first, empty or NULL
 -- when it did not parse. The first 100 that are neither empty nor over 1000
 -- bytes are kept, in order; the rest are left out. An intent or reason
 -- over 2000 bytes and a statement over 64 KiB are cut with '...'
--- (_cut_text), on the change record and in the ledger row alike, so no
--- text or name can keep the refusal out of the ledger.
+-- (_cut_text), on the change record and in the ledger row alike, and
+-- params over 64 KiB are replaced by {"cut": true, "bytes": <size of the
+-- params as JSON text>}, so no text, params or name can keep the refusal
+-- out of the ledger.
 CREATE OR REPLACE FUNCTION basalt_meta.record_refusal(
     p_run_id uuid, p_task_id uuid, p_intent text, p_op text, p_statement text, p_params jsonb,
     p_code text, p_reason text, p_duration_ms int, p_resources text[]
@@ -60,12 +78,15 @@ DECLARE
     v_intent    text := basalt_meta._cut_text(p_intent, 2000);
     v_statement text := basalt_meta._cut_text(p_statement, 65536);
     v_reason    text := basalt_meta._cut_text(p_reason, 2000);
+    v_params    jsonb := p_params;
     v_task      uuid;
     v_id        uuid;
     v_resources text[];
 BEGIN
     PERFORM basalt_meta._require_agent();
-    PERFORM basalt_meta._check_text('params', p_params::text, 65536, false);
+    IF octet_length(p_params::text) > 65536 THEN
+        v_params := jsonb_build_object('cut', true, 'bytes', octet_length(p_params::text));
+    END IF;
     IF p_op IS NULL OR p_op NOT IN ('READ', 'INSERT', 'UPDATE', 'DELETE', 'OTHER') THEN
         PERFORM basalt_meta._invalid('op must be READ, INSERT, UPDATE, DELETE or OTHER');
     END IF;
@@ -82,7 +103,7 @@ BEGIN
     INSERT INTO basalt_meta.changes (tx, stmt_ts, agent, run_id, task_id, intent, op, table_name, statement, params,
                                      duration_ms, status, code, reason)
     VALUES (pg_current_xact_id(), statement_timestamp(), session_user, p_run_id, v_task, nullif(v_intent, ''),
-            p_op, v_resources[1], v_statement, p_params, p_duration_ms, 'REFUSED', p_code, v_reason)
+            p_op, v_resources[1], v_statement, v_params, p_duration_ms, 'REFUSED', p_code, v_reason)
     RETURNING change_id INTO v_id;
     PERFORM basalt_meta._append(session_user, v_id, 'REFUSED', NULL, p_op, NULL, NULL, NULL, NULL,
         jsonb_build_object('runId', p_run_id, 'taskId', v_task, 'intent', v_intent, 'statement', v_statement,

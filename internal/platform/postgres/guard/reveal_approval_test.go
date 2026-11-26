@@ -3,6 +3,7 @@ package guard_test
 import (
 	"context"
 	"crypto/sha256"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -134,6 +135,14 @@ func requireApprovalInvalid(t *testing.T, err error, detail string) {
 	t.Helper()
 	requireCode(t, err, guard.CodeApprovalInvalid)
 	require.Contains(t, scopeErrorText(t, err), "|"+detail+"|")
+}
+
+// requireApprovalRefused is APPROVAL_INVALID with the typed detail code
+// and the hint hint (version 13).
+func requireApprovalRefused(t *testing.T, err error, code, hint string) {
+	t.Helper()
+	requireCode(t, err, guard.CodeApprovalInvalid)
+	require.True(t, strings.HasSuffix(scopeErrorText(t, err), "|"+code+"|"+hint), scopeErrorText(t, err))
 }
 
 // The person's proof opens a ticket; a re-run preview with it returns the
@@ -290,8 +299,10 @@ func TestOpenRevealRefused(t *testing.T) {
 	helper := e.d.NewAgent(t, "helper", leads, leads)
 	_, theirs := guard.OpenReveal(ctx, helper.Conn, id, valid, key)
 	_, unknown := guard.OpenReveal(ctx, e.a.Conn, uuid.Must(uuid.NewV7()), valid, key)
-	requireApprovalInvalid(t, theirs, "no such approval")
+	requireApprovalRefused(t, theirs, guard.NoSuchApproval, "no such approval")
 	require.Equal(t, scopeErrorText(t, theirs, id), scopeErrorText(t, unknown))
+	_, err = guard.RevealNonce(ctx, helper.Conn, approval.KindApprove, id)
+	requireApprovalRefused(t, err, guard.NoSuchApproval, "no such approval")
 
 	// Approved, then used: no reveal either way.
 	_, err = guard.SubmitApproval(ctx, e.a.Conn, id, sign(t, e.p, e.held, nil))

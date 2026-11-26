@@ -75,9 +75,10 @@ const (
 	// row's detail: schema/025.
 	versionRefusalResources
 	// versionRefusalCut cuts a refusal's over-long intent, statement or
-	// reason with a marker instead of raising, and gives REVERT_INVALID for
-	// a revert the role did not prepare the code NO_SUCH_REVERT as its
-	// detail: schema/026.
+	// reason with a marker and replaces over-long params with one, instead
+	// of raising, and gives REVERT_INVALID for a revert the role did not
+	// prepare and APPROVAL_INVALID for an approval it does not hold the
+	// codes NO_SUCH_REVERT and NO_SUCH_APPROVAL as their detail: schema/026.
 	versionRefusalCut
 )
 

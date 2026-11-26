@@ -223,12 +223,21 @@ func TestRegistrationCodes(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, back.PRFSupported)
 
+	// Whitespace after the JSON is not data.
+	raw, err := json.Marshal(resp)
+	require.NoError(t, err)
+	back, err = passkey.ParseRegistrationResponse(passkey.RegistrationResponsePrefix + passkey.Bytes(string(raw)+" \n").String())
+	require.NoError(t, err)
+	require.Equal(t, resp, back)
+
 	bad := []struct{ name, code, detail string }{
 		{"wrong prefix", "basalt-approval.1.e30", "must start with"},
 		{"padding", passkey.RegistrationResponsePrefix + "e30=", "base64url"},
 		{"standard alphabet", passkey.RegistrationResponsePrefix + "+/", "base64url"},
 		{"unknown field", passkey.RegistrationResponsePrefix + passkey.Bytes(`{"extra":1}`).String(), "unknown field"},
 		{"too long", passkey.RegistrationResponsePrefix + strings.Repeat("A", 70000), "longer"},
+		{"a second value", passkey.RegistrationResponsePrefix + passkey.Bytes(string(raw)+` {}`).String(), "data after the JSON value"},
+		{"a stray brace", passkey.RegistrationResponsePrefix + passkey.Bytes(string(raw)+`}`).String(), "data after the JSON value"},
 	}
 	for _, tc := range bad {
 		_, err := passkey.ParseRegistrationResponse(tc.code)

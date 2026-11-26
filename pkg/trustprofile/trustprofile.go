@@ -19,17 +19,17 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
-	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/url"
 	"regexp"
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 )
 
 // Origin is where a profile comes from.
@@ -153,13 +153,10 @@ func Parse(raw []byte, origin Origin, read func(name string) ([]byte, error)) (*
 		return nil, fmt.Errorf("the profile is over %d bytes", MaxProfileBytes)
 	}
 	var s Spec
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&s); err != nil {
-		return nil, fmt.Errorf("the profile is not valid JSON: %w", err)
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+	if err := strictjson.Decode(raw, &s); errors.Is(err, strictjson.ErrTrailingData) {
 		return nil, errors.New("the profile holds more than one JSON value")
+	} else if err != nil {
+		return nil, fmt.Errorf("the profile is not valid JSON: %w", err)
 	}
 	if !ValidName(s.Name) {
 		return nil, fmt.Errorf("name %q is not a profile name (lowercase letters, digits and dashes, up to 63)", s.Name)

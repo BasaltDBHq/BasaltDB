@@ -5,11 +5,10 @@
 package revertpage
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
 
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
@@ -105,9 +104,7 @@ func (p revertPage) postScope(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in revertsvc.ScopeRequest
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&in); err != nil || dec.More() || (in.Proof == nil) != (in.NewSecret == "") {
+	if err := strictjson.Decode(body, &in); err != nil || (in.Proof == nil) != (in.NewSecret == "") {
 		p.s.Fail(w, &toolresult.ToolError{
 			Code:    guidance.CodeInvalidArgument,
 			Message: "the body must be {\"select\", \"proof\"?, \"newSecret\"?} (revert-scope-request.schema.json), proof and newSecret together",
@@ -138,9 +135,7 @@ func (p revertPage) postReject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in revertsvc.RejectRequest
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&in); err != nil || dec.More() {
+	if err := strictjson.Decode(body, &in); err != nil {
 		p.s.Fail(w, &toolresult.ToolError{
 			Code:    guidance.CodeInvalidArgument,
 			Message: "the body must be {\"note\"?} (revert-reject-request.schema.json)",

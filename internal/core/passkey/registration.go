@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 )
 
 // Code prefixes (CONTRACT.md, Approvals, Codes).
@@ -156,15 +158,14 @@ func DecodeCode(prefix, code string, v any) error {
 }
 
 // DecodeStrict decodes one JSON value into v as a code's payload is
-// decoded: at most maxCodeLen bytes, no unknown field, base64url bytes.
+// decoded: at most maxCodeLen bytes, then strictjson.Decode (no unknown
+// field, no data after the value; whitespace is fine), bytes as base64url.
 // The pages post signed responses as such JSON.
 func DecodeStrict(raw []byte, v any) error {
 	if len(raw) > maxCodeLen {
 		return rejected("payload longer than %d bytes", maxCodeLen)
 	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
+	if err := strictjson.Decode(raw, v); err != nil {
 		return rejected("code payload: %v", err)
 	}
 	return nil

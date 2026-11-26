@@ -535,6 +535,44 @@ func TestWireTagsSpellTheContract(t *testing.T) {
 		"json keys are camelCase and enum values SCREAMING_SNAKE_CASE (CONTRACT.md); allowlist only another system's names")
 }
 
+// --- Strict JSON reader ---------------------------------------------------
+
+// strictJSONHome is the one strict JSON reader: strictjson.Decode refuses
+// an unknown field and data after the value. A copy elsewhere drifts (one
+// forgot the trailing data, one checked it with More, which misses a stray
+// brace), so json.Decoder.DisallowUnknownFields is called only there.
+var strictJSONHome = "internal/lib/strictjson"
+
+func strictJSONFindings(pkgs map[string]*goPkg) ([]string, int) {
+	var out []string
+	files := eachFile(pkgs, func(rel, file string, f *ast.File, _ map[string]string) {
+		if underAny(rel, []string{strictJSONHome}) {
+			return
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "DisallowUnknownFields" {
+				out = append(out, file+": DisallowUnknownFields")
+			}
+			return true
+		})
+	})
+	return tally(out), files
+}
+
+// strictJSONAllowed are the strict decoders strictjson.Decode cannot be.
+var strictJSONAllowed = map[string]string{
+	"internal/core/guidance/tool.go: DisallowUnknownFields": "DecodeArgs keeps numbers as their text (UseNumber), " +
+		"which strictjson.Decode does not do",
+	"api/mcp/contract.go: DisallowUnknownFields (2 times)": "the api layer imports only api, so the embedded tool " +
+		"contracts and next-steps catalog decode on their own",
+}
+
+func TestOneStrictJSONReader(t *testing.T) {
+	findings, files := strictJSONFindings(moduleTree(t))
+	requireRule(t, findings, files, strictJSONAllowed,
+		"decode strict JSON with strictjson.Decode (internal/lib/strictjson)")
+}
+
 // --- Probes --------------------------------------------------------------
 
 // probeTree writes files (path -> source) under a new module and parses it.
@@ -568,6 +606,7 @@ const CodeInternal Code = "INTERNAL"
 		"internal/bad/bad.go": `package bad
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -607,6 +646,7 @@ func f(t time.Time) any {
 	_ = sq.Select("a").From("b")
 	_ = psql.Select("a")
 	_ = sq.Select("a").PlaceholderFormat(sq.Dollar)
+	json.NewDecoder(nil).DisallowUnknownFields()
 	return nil
 }
 `,
@@ -615,6 +655,10 @@ const q = ` + "`\nSET LOCAL statement_timeout = 5\n`" + `
 const inline = "BEGIN; SET statement_timeout = 5; COMMIT"
 const role = "ALTER ROLE x SET statement_timeout = 5"
 const db = "ALTER DATABASE d SET statement_timeout = 5"
+`,
+		"internal/lib/strictjson/strictjson.go": `package strictjson
+import "encoding/json"
+func f() { json.NewDecoder(nil).DisallowUnknownFields() }
 `,
 		"internal/home/home.go": `package home
 const q = "SELECT set_config('statement_timeout', $1, true)"
@@ -675,6 +719,14 @@ const q = "SELECT set_config('statement_timeout', $1, true)"
 	tags, _ := wireTagFindings(pkgs)
 	if want := []string{`internal/bad/bad.go: json key "run_id"`, `internal/bad/bad.go: oneof value "closed"`}; !slices.Equal(tags, want) {
 		t.Errorf("wire tags:\n got %q\nwant %q", tags, want)
+	}
+
+	strict, _ := strictJSONFindings(pkgs)
+	if want := []string{"internal/bad/bad.go: DisallowUnknownFields"}; !slices.Equal(strict, want) {
+		t.Errorf("strict JSON decoders:\n got %q\nwant %q", strict, want)
+	}
+	if len(checkStoreNeutral(strict, strictJSONAllowed)) == 0 {
+		t.Error("a strict JSON decoder outside strictjson passed")
 	}
 
 	if p := checkStoreNeutral(nil, map[string]string{"gone.go: x": "fixed"}); len(p) == 0 {

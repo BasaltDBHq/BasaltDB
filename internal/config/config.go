@@ -23,6 +23,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/lib/ownerfile"
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 )
 
 // Platform defaults. The engine service runs as its own OS user; the config
@@ -408,9 +409,7 @@ func parse(path string, raw []byte) (Config, error) {
 	}
 	raw = dropInitArgs(raw)
 	var c Config
-	dec := json.NewDecoder(strings.NewReader(string(raw)))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&c); err != nil {
+	if err := strictjson.Decode(raw, &c); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	if err := c.check(); err != nil {

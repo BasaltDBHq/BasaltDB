@@ -128,7 +128,8 @@ var codeKeys = []string{"Code", "Reason", "ErrorCode"}
 
 // codeLiteralFindings are the error codes and reasons spelled as a string
 // literal where they are used: a Code, Reason or ErrorCode field set to a
-// SCREAMING_SNAKE_CASE literal, or a Code("...") conversion. A code or
+// SCREAMING_SNAKE_CASE literal (in a composite literal or by assignment),
+// or a Code("...") conversion. A code or
 // reason is a constant in its catalog; its users name the constant.
 func codeLiteralFindings(pkgs map[string]*goPkg) ([]string, int) {
 	var out []string
@@ -142,6 +143,19 @@ func codeLiteralFindings(pkgs map[string]*goPkg) ([]string, int) {
 				}
 				if v, ok := stringValue(x.Value); ok && screaming.MatchString(v) {
 					out = append(out, fmt.Sprintf("%s: %s %q", file, k.Name, v))
+				}
+			case *ast.AssignStmt:
+				if len(x.Lhs) != len(x.Rhs) {
+					return true
+				}
+				for i, lhs := range x.Lhs {
+					sel, ok := lhs.(*ast.SelectorExpr)
+					if !ok || !slices.Contains(codeKeys, sel.Sel.Name) {
+						continue
+					}
+					if v, ok := stringValue(x.Rhs[i]); ok && screaming.MatchString(v) {
+						out = append(out, fmt.Sprintf("%s: %s %q", file, sel.Sel.Name, v))
+					}
 				}
 			case *ast.CallExpr:
 				if len(x.Args) != 1 || calleeName(x.Fun) != "Code" {
@@ -233,25 +247,42 @@ func TestPersonTimesUseOneLayout(t *testing.T) {
 
 // --- Statement timeout ---------------------------------------------------
 
-// setsStatementTimeout is SQL that sets the session's statement timeout:
-// set_config('statement_timeout', ...) or a SET [LOCAL] statement. A role's
-// default (ALTER ROLE ... SET) is setup's and not matched.
-var setsStatementTimeout = regexp.MustCompile(`(?i)set_config\(\s*'statement_timeout'|(?m)^\s*SET\s+(LOCAL\s+|SESSION\s+)?statement_timeout\b`)
+// setConfigTimeout and setTimeout are SQL that sets the session's
+// statement timeout: set_config('statement_timeout', ...) or a SET [LOCAL]
+// statement anywhere on a line. A default set with ALTER ROLE, USER or
+// DATABASE ... SET is setup's and not counted.
+var (
+	setConfigTimeout = regexp.MustCompile(`(?i)set_config\(\s*'statement_timeout'`)
+	setTimeout       = regexp.MustCompile(`(?i)\bSET\s+(LOCAL\s+|SESSION\s+)?statement_timeout\b`)
+	alterDefault     = regexp.MustCompile(`(?i)\bALTER\s+(ROLE|USER|DATABASE)\b`)
+)
+
+// statementTimeoutSets counts the places SQL text s sets the timeout.
+func statementTimeoutSets(s string) int {
+	n := len(setConfigTimeout.FindAllStringIndex(s, -1))
+	for line := range strings.SplitSeq(s, "\n") {
+		if !alterDefault.MatchString(line) {
+			n += len(setTimeout.FindAllStringIndex(line, -1))
+		}
+	}
+	return n
+}
 
 func statementTimeoutFindings(pkgs map[string]*goPkg) ([]string, int) {
 	var out []string
 	files := eachFile(pkgs, func(_, file string, f *ast.File, _ map[string]string) {
 		ast.Inspect(f, func(n ast.Node) bool {
 			if v, ok := n.(ast.Expr); ok {
-				if s, ok := stringValue(v); ok && setsStatementTimeout.MatchString(s) {
-					out = append(out, file)
+				if s, ok := stringValue(v); ok {
+					for range statementTimeoutSets(s) {
+						out = append(out, file)
+					}
 				}
 			}
 			return true
 		})
 	})
-	slices.Sort(out)
-	return slices.Compact(out), files
+	return tally(out), files
 }
 
 // statementTimeoutAllowed are the files that set the timeout beside the
@@ -264,18 +295,31 @@ var statementTimeoutAllowed = map[string]string{
 	"internal/platform/postgres/pgpii/sampler.go": "sets the sample's timeout itself",
 }
 
+// tallyCount is how many sites a tally entry stands for.
+var tallyTimes = regexp.MustCompile(` \(([0-9]+) times\)$`)
+
+func tallyCount(entry string) int {
+	if m := tallyTimes.FindStringSubmatch(entry); m != nil {
+		n, _ := strconv.Atoi(m[1])
+		return n
+	}
+	return 1
+}
+
 // checkOneHome is checkStoreNeutral for a rule that allows one home: the
-// findings the allowlist does not name may be at most one file.
+// findings the allowlist does not name may be one site at most.
 func checkOneHome(findings []string, allowed map[string]string) []string {
 	var out []string
 	var unlisted []string
+	sites := 0
 	for _, f := range findings {
 		if _, ok := allowed[f]; !ok {
 			unlisted = append(unlisted, f)
+			sites += tallyCount(f)
 		}
 	}
-	if len(unlisted) > 1 {
-		out = append(out, fmt.Sprintf("%d files set it: %s", len(unlisted), strings.Join(unlisted, ", ")))
+	if sites > 1 {
+		out = append(out, fmt.Sprintf("%d sites set it: %s", sites, strings.Join(unlisted, ", ")))
 	}
 	for entry, reason := range allowed {
 		if strings.TrimSpace(reason) == "" {
@@ -304,10 +348,12 @@ func TestStatementTimeoutSetInOneFile(t *testing.T) {
 // pgdialRoots may open a Postgres connection with pgx's own constructors.
 var pgdialRoots = []string{"internal/platform/postgres/pgdial", "internal/testkit"}
 
-// directDials are pgx's constructors that skip the pooler-safe settings.
+// directDials are pgx's constructors: a connection opened or a config
+// parsed with them skips pgdial's pooler-safe settings.
 var directDials = map[string][]string{
-	"github.com/jackc/pgx/v5":         {"Connect", "ParseConfig"},
-	"github.com/jackc/pgx/v5/pgxpool": {"New", "ParseConfig"},
+	"github.com/jackc/pgx/v5":         {"Connect", "ConnectConfig", "ParseConfig"},
+	"github.com/jackc/pgx/v5/pgxpool": {"New", "NewWithConfig", "ParseConfig"},
+	"github.com/jackc/pgx/v5/pgconn":  {"Connect", "ConnectConfig", "ParseConfig"},
 }
 
 func directDialFindings(pkgs map[string]*goPkg) ([]string, int) {
@@ -338,9 +384,27 @@ func directDialFindings(pkgs map[string]*goPkg) ([]string, int) {
 	return tally(out), files
 }
 
+// parsesOnly reads a connection string's host, port, user or database and
+// opens nothing.
+const parsesOnly = "parses the connection string only to read its target; it opens no connection"
+
+// directDialsAllowed are today's uses outside pgdial.
+var directDialsAllowed = map[string]string{
+	"internal/platform/postgres/store/password.go: pgxpool.NewWithConfig": "opens the pool from pgdial.PoolConfig, " +
+		"adding the password refresh",
+	"internal/setup/in/localsetup/pin.go: pgx.ConnectConfig": "connects with the config from the backend's " +
+		"ConnConfigPinned (pgdial)",
+	"internal/app/setuphost.go: pgconn.ParseConfig":                            parsesOnly,
+	"internal/platform/cli/trust.go: pgconn.ParseConfig":                       parsesOnly,
+	"internal/setup/in/localsetup/agentjobs.go: pgconn.ParseConfig (2 times)":  parsesOnly,
+	"internal/setup/in/localsetup/confirm.go: pgconn.ParseConfig":              parsesOnly,
+	"internal/setup/in/localsetup/localsetup.go: pgconn.ParseConfig (2 times)": parsesOnly,
+	"internal/setup/in/localsetup/trustfix.go: pgconn.ParseConfig":             parsesOnly,
+}
+
 func TestConnectionsOpenThroughPgdial(t *testing.T) {
 	findings, files := directDialFindings(moduleTree(t))
-	requireRule(t, findings, files, map[string]string{},
+	requireRule(t, findings, files, directDialsAllowed,
 		"open a Postgres connection through internal/platform/postgres/pgdial, which keeps it pooler-safe")
 }
 
@@ -521,6 +585,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	pool "github.com/jackc/pgx/v5/pgxpool"
 	sq "github.com/Masterminds/squirrel"
 	"probe/internal/core/guidance"
@@ -541,10 +606,18 @@ func f(t time.Time) any {
 	_ = ToolError{Code: "INTERNAL", Reason: "BAD_MANIFEST", Message: "a sentence"}
 	_ = ToolError{Reason: "the URL has no host"}
 	_ = guidance.Code("NOT_FOUND")
+	var e ToolError
+	e.Code, e.Message = "QUERY_TIMEOUT", "a sentence"
+	e.Reason = "STALE_READ"
+	e.Message = "NOT_A_CODE_FIELD"
 	_ = t.Format("2006-01-02 15:04 UTC")
 	_ = "SELECT pg_catalog.set_config('statement_timeout', $1, true)"
 	_, _ = pgx.Connect(nil, "")
 	_, _ = pool.New(nil, "")
+	_, _ = pgx.ConnectConfig(nil, nil)
+	_, _ = pool.NewWithConfig(nil, nil)
+	_, _ = pgconn.Connect(nil, "")
+	_, _ = pgconn.ParseConfig("")
 	_ = sq.Select("a").From("b")
 	_ = psql.Select("a")
 	_ = sq.Select("a").PlaceholderFormat(sq.Dollar)
@@ -553,15 +626,22 @@ func f(t time.Time) any {
 `,
 		"internal/other/timeout.go": `package other
 const q = ` + "`\nSET LOCAL statement_timeout = 5\n`" + `
+const inline = "BEGIN; SET statement_timeout = 5; COMMIT"
 const role = "ALTER ROLE x SET statement_timeout = 5"
+const db = "ALTER DATABASE d SET statement_timeout = 5"
+`,
+		"internal/home/home.go": `package home
+const q = "SELECT set_config('statement_timeout', $1, true)"
 `,
 	})
 
 	codes, _ := codeLiteralFindings(pkgs)
 	want := []string{
 		`internal/bad/bad.go: Code "INTERNAL"`,
+		`internal/bad/bad.go: Code "QUERY_TIMEOUT"`,
 		`internal/bad/bad.go: Code("NOT_FOUND")`,
 		`internal/bad/bad.go: Reason "BAD_MANIFEST"`,
+		`internal/bad/bad.go: Reason "STALE_READ"`,
 	}
 	if !slices.Equal(codes, want) {
 		t.Errorf("code literals:\n got %q\nwant %q", codes, want)
@@ -573,18 +653,31 @@ const role = "ALTER ROLE x SET statement_timeout = 5"
 	}
 
 	timeouts, _ := statementTimeoutFindings(pkgs)
-	if want := []string{"internal/bad/bad.go", "internal/other/timeout.go"}; !slices.Equal(timeouts, want) {
+	want = []string{"internal/bad/bad.go", "internal/home/home.go", "internal/other/timeout.go (2 times)"}
+	if !slices.Equal(timeouts, want) {
 		t.Errorf("statement timeouts:\n got %q\nwant %q", timeouts, want)
 	}
-	if len(checkOneHome(timeouts, map[string]string{})) == 0 {
+	if len(checkOneHome(timeouts, map[string]string{"internal/bad/bad.go": "probe"})) == 0 {
 		t.Error("two files set the timeout and the one-home check passed")
 	}
-	if p := checkOneHome(timeouts, map[string]string{"internal/other/timeout.go": "probe"}); len(p) != 0 {
-		t.Errorf("one unlisted file must pass: %q", p)
+	if p := checkOneHome(timeouts, map[string]string{"internal/bad/bad.go": "probe", "internal/other/timeout.go (2 times)": "probe"}); len(p) != 0 {
+		t.Errorf("one unlisted site must pass: %q", p)
+	}
+	if len(checkOneHome(timeouts, map[string]string{"internal/bad/bad.go": "probe", "internal/home/home.go": "probe"})) == 0 {
+		t.Error("the one unlisted file sets the timeout twice and the one-home check passed")
+	}
+	if len(checkOneHome(timeouts, map[string]string{
+		"internal/bad/bad.go": "probe", "internal/home/home.go": "probe", "internal/other/timeout.go": "probe",
+	})) == 0 {
+		t.Error("a second set-site in a listed file was absorbed by its entry")
 	}
 
 	dials, _ := directDialFindings(pkgs)
-	if want := []string{"internal/bad/bad.go: pgx.Connect", "internal/bad/bad.go: pgxpool.New"}; !slices.Equal(dials, want) {
+	if want := []string{
+		"internal/bad/bad.go: pgconn.Connect", "internal/bad/bad.go: pgconn.ParseConfig",
+		"internal/bad/bad.go: pgx.Connect", "internal/bad/bad.go: pgx.ConnectConfig",
+		"internal/bad/bad.go: pgxpool.New", "internal/bad/bad.go: pgxpool.NewWithConfig",
+	}; !slices.Equal(dials, want) {
 		t.Errorf("direct dials:\n got %q\nwant %q", dials, want)
 	}
 

@@ -16,10 +16,16 @@ import (
 // their sha256. Lines are added only when a release ships.
 const releasedList = "schema/released.sha256"
 
+// releasedFloor is the newest migration a release has shipped
+// (v0.1.0-alpha-rc.4): every migration up to it must stay listed, so the
+// list only grows. Raise it with the lines a new release adds.
+const releasedFloor = 18
+
 // releasedMigrationProblems reads list (sha256 and file name per line, #
 // comments) and names every listed file in dir that is gone or whose
-// content changed, and every malformed or repeated line.
-func releasedMigrationProblems(dir, list string) ([]string, int, error) {
+// content changed, every malformed or repeated line, and every migration
+// number from 1 to floor the list does not name.
+func releasedMigrationProblems(dir, list string, floor int) ([]string, int, error) {
 	raw, err := os.ReadFile(list)
 	if err != nil {
 		return nil, 0, err
@@ -52,13 +58,23 @@ func releasedMigrationProblems(dir, list string) ([]string, int, error) {
 			problems = append(problems, fmt.Sprintf("%s shipped in a release and changed (sha256 %s, released %s)", name, got, want))
 		}
 	}
+	for i := 1; i <= floor; i++ {
+		prefix := fmt.Sprintf("%03d_", i)
+		listed := false
+		for name := range seen {
+			listed = listed || strings.HasPrefix(name, prefix)
+		}
+		if !listed {
+			problems = append(problems, fmt.Sprintf("migration %s* shipped in a release and is not listed; the list only grows", prefix))
+		}
+	}
 	return problems, len(seen), sc.Err()
 }
 
 // TestReleasedMigrationsNeverChange holds every migration a release
 // shipped to its released bytes: a guard change is a new migration file.
 func TestReleasedMigrationsNeverChange(t *testing.T) {
-	problems, listed, err := releasedMigrationProblems("schema", releasedList)
+	problems, listed, err := releasedMigrationProblems("schema", releasedList, releasedFloor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +106,7 @@ func TestReleasedMigrationsCatchAChange(t *testing.T) {
 		sum("CREATE TABLE b ();\n")+"  002_b.sql\n"+
 		sum("CREATE TABLE c ();\n")+"  003_c.sql\n")
 
-	problems, listed, err := releasedMigrationProblems(dir, list)
+	problems, listed, err := releasedMigrationProblems(dir, list, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,13 +115,20 @@ func TestReleasedMigrationsCatchAChange(t *testing.T) {
 	}
 
 	write("003_c.sql", "CREATE TABLE c ();\n")
-	if problems, _, _ := releasedMigrationProblems(dir, list); len(problems) != 0 {
+	if problems, _, _ := releasedMigrationProblems(dir, list, 3); len(problems) != 0 {
 		t.Fatalf("unchanged files: %q", problems)
 	}
 
 	write("002_b.sql", "CREATE TABLE b (id int);\n")
-	problems, _, _ = releasedMigrationProblems(dir, list)
+	problems, _, _ = releasedMigrationProblems(dir, list, 3)
 	if len(problems) != 1 || !strings.Contains(problems[0], "002_b.sql shipped in a release and changed") {
 		t.Fatalf("a changed file: %q", problems)
+	}
+
+	write("002_b.sql", "CREATE TABLE b ();\n")
+	write("released.sha256", sum("CREATE TABLE a ();\n")+"  001_a.sql\n"+sum("CREATE TABLE c ();\n")+"  003_c.sql\n")
+	problems, _, _ = releasedMigrationProblems(dir, list, 3)
+	if len(problems) != 1 || !strings.Contains(problems[0], "migration 002_* shipped in a release and is not listed") {
+		t.Fatalf("a line dropped under the floor: %q", problems)
 	}
 }

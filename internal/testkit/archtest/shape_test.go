@@ -32,9 +32,10 @@ import (
 //     call; one anywhere else, or a call in the node after one (golangci
 //     widens the directive to it), fails even when listed;
 //   - the service-to-service edges are the ones ARCHITECTURE.md lists;
-//   - in a domain's root, no file is named after the domain
-//     (<domain>_*.go), the Service type is declared in service.go and the
-//     Core and Deps types in deps.go.
+//   - in a domain's root, no file, test files included, is named after the
+//     domain (<domain>_*.go; <domain>_test.go and the files in
+//     domainNamedTests excepted), the Service type is declared in
+//     service.go and the Core and Deps types in deps.go.
 //
 // The breaks that exist today are in shape_baseline.txt, which only shrinks.
 // Each line names the function that holds the finding, with a count when the
@@ -349,13 +350,35 @@ func enclosing(f *ast.File, pos ast.Node) string {
 // root.
 var roleFiles = map[string]string{"Service": "service.go", "Core": "deps.go", "Deps": "deps.go"}
 
-// fileRoleFindings returns the file-name findings of the domain root p,
-// whose package directory is named domain.
-func fileRoleFindings(domain string, p *goPkg) []string {
+// domainNamedTests are the test files of a domain root allowed to keep the
+// domain's name, each with its reason.
+var domainNamedTests = map[string]string{
+	"internal/revert/revert_internal_test.go": "without the prefix it would be internal_test.go, which names no use case",
+}
+
+// fileRoleFindings returns the file-name findings of the domain root p at
+// root/rel: its files, test files included, and the files its role types
+// are declared in.
+func fileRoleFindings(root, rel string, p *goPkg) ([]string, error) {
+	domain := path.Base(rel)
+	prefixed := func(name string) string {
+		return fmt.Sprintf("%s: file named after its domain (drop the %s_ prefix)", name, domain)
+	}
 	var out []string
+	entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range entries {
+		n := e.Name()
+		// <domain>_test.go is the package's own test file, Go's usual name.
+		if !e.IsDir() && strings.HasSuffix(n, "_test.go") && strings.HasPrefix(n, domain+"_") && n != domain+"_test.go" && domainNamedTests[rel+"/"+n] == "" {
+			out = append(out, prefixed(n))
+		}
+	}
 	for _, f := range p.files {
 		if strings.HasPrefix(f.name, domain+"_") {
-			out = append(out, fmt.Sprintf("%s: file named after its domain (drop the %s_ prefix)", f.name, domain))
+			out = append(out, prefixed(f.name))
 		}
 		for _, d := range f.ast.Decls {
 			gd, ok := d.(*ast.GenDecl)
@@ -370,7 +393,7 @@ func fileRoleFindings(domain string, p *goPkg) []string {
 			}
 		}
 	}
-	return out
+	return out, nil
 }
 
 // shapeViolations returns today's breaks of the shape rules in the module at
@@ -398,7 +421,11 @@ func shapeViolations(root string) ([]string, error) {
 		}
 		named := toolSliceTypes(p)
 		if isRoot {
-			for _, l := range fileRoleFindings(path.Base(rel), p) {
+			lines, err := fileRoleFindings(root, rel, p)
+			if err != nil {
+				return nil, err
+			}
+			for _, l := range lines {
 				add(rel, "%s", l)
 			}
 		}
@@ -579,11 +606,17 @@ func TestShapeRulesCatchViolations(t *testing.T) {
 		"internal/platform/mcpserver/m.go": "package mcpserver\n\ntype Tool struct{}\n\nfunc RefuseAdminCredential() {}\nfunc HoldsAdminCredential() bool { return false }\n",
 		"internal/agent/s.go": "package agent\n\n" + imp(m+"internal/links", m+"internal/approval") + "type Service struct{ d any }\n\nfunc (s *Service) SetPorts() {}\nfunc (s Service) Settle() {}\nfunc (s *Service) setLate() {}\n" +
 			"func (s *Service) WithDelivery(d any) { s.d = d }\nfunc (s Service) WireUp(d any) Service { (s).d = d; return s }\nfunc (s *Service) UseX() any { x := s.d; return x }\n",
-		"internal/approval/s.go":    "package approval\n\n" + imp(m+"internal/links") + "type Service struct{}\n\nfunc (s *Service) Set() {}\n\ntype Other struct{}\n\nfunc (o *Other) SetX() {}\n",
-		"internal/links/s.go":       "package links\n\n" + imp(m+"internal/links/sub") + "type Service struct{}\n",
-		"internal/links/links_x.go": "package links\n\ntype Core struct{}\n",
-		"internal/links/deps.go":    "package links\n\ntype Deps struct{}\n",
-		"internal/links/sub/s.go":   "package sub\n\n" + imp(m+"internal/approval") + "type Service struct{}\n\nfunc (s *Service) SetX() {}\n",
+		"internal/approval/s.go":                  "package approval\n\n" + imp(m+"internal/links") + "type Service struct{}\n\nfunc (s *Service) Set() {}\n\ntype Other struct{}\n\nfunc (o *Other) SetX() {}\n",
+		"internal/links/s.go":                     "package links\n\n" + imp(m+"internal/links/sub") + "type Service struct{}\n",
+		"internal/links/links_x.go":               "package links\n\ntype Core struct{}\n",
+		"internal/links/deps.go":                  "package links\n\ntype Deps struct{}\n",
+		"internal/links/links_x_test.go":          "package links\n",
+		"internal/links/x_test.go":                "package links\n",
+		"internal/links/links_test.go":            "package links\n",
+		"internal/revert/service.go":              "package revert\n\ntype Service struct{}\n",
+		"internal/revert/core.go":                 "package revert\n\ntype Deps struct{}\n",
+		"internal/revert/revert_internal_test.go": "package revert\n",
+		"internal/links/sub/s.go":                 "package sub\n\n" + imp(m+"internal/approval") + "type Service struct{}\n\nfunc (s *Service) SetX() {}\n",
 		"internal/agent/in/agentmcp/t.go": "package agentmcp\n\n" + mcpImp + "func Tools(svc any, mount " + mountT + ") []srv.Tool { return nil }\nfunc RunTools(svc any, mount " + mountT + ") []srv.Tool { return nil }\nfunc helper(mount " + mountT + ") []srv.Tool { return nil }\n\nvar _ = srv.HoldsAdminCredential\n" +
 			"var _ = srv.HoldsAdminCredential\n\nfunc Errs(mount " + mountT + ") ([]srv.Tool, error) { return nil, nil }\nfunc Ptrs(mount " + mountT + ") []*srv.Tool { return nil }\n\ntype List []srv.Tool\n\nfunc Named(mount " + mountT + ") List { return nil }\n",
 		"internal/approval/in/approvalmcp/t.go":  "package approvalmcp\n\n" + mcpImp + "func Tools(svc any, wrap " + mountT + ") []srv.Tool { return nil }\n\ntype Down struct{}\n\nfunc (Down) Tools() []srv.Tool { srv.RefuseAdminCredential(); return nil }\n",
@@ -623,7 +656,9 @@ func TestShapeRulesCatchViolations(t *testing.T) {
 		"internal/lib/ids: i.go: package level: uuid.New silences the uniqueid lint (generate ids with internal/lib/uniqueid)",
 		"internal/links: links_x.go: Core is declared here (declare it in deps.go)",
 		"internal/links: links_x.go: file named after its domain (drop the links_ prefix)",
+		"internal/links: links_x_test.go: file named after its domain (drop the links_ prefix)",
 		"internal/links: s.go: Service is declared here (declare it in service.go)",
+		"internal/revert: core.go: Deps is declared here (declare it in deps.go)",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("shapeViolations:\n got %q\nwant %q", got, want)

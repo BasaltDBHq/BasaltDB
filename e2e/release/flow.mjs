@@ -304,7 +304,18 @@ async function revert() {
   ok("revert");
 }
 
+// Saves the engine log and the service state while the service still exists:
+// removing BasaltDB deletes the log on macOS, so the exit trap in run.sh finds nothing.
+function collectEngineLog() {
+  run("sh", [path.join(DIR, "service.sh"), "collect", OUT], { stdio: "inherit" });
+  for (const f of ["engine.log", "service-state.txt"]) {
+    const file = path.join(OUT, f);
+    if (fs.existsSync(file)) fs.writeFileSync(file, scrub(fs.readFileSync(file, "utf8")));
+  }
+}
+
 async function remove() {
+  collectEngineLog();
   mcp.close();
   const init = basaltInit(["--agent", AGENT]);
   const link = await initLink(init);

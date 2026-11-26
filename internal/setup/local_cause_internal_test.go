@@ -1,4 +1,4 @@
-package localsetup
+package setup
 
 import (
 	"errors"
@@ -9,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 )
 
@@ -23,7 +22,7 @@ func TestCauseRedactsPasswords(t *testing.T) {
 		Code: "42501", Detail: "the statement was ALTER ROLE x PASSWORD '" + agentPW + "'",
 		Message: "permission denied for postgres://postgres" + ":Tr0ub4dor&x@db.ref.supabase.co password=Tr0ub4dor&x PASSWORD '" + agentPW + "' and Tr0ub4dor&x alone",
 	}
-	s := &Service{be: setupbackend.Backend{}}
+	s := &LocalService{be: testBackend{}}
 	err := scrub(s.setupFailed("install script", fmt.Errorf("init step 7: %w", pg)), admin)
 	r := AsRefusal(err)
 	require.Equal(t, CodeSetupFailed, r.Code)

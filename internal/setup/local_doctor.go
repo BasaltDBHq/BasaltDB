@@ -1,4 +1,4 @@
-package localsetup
+package setup
 
 import (
 	"context"
@@ -117,7 +117,7 @@ type DoctorPasskey struct {
 
 // Doctor is the Update check for an agent of this engine. It is not a
 // setup run: it does not take the run lock.
-func (s *Service) Doctor(ctx context.Context, req DoctorRequest) (DoctorAnswer, error) {
+func (s *LocalService) Doctor(ctx context.Context, req DoctorRequest) (DoctorAnswer, error) {
 	ctx, cancel := context.WithTimeout(ctx, callLimit)
 	defer cancel()
 	if !s.opts.Configured {
@@ -156,7 +156,7 @@ var errNoLogin = errors.New("the agent cannot log in")
 // not on out and returns errNoLogin. A certificate that does not verify
 // is never answered with a login: the chain is read with the handshake
 // alone, and a pinned host presenting another chain top is CHANGED.
-func (s *Service) agentLogin(ctx context.Context, a config.Agent, out *DoctorAnswer) (Conn, error) {
+func (s *LocalService) agentLogin(ctx context.Context, a config.Agent, out *DoctorAnswer) (Conn, error) {
 	rejected := &DoctorLogin{Code: action.ReasonCredentialRejected, Message: "The database refuses the agent's credential, or this engine has none for it."}
 	dsn, err := s.be.ReadCredential(a.Store.CredentialFile)
 	if err != nil {
@@ -185,7 +185,7 @@ func (s *Service) agentLogin(ctx context.Context, a config.Agent, out *DoctorAns
 
 // certificateChanged sets CHANGED when the agent's host is pinned and
 // presents another chain top, read with the TLS handshake alone.
-func (s *Service) certificateChanged(ctx context.Context, a config.Agent, out *DoctorAnswer) bool {
+func (s *LocalService) certificateChanged(ctx context.Context, a config.Agent, out *DoctorAnswer) bool {
 	h, err := s.hostOf(a)
 	if err != nil || h.pin == nil {
 		return false
@@ -208,7 +208,7 @@ func (s *Service) certificateChanged(ctx context.Context, a config.Agent, out *D
 // readDoctor reads, on the agent's connection, metadata only: the
 // database's name, the guard, the ledger's pin, the unlabeled columns and
 // the passkeys. A row that cannot be read stays UNKNOWN.
-func (s *Service) readDoctor(ctx context.Context, conn Conn, a config.Agent, out *DoctorAnswer) error {
+func (s *LocalService) readDoctor(ctx context.Context, conn Conn, a config.Agent, out *DoctorAnswer) error {
 	database, err := s.be.CurrentDatabase(ctx, conn.Port())
 	if err != nil {
 		return err
@@ -234,7 +234,7 @@ func (s *Service) readDoctor(ctx context.Context, conn Conn, a config.Agent, out
 
 // guardRow is the guard by the test UPDATE makes: OUTDATED exactly when an
 // UPDATE has migrations to add.
-func (s *Service) guardRow(st guardmodel.Status) DoctorGuard {
+func (s *LocalService) guardRow(st guardmodel.Status) DoctorGuard {
 	latest := s.be.LatestVersion()
 	switch {
 	case st.State == guardmodel.GuardMissing || st.Installed == 0:
@@ -249,7 +249,7 @@ func (s *Service) guardRow(st guardmodel.Status) DoctorGuard {
 
 // doctorLabels counts the columns pii_unclassified() returns for the
 // agent's role with why NEW or UNCLASSIFIED, and names the first 20.
-func (s *Service) doctorLabels(ctx context.Context, conn Conn) DoctorLabels {
+func (s *LocalService) doctorLabels(ctx context.Context, conn Conn) DoctorLabels {
 	out := DoctorLabels{State: StateUnknown, Columns: []string{}}
 	cols, err := s.be.PIIUnclassified(ctx, conn.Port())
 	if err != nil {
@@ -274,7 +274,7 @@ func (s *Service) doctorLabels(ctx context.Context, conn Conn) DoctorLabels {
 // doctorPasskeys lists the active passkeys the agent's role may read
 // (agent_passkeys), at most 100, oldest first. OK when one has this page's
 // origin.
-func (s *Service) doctorPasskeys(ctx context.Context, conn Conn) DoctorPasskeys {
+func (s *LocalService) doctorPasskeys(ctx context.Context, conn Conn) DoctorPasskeys {
 	out := DoctorPasskeys{State: StateUnknown, Items: []DoctorPasskey{}}
 	keys, err := s.be.ListPasskeys(ctx, conn.Port())
 	if err != nil {

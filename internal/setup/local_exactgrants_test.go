@@ -1,4 +1,4 @@
-package localsetup_test
+package setup_test
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // exactMarker is a line only the statement that revokes an earlier run's
@@ -25,17 +25,17 @@ CREATE TABLE public.t2 (id bigserial PRIMARY KEY, note text);
 CREATE TABLE public.t3 (id bigint PRIMARY KEY, note text);
 CREATE TABLE public.other (id bigint PRIMARY KEY, note text)`
 
-func picks(p ...localsetup.TablePick) []localsetup.TablePick { return p }
+func picks(p ...setup.TablePick) []setup.TablePick { return p }
 
-func readPick(table string) localsetup.TablePick {
-	return localsetup.TablePick{Table: table, Access: localsetup.AccessRead}
+func readPick(table string) setup.TablePick {
+	return setup.TablePick{Table: table, Access: setup.AccessRead}
 }
 
 // writeT2 picks t2 to write.
-var writeT2 = localsetup.TablePick{Table: "public.t2", Access: localsetup.AccessWrite}
+var writeT2 = setup.TablePick{Table: "public.t2", Access: setup.AccessWrite}
 
 // realReq is a real install request for tables in schemas (nil: public).
-func (f *fixture) realReq(schemas []string, tables []localsetup.TablePick) localsetup.Request {
+func (f *fixture) realReq(schemas []string, tables []setup.TablePick) setup.Request {
 	r := f.real()
 	r.Schemas, r.Tables = schemas, tables
 	return r
@@ -73,7 +73,7 @@ func can(t *testing.T, f *fixture, role, table, privilege string) bool {
 // interruptedInstall runs req, a real install whose database part commits
 // but whose engine.json write fails, as an install the person stopped half
 // way: the role keeps the grants and this engine its credential.
-func interruptedInstall(t *testing.T, f *fixture, req localsetup.Request) {
+func interruptedInstall(t *testing.T, f *fixture, req setup.Request) {
 	t.Helper()
 	if os.Geteuid() == 0 {
 		t.Skip("root writes into a folder without write permission")
@@ -87,13 +87,13 @@ func interruptedInstall(t *testing.T, f *fixture, req localsetup.Request) {
 	require.NoError(t, os.Chmod(dir, 0o500))
 	_, err = f.svc.Run(ctx, req)
 	require.NoError(t, os.Chmod(dir, 0o700))
-	refusal(t, err, localsetup.CodeSetupFailed)
+	refusal(t, err, setup.CodeSetupFailed)
 	require.True(t, exists(t, f.db, "basalt_meta"), "the database part committed")
 }
 
 // finishInstall checks and runs req with the role an earlier run left, and
 // returns the check's answer and the run's error.
-func finishInstall(t *testing.T, f *fixture, req localsetup.Request) (localsetup.CheckAnswer, error) {
+func finishInstall(t *testing.T, f *fixture, req setup.Request) (setup.CheckAnswer, error) {
 	t.Helper()
 	ctx := context.Background()
 	checked, err := f.svc.Check(ctx, req)
@@ -114,7 +114,7 @@ func finishInstall(t *testing.T, f *fixture, req localsetup.Request) (localsetup
 func TestFinishedInstallRevokesTheGrantsOfTablesNotPickedNow(t *testing.T) {
 	t.Parallel()
 	cases := map[string]struct {
-		earlier, now []localsetup.TablePick
+		earlier, now []setup.TablePick
 		want         []string
 		cannot       []string
 	}{
@@ -301,7 +301,7 @@ RESET ROLE`)
 	require.NoError(t, f.db.Admin.QueryRow(ctx, roleState, role).Scan(&settings))
 
 	_, err := finishInstall(t, f, f.realReq(nil, picks(readPick("public.t1"))))
-	refusal(t, err, localsetup.CodeGrantsNotRevoked)
+	refusal(t, err, setup.CodeGrantsNotRevoked)
 	require.Contains(t, err.Error(), "The agent role "+role+" still has access to tables or sequences that were not picked (public.t2)")
 	require.Contains(t, err.Error(), "another role made those grants")
 	require.Contains(t, err.Error(), "Nothing changed.")

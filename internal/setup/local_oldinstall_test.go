@@ -1,4 +1,4 @@
-package localsetup_test
+package setup_test
 
 import (
 	"bytes"
@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
@@ -77,8 +77,8 @@ func TestAnInstallRefusesAnOlderInstallItCannotUse(t *testing.T) {
 			before := guardObjects(t, f)
 
 			_, err := f.svc.Check(ctx, f.request())
-			refusal(t, err, localsetup.CodeGuardUnusable)
-			var r *localsetup.RefusalError
+			refusal(t, err, setup.CodeGuardUnusable)
+			var r *setup.RefusalError
 			require.ErrorAs(t, err, &r)
 			require.Contains(t, r.Message, "older BasaltDB install")
 			require.Contains(t, r.Message, "docs/remove-old-install.md")
@@ -86,7 +86,7 @@ func TestAnInstallRefusesAnOlderInstallItCannotUse(t *testing.T) {
 
 			// A run without the check is refused the same way.
 			_, err = f.svc.Run(ctx, f.request())
-			refusal(t, err, localsetup.CodeGuardUnusable)
+			refusal(t, err, setup.CodeGuardUnusable)
 			require.Equal(t, before, guardObjects(t, f), "nothing changed in basalt_meta")
 			require.NoFileExists(t, f.config)
 		})
@@ -122,7 +122,7 @@ func TestSetupFailedLogsItsCauseWithoutSecrets(t *testing.T) {
 	h := setuppage.SetupOnlyHandler(origin, f.svc, slog.New(slog.NewTextHandler(&logs, nil)))
 	req := f.request()
 	req.DatabaseURL = adminURL
-	var checked localsetup.CheckAnswer
+	var checked setup.CheckAnswer
 	require.Equal(t, http.StatusOK, post(t, h, pageserver.SetupCheckPath, req, &checked))
 	req.Challenge = checked.Challenge
 	if checked.PasskeyNeeded {
@@ -130,7 +130,7 @@ func TestSetupFailedLogsItsCauseWithoutSecrets(t *testing.T) {
 	}
 	var refused struct{ Code, Message string }
 	require.Equal(t, http.StatusConflict, post(t, h, pageserver.SetupRunPath, req, &refused))
-	require.Equal(t, localsetup.CodeSetupFailed, refused.Code)
+	require.Equal(t, setup.CodeSetupFailed, refused.Code)
 	require.Contains(t, refused.Message, "Postgres error P0001, install script, statement")
 	require.NotContains(t, refused.Message, "attach failed", "the cause stays in the log")
 
@@ -155,9 +155,9 @@ func TestAnUpdateRefusesAnOlderInstallItCannotUse(t *testing.T) {
 	f.db.Exec(t, `SET ROLE `+f.db.Names.Guard()+`; DROP TABLE basalt_meta.installs CASCADE;
 		INSERT INTO basalt_meta.schema_version (version) VALUES (30); RESET ROLE`)
 	before := guardObjects(t, f)
-	_, err := svc.Check(ctx, f.agentJob(localsetup.JobUpdate))
-	refusal(t, err, localsetup.CodeGuardUnusable)
-	_, err = svc.Run(ctx, f.agentJob(localsetup.JobUpdate))
-	refusal(t, err, localsetup.CodeGuardUnusable)
+	_, err := svc.Check(ctx, f.agentJob(setup.JobUpdate))
+	refusal(t, err, setup.CodeGuardUnusable)
+	_, err = svc.Run(ctx, f.agentJob(setup.JobUpdate))
+	refusal(t, err, setup.CodeGuardUnusable)
 	require.Equal(t, before, guardObjects(t, f), "nothing changed in basalt_meta")
 }

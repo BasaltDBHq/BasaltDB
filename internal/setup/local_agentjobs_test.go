@@ -1,4 +1,4 @@
-package localsetup_test
+package setup_test
 
 import (
 	"context"
@@ -16,12 +16,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // installed is a fixture after a first install from the page, with the
 // setup of the engine that now runs with that config.
-func installed(t *testing.T) (*fixture, *localsetup.Service) {
+func installed(t *testing.T) (*fixture, *setup.LocalService) {
 	t.Helper()
 	f := newFixture(t)
 	ctx := context.Background()
@@ -31,7 +31,7 @@ func installed(t *testing.T) (*fixture, *localsetup.Service) {
 	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	_, err = f.svc.Run(ctx, req)
 	require.NoError(t, err)
-	svc, err := localsetup.New(localsetup.Options{
+	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix, Configured: true,
 		Now: func() time.Time { return f.now },
@@ -40,15 +40,15 @@ func installed(t *testing.T) (*fixture, *localsetup.Service) {
 	return f, svc
 }
 
-func (f *fixture) agentJob(job string) localsetup.Request {
-	return localsetup.Request{Job: job, Agent: "demo_bot", OSUser: "alice", DatabaseURL: f.db.URL}
+func (f *fixture) agentJob(job string) setup.Request {
+	return setup.Request{Job: job, Agent: "demo_bot", OSUser: "alice", DatabaseURL: f.db.URL}
 }
 
 // removeRun is a REMOVE run with the database's name typed, as the page
 // sends it.
-func (f *fixture) removeRun(t *testing.T) localsetup.Request {
+func (f *fixture) removeRun(t *testing.T) setup.Request {
 	t.Helper()
-	req := f.agentJob(localsetup.JobRemove)
+	req := f.agentJob(setup.JobRemove)
 	require.NoError(t, f.db.Admin.QueryRow(context.Background(), `SELECT pg_catalog.current_database()::text`).Scan(&req.ConfirmName))
 	return req
 }
@@ -59,19 +59,19 @@ func TestRemoveRunsOnlyWithTheDatabaseNameTyped(t *testing.T) {
 	ctx := context.Background()
 	right := f.removeRun(t)
 	for _, typed := range []string{"", "not_it", strings.ToUpper(right.ConfirmName), right.ConfirmName + " ", strings.Repeat("a", 64)} {
-		req := f.agentJob(localsetup.JobRemove)
+		req := f.agentJob(setup.JobRemove)
 		req.ConfirmName = typed
 		_, err := svc.Run(ctx, req)
 		require.Error(t, err, "typed %q", typed)
-		refusal(t, err, localsetup.CodeAnswersInvalid)
+		refusal(t, err, setup.CodeAnswersInvalid)
 	}
 	require.True(t, exists(t, f.db, "basalt_meta"), "nothing was removed")
 	_, err := svc.Check(ctx, right)
-	refusal(t, err, localsetup.CodeAnswersInvalid)
-	update := f.agentJob(localsetup.JobUpdate)
+	refusal(t, err, setup.CodeAnswersInvalid)
+	update := f.agentJob(setup.JobUpdate)
 	update.ConfirmName = right.ConfirmName
 	_, err = svc.Run(ctx, update)
-	refusal(t, err, localsetup.CodeAnswersInvalid)
+	refusal(t, err, setup.CodeAnswersInvalid)
 
 	_, err = svc.Run(ctx, right)
 	require.NoError(t, err)
@@ -90,11 +90,11 @@ func TestUpdateAddsOnlyTheMissingMigrations(t *testing.T) {
 	ctx := context.Background()
 	from := guardVersion(t, f.db)
 
-	_, err := svc.Check(ctx, f.agentJob(localsetup.JobUpdate))
-	refusal(t, err, localsetup.CodeGuardCurrent)
+	_, err := svc.Check(ctx, f.agentJob(setup.JobUpdate))
+	refusal(t, err, setup.CodeGuardCurrent)
 
 	next := guardtest.NextVersion(t, false)
-	checked, err := svc.Check(ctx, f.agentJob(localsetup.JobUpdate))
+	checked, err := svc.Check(ctx, f.agentJob(setup.JobUpdate))
 	require.NoError(t, err)
 	require.False(t, checked.PasskeyNeeded)
 	require.Nil(t, checked.Challenge, "an update registers no passkey")
@@ -103,7 +103,7 @@ func TestUpdateAddsOnlyTheMissingMigrations(t *testing.T) {
 	require.Contains(t, checked.Lines[0], fmt.Sprintf("from version %d to %d", from, next))
 	require.Equal(t, from, guardVersion(t, f.db), "check changes nothing")
 
-	done, err := svc.Run(ctx, f.agentJob(localsetup.JobUpdate))
+	done, err := svc.Run(ctx, f.agentJob(setup.JobUpdate))
 	require.NoError(t, err)
 	require.Equal(t, next, guardVersion(t, f.db))
 	require.Equal(t, "basalt mcp --agent demo_bot", done.MCPCommand)
@@ -112,8 +112,8 @@ func TestUpdateAddsOnlyTheMissingMigrations(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, cfg.Agents, 1, "an update leaves the engine's config as it is")
 
-	_, err = svc.Run(ctx, f.agentJob(localsetup.JobUpdate))
-	refusal(t, err, localsetup.CodeGuardCurrent)
+	_, err = svc.Run(ctx, f.agentJob(setup.JobUpdate))
+	refusal(t, err, setup.CodeGuardCurrent)
 }
 
 func TestAgentJobsRefuseWhatIsNotTheAgentsBeforeConnecting(t *testing.T) {
@@ -121,26 +121,26 @@ func TestAgentJobsRefuseWhatIsNotTheAgentsBeforeConnecting(t *testing.T) {
 	f, svc := installed(t)
 	ctx := context.Background()
 	for name, tc := range map[string]struct {
-		edit func(*localsetup.Request)
+		edit func(*setup.Request)
 		code string
 	}{
-		"an install":      {func(r *localsetup.Request) { r.Job = localsetup.JobInstall }, localsetup.CodeJobUnavailable},
-		"a change link":   {func(r *localsetup.Request) { r.Job = localsetup.JobChange }, localsetup.CodeInvalidArgument},
-		"no job":          {func(r *localsetup.Request) { r.Job = "" }, localsetup.CodeJobUnavailable},
-		"another agent":   {func(r *localsetup.Request) { r.Agent = "other_bot" }, localsetup.CodeInvalidArgument},
-		"another OS user": {func(r *localsetup.Request) { r.OSUser = "carol" }, localsetup.CodeInvalidArgument},
-		"the demo flag":   {func(r *localsetup.Request) { r.Demo = true }, localsetup.CodeInvalidArgument},
-		"a passkey":       {func(r *localsetup.Request) { r.Passkey = &localsetup.Passkey{} }, localsetup.CodeAnswersInvalid},
-		"schemas":         {func(r *localsetup.Request) { r.Schemas = []string{"public"} }, localsetup.CodeAnswersInvalid},
-		"tables":          {func(r *localsetup.Request) { r.Tables = []localsetup.TablePick{{Table: "public.a", Access: "READ"}} }, localsetup.CodeAnswersInvalid},
-		"column labels": {func(r *localsetup.Request) {
-			r.ColumnClasses = []localsetup.ColumnClass{{Table: "public.a", Column: "b"}}
-		}, localsetup.CodeAnswersInvalid},
-		"restPublic":       {func(r *localsetup.Request) { r.RestPublic = true }, localsetup.CodeAnswersInvalid},
-		"no admin string":  {func(r *localsetup.Request) { r.DatabaseURL = "" }, localsetup.CodeConnectionStringRefused},
-		"another database": {func(r *localsetup.Request) { r.DatabaseURL = unusedAdminURL }, localsetup.CodeTargetMismatch},
+		"an install":      {func(r *setup.Request) { r.Job = setup.JobInstall }, setup.CodeJobUnavailable},
+		"a change link":   {func(r *setup.Request) { r.Job = setup.JobChange }, setup.CodeInvalidArgument},
+		"no job":          {func(r *setup.Request) { r.Job = "" }, setup.CodeJobUnavailable},
+		"another agent":   {func(r *setup.Request) { r.Agent = "other_bot" }, setup.CodeInvalidArgument},
+		"another OS user": {func(r *setup.Request) { r.OSUser = "carol" }, setup.CodeInvalidArgument},
+		"the demo flag":   {func(r *setup.Request) { r.Demo = true }, setup.CodeInvalidArgument},
+		"a passkey":       {func(r *setup.Request) { r.Passkey = &setup.Passkey{} }, setup.CodeAnswersInvalid},
+		"schemas":         {func(r *setup.Request) { r.Schemas = []string{"public"} }, setup.CodeAnswersInvalid},
+		"tables":          {func(r *setup.Request) { r.Tables = []setup.TablePick{{Table: "public.a", Access: "READ"}} }, setup.CodeAnswersInvalid},
+		"column labels": {func(r *setup.Request) {
+			r.ColumnClasses = []setup.ColumnClass{{Table: "public.a", Column: "b"}}
+		}, setup.CodeAnswersInvalid},
+		"restPublic":       {func(r *setup.Request) { r.RestPublic = true }, setup.CodeAnswersInvalid},
+		"no admin string":  {func(r *setup.Request) { r.DatabaseURL = "" }, setup.CodeConnectionStringRefused},
+		"another database": {func(r *setup.Request) { r.DatabaseURL = unusedAdminURL }, setup.CodeTargetMismatch},
 	} {
-		for _, job := range []string{localsetup.JobUpdate, localsetup.JobRemove} {
+		for _, job := range []string{setup.JobUpdate, setup.JobRemove} {
 			req := f.agentJob(job)
 			tc.edit(&req)
 			_, err := svc.Check(ctx, req)
@@ -158,9 +158,9 @@ func TestAgentJobsRefuseWhatIsNotTheAgentsBeforeConnecting(t *testing.T) {
 func TestAgentJobsNeedAnEngineWithAConfig(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	for _, job := range []string{localsetup.JobUpdate, localsetup.JobRemove} {
+	for _, job := range []string{setup.JobUpdate, setup.JobRemove} {
 		_, err := f.svc.Check(context.Background(), f.agentJob(job))
-		refusal(t, err, localsetup.CodeJobUnavailable)
+		refusal(t, err, setup.CodeJobUnavailable)
 	}
 }
 
@@ -170,7 +170,7 @@ func TestRemoveDropsBasaltAndForgetsTheAgent(t *testing.T) {
 	ctx := context.Background()
 	cred := filepath.Join(filepath.Dir(f.config), "agents", "demo_bot.url")
 
-	checked, err := svc.Check(ctx, f.agentJob(localsetup.JobRemove))
+	checked, err := svc.Check(ctx, f.agentJob(setup.JobRemove))
 	require.NoError(t, err)
 	require.Nil(t, checked.Challenge)
 	require.Contains(t, checked.SQL, "DROP SCHEMA IF EXISTS basalt_meta CASCADE;")
@@ -200,11 +200,11 @@ func TestRemoveDropsBasaltAndForgetsTheAgent(t *testing.T) {
 	// config only at its start): it answers every request, the empty one
 	// basalt init sends included, that BasaltDB is removed from it, so init
 	// removes the engine service.
-	for _, req := range []localsetup.Request{f.request(), {}, f.agentJob(localsetup.JobUpdate), f.agentJob(localsetup.JobRemove)} {
+	for _, req := range []setup.Request{f.request(), {}, f.agentJob(setup.JobUpdate), f.agentJob(setup.JobRemove)} {
 		_, err = svc.Check(ctx, req)
-		refusal(t, err, localsetup.CodeEngineRemoved)
+		refusal(t, err, setup.CodeEngineRemoved)
 		_, err = svc.Run(ctx, req)
-		refusal(t, err, localsetup.CodeEngineRemoved)
+		refusal(t, err, setup.CodeEngineRemoved)
 	}
 }
 
@@ -244,7 +244,7 @@ func TestRemoveFinishesOnADatabaseBasaltIsGoneFrom(t *testing.T) {
 	// files were not changed.
 	require.NoError(t, guard.Uninstall(ctx, f.db.Admin, f.db.Names))
 
-	checked, err := svc.Check(ctx, f.agentJob(localsetup.JobRemove))
+	checked, err := svc.Check(ctx, f.agentJob(setup.JobRemove))
 	require.NoError(t, err)
 	require.Contains(t, checked.Lines[0], "BasaltDB is no longer in the database")
 	_, err = svc.Run(ctx, f.removeRun(t))
@@ -269,10 +269,10 @@ func TestRemoveRefusesTheAdminStringOfAnotherRealDatabase(t *testing.T) {
 	f, svc := installed(t)
 	other := guardtest.New(t)
 	other.Exec(t, `CREATE SCHEMA keep_me`)
-	req := f.agentJob(localsetup.JobRemove)
+	req := f.agentJob(setup.JobRemove)
 	req.DatabaseURL = other.URL
 	_, err := svc.Run(context.Background(), req)
-	refusal(t, err, localsetup.CodeTargetMismatch)
+	refusal(t, err, setup.CodeTargetMismatch)
 	require.True(t, exists(t, other, "keep_me"), "the other database is as it was")
 	require.True(t, exists(t, f.db, "basalt_meta"), "and so is the agent's")
 	_, err = os.Stat(f.config)
@@ -283,7 +283,7 @@ func TestRemoveLeavesASampleSchemaTheDemoDidNotMake(t *testing.T) {
 	t.Parallel()
 	f, svc := installed(t)
 	f.db.Exec(t, `COMMENT ON SCHEMA basalt_demo IS NULL`)
-	checked, err := svc.Check(context.Background(), f.agentJob(localsetup.JobRemove))
+	checked, err := svc.Check(context.Background(), f.agentJob(setup.JobRemove))
 	require.NoError(t, err)
 	require.NotContains(t, checked.SQL, "basalt_demo")
 	_, err = svc.Run(context.Background(), f.removeRun(t))
@@ -299,7 +299,7 @@ func TestRemoveDropsAPolicyOnASampleTableBeforeTheTable(t *testing.T) {
 	require.NoError(t, err)
 	ident := pgx.Identifier{role}.Sanitize()
 	f.db.Exec(t, `CREATE POLICY `+ident+` ON basalt_demo.leads AS PERMISSIVE FOR SELECT TO `+ident+` USING (true)`)
-	checked, err := svc.Check(context.Background(), f.agentJob(localsetup.JobRemove))
+	checked, err := svc.Check(context.Background(), f.agentJob(setup.JobRemove))
 	require.NoError(t, err)
 	require.Less(t, strings.Index(checked.SQL, "DROP POLICY"), strings.Index(checked.SQL, "DROP TABLE basalt_demo.leads"))
 	_, err = svc.Run(context.Background(), f.removeRun(t))
@@ -325,7 +325,7 @@ func TestRemoveForgetsEveryAgentOfTheSameDatabase(t *testing.T) {
 		return nil
 	}}))
 
-	checked, err := svc.Check(context.Background(), f.agentJob(localsetup.JobRemove))
+	checked, err := svc.Check(context.Background(), f.agentJob(setup.JobRemove))
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(checked.Lines, "\n"), "demo_bot, twin_bot")
 	done, err := svc.Run(context.Background(), f.removeRun(t))
@@ -340,17 +340,17 @@ func TestRemoveForgetsEveryAgentOfTheSameDatabase(t *testing.T) {
 func TestAgentJobsRefuseAnEngineRunningAsRoot(t *testing.T) {
 	t.Parallel()
 	f, _ := installed(t)
-	svc, err := localsetup.New(localsetup.Options{
+	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix, Configured: true,
 		Euid: func() int { return 0 },
 	})
 	require.NoError(t, err)
-	for _, job := range []string{localsetup.JobUpdate, localsetup.JobRemove} {
+	for _, job := range []string{setup.JobUpdate, setup.JobRemove} {
 		_, err := svc.Check(context.Background(), f.agentJob(job))
-		refusal(t, err, localsetup.CodeJobUnavailable)
+		refusal(t, err, setup.CodeJobUnavailable)
 		_, err = svc.Run(context.Background(), f.agentJob(job))
-		refusal(t, err, localsetup.CodeJobUnavailable)
+		refusal(t, err, setup.CodeJobUnavailable)
 	}
 	require.True(t, exists(t, f.db, "basalt_meta"))
 }
@@ -377,12 +377,12 @@ func TestAgentJobsCheckTheAgentBeforeTheAdminString(t *testing.T) {
 	t.Parallel()
 	f, svc := installed(t)
 	ctx := context.Background()
-	probe := f.agentJob(localsetup.JobUpdate)
+	probe := f.agentJob(setup.JobUpdate)
 	probe.DatabaseURL = ""
 	_, err := svc.Check(ctx, probe)
-	refusal(t, err, localsetup.CodeConnectionStringRefused)
+	refusal(t, err, setup.CodeConnectionStringRefused)
 	probe.Agent = "sales_bot"
 	_, err = svc.Check(ctx, probe)
-	refusal(t, err, localsetup.CodeInvalidArgument)
+	refusal(t, err, setup.CodeInvalidArgument)
 	require.Contains(t, err.Error(), "basalt init --agent NAME")
 }

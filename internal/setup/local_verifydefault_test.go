@@ -1,4 +1,4 @@
-package localsetup_test
+package setup_test
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -20,11 +20,11 @@ import (
 func TestAdminStringVerifiesByDefaultForABuiltInProfile(t *testing.T) {
 	t.Parallel()
 	var dialed []string
-	svc, err := localsetup.New(localsetup.Options{
+	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin, Users: okUsers{},
 		Profiles: trustprofile.BuiltInSet,
-		Dial: func(_ context.Context, dsn string) (localsetup.Conn, error) {
+		Dial: func(_ context.Context, dsn string) (setup.Conn, error) {
 			dialed = append(dialed, dsn)
 			return nil, errors.New("not here")
 		},
@@ -39,10 +39,10 @@ func TestAdminStringVerifiesByDefaultForABuiltInProfile(t *testing.T) {
 		{supabase + "?sslmode=disable", supabase + "?sslmode=disable"},
 		{unusedAdminURL, unusedAdminURL},
 	} {
-		req := localsetup.Request{
-			Job: localsetup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: tc.in,
-			Tables:    []localsetup.TablePick{{Table: "public.a", Access: "READ"}},
-			Challenge: &localsetup.Challenge{ExpiresAt: time.Now().Add(time.Hour)},
+		req := setup.Request{
+			Job: setup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: tc.in,
+			Tables:    []setup.TablePick{{Table: "public.a", Access: "READ"}},
+			Challenge: &setup.Challenge{ExpiresAt: time.Now().Add(time.Hour)},
 		}
 		dialed = nil
 		_, err := svc.Check(context.Background(), req)

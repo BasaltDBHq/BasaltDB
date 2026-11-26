@@ -21,6 +21,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
 )
 
@@ -50,9 +51,9 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err != nil && admin == "" {
 		return errors.New("no admin connection string on stdin")
 	}
-	req := localsetup.Request{Job: job.Job, Agent: job.Agent, OSUser: job.OSUser, Demo: job.Demo, DatabaseURL: strings.TrimSpace(admin)}
+	req := setup.Request{Job: job.Job, Agent: job.Agent, OSUser: job.OSUser, Demo: job.Demo, DatabaseURL: strings.TrimSpace(admin)}
 
-	var checked localsetup.CheckAnswer
+	var checked setup.CheckAnswer
 	if err := post(origin, localsetup.SetupCheckPath, req, &checked); err != nil {
 		return fmt.Errorf("check: %w", err)
 	}
@@ -61,9 +62,9 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 		if err != nil {
 			return err
 		}
-		req.Challenge, req.Passkey = checked.Challenge, &localsetup.Passkey{RegistrationResponse: reg, Label: "smoke"}
+		req.Challenge, req.Passkey = checked.Challenge, &setup.Passkey{RegistrationResponse: reg, Label: "smoke"}
 	}
-	var done localsetup.RunAnswer
+	var done setup.RunAnswer
 	if err := post(origin, localsetup.SetupRunPath, req, &done); err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
@@ -83,7 +84,7 @@ func parseJob(fragment string) (localsetup.Job, error) {
 	return j, nil
 }
 
-func register(origin string, c localsetup.Challenge) (passkey.RegistrationResponse, error) {
+func register(origin string, c setup.Challenge) (passkey.RegistrationResponse, error) {
 	rp, err := passkey.Local(origin)
 	if err != nil {
 		return passkey.RegistrationResponse{}, err

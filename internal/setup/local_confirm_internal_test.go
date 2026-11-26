@@ -1,4 +1,4 @@
-package localsetup
+package setup
 
 import (
 	"encoding/pem"
@@ -9,8 +9,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
-	"github.com/basaltdbhq/basaltdb/pkg/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
 )
@@ -23,8 +21,8 @@ import (
 func TestCertificateKindIsWhatTheEngineDialsWith(t *testing.T) {
 	t.Parallel()
 	operator := &trustprofile.Profile{Spec: trustprofile.Spec{Name: trustprofile.PinName("db.example"), Match: []string{"=db.example"}}, Origin: trustprofile.Operator}
-	s, err := New(Options{
-		Backend:    setupbackend.Backend{},
+	s, err := NewLocal(LocalOptions{
+		Backend:    testBackend{},
 		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: "http://localhost:8787",
 		Profiles: func() *trustprofile.Set {
 			return trustprofile.NewSet(trustprofile.BuiltIns(), []*trustprofile.Profile{operator}, nil)
@@ -37,19 +35,19 @@ func TestCertificateKindIsWhatTheEngineDialsWith(t *testing.T) {
 
 	for _, tc := range []struct {
 		dsn      string
-		kind     setup.CertificateKind
+		kind     string
 		provider string
 	}{
-		{"postgres://u@db.abcdefghijklmnopqrst.supabase.co:5432/postgres?sslmode=verify-full", setup.CertificateProvider, "supabase"},
-		{"postgres://u@x.rds.amazonaws.com:5432/app?sslmode=verify-full", setup.CertificateProvider, "aws-rds"},
-		{"postgres://u@db.example:5432/app?sslmode=verify-full", setup.CertificateOwn, ""},
-		{"postgres://u@public.example:5432/app?sslmode=verify-full", setup.CertificatePublic, ""},
-		{"postgres://u@public.example:5432/app?sslmode=verify-full&sslrootcert=" + root, setup.CertificateOwn, ""},
-		{"postgres://u@public.example:5432/app?sslmode=require", setup.CertificateNotVerified, ""},
-		{"postgres://u@public.example:5432/app?sslmode=disable", setup.CertificateNotVerified, ""},
+		{"postgres://u@db.abcdefghijklmnopqrst.supabase.co:5432/postgres?sslmode=verify-full", certProvider, "supabase"},
+		{"postgres://u@x.rds.amazonaws.com:5432/app?sslmode=verify-full", certProvider, "aws-rds"},
+		{"postgres://u@db.example:5432/app?sslmode=verify-full", certOwn, ""},
+		{"postgres://u@public.example:5432/app?sslmode=verify-full", certPublic, ""},
+		{"postgres://u@public.example:5432/app?sslmode=verify-full&sslrootcert=" + root, certOwn, ""},
+		{"postgres://u@public.example:5432/app?sslmode=require", certNotVerified, ""},
+		{"postgres://u@public.example:5432/app?sslmode=disable", certNotVerified, ""},
 	} {
 		kind, provider := s.certificateKind(tc.dsn)
-		require.Equal(t, string(tc.kind), kind, tc.dsn)
+		require.Equal(t, tc.kind, kind, tc.dsn)
 		require.Equal(t, tc.provider, provider, tc.dsn)
 	}
 
@@ -58,17 +56,17 @@ func TestCertificateKindIsWhatTheEngineDialsWith(t *testing.T) {
 	// no profile covers and an explicit mode are as given.
 	for _, tc := range []struct {
 		dsn      string
-		kind     setup.CertificateKind
+		kind     string
 		provider string
 	}{
-		{"postgres://u@db.abcdefghijklmnopqrst.supabase.co:5432/postgres", setup.CertificateProvider, "supabase"},
-		{"postgres://u@x.rds.amazonaws.com:5432/app", setup.CertificateProvider, "aws-rds"},
-		{"postgres://u@db.abcdefghijklmnopqrst.supabase.co:5432/postgres?sslmode=require", setup.CertificateNotVerified, ""},
-		{"postgres://u@db.example:5432/app", setup.CertificateNotVerified, ""},
-		{"postgres://u@public.example:5432/app", setup.CertificateNotVerified, ""},
+		{"postgres://u@db.abcdefghijklmnopqrst.supabase.co:5432/postgres", certProvider, "supabase"},
+		{"postgres://u@x.rds.amazonaws.com:5432/app", certProvider, "aws-rds"},
+		{"postgres://u@db.abcdefghijklmnopqrst.supabase.co:5432/postgres?sslmode=require", certNotVerified, ""},
+		{"postgres://u@db.example:5432/app", certNotVerified, ""},
+		{"postgres://u@public.example:5432/app", certNotVerified, ""},
 	} {
 		kind, provider := s.certificateKind(s.verifyByDefault(tc.dsn))
-		require.Equal(t, string(tc.kind), kind, tc.dsn)
+		require.Equal(t, tc.kind, kind, tc.dsn)
 		require.Equal(t, tc.provider, provider, tc.dsn)
 	}
 }
@@ -79,8 +77,8 @@ func TestCertificateKindIsWhatTheEngineDialsWith(t *testing.T) {
 // checks the certificate too.
 func TestAgentCredentialVerifiesByDefault(t *testing.T) {
 	t.Parallel()
-	s, err := New(Options{
-		Backend:    setupbackend.Backend{},
+	s, err := NewLocal(LocalOptions{
+		Backend:    testBackend{},
 		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: "http://localhost:8787",
 		Profiles: trustprofile.BuiltInSet,
 	})

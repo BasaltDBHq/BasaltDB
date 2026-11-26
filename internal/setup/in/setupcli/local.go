@@ -205,7 +205,7 @@ func waitForEngineBuild(c *cli.IO) (string, error) {
 // the administrator dialog (Not your database), and init goes on to the
 // install.
 func changeLink(c *cli.IO, h LocalHost, job localsetup.Job) (code int, reset bool) {
-	job.Job, job.Demo = localsetup.JobChange, false
+	job.Job, job.Demo = setup.JobChange, false
 	link, err := localsetup.Link(links.DefaultLocal, job)
 	if err != nil {
 		return c.Fail(err), false
@@ -240,9 +240,9 @@ func waitForRemoval(c *cli.IO) setup.BasaltEngineState {
 	for {
 		code, err := c.Host.SetupState(ctx, links.DefaultLocal)
 		switch {
-		case err == nil && code == localsetup.CodeEngineRemoved:
+		case err == nil && code == setup.CodeEngineRemoved:
 			return setup.EngineRemoved
-		case err == nil && code == localsetup.CodeResetAsked:
+		case err == nil && code == setup.CodeResetAsked:
 			return setup.EngineResetAsked
 		}
 		select {
@@ -356,7 +356,7 @@ func parseInitLocal(c *cli.IO, args []string) (localsetup.Job, error) {
 	if !guardmodel.ValidAgentName(name) {
 		return localsetup.Job{}, fmt.Errorf("%w: --agent %q is not a name an agent can have (lowercase letters, digits and _)", cli.ErrUsage, name)
 	}
-	return localsetup.Job{Job: localsetup.JobInstall, Agent: name, Demo: *demoFlag}, nil
+	return localsetup.Job{Job: setup.JobInstall, Agent: name, Demo: *demoFlag}, nil
 }
 
 // waitForSetupPage waits until the engine answers its setup routes, and
@@ -370,11 +370,11 @@ func waitForSetupPage(c *cli.IO) (setup.BasaltEngineState, error) {
 	for {
 		code, err := c.Host.SetupState(ctx, links.DefaultLocal)
 		switch {
-		case err == nil && code == localsetup.CodeJobUnavailable:
+		case err == nil && code == setup.CodeJobUnavailable:
 			return setup.EngineSetUp, nil
-		case err == nil && code == localsetup.CodeEngineRemoved:
+		case err == nil && code == setup.CodeEngineRemoved:
 			return setup.EngineRemoved, nil
-		case err == nil && code == localsetup.CodeResetAsked:
+		case err == nil && code == setup.CodeResetAsked:
 			// A "No" left from an earlier page: the engine is set up, and
 			// only the init that opened the page resets it.
 			return setup.EngineSetUp, nil

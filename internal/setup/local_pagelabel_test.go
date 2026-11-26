@@ -1,4 +1,4 @@
-package localsetup_test
+package setup_test
 
 import (
 	"bytes"
@@ -12,13 +12,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
 // unlabeled is the passkey as the setup page sends it: the browser's
 // registration response and no label (the page asks for none).
-func unlabeled(t *testing.T, c localsetup.Challenge) *localsetup.Passkey {
+func unlabeled(t *testing.T, c setup.Challenge) *setup.Passkey {
 	t.Helper()
 	p := register(t, c)
 	p.Label = ""
@@ -51,12 +51,12 @@ func TestTheSetupPageInstallsWithAnUnlabeledPasskey(t *testing.T) {
 	var logs bytes.Buffer
 	h := setuppage.SetupOnlyHandler(origin, f.svc, slog.New(slog.NewTextHandler(&logs, nil)))
 
-	var checked localsetup.CheckAnswer
+	var checked setup.CheckAnswer
 	require.Equal(t, http.StatusOK, post(t, h, pageserver.SetupCheckPath, f.request(), &checked))
 	require.True(t, checked.PasskeyNeeded)
 	req := f.request()
 	req.Challenge, req.Passkey = checked.Challenge, unlabeled(t, *checked.Challenge)
-	var done localsetup.RunAnswer
+	var done setup.RunAnswer
 	code := post(t, h, pageserver.SetupRunPath, req, &done)
 	require.Equal(t, http.StatusOK, code, logs.String())
 	require.Len(t, done.Passkeys, 1)
@@ -72,9 +72,9 @@ func TestPasskeyAddWithAnUnlabeledPasskey(t *testing.T) {
 	t.Parallel()
 	f, svc := installed(t)
 	ctx := context.Background()
-	checked, err := svc.Check(ctx, f.fix(localsetup.JobPasskeyAdd))
+	checked, err := svc.Check(ctx, f.fix(setup.JobPasskeyAdd))
 	require.NoError(t, err)
-	run := f.fix(localsetup.JobPasskeyAdd)
+	run := f.fix(setup.JobPasskeyAdd)
 	run.Challenge, run.Passkey = checked.Challenge, unlabeled(t, *checked.Challenge)
 	done, err := svc.Run(ctx, run)
 	require.NoError(t, err)

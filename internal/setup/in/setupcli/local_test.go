@@ -273,7 +273,7 @@ func TestInitInstallsThroughTheDialogThenPrintsAndOpensTheLink(t *testing.T) {
 	require.Len(t, lines, 2, "stdout is the link and the MCP line, nothing else")
 	require.True(t, strings.HasPrefix(lines[0], "http://localhost:8787/setup/#1."), lines[0])
 	require.Equal(t, "basalt mcp --agent demo_bot", lines[1])
-	require.Equal(t, localsetup.Job{Job: localsetup.JobInstall, Agent: "demo_bot", OSUser: me752(t), Demo: true}, linkJob(t, lines[0]))
+	require.Equal(t, localsetup.Job{Job: setup.JobInstall, Agent: "demo_bot", OSUser: me752(t), Demo: true}, linkJob(t, lines[0]))
 	require.Equal(t, []string{lines[0]}, h.opened, "init opens its own link")
 
 	require.NotContains(t, read, envAdminURL, "init never reads the admin connection string")
@@ -292,7 +292,7 @@ func TestInitWithoutDemoOpensTheInstallOfARealDatabase(t *testing.T) {
 	require.Len(t, h.dialogs, 1, "the engine service is installed through the dialog, as for --demo")
 	lines := strings.Split(strings.TrimSuffix(r.stdout, "\n"), "\n")
 	require.Len(t, lines, 2, r.stdout)
-	require.Equal(t, localsetup.Job{Job: localsetup.JobInstall, Agent: "sales_bot", OSUser: me752(t), Demo: false}, linkJob(t, lines[0]))
+	require.Equal(t, localsetup.Job{Job: setup.JobInstall, Agent: "sales_bot", OSUser: me752(t), Demo: false}, linkJob(t, lines[0]))
 	require.Equal(t, "basalt mcp --agent sales_bot", lines[1])
 	require.Equal(t, []string{lines[0]}, h.opened)
 	require.NotContains(t, read, envAdminURL)
@@ -447,7 +447,7 @@ func TestInitOnASetUpEngineOpensTheChangeLink(t *testing.T) {
 	for _, args := range [][]string{nil, {"--demo"}, {"--agent", "sales_bot"}} {
 		h := newFakeHost()
 		h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
-		h.setupCodes = []string{localsetup.CodeJobUnavailable}
+		h.setupCodes = []string{setup.CodeJobUnavailable}
 		r, read := localInitWithin(t, 2*time.Second, h, args...)
 		require.Equal(t, cli.ExitOK, r.code, "%v: %s", args, r.stderr)
 		require.Contains(t, r.stderr, "after a Remove on that page, run basalt init once more", "no Remove within the wait: init returns, and removes nothing")
@@ -458,7 +458,7 @@ func TestInitOnASetUpEngineOpensTheChangeLink(t *testing.T) {
 		if len(args) == 2 {
 			agent = args[1]
 		}
-		require.Equal(t, localsetup.Job{Job: localsetup.JobChange, Agent: agent, OSUser: me752(t)}, linkJob(t, lines[0]), "%v", args)
+		require.Equal(t, localsetup.Job{Job: setup.JobChange, Agent: agent, OSUser: me752(t)}, linkJob(t, lines[0]), "%v", args)
 		require.Equal(t, []string{lines[0]}, h.opened, "init opens its own link")
 		require.Contains(t, r.stderr, "update the guard or remove BasaltDB")
 		require.NotContains(t, read, envAdminURL)
@@ -553,7 +553,7 @@ func TestInitOnARemovedEngineRemovesTheService(t *testing.T) {
 	t.Parallel()
 	h := newFakeHost()
 	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
-	h.setupCodes = []string{localsetup.CodeEngineRemoved}
+	h.setupCodes = []string{setup.CodeEngineRemoved}
 	r, read := localInit(t, h)
 	require.Equal(t, cli.ExitOK, r.code, r.stderr)
 	require.Empty(t, h.opened)
@@ -580,7 +580,7 @@ func TestInitRemovalStops(t *testing.T) {
 	} {
 		h := newFakeHost()
 		h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
-		h.setupCodes = []string{localsetup.CodeEngineRemoved}
+		h.setupCodes = []string{setup.CodeEngineRemoved}
 		v.edit(h)
 		r, _ := localInit(t, h)
 		require.Equal(t, cli.ExitError, r.code, v.name)
@@ -594,7 +594,7 @@ func TestInitRemovesTheServiceWhenTheRemoveLandsWithinTheWait(t *testing.T) {
 	t.Parallel()
 	h := newFakeHost()
 	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
-	h.setupCodes = []string{localsetup.CodeJobUnavailable, localsetup.CodeJobUnavailable, localsetup.CodeEngineRemoved}
+	h.setupCodes = []string{setup.CodeJobUnavailable, setup.CodeJobUnavailable, setup.CodeEngineRemoved}
 	r, _ := localInit(t, h)
 	require.Equal(t, cli.ExitOK, r.code, r.stderr)
 	require.Len(t, h.opened, 1, "init opened the Update/Remove link first")
@@ -613,7 +613,7 @@ func TestInitResetsThroughTheDialogThenOpensTheInstallLink(t *testing.T) {
 	h := newFakeHost()
 	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
 	h.setupCodes = []string{
-		localsetup.CodeJobUnavailable, localsetup.CodeJobUnavailable, localsetup.CodeResetAsked, localsetup.CodeInvalidArgument,
+		setup.CodeJobUnavailable, setup.CodeJobUnavailable, setup.CodeResetAsked, setup.CodeInvalidArgument,
 	}
 	r, read := localInit(t, h)
 	require.Equal(t, cli.ExitOK, r.code, r.stderr)
@@ -623,8 +623,8 @@ func TestInitResetsThroughTheDialogThenOpensTheInstallLink(t *testing.T) {
 	require.Equal(t, []string{servicespec.ResetPrompt}, h.prompts, "the dialog names the reset")
 	require.Empty(t, h.sudo)
 	require.Len(t, h.opened, 2, "the Update check's link, then the install link")
-	require.Equal(t, localsetup.Job{Job: localsetup.JobChange, Agent: "demo_bot", OSUser: me752(t)}, linkJob(t, h.opened[0]))
-	require.Equal(t, localsetup.Job{Job: localsetup.JobInstall, Agent: "demo_bot", OSUser: me752(t)}, linkJob(t, h.opened[1]))
+	require.Equal(t, localsetup.Job{Job: setup.JobChange, Agent: "demo_bot", OSUser: me752(t)}, linkJob(t, h.opened[0]))
+	require.Equal(t, localsetup.Job{Job: setup.JobInstall, Agent: "demo_bot", OSUser: me752(t)}, linkJob(t, h.opened[1]))
 	require.Contains(t, r.stderr, "BasaltDB on this computer is reset")
 	require.Contains(t, r.stdout, "basalt mcp --agent demo_bot")
 	require.NotContains(t, read, envAdminURL)
@@ -645,7 +645,7 @@ func TestInitResetStops(t *testing.T) {
 	} {
 		h := newFakeHost()
 		h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
-		h.setupCodes = []string{localsetup.CodeJobUnavailable, localsetup.CodeResetAsked}
+		h.setupCodes = []string{setup.CodeJobUnavailable, setup.CodeResetAsked}
 		v.edit(h)
 		r, _ := localInit(t, h)
 		require.Equal(t, cli.ExitError, r.code, v.name)
@@ -658,12 +658,12 @@ func TestInitResetStops(t *testing.T) {
 
 	h := newFakeHost()
 	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
-	h.setupCodes = []string{localsetup.CodeResetAsked, localsetup.CodeJobUnavailable}
+	h.setupCodes = []string{setup.CodeResetAsked, setup.CodeJobUnavailable}
 	r, _ := localInitWithin(t, 3*time.Second, h)
 	require.Equal(t, cli.ExitOK, r.code, r.stderr)
 	require.Empty(t, h.dialogs, "a No left from an earlier page resets nothing")
 	require.Len(t, h.opened, 1)
-	require.Equal(t, localsetup.JobChange, linkJob(t, h.opened[0]).Job)
+	require.Equal(t, setup.JobChange, linkJob(t, h.opened[0]).Job)
 }
 
 func TestInitWaitsAsLongAsAnApprovalWait(t *testing.T) {

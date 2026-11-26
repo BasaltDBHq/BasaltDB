@@ -1,4 +1,4 @@
-package localsetup
+package setup
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
-	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // The tables of an install of a real database (CONTRACT.md, The install of
@@ -77,11 +76,11 @@ type listing struct {
 }
 
 // readListing reads the ordinary and partitioned tables of schemas (one
-// more than the cap, so a longer list is known; Backend.ListTables): a
+// more than the cap, so a longer list is known; LocalBackend.ListTables): a
 // table whose name is not plain, or that the admin does not own, is
 // excluded with the reason. Partitions are left out: the agent reaches
 // their rows through the partitioned table.
-func (s *Service) readListing(ctx context.Context, q setup.Querier, schemas []string) (listing, error) {
+func (s *LocalService) readListing(ctx context.Context, q Querier, schemas []string) (listing, error) {
 	rows, err := s.be.ListTables(ctx, q, schemas, maxTables+1)
 	if err != nil {
 		return listing{}, err
@@ -223,7 +222,7 @@ func (l listing) access(picks []TablePick) (write, read []string, err error) {
 func questions(blind []guardmodel.BlindTable, agent string) []Question {
 	out := make([]Question, 0, len(blind))
 	for _, b := range blind {
-		out = append(out, Question{Kind: "ROW_LEVEL_SECURITY", Table: b.Table, Text: setup.RLSQuestion(b, agent), Choices: []string{ChoiceAllRows, ChoiceNone}})
+		out = append(out, Question{Kind: "ROW_LEVEL_SECURITY", Table: b.Table, Text: RLSQuestion(b, agent), Choices: []string{ChoiceAllRows, ChoiceNone}})
 	}
 	return out
 }

@@ -30,7 +30,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginpage"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
@@ -100,10 +100,10 @@ func TestFirstInstallThroughTheSetupRoutes(t *testing.T) {
 	waitUp(t, addr)
 	base := "http://" + addr
 
-	job := localsetup.Request{Job: localsetup.JobInstall, Agent: "demo_bot", OSUser: "alice", Demo: true, DatabaseURL: d.URL}
+	job := setup.Request{Job: setup.JobInstall, Agent: "demo_bot", OSUser: "alice", Demo: true, DatabaseURL: d.URL}
 	code, raw := postJSON(t, base, origin, "/api/v1/setup/check", job)
 	require.Equal(t, http.StatusOK, code, string(raw))
-	var checked localsetup.CheckAnswer
+	var checked setup.CheckAnswer
 	require.NoError(t, json.Unmarshal(raw, &checked))
 	require.True(t, checked.PasskeyNeeded)
 
@@ -117,10 +117,10 @@ func TestFirstInstallThroughTheSetupRoutes(t *testing.T) {
 	reg, err := auth.Register(rr, nil)
 	require.NoError(t, err)
 	run := job
-	run.Challenge, run.Passkey = &c, &localsetup.Passkey{RegistrationResponse: reg, Label: "laptop"}
+	run.Challenge, run.Passkey = &c, &setup.Passkey{RegistrationResponse: reg, Label: "laptop"}
 	code, raw = postJSON(t, base, origin, "/api/v1/setup/run", run)
 	require.Equal(t, http.StatusOK, code, string(raw))
-	var ran localsetup.RunAnswer
+	var ran setup.RunAnswer
 	require.NoError(t, json.Unmarshal(raw, &ran))
 	require.Equal(t, "demo_bot", ran.Agent)
 	require.Len(t, ran.Passkeys, 1)
@@ -140,7 +140,7 @@ func TestFirstInstallThroughTheSetupRoutes(t *testing.T) {
 }
 
 // registerFor is the browser's part: a passkey made with a check's challenge.
-func registerFor(t *testing.T, origin string, c localsetup.Challenge) *localsetup.Passkey {
+func registerFor(t *testing.T, origin string, c setup.Challenge) *setup.Passkey {
 	t.Helper()
 	rp, err := passkey.Local(origin)
 	require.NoError(t, err)
@@ -150,7 +150,7 @@ func registerFor(t *testing.T, origin string, c localsetup.Challenge) *localsetu
 	require.NoError(t, err)
 	reg, err := auth.Register(rr, nil)
 	require.NoError(t, err)
-	return &localsetup.Passkey{RegistrationResponse: reg, Label: "laptop"}
+	return &setup.Passkey{RegistrationResponse: reg, Label: "laptop"}
 }
 
 // The install of a real database through the routes, as the page drives
@@ -189,35 +189,35 @@ CREATE TABLE public.secrets (id bigint PRIMARY KEY, v text)`)
 	}()
 	waitUp(t, addr)
 	base := "http://" + addr
-	check := func(req localsetup.Request) localsetup.CheckAnswer {
+	check := func(req setup.Request) setup.CheckAnswer {
 		t.Helper()
 		code, raw := postJSON(t, base, origin, "/api/v1/setup/check", req)
 		require.Equal(t, http.StatusOK, code, string(raw))
-		var a localsetup.CheckAnswer
+		var a setup.CheckAnswer
 		require.NoError(t, json.Unmarshal(raw, &a))
 		return a
 	}
 
 	// 1: the listing.
-	job := localsetup.Request{Job: localsetup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: d.URL}
+	job := setup.Request{Job: setup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: d.URL}
 	listing := check(job)
 	require.Nil(t, listing.Challenge)
-	require.Contains(t, listing.Tables, localsetup.ListedTable{Table: "public.orders", CanWrite: true})
-	require.Contains(t, listing.Tables, localsetup.ListedTable{Table: "public.logs", CanWrite: false})
-	require.Contains(t, listing.Tables, localsetup.ListedTable{Table: "public.secrets", CanWrite: true})
+	require.Contains(t, listing.Tables, setup.ListedTable{Table: "public.orders", CanWrite: true})
+	require.Contains(t, listing.Tables, setup.ListedTable{Table: "public.logs", CanWrite: false})
+	require.Contains(t, listing.Tables, setup.ListedTable{Table: "public.secrets", CanWrite: true})
 
 	// 2: the picks; secrets stays unticked.
 	picked := job
-	picked.Tables = []localsetup.TablePick{
-		{Table: "public.orders", Access: localsetup.AccessWrite},
-		{Table: "public.logs", Access: localsetup.AccessRead},
-		{Table: "public.vault", Access: localsetup.AccessRead},
+	picked.Tables = []setup.TablePick{
+		{Table: "public.orders", Access: setup.AccessWrite},
+		{Table: "public.logs", Access: setup.AccessRead},
+		{Table: "public.vault", Access: setup.AccessRead},
 	}
 	full := check(picked)
 	require.NotNil(t, full.Challenge)
 	require.Len(t, full.Questions, 1)
 	require.Equal(t, "public.vault", full.Questions[0].Table)
-	var email *localsetup.ColumnInfo
+	var email *setup.ColumnInfo
 	for i := range full.Columns {
 		if full.Columns[i].Table == "public.orders" && full.Columns[i].Column == "email" {
 			email = &full.Columns[i]
@@ -229,26 +229,26 @@ CREATE TABLE public.secrets (id bigint PRIMARY KEY, v text)`)
 	// 3: the person accepts the suggestion; the page checks again for the
 	// challenge that binds the label.
 	labeled := picked
-	labeled.ColumnClasses = []localsetup.ColumnClass{{Table: "public.orders", Column: "email", Class: "IDENTIFIER", EntityType: "EMAIL", Was: localsetup.Label{Class: "UNCLASSIFIED"}}}
+	labeled.ColumnClasses = []setup.ColumnClass{{Table: "public.orders", Column: "email", Class: "IDENTIFIER", EntityType: "EMAIL", Was: setup.Label{Class: "UNCLASSIFIED"}}}
 	withLabels := check(labeled)
 	require.NotNil(t, withLabels.Challenge)
 	require.Contains(t, withLabels.SQL, "column labels")
-	answers := []localsetup.Answer{{Table: "public.vault", Choice: "ALL_ROWS"}}
+	answers := []setup.Answer{{Table: "public.vault", Choice: "ALL_ROWS"}}
 
 	// A run of anything else than what that check showed is refused.
-	for name, edit := range map[string]func(*localsetup.Request){
-		"another access": func(r *localsetup.Request) {
-			r.Tables = append([]localsetup.TablePick{{Table: "public.orders", Access: localsetup.AccessRead}}, r.Tables[1:]...)
+	for name, edit := range map[string]func(*setup.Request){
+		"another access": func(r *setup.Request) {
+			r.Tables = append([]setup.TablePick{{Table: "public.orders", Access: setup.AccessRead}}, r.Tables[1:]...)
 		},
-		"another table": func(r *localsetup.Request) {
-			r.Tables = append(r.Tables, localsetup.TablePick{Table: "public.secrets", Access: localsetup.AccessRead})
+		"another table": func(r *setup.Request) {
+			r.Tables = append(r.Tables, setup.TablePick{Table: "public.secrets", Access: setup.AccessRead})
 		},
-		"no labels": func(r *localsetup.Request) { r.ColumnClasses = nil },
-		"the first check": func(r *localsetup.Request) {
+		"no labels": func(r *setup.Request) { r.ColumnClasses = nil },
+		"the first check": func(r *setup.Request) {
 			r.Challenge, r.Passkey = full.Challenge, registerFor(t, origin, *full.Challenge)
 		},
-		"no challenge":       func(r *localsetup.Request) { r.Challenge, r.Passkey = nil, nil },
-		"another RLS answer": func(r *localsetup.Request) { r.Answers = []localsetup.Answer{{Table: "public.vault", Choice: "NONE"}} },
+		"no challenge":       func(r *setup.Request) { r.Challenge, r.Passkey = nil, nil },
+		"another RLS answer": func(r *setup.Request) { r.Answers = []setup.Answer{{Table: "public.vault", Choice: "NONE"}} },
 	} {
 		run := labeled
 		run.Answers = answers
@@ -256,7 +256,7 @@ CREATE TABLE public.secrets (id bigint PRIMARY KEY, v text)`)
 		edit(&run)
 		code, raw := postJSON(t, base, origin, "/api/v1/setup/run", run)
 		require.Equal(t, http.StatusBadRequest, code, "%s: %s", name, raw)
-		require.Contains(t, string(raw), `"code":"`+localsetup.CodeChallengeInvalid+`"`, name)
+		require.Contains(t, string(raw), `"code":"`+setup.CodeChallengeInvalid+`"`, name)
 	}
 
 	// 4: the run of what was checked.
@@ -265,7 +265,7 @@ CREATE TABLE public.secrets (id bigint PRIMARY KEY, v text)`)
 	run.Challenge, run.Passkey = withLabels.Challenge, registerFor(t, origin, *withLabels.Challenge)
 	code, raw := postJSON(t, base, origin, "/api/v1/setup/run", run)
 	require.Equal(t, http.StatusOK, code, string(raw))
-	var ran localsetup.RunAnswer
+	var ran setup.RunAnswer
 	require.NoError(t, json.Unmarshal(raw, &ran))
 	require.Equal(t, "bot", ran.Agent)
 	require.Len(t, ran.Passkeys, 1)
@@ -360,11 +360,11 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 		return nil
 	}
 	base := "http://" + addr
-	install := func(job localsetup.Request) {
+	install := func(job setup.Request) {
 		t.Helper()
 		code, raw := postJSON(t, base, origin, pageserver.SetupCheckPath, job)
 		require.Equal(t, http.StatusOK, code, string(raw))
-		var checked localsetup.CheckAnswer
+		var checked setup.CheckAnswer
 		require.NoError(t, json.Unmarshal(raw, &checked))
 		run := job
 		run.Challenge = checked.Challenge
@@ -377,18 +377,18 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 
 	// 1: the program's install, with its own database and passkey.
 	done := wait()
-	job := localsetup.Request{Job: localsetup.JobInstall, Agent: "other_bot", OSUser: "alice", Demo: true, DatabaseURL: d.URL}
+	job := setup.Request{Job: setup.JobInstall, Agent: "other_bot", OSUser: "alice", Demo: true, DatabaseURL: d.URL}
 	install(job)
 	ln := waitFor(done)
 
 	// 2: the engine now serves that setup on the same port, as Run does
 	// with the listener handed on. Its admin connections are counted.
 	var dials atomic.Int32
-	jobs, err := localsetup.New(localsetup.Options{
+	jobs, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: configPath, Origin: origin, Users: agentUsers{}, Prefix: d.Names.Prefix, Configured: true,
 		Euid: func() int { return 4000 },
-		Dial: func(context.Context, string) (localsetup.Conn, error) {
+		Dial: func(context.Context, string) (setup.Conn, error) {
 			dials.Add(1)
 			return nil, errors.New("down")
 		},
@@ -410,11 +410,11 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 
 	// Every later install is refused, and the person's link names an agent
 	// this engine does not have.
-	mine := localsetup.Request{Job: localsetup.JobInstall, Agent: "demo_bot", OSUser: "alice"}
+	mine := setup.Request{Job: setup.JobInstall, Agent: "demo_bot", OSUser: "alice"}
 	code, raw := postJSON(t, base, origin, pageserver.SetupCheckPath, mine)
 	require.Equal(t, http.StatusConflict, code, string(raw))
-	require.Contains(t, string(raw), localsetup.CodeJobUnavailable)
-	code, raw = postJSON(t, base, origin, pageserver.SetupDoctorPath, localsetup.DoctorRequest{Agent: "demo_bot", OSUser: "alice"})
+	require.Contains(t, string(raw), setup.CodeJobUnavailable)
+	code, raw = postJSON(t, base, origin, pageserver.SetupDoctorPath, setup.DoctorRequest{Agent: "demo_bot", OSUser: "alice"})
 	require.Equal(t, http.StatusBadRequest, code, string(raw))
 	// A forged request to anything reset-like finds no route.
 	for _, path := range []string{"/api/v1/setup/reset", "/api/v1/setup/forget"} {
@@ -425,7 +425,7 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 	// 3: "Is this your database?" names it from the engine's own file.
 	code, raw = postJSON(t, base, origin, pageserver.SetupEnginePath, struct{}{})
 	require.Equal(t, http.StatusOK, code, string(raw))
-	var asked localsetup.EngineAnswer
+	var asked setup.EngineAnswer
 	require.NoError(t, json.Unmarshal(raw, &asked))
 	var database string
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT pg_catalog.current_database()::text`).Scan(&database))
@@ -443,7 +443,7 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 	require.FileExists(t, credential)
 	code, raw = postJSON(t, base, origin, pageserver.SetupCheckPath, struct{}{})
 	require.Equal(t, http.StatusConflict, code, string(raw))
-	require.Contains(t, string(raw), localsetup.CodeResetAsked, "basalt init's probe reads the No")
+	require.Contains(t, string(raw), setup.CodeResetAsked, "basalt init's probe reads the No")
 
 	// 5: the person's password in the administrator dialog: the reset
 	// script deletes the setup's files and restarts the engine, which
@@ -459,7 +459,7 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 	done = wait()
 	code, raw = postJSON(t, base, origin, pageserver.SetupCheckPath, mine)
 	require.Equal(t, http.StatusBadRequest, code, string(raw))
-	require.Contains(t, string(raw), localsetup.CodeConnectionStringRefused, "the install gets past the job and asks for the admin string")
+	require.Contains(t, string(raw), setup.CodeConnectionStringRefused, "the install gets past the job and asks for the admin string")
 
 	// The install is accepted, even under the agent name the role left
 	// behind has: it sets a new password for that role.

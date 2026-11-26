@@ -1,4 +1,4 @@
-package localsetup
+package setup
 
 import (
 	"errors"
@@ -8,7 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
@@ -17,7 +16,7 @@ import (
 // and what to do; any other guard refusal stays SETUP_FAILED.
 func TestGrantsNotRevokedIsAReadableRefusal(t *testing.T) {
 	t.Parallel()
-	s := &Service{be: setupbackend.Backend{}}
+	s := &LocalService{be: testBackend{}}
 	pg := &pgconn.PgError{
 		Code: sqlstateLedgerInputInvalid, Message: "LEDGER_INPUT_INVALID",
 		Detail: "bt_agent_bot " + guardmodel.UnpickedGrantsDetail + "public.t2, sales.\u202enotes",

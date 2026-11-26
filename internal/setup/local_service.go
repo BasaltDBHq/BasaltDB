@@ -1,10 +1,11 @@
-// Package localsetup is the engine's side of the local setup page
-// (CONTRACT.md, The local setup page): the INSTALL job of an engine with no
-// config, run with the admin connection string the person types on the
-// page. The string is used for one request and never written, logged or
-// returned; every answer and refusal is built from fixed words and values
-// read from the catalog.
-package localsetup
+// The local setup page's jobs (CONTRACT.md, The local setup page): the
+// INSTALL job of an engine with no config, run with the admin connection
+// string the person types on the page, and the UPDATE, REMOVE and fix jobs
+// of an engine with one. The string is used for one request and never
+// written, logged or returned; every answer and refusal is built from fixed
+// words and values read from the catalog.
+
+package setup
 
 import (
 	"context"
@@ -20,7 +21,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
-	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -153,11 +153,11 @@ type RunAnswer struct {
 	Remaining *int `json:"remaining,omitempty"`
 }
 
-// Options are what the engine gives the setup.
-type Options struct {
-	// Backend is the database, the connection and the trust files the
+// LocalOptions are what the engine gives the setup.
+type LocalOptions struct {
+	// LocalBackend is the database, the connection and the trust files the
 	// setup works on. Required.
-	Backend Backend
+	Backend LocalBackend
 	// ConfigPath is the engine.json the run writes; its folder is the
 	// engine's own.
 	ConfigPath string
@@ -166,7 +166,7 @@ type Options struct {
 	Origin string
 	// Now is the clock (time.Now outside tests).
 	Now func() time.Time
-	// Dial opens the admin connection (Backend.Connect outside tests).
+	// Dial opens the admin connection (LocalBackend.Connect outside tests).
 	Dial func(ctx context.Context, dsn string) (Conn, error)
 	// Users looks OS users up (the OS outside tests).
 	Users Users
@@ -178,11 +178,11 @@ type Options struct {
 	// (the engine loads engine.json only at its start).
 	Configured bool
 	// DialPinned opens the admin connection trusting only the pin's
-	// certificate for its host (Backend.ConnectPinned outside tests).
+	// certificate for its host (LocalBackend.ConnectPinned outside tests).
 	DialPinned func(ctx context.Context, dsn string, pin *trustprofile.Profile) (Conn, error)
-	// Profiles are the trust profiles in force (Backend.Trust outside tests).
+	// Profiles are the trust profiles in force (LocalBackend.Trust outside tests).
 	Profiles func() *trustprofile.Set
-	// Probe reads the chain a host presents (Backend.FetchChain outside tests).
+	// Probe reads the chain a host presents (LocalBackend.FetchChain outside tests).
 	Probe func(ctx context.Context, host string, port int) ([]*x509.Certificate, error)
 	// SampleColumn reads a column's sample for the check's suggestions
 	// (the classifier's sampler outside tests).
@@ -194,10 +194,10 @@ type Options struct {
 	CredentialChanged func(agent, password string)
 }
 
-// Service runs the setup jobs. One runs at a time.
-type Service struct {
-	opts Options
-	be   Backend
+// LocalService runs the setup jobs. One runs at a time.
+type LocalService struct {
+	opts LocalOptions
+	be   LocalBackend
 	key  []byte
 	rp   passkey.Relying
 	busy sync.Mutex
@@ -206,14 +206,14 @@ type Service struct {
 }
 
 // New returns the setup of an engine with no config.
-func New(o Options) (*Service, error) {
+func NewLocal(o LocalOptions) (*LocalService, error) {
 	if o.ConfigPath == "" || o.Origin == "" {
 		return nil, errors.New("localsetup: config path and origin required")
 	}
 	if o.Backend == nil {
 		return nil, errors.New("localsetup: backend required")
 	}
-	rp, err := setup.LocalRelying(o.Origin)
+	rp, err := LocalRelying(o.Origin)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +248,7 @@ func New(o Options) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{opts: o, be: o.Backend, key: key, rp: rp}, nil
+	return &LocalService{opts: o, be: o.Backend, key: key, rp: rp}, nil
 }
 
 // job is a validated request's job: the agent's role and its spec.
@@ -265,7 +265,7 @@ type job struct {
 }
 
 // validate checks everything that needs no database, in order.
-func (s *Service) validate(req Request) (job, error) {
+func (s *LocalService) validate(req Request) (job, error) {
 	if err := s.be.Lstat(s.opts.ConfigPath); !errors.Is(err, os.ErrNotExist) {
 		return job{}, refuse(CodeJobUnavailable, "This engine is already set up. An install never changes an engine that has a config; ask the agent for the setup link of the change you want.")
 	}
@@ -317,7 +317,7 @@ func (s *Service) validate(req Request) (job, error) {
 
 // adminURLParams is the refusal of a parameter outside the allowlist. It
 // never names the parameter or its value.
-func (s *Service) adminURLParams() string {
+func (s *LocalService) adminURLParams() string {
 	return "The admin connection string can take only these parameters: " +
 		strings.Join(s.be.ConnectionKeys(), ", ") + ". Remove the others (a file such as passfile, sslkey, sslcert or sslrootcert is never read from it) and paste it again."
 }
@@ -325,7 +325,7 @@ func (s *Service) adminURLParams() string {
 // checkAdminURL accepts a postgres:// or postgresql:// URL with a user and
 // a password that an agent's connection string can be built from. The
 // refusal never names any part of it.
-func (s *Service) checkAdminURL(raw, role string) (string, error) {
+func (s *LocalService) checkAdminURL(raw, role string) (string, error) {
 	bad := refuse(CodeConnectionStringRefused, "The admin connection string must be a postgres:// URL with the admin's user and password, the host and the database, as your provider shows it.")
 	if !strings.HasPrefix(raw, "postgres://") && !strings.HasPrefix(raw, "postgresql://") {
 		return "", bad
@@ -361,7 +361,7 @@ func (s *Service) checkAdminURL(raw, role string) (string, error) {
 // sameTarget: two connection strings, as the driver parses them (query
 // parameters included), name the same host and port (the host compared in
 // lowercase) and the same database.
-func (s *Service) sameTarget(a, b string) bool {
+func (s *LocalService) sameTarget(a, b string) bool {
 	ca, err := s.be.ParseTarget(a)
 	if err != nil {
 		return false
@@ -375,7 +375,7 @@ func (s *Service) sameTarget(a, b string) bool {
 }
 
 // connect opens the admin connection; a failure is a fixed refusal.
-func (s *Service) connect(ctx context.Context, admin string) (Conn, error) {
+func (s *LocalService) connect(ctx context.Context, admin string) (Conn, error) {
 	conn, err := s.opts.Dial(ctx, admin)
 	if err != nil {
 		return nil, s.connectError(ctx, err)
@@ -385,7 +385,7 @@ func (s *Service) connect(ctx context.Context, admin string) (Conn, error) {
 
 // open opens the admin connection of j: a real install may pin the
 // database's certificate (connectAdmin).
-func (s *Service) open(ctx context.Context, req Request) (Conn, *pin, error) {
+func (s *LocalService) open(ctx context.Context, req Request) (Conn, *pin, error) {
 	if req.Demo {
 		conn, err := s.connect(ctx, req.DatabaseURL)
 		return conn, nil, err
@@ -419,7 +419,7 @@ type planned struct {
 // every row-level security question were answered ALL_ROWS, the page's
 // answer; a run passes the person's. The caller rolls tx back (check) or
 // commits (run).
-func (s *Service) plan(ctx context.Context, tx Tx, j job, password, database string, answers []Answer) (planned, error) {
+func (s *LocalService) plan(ctx context.Context, tx Tx, j job, password, database string, answers []Answer) (planned, error) {
 	prefix := s.opts.Prefix
 	names := guardmodel.Names{Prefix: prefix}
 	installed, err := s.be.InstalledPrefix(ctx, tx.Port())
@@ -508,7 +508,7 @@ func (s *Service) plan(ctx context.Context, tx Tx, j job, password, database str
 // that role on the database the admin string reached. Only then does an
 // install finish with that role (its engine.json write had failed);
 // anything else is another role of the same name, never taken over.
-func (s *Service) ownRole(ctx context.Context, j job, database string) bool {
+func (s *LocalService) ownRole(ctx context.Context, j job, database string) bool {
 	// ReadCredential accepts only a string that makes the driver read no
 	// file: the folder is the engine's own, but a credential is never
 	// trusted to be well-formed.
@@ -536,7 +536,7 @@ func (s *Service) ownRole(ctx context.Context, j job, database string) bool {
 
 // usable refuses GUARD_UNUSABLE for a basalt_meta this build cannot
 // install over or update, before anything is planned or changed.
-func (s *Service) usable(ctx context.Context, tx Tx) error {
+func (s *LocalService) usable(ctx context.Context, tx Tx) error {
 	err := s.be.CheckUsable(ctx, tx.Port())
 	switch {
 	case s.be.UnusableInstall(err):
@@ -550,7 +550,7 @@ func (s *Service) usable(ctx context.Context, tx Tx) error {
 // setupFailed is SETUP_FAILED for err at step: the person's message names
 // the Postgres error code and the step when the database refused it, and
 // Cause carries the redacted message for the engine's log.
-func (s *Service) setupFailed(step string, err error) *RefusalError {
+func (s *LocalService) setupFailed(step string, err error) *RefusalError {
 	return failed(step, err, s.be.DatabaseError)
 }
 
@@ -558,7 +558,7 @@ func (s *Service) setupFailed(step string, err error) *RefusalError {
 // (causeOf).
 func failed(step string, err error, describe describeError) *RefusalError {
 	c := causeOf(step, err, describe)
-	r := refuse(CodeSetupFailed, setup.FailedMessage(c.Step, c.SQLState))
+	r := refuse(CodeSetupFailed, FailedMessage(c.Step, c.SQLState))
 	r.Cause = c
 	return r
 }
@@ -566,7 +566,7 @@ func failed(step string, err error, describe describeError) *RefusalError {
 // refused is err as the refusal the page answers with (asRefusal); nil
 // stays nil. Every call the page makes returns its error through it, so
 // the page's AsRefusal only ever finds a refusal.
-func (s *Service) refused(err error) error {
+func (s *LocalService) refused(err error) error {
 	if err == nil {
 		return nil
 	}
@@ -574,7 +574,7 @@ func (s *Service) refused(err error) error {
 }
 
 // Check reads what an install would do. It changes nothing.
-func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
+func (s *LocalService) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 	given := req.DatabaseURL
 	req.DatabaseURL = s.verifyByDefault(given)
 	a, err := s.check(ctx, req)
@@ -586,11 +586,11 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 // covers its host (trustprofile.VerifyFullByDefault), so the admin login,
 // the confirm step and the agent's connection string all verify the
 // certificate; else as given.
-func (s *Service) verifyByDefault(dsn string) string {
+func (s *LocalService) verifyByDefault(dsn string) string {
 	return trustprofile.VerifyFullByDefault(dsn, s.opts.Profiles())
 }
 
-func (s *Service) check(ctx context.Context, req Request) (CheckAnswer, error) {
+func (s *LocalService) check(ctx context.Context, req Request) (CheckAnswer, error) {
 	ctx, cancel := context.WithTimeout(ctx, callLimit)
 	defer cancel()
 	if s.opts.Configured {
@@ -691,7 +691,7 @@ func listingAnswer(j job, database string, p planned, needed bool) (CheckAnswer,
 
 // currentDatabase is the name of the database the connection reached, as
 // the server says it: never a name read from the admin string.
-func (s *Service) currentDatabase(ctx context.Context, tx Tx) (string, error) {
+func (s *LocalService) currentDatabase(ctx context.Context, tx Tx) (string, error) {
 	name, err := s.be.CurrentDatabase(ctx, tx.Port())
 	if err != nil {
 		return "", s.setupFailed("read the database name", err)
@@ -701,7 +701,7 @@ func (s *Service) currentDatabase(ctx context.Context, tx Tx) (string, error) {
 
 // passkeyNeeded: the database has no active passkey for origin (none at
 // all on a fresh database, whose passkeys table does not exist yet).
-func passkeyNeeded(ctx context.Context, b Backend, tx Tx, origin string) (bool, error) {
+func passkeyNeeded(ctx context.Context, b LocalBackend, tx Tx, origin string) (bool, error) {
 	// A savepoint: on a fresh database the lookup fails and must not abort tx.
 	sub, err := tx.Begin(ctx)
 	if err != nil {
@@ -709,14 +709,14 @@ func passkeyNeeded(ctx context.Context, b Backend, tx Tx, origin string) (bool, 
 	}
 	defer func() { _ = sub.Rollback(context.WithoutCancel(ctx)) }()
 	has, err := b.HasPasskeyFor(ctx, sub.Port(), origin)
-	if code := setup.SQLStateOf(err); code == "42P01" || code == "3F000" {
+	if code := SQLStateOf(err); code == "42P01" || code == "3F000" {
 		return true, nil // basalt_meta or its passkeys table does not exist yet
 	}
 	return !has, err
 }
 
 // summary is the fixed account of the install the person reads.
-func (s *Service) summary(j job, database string, seeded guardmodel.DemoPlan, passkeyNeeded, keep bool) []string {
+func (s *LocalService) summary(j job, database string, seeded guardmodel.DemoPlan, passkeyNeeded, keep bool) []string {
 	lines := []string{fmt.Sprintf("This sets up Basalt in the database %s.", database)}
 	if keep {
 		lines = append(lines, fmt.Sprintf("The agent %s (role %s) is already in the database, and this engine holds its password: this finishes its setup, which stopped before the engine wrote its config. Its password stays.", j.req.Agent, j.role))
@@ -734,7 +734,7 @@ func (s *Service) summary(j job, database string, seeded guardmodel.DemoPlan, pa
 }
 
 // notes are the lines that depend on what the database holds.
-func (s *Service) notes(seeded guardmodel.DemoPlan, script guardmodel.Script) []string {
+func (s *LocalService) notes(seeded guardmodel.DemoPlan, script guardmodel.Script) []string {
 	out := []string{}
 	if seeded.Exists() {
 		out = append(out, "sample schema "+s.be.DemoSchema()+" already exists; its rows are left as they are")

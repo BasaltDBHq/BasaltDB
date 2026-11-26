@@ -144,6 +144,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"net/netip"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -158,6 +159,11 @@ func main() {
 	desc, err := setup.Describe(req)
 	var refused *setup.Error
 	fmt.Println(desc.Fingerprint, err, refused)
+	// What the connect service shares with the engine.
+	ip, err := setup.PickAddress(ctx, setup.SystemResolver{}, "db.example.com")
+	fmt.Println(ip, setup.AddressRefused(err), setup.AddressAllowed(netip.Addr{}), setup.RefusedPrefixes(), setup.CheckCode(nil, nil), setup.PasskeyRegistrationPrefix)
+	fmt.Println(setup.SupabaseRef("h", "u"), setup.Target{}.Canonical(), setup.ConnectCollectContext, setup.ConnectReachContext, setup.ConnectAudience)
+	fmt.Println(setup.VerifyConnectCollect(nil, nil, "", "", ""), setup.VerifyConnectReach(nil, nil, "", "", "", setup.Target{}, "", ""), setup.ConnectCollectBody("", "", ""), setup.ConnectReachBody("", "", "", setup.Target{}, "", ""))
 	var conn *pgx.Conn
 	if conn == nil {
 		return

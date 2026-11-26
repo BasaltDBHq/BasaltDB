@@ -193,14 +193,14 @@ A new core package adds a row to the register below, and the test fails until it
 
 Every package directly under `internal/core` has one row: its area, its kind, the rule above that admitted it (1, 2 or 3), the standard-library packages beyond the pure set that it may import, and its codec functions.
 
-A codec function is a function of a decision package that only decodes, parses or checks the format of its input. Any layer may call it, because it decides nothing. List a function only if it is that: one that decides allowed, held, refused, valid, a scope or a plan stays a decision. Only a decision package has the column filled. The test fails if a listed function does not exist.
+A codec function is a function of a decision package that only encodes, decodes, parses or checks the format of its input. Any layer may call it, because it decides nothing. List a function only if it is that: one that decides allowed, held, refused, valid, a scope or a plan stays a decision. Only a decision package has the column filled. The test fails if a listed function does not exist.
 
 | Package | Area | Kind | Admitted by | Extra imports | Codec functions |
 |---|---|---|---|---|---|
 | `sqlguard` | SQL policy | decision | 1 | - | - |
 | `approval` | approvals | decision | 1 | - | `DecodeResponse`, `DecodePluginResponse`, `CheckTexts` |
 | `revert` | reverts | decision | 1 | - | `ParseBinding`, `DecodeResponse` |
-| `passkey` | approvals and reverts | decision | 1 | - | `PublicKeyFromXY` |
+| `passkey` | approvals and reverts | decision | 1 | - | `PublicKeyFromXY`, `CheckCode` |
 | `pii` | PII handling | decision | 1 | - | `CheckDictionarySize`, `OpenDictionary`, `NewKeys` |
 | `chainpin` | ledger | decision | 1 | - | `CheckName` |
 | `action` | ledger | types | 2 | - | - |

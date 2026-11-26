@@ -288,7 +288,7 @@ func (p Prober) Resolve(ctx context.Context, a setupcode.Address) (netip.Addr, e
 	if err := a.Check(); err != nil {
 		return netip.Addr{}, err
 	}
-	ip, err := pick(ctx, p.resolver(), a.Host)
+	ip, err := Pick(ctx, p.resolver(), a.Host)
 	switch {
 	case errors.Is(err, setupcode.ErrAddressInvalid):
 		return netip.Addr{}, &ReachError{Reason: ReasonAddressRefused}

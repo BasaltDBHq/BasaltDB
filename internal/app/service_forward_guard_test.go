@@ -23,14 +23,7 @@ import (
 // service, with the reason each is still here. The list only shrinks: when
 // the logic moves to the domain that owns the answer, the entry goes, and an
 // entry whose method is gone or has become a forward fails the test.
-var serviceLogic = map[string]string{
-	"UnavailableSteps":     "chooses the UNAVAILABLE steps by reason, here until the steps move to their domain",
-	"ApprovalLinkError":    "chooses the approval-link error and the person's message by reason, here until it moves to the approval domain",
-	"openApprovalAgain":    "steps of ApprovalLinkError, move with it",
-	"approvalAgainMessage": "person's message of ApprovalLinkError, moves with it",
-	"setupSteps":           "the pending and expired setup steps of UnavailableSteps, move with them",
-	"homeHealth":           "the home page's guard and passkey read, here until the home page's use case moves to status",
-}
+var serviceLogic = map[string]string{}
 
 // serviceWiring lists the methods on *Service that build the services from
 // Deps. They implement no port: building the services and handing each its
@@ -51,8 +44,9 @@ var serviceWiring = map[string]string{
 // isForward reports whether body is a forward: empty, or one return or call
 // statement, or one call whose results are all discarded (_ = f()). One if,
 // switch or loop is not a forward, however short, and neither is a call of a
-// function literal (return func() { ... }()); a function literal passed as
-// an argument is allowed.
+// function literal (return func() { ... }()) or a call that passes a function
+// literal of more than one statement (return s.x.Run(func() error { ...; ... })).
+// A function literal of one statement passed as an argument is allowed.
 func isForward(body *ast.BlockStmt) bool {
 	switch len(body.List) {
 	case 0:
@@ -72,6 +66,11 @@ func isForward(body *ast.BlockStmt) bool {
 		for _, call := range outerCalls(body.List[0]) {
 			if _, ok := ast.Unparen(call.Fun).(*ast.FuncLit); ok {
 				return false
+			}
+			for _, arg := range call.Args {
+				if lit, ok := ast.Unparen(arg).(*ast.FuncLit); ok && len(lit.Body.List) > 1 {
+					return false
+				}
 			}
 		}
 		return true
@@ -105,10 +104,17 @@ func outerCalls(st ast.Stmt) []*ast.CallExpr {
 // forward whose call lands in pkg itself: on a free function of pkg, or on a
 // method of pkg that is not itself a checked forward. Moving logic into a
 // helper beside the method does not make it a forward. A call of an
-// interface method is a forward, whoever declares the interface.
+// interface method is a forward, whoever declares the interface. A call
+// through a function-typed field or variable that pkg assigns (funcValues)
+// lands where each value it assigns does: a function or method value of pkg
+// is followed like a direct call, one of another package is a forward, and
+// any other value (a function literal, a parameter, a call's result) counts
+// as logic in pkg, since the scan cannot say where it lands.
 func forwardsIntoApp(files []*ast.File, pkg *types.Package, info *types.Info, checked map[string]bool) []string {
 	forward := map[string]bool{}
 	callees := map[string][]*types.Func{}
+	opaque := map[string]bool{}
+	values := funcValues(files, info)
 	for _, f := range files {
 		for _, decl := range f.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
@@ -131,13 +137,38 @@ func forwardsIntoApp(files []*ast.File, pkg *types.Package, info *types.Info, ch
 				case *ast.SelectorExpr:
 					id = fun.Sel
 				}
-				if callee, ok := info.Uses[id].(*types.Func); ok && callee.Pkg() == pkg {
-					callees[key] = append(callees[key], callee)
+				switch callee := info.Uses[id].(type) {
+				case *types.Func:
+					if callee.Pkg() == pkg {
+						callees[key] = append(callees[key], callee)
+					}
+				case *types.Var:
+					assigned, ok := values[callee]
+					if !ok && callee.Pkg() == pkg {
+						opaque[key] = true
+					}
+					for _, v := range assigned {
+						lands, known := landing(v, info)
+						if !known {
+							opaque[key] = true
+						}
+						for _, fn := range lands {
+							if fn.Pkg() == pkg {
+								callees[key] = append(callees[key], fn)
+							}
+						}
+					}
 				}
 			}
 		}
 	}
 	var into []string
+	for key := range opaque {
+		if forward[key] {
+			delete(forward, key)
+			into = append(into, key)
+		}
+	}
 	for changed := true; changed; {
 		changed = false
 		for key := range forward {
@@ -157,6 +188,103 @@ func forwardsIntoApp(files []*ast.File, pkg *types.Package, info *types.Info, ch
 	}
 	slices.Sort(into)
 	return into
+}
+
+// funcValues maps each function-typed field or variable that files assign,
+// in a composite literal's key, on an assignment's left side or in a var
+// declaration, to the values assigned to it. A field or variable files never
+// assign has no entry: forwardsIntoApp counts a call through one that pkg
+// declares as logic, and one another package declares and app never sets as
+// a forward.
+func funcValues(files []*ast.File, info *types.Info) map[*types.Var][]ast.Expr {
+	values := map[*types.Var][]ast.Expr{}
+	add := func(target ast.Expr, value ast.Expr) {
+		var obj types.Object
+		switch x := ast.Unparen(target).(type) {
+		case *ast.Ident:
+			obj = info.Uses[x]
+			if obj == nil {
+				obj = info.Defs[x]
+			}
+		case *ast.SelectorExpr:
+			obj = info.Uses[x.Sel]
+		default:
+			return
+		}
+		v, ok := obj.(*types.Var)
+		if !ok {
+			return
+		}
+		if _, ok := v.Type().Underlying().(*types.Signature); !ok {
+			return
+		}
+		values[v] = append(values[v], value)
+	}
+	for _, f := range files {
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.CompositeLit:
+				for _, el := range n.Elts {
+					if kv, ok := el.(*ast.KeyValueExpr); ok {
+						add(kv.Key, kv.Value)
+					}
+				}
+			case *ast.AssignStmt:
+				if len(n.Lhs) == len(n.Rhs) {
+					for i := range n.Lhs {
+						add(n.Lhs[i], n.Rhs[i])
+					}
+				}
+			case *ast.ValueSpec:
+				if len(n.Names) == len(n.Values) {
+					for i := range n.Names {
+						add(n.Names[i], n.Values[i])
+					}
+				}
+			}
+			return true
+		})
+	}
+	return values
+}
+
+// landing is where a call through a function value lands: the function or
+// method the value names, or the functions a function literal that is itself
+// a forward calls (func(x T) R { return other.F(x) }). known is false for
+// any other value (a literal with logic, a parameter, a call's result), whose
+// landing the scan cannot say.
+func landing(value ast.Expr, info *types.Info) (lands []*types.Func, known bool) {
+	named := func(e ast.Expr) *types.Func {
+		var id *ast.Ident
+		switch x := ast.Unparen(e).(type) {
+		case *ast.Ident:
+			id = x
+		case *ast.SelectorExpr:
+			id = x.Sel
+		}
+		fn, _ := info.Uses[id].(*types.Func)
+		return fn
+	}
+	if fn := named(value); fn != nil {
+		return []*types.Func{fn}, true
+	}
+	lit, ok := ast.Unparen(value).(*ast.FuncLit)
+	if !ok || !isForward(lit.Body) {
+		return nil, false
+	}
+	if len(lit.Body.List) == 0 {
+		return nil, true
+	}
+	for _, call := range outerCalls(lit.Body.List[0]) {
+		fn := named(call.Fun)
+		if fn == nil {
+			return nil, false
+		}
+		if recv := fn.Signature().Recv(); recv == nil || !types.IsInterface(recv.Type()) {
+			lands = append(lands, fn)
+		}
+	}
+	return lands, true
 }
 
 // typeName is the name of t, a named type or a pointer to one.
@@ -319,6 +447,12 @@ func (s *Service) Assign() { s.x = nil }
 func (s *Service) CallsLiteral() int { return func() int { n := s.x.F(); return n }() }
 func (s *Service) DiscardsLiteral() { _ = (func() int { return s.x.F() })() }
 func (s *Service) PassesLiteral() { s.run(func() { s.x.F() }) }
+func (s *Service) PassesLongLiteral() error {
+	return s.run(func() error {
+		n := s.x.F()
+		return check(n)
+	})
+}
 func (s Service) TwoStatements() int {
 	n := s.x.F()
 	return n
@@ -347,8 +481,8 @@ func (s *Service) InATest() int { n := 1; return n }
 
 	files, methods, notForward := serviceMethods(t, dir)
 	require.Equal(t, 1, files)
-	require.ElementsMatch(t, []string{"Forward", "Call", "Discard", "Assign", "CallsLiteral", "DiscardsLiteral", "PassesLiteral", "TwoStatements", "OneSwitch", "Listed"}, methods)
-	require.ElementsMatch(t, []string{"Assign", "CallsLiteral", "DiscardsLiteral", "TwoStatements", "OneSwitch", "Listed"}, notForward)
+	require.ElementsMatch(t, []string{"Forward", "Call", "Discard", "Assign", "CallsLiteral", "DiscardsLiteral", "PassesLiteral", "PassesLongLiteral", "TwoStatements", "OneSwitch", "Listed"}, methods)
+	require.ElementsMatch(t, []string{"Assign", "CallsLiteral", "DiscardsLiteral", "PassesLongLiteral", "TwoStatements", "OneSwitch", "Listed"}, notForward)
 
 	problems := serviceForwardProblems(files, methods, notForward,
 		map[string]string{"Listed": "probe", "Gone": "probe"},
@@ -358,6 +492,7 @@ func (s *Service) InATest() int { n := 1; return n }
 		"(*Service).CallsLiteral does more than forward: move the logic to the service that owns it and leave a one-line forward",
 		"(*Service).DiscardsLiteral does more than forward: move the logic to the service that owns it and leave a one-line forward",
 		"(*Service).OneSwitch does more than forward: move the logic to the service that owns it and leave a one-line forward",
+		"(*Service).PassesLongLiteral does more than forward: move the logic to the service that owns it and leave a one-line forward",
 		"(*Service).TwoStatements does more than forward: move the logic to the service that owns it and leave a one-line forward",
 		"serviceLogic entry Gone matches no method on Service that does more than forward: remove it",
 		"serviceWiring entry Forward matches no method on Service that does more than forward: remove it",
@@ -485,7 +620,7 @@ func loadApp(t *testing.T, dir string) ([]*ast.File, *types.Package, *types.Info
 		require.NoError(t, err, name)
 		files = append(files, f)
 	}
-	info := &types.Info{Uses: map[*ast.Ident]types.Object{}}
+	info := &types.Info{Uses: map[*ast.Ident]types.Object{}, Defs: map[*ast.Ident]types.Object{}}
 	pkg, err := (&types.Config{Importer: imp}).Check(self.ImportPath, fset, files, info)
 	require.NoError(t, err)
 	var domains []*types.Package
@@ -693,7 +828,9 @@ func (s *Service) Tell(int) {}
 // A forward into app's own code is logic: a call of a free function of app,
 // or of an app method that is not itself a checked forward. A call of
 // another checked forward, of an interface method or of another package is
-// a forward.
+// a forward. A call through a function-typed field or variable lands where
+// the values app assigns it do; one the scan cannot follow (a literal with
+// logic, a parameter, a field app never sets) is logic.
 func TestForwardIntoAppIsLogic(t *testing.T) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "probe.go", `package app
@@ -733,24 +870,48 @@ func (*listed) Ask() int {
 	return n
 }
 
+type fields struct {
+	helperFn, forwardFn, litFn, paramFn, methodFn, unsetFn func() int
+}
+
+var varFn = helper
+
+func wire(p port, c checked, fn func() int) fields {
+	f := fields{helperFn: helper, forwardFn: func() int { return p.Ask() }, methodFn: c.Ask}
+	f.litFn = func() int { n := 1; return n }
+	f.paramFn = fn
+	return f
+}
+
+func (f fields) ViaHelper() int  { return f.helperFn() }
+func (f fields) ViaForward() int { return f.forwardFn() }
+func (f fields) ViaLiteral() int { return f.litFn() }
+func (f fields) ViaParam() int   { return f.paramFn() }
+func (f fields) ViaMethod() int  { return f.methodFn() }
+func (f fields) ViaUnset() int   { return f.unsetFn() }
+func (f fields) ViaVar() int     { return varFn() }
+
 type Service struct{ u uses }
 
 func (s *Service) Forward() int { return s.u.Checked() }
 func (s *Service) Helper() int  { return helper() }
 `, parser.SkipObjectResolution)
 	require.NoError(t, err)
-	info := &types.Info{Uses: map[*ast.Ident]types.Object{}}
+	info := &types.Info{Uses: map[*ast.Ident]types.Object{}, Defs: map[*ast.Ident]types.Object{}}
 	pkg, err := (&types.Config{}).Check("example.com/m/internal/app", fset, []*ast.File{f}, info)
 	require.NoError(t, err)
 	checked := map[string]bool{}
 	for _, key := range []string{
 		"checked.Ask", "uses.Interface", "uses.Checked", "uses.Helper", "uses.Discard", "uses.Unchecked",
 		"uses.ViaHelper", "uses.Listed", "uses.InArgument", "listed.Ask", "Service.Forward", "Service.Helper",
+		"fields.ViaHelper", "fields.ViaForward", "fields.ViaLiteral", "fields.ViaParam", "fields.ViaMethod",
+		"fields.ViaUnset", "fields.ViaVar",
 	} {
 		checked[key] = true
 	}
 	require.Equal(t, []string{
-		"Service.Helper", "uses.Discard", "uses.Helper", "uses.Listed", "uses.Unchecked", "uses.ViaHelper",
+		"Service.Helper", "fields.ViaHelper", "fields.ViaLiteral", "fields.ViaParam", "fields.ViaUnset", "fields.ViaVar",
+		"uses.Discard", "uses.Helper", "uses.Listed", "uses.Unchecked", "uses.ViaHelper",
 	}, forwardsIntoApp([]*ast.File{f}, pkg, info, checked))
 }
 

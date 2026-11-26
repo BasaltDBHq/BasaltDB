@@ -14,6 +14,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"net/netip"
 	"os"
 	"time"
 
@@ -48,6 +49,24 @@ func useSetup() {
 	var e error = &setup.Error{}
 	_ = e.Error()
 	_ = (&setup.Error{}).Unwrap()
+	useSetupConnect(ctx)
+}
+
+// useSetupConnect calls the connect side of pkg/setup: the address policy,
+// the signed connect texts and the passkey check code.
+func useSetupConnect(ctx context.Context) {
+	_ = setup.AddressAllowed(netip.Addr{})
+	_ = setup.RefusedPrefixes()
+	a, err := setup.PickAddress(ctx, setup.SystemResolver{}, "")
+	_ = setup.AddressRefused(err)
+	_ = a
+	t := setup.Target{}.Canonical()
+	_ = setup.ConnectCollectBody("", "", "")
+	_ = setup.ConnectReachBody("", "", "", t, "", "")
+	_ = setup.VerifyConnectCollect(nil, nil, "", "", "")
+	_ = setup.VerifyConnectReach(nil, nil, "", "", "", t, "", "")
+	_ = setup.CheckCode(nil, nil)
+	_ = setup.SupabaseRef("", "")
 }
 
 func useTrustpin() {

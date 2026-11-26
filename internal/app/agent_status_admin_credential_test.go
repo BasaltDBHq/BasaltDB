@@ -92,7 +92,7 @@ func TestEveryToolRefusesAnAdminURLInItsArguments(t *testing.T) {
 			require.True(t, isError, tool.Name+" "+name)
 			require.Equal(t, guidance.CodeInvalidArgument, body["code"], tool.Name)
 			require.Equal(t, guidance.ReasonAdminCredential, body["reason"], tool.Name)
-			require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool.Name)
+			require.Equal(t, stepcatalogtest.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool.Name)
 			require.Contains(t, body["personMessage"], "Change that database password", tool.Name)
 			raw, err := json.Marshal(body)
 			require.NoError(t, err)

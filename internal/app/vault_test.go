@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/configtest"
 )
 
 func TestServiceInstallKeepsTheVaultOnARerun(t *testing.T) {
@@ -100,14 +101,14 @@ func TestConfigUpsertKeepsTheVaultWithoutAChoice(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "engine.json")
 	bot := config.Agent{Name: "bot", OSUser: "alice", Store: config.PostgresStore("/c/bot.url")}
-	require.NoError(t, config.UpsertAgent(path, config.Settings{SocketDir: "/s", PagesURL: links.Portal, Vault: config.VaultOn}, bot))
-	require.NoError(t, config.UpsertAgent(path, config.Settings{SocketDir: "/s"}, bot))
+	require.NoError(t, configtest.UpsertAgent(path, config.Settings{SocketDir: "/s", PagesURL: links.Portal, Vault: config.VaultOn}, bot))
+	require.NoError(t, configtest.UpsertAgent(path, config.Settings{SocketDir: "/s"}, bot))
 	c, err := config.Load(path)
 	require.NoError(t, err)
 	require.Equal(t, config.VaultOn, c.Vault)
-	require.NoError(t, config.UpsertAgent(path, config.Settings{Vault: config.VaultOff}, bot))
+	require.NoError(t, configtest.UpsertAgent(path, config.Settings{Vault: config.VaultOff}, bot))
 	c, err = config.Load(path)
 	require.NoError(t, err)
 	require.Equal(t, config.VaultOff, c.Vault)
-	require.Error(t, config.UpsertAgent(path, config.Settings{Vault: "on"}, bot), "engine.json holds ON or OFF")
+	require.Error(t, configtest.UpsertAgent(path, config.Settings{Vault: "on"}, bot), "engine.json holds ON or OFF")
 }

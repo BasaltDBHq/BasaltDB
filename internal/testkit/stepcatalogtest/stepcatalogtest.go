@@ -6,6 +6,7 @@ package stepcatalogtest
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -49,7 +50,7 @@ func ExpectedSteps(t *testing.T, kind, code, reason, tool string, steps []mcpcon
 			return v.Steps, v.PersonMessage, true
 		}
 	}
-	return mcpcontract.Resolve(steps, operatedBy), personMessage, false
+	return Resolve(steps, operatedBy), personMessage, false
 }
 
 // requireOperatorRules checks the agent's commands on an engine operated by
@@ -366,7 +367,7 @@ func containsValue(list []any, v any) bool {
 func RequireObeysCatalogSteps(t *testing.T, entry mcpcontract.ErrorSteps, kase Case, person string, links []toolresult.Link, steps []toolresult.NextStep, openWithoutURL bool) {
 	t.Helper()
 	got := CatalogKinds(steps)
-	require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), got, "(actor, action) sequence")
+	require.Equal(t, Resolve(entry.Steps, mcpcontract.OperatedByPerson), got, "(actor, action) sequence")
 	require.Equal(t, entry.PersonMessage, person != "", "personMessage set exactly when the catalog says: %q", person)
 	mcptest.Require(t, person, links)
 	for i, st := range steps {
@@ -404,3 +405,40 @@ func RequirePersonMessage(t *testing.T, message string, links []toolresult.Link)
 // basalt init: the plugin steps, which the plugin epic replaces, still take
 // --json.
 var RemovedCommand = regexp.MustCompile(`basalt (approve|revert|upgrade|passkey|trust|access|status|portal|crash|service|log|classify|uninstall|tunnel)\b|--setup-code|--add-passkey|--rotate-password|--agent-rls|--new-code|rotate-key|basalt init\b[^\n]*?--(forget|json)`)
+
+// Resolve returns steps with every OPERATOR step addressed to the agent when
+// operatedBy is AGENT and to the person otherwise (PERSON, or a config the
+// shim cannot read).
+func Resolve(steps []mcpcontract.StepKind, operatedBy string) []mcpcontract.StepKind {
+	actor := mcpcontract.ActorPerson
+	if operatedBy == mcpcontract.OperatedByAgent {
+		actor = mcpcontract.ActorAgent
+	}
+	out := make([]mcpcontract.StepKind, len(steps))
+	for i, s := range steps {
+		if s.Actor == mcpcontract.ActorOperator {
+			s.Actor = actor
+		}
+		out[i] = s
+	}
+	return out
+}
+
+// CheckServed compares the tools a server lists with the contracts: every
+// served tool needs a contract, and every IMPLEMENTED contract must be served.
+func CheckServed(tools []mcpcontract.Tool, served []string) error {
+	var errs []error
+	servedSet := make(map[string]bool, len(served))
+	for _, name := range served {
+		servedSet[name] = true
+		if _, ok := mcpcontract.Find(tools, name); !ok {
+			errs = append(errs, fmt.Errorf("tool %q is served but has no contract in api/mcp/tools", name))
+		}
+	}
+	for _, t := range tools {
+		if t.Status == mcpcontract.StatusImplemented && !servedSet[t.Name] {
+			errs = append(errs, fmt.Errorf("tool %q is %s but not served", t.Name, mcpcontract.StatusImplemented))
+		}
+	}
+	return errors.Join(errs...)
+}

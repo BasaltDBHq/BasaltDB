@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/configtest"
 )
 
 func TestUpsertAgent(t *testing.T) {
@@ -15,7 +16,7 @@ func TestUpsertAgent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "etc", "engine.json")
 	bot := config.Agent{Name: "bot", OSUser: "alice", Store: config.PostgresStore("/c/bot.url")}
 
-	require.NoError(t, config.UpsertAgent(path, config.Settings{SocketDir: "/run/basalt"}, bot))
+	require.NoError(t, configtest.UpsertAgent(path, config.Settings{SocketDir: "/run/basalt"}, bot))
 	c, err := config.Load(path)
 	require.NoError(t, err)
 	require.Equal(t, "/run/basalt", c.SocketDir)
@@ -28,8 +29,8 @@ func TestUpsertAgent(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(`{"socketDir":"/s","agents":[{"name":"bot","osUser":"alice","store": {"kind": "POSTGRES", "credentialFile":"/c/bot.url"}}],"limits":{"readRowLimit":7}}`), config.FileMode))
 	bot.OSUser = "bob"
 	other := config.Agent{Name: "other", OSUser: "carol", Store: config.PostgresStore("/c/other.url")}
-	require.NoError(t, config.UpsertAgent(path, config.Settings{SocketDir: "/ignored", StateDir: "/ignored"}, bot))
-	require.NoError(t, config.UpsertAgent(path, config.Settings{SocketDir: "/ignored"}, other))
+	require.NoError(t, configtest.UpsertAgent(path, config.Settings{SocketDir: "/ignored", StateDir: "/ignored"}, bot))
+	require.NoError(t, configtest.UpsertAgent(path, config.Settings{SocketDir: "/ignored"}, other))
 	c, err = config.Load(path)
 	require.NoError(t, err)
 	require.Equal(t, "/s", c.SocketDir)
@@ -37,7 +38,7 @@ func TestUpsertAgent(t *testing.T) {
 	require.Equal(t, 7, c.Limits.ReadRowLimit)
 	require.Equal(t, []config.Agent{bot, other}, c.Agents)
 
-	require.Error(t, config.UpsertAgent(path, config.Settings{SocketDir: "/s"}, config.Agent{Name: "Bad/Name", OSUser: "x", Store: config.PostgresStore("/x")}))
+	require.Error(t, configtest.UpsertAgent(path, config.Settings{SocketDir: "/s"}, config.Agent{Name: "Bad/Name", OSUser: "x", Store: config.PostgresStore("/x")}))
 }
 
 func TestUpsertAgentStateDirAndPagesURL(t *testing.T) {
@@ -46,7 +47,7 @@ func TestUpsertAgentStateDirAndPagesURL(t *testing.T) {
 	bot := config.Agent{Name: "bot", OSUser: "alice", Store: config.PostgresStore("/c/bot.url")}
 
 	// A new file takes the state directory; the pages base URL is set.
-	require.NoError(t, config.UpsertAgent(path, config.Settings{
+	require.NoError(t, configtest.UpsertAgent(path, config.Settings{
 		SocketDir: "/home/alice/basalt/run", StateDir: "/home/alice/basalt/state",
 		PagesURL: "http://localhost:8787",
 	}, bot))
@@ -57,11 +58,11 @@ func TestUpsertAgentStateDirAndPagesURL(t *testing.T) {
 
 	// Without one the existing one stays; a new one replaces it, and the
 	// older approvalPage key with it.
-	require.NoError(t, config.UpsertAgent(path, config.Settings{}, bot))
+	require.NoError(t, configtest.UpsertAgent(path, config.Settings{}, bot))
 	c, err = config.Load(path)
 	require.NoError(t, err)
 	require.Equal(t, "http://localhost:8787", c.PagesURL)
-	require.NoError(t, config.UpsertAgent(path, config.Settings{PagesURL: "http://localhost:9000"}, bot))
+	require.NoError(t, configtest.UpsertAgent(path, config.Settings{PagesURL: "http://localhost:9000"}, bot))
 	c, err = config.Load(path)
 	require.NoError(t, err)
 	require.Equal(t, "http://localhost:9000", c.PagesURL)
@@ -73,11 +74,11 @@ func TestUpsertAgentRecordsTheModeAndKeepsThePersons(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "engine.json")
 	bot := config.Agent{Name: "bot", OSUser: "bot", Store: config.PostgresStore("/c/bot.url")}
 	service := config.Settings{SocketDir: "/run/basalt", Mode: config.ModeService, PersonUIDs: []uint32{501}}
-	require.NoError(t, config.UpsertAgent(path, service, bot))
+	require.NoError(t, configtest.UpsertAgent(path, service, bot))
 
 	// Re-running init keeps the recorded person and adds a new one once.
 	service.PersonUIDs = []uint32{502, 501}
-	require.NoError(t, config.UpsertAgent(path, service, bot))
+	require.NoError(t, configtest.UpsertAgent(path, service, bot))
 	c, err := config.Load(path)
 	require.NoError(t, err)
 	require.True(t, c.Service())
@@ -85,7 +86,7 @@ func TestUpsertAgentRecordsTheModeAndKeepsThePersons(t *testing.T) {
 
 	// No mode written means same-user mode.
 	plain := filepath.Join(t.TempDir(), "engine.json")
-	require.NoError(t, config.UpsertAgent(plain, config.Settings{SocketDir: "/tmp/run"}, bot))
+	require.NoError(t, configtest.UpsertAgent(plain, config.Settings{SocketDir: "/tmp/run"}, bot))
 	c, err = config.Load(plain)
 	require.NoError(t, err)
 	require.False(t, c.Service())

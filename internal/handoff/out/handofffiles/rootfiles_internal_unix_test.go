@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/configtest"
 )
 
 // pg starts a test connection string; built so no secret scanner reads one
@@ -25,7 +26,7 @@ func rootLayout(t *testing.T) (cfgPath, credFile string) {
 	dir := filepath.Join(root, "basalt")
 	cfgPath, credFile = filepath.Join(dir, "engine.json"), filepath.Join(dir, "agents", "bot.url")
 	require.NoError(t, config.WriteFile(credFile, []byte(pg+"bt_agent_bot:old@db:5432/app\n")))
-	require.NoError(t, config.UpsertAgent(cfgPath, config.Settings{SocketDir: "/run/basalt"}, config.Agent{
+	require.NoError(t, configtest.UpsertAgent(cfgPath, config.Settings{SocketDir: "/run/basalt"}, config.Agent{
 		Name: "bot", OSUser: "bot", Store: config.PostgresStore(credFile),
 	}))
 	return cfgPath, credFile

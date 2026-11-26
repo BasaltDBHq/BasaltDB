@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
+	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec/linkcodectest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 )
@@ -18,7 +18,7 @@ const pluginSettings = 1
 // ParsePluginRequest decodes a plugin approval link fragment, with or
 // without '#', and checks it (Check).
 func ParsePluginRequest(fragment string) (approval.PluginRequest, approval.PluginBinding, error) {
-	r, err := linkcodec.DecodeRequest(fragment, pluginSettings, func(binding string, lines []string, ids []passkey.Bytes) approval.PluginRequest {
+	r, err := linkcodectest.DecodeRequest(fragment, pluginSettings, func(binding string, lines []string, ids []passkey.Bytes) approval.PluginRequest {
 		out := approval.PluginRequest{Binding: binding, Settings: lines[0], CredentialIDs: ids}
 		if b, err := approval.ParsePluginBinding(binding); err == nil {
 			out.ApprovalID = b.ApprovalID

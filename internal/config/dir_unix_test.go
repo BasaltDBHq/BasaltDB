@@ -13,6 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/configtest"
 )
 
 // realDir is a temporary directory with no symlink on its path.
@@ -45,7 +46,7 @@ func TestUpsertAgentVaultAtStaysInTheOpenedDirectory(t *testing.T) {
 	require.NoError(t, os.Mkdir(cfgDir, 0o700))
 	require.NoError(t, os.Mkdir(elsewhere, 0o700))
 	cfg := filepath.Join(cfgDir, "engine.json")
-	require.NoError(t, config.UpsertAgent(cfg, config.Settings{SocketDir: "/run/basalt"}, config.Agent{Name: "one", OSUser: "bot", Store: config.PostgresStore("/c/one.url")}))
+	require.NoError(t, configtest.UpsertAgent(cfg, config.Settings{SocketDir: "/run/basalt"}, config.Agent{Name: "one", OSUser: "bot", Store: config.PostgresStore("/c/one.url")}))
 	d := openDir(t, cfgDir)
 
 	// The swap: the config directory moves away and a symlink takes its
@@ -79,7 +80,7 @@ func TestUpsertAgentVaultAtRefusesAnUntrustedConfig(t *testing.T) {
 	dir := realDir(t)
 	d := openDir(t, dir)
 	cfg := filepath.Join(dir, "engine.json")
-	require.NoError(t, config.UpsertAgent(cfg, config.Settings{SocketDir: "/run/basalt"}, config.Agent{Name: "one", OSUser: "bot", Store: config.PostgresStore("/c/one.url")}))
+	require.NoError(t, configtest.UpsertAgent(cfg, config.Settings{SocketDir: "/run/basalt"}, config.Agent{Name: "one", OSUser: "bot", Store: config.PostgresStore("/c/one.url")}))
 	before, err := os.ReadFile(cfg)
 	require.NoError(t, err)
 

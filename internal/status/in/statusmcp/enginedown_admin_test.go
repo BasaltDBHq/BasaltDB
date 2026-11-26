@@ -33,7 +33,7 @@ func TestEngineDownToolsRefuseAnAdminURL(t *testing.T) {
 			body, isError := serveCall(t, downSrv, tool.Name, args)
 			require.True(t, isError, tool.Name)
 			require.Equal(t, guidance.ReasonAdminCredential, body["reason"], tool.Name)
-			require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool.Name)
+			require.Equal(t, stepcatalogtest.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool.Name)
 			raw, err := json.Marshal(body)
 			require.NoError(t, err)
 			require.NotContains(t, string(raw), secret, tool.Name)

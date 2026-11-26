@@ -20,6 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/configtest"
 )
 
 // These tests run the engine's agent runtime against a real Postgres
@@ -51,7 +52,7 @@ func newRemoteAgent(t *testing.T, dsn, kind string) remoteAgent {
 		ExpiresAt: r.expires.Format(time.RFC3339), Code: "basalt-setup.1.abc.def", Fingerprint: "a1b2 c3d4 e5f6 0718 293a",
 	}
 	setup := r.setup
-	require.NoError(t, config.UpsertAgent(r.cfgPath, config.Settings{SocketDir: "/run/basalt", StateDir: dir, OperatedBy: mcpcontract.OperatedByAgent, PagesURL: links.Portal},
+	require.NoError(t, configtest.UpsertAgent(r.cfgPath, config.Settings{SocketDir: "/run/basalt", StateDir: dir, OperatedBy: mcpcontract.OperatedByAgent, PagesURL: links.Portal},
 		config.Agent{Name: "bot", OSUser: "bot", Store: config.PostgresStore(r.credFile), Setup: &setup}))
 	return r
 }

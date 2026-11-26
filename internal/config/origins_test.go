@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/configtest"
 )
 
 // loadWith writes a config with the given top-level keys and loads it.
@@ -69,13 +70,13 @@ func TestUpsertChecksTheOrigins(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "engine.json")
 	a := config.Agent{Name: "bot", OSUser: "bot", Store: config.PostgresStore("/etc/basalt/agents/bot.url")}
-	err := config.UpsertAgent(path, config.Settings{SocketDir: "/run/basalt", OperatedBy: "AGENT", PagesURL: "http://localhost:8787"}, a)
+	err := configtest.UpsertAgent(path, config.Settings{SocketDir: "/run/basalt", OperatedBy: "AGENT", PagesURL: "http://localhost:8787"}, a)
 	require.ErrorContains(t, err, "an agent-operated engine uses the portal's pages")
-	require.NoError(t, config.UpsertAgent(path, config.Settings{SocketDir: "/run/basalt", OperatedBy: "AGENT", PagesURL: "http://localhost:8787", DevLocalPages: true}, a))
+	require.NoError(t, configtest.UpsertAgent(path, config.Settings{SocketDir: "/run/basalt", OperatedBy: "AGENT", PagesURL: "http://localhost:8787", DevLocalPages: true}, a))
 	c, err := config.Load(path)
 	require.NoError(t, err)
 	require.True(t, c.DevLocalPages)
-	require.NoError(t, config.UpsertAgent(path, config.Settings{PagesURL: "https://portal.basaltvault.app"}, a), "init again without the flag")
+	require.NoError(t, configtest.UpsertAgent(path, config.Settings{PagesURL: "https://portal.basaltvault.app"}, a), "init again without the flag")
 	c, err = config.Load(path)
 	require.NoError(t, err)
 	require.False(t, c.DevLocalPages, "moving to the portal drops the exception")

@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
+	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec/linkcodectest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 )
@@ -25,7 +25,7 @@ func fromCompact(binding string, lines []string, ids []passkey.Bytes) approval.R
 // checks it (Check). A format 2 link carries only texts and credential
 // ids, never the engine's revealNonce or columns.
 func ParseRequest(fragment string) (approval.Request, approval.Binding, error) {
-	r, err := linkcodec.DecodeRequest(fragment, approval.MaxRows, fromCompact)
+	r, err := linkcodectest.DecodeRequest(fragment, approval.MaxRows, fromCompact)
 	if err != nil {
 		return approval.Request{}, approval.Binding{}, approval.Invalid("approval request %v", err)
 	}

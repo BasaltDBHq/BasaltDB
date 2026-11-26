@@ -25,6 +25,7 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/contractdoc"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
 
 // Setup code shape (CONTRACT.md, Setup from your laptop).
@@ -524,7 +525,7 @@ func TestConnectLinkSteps(t *testing.T) {
 		require.False(t, agentVariant, "%s: an entry with an agent-operated variant cannot take a connect-link one", key)
 		require.True(t, v.PersonMessage, "%s: the link is in the personMessage", key)
 		requireSteps(t, key, v.Steps)
-		resolved := mcpcontract.Resolve(steps, mcpcontract.OperatedByAgent)
+		resolved := stepcatalogtest.Resolve(steps, mcpcontract.OperatedByAgent)
 		require.Equal(t, mcpcontract.StepKind{Actor: mcpcontract.ActorAgent, Action: mcpcontract.ActionRunCommand}, resolved[0],
 			"%s: the entry starts with the agent's basalt init", key)
 		want := append([]mcpcontract.StepKind{{Actor: mcpcontract.ActorPerson, Action: "OPEN_LINK"}}, resolved[1:]...)
@@ -620,7 +621,7 @@ func TestResolveOperatorSteps(t *testing.T) {
 		mcpcontract.OperatedByPerson: mcpcontract.ActorPerson,
 		"":                           mcpcontract.ActorPerson, // config unreadable: the safe default
 	} {
-		got := mcpcontract.Resolve(e.Steps, operatedBy)
+		got := stepcatalogtest.Resolve(e.Steps, operatedBy)
 		require.Equal(t, actor, got[1].Actor, operatedBy)
 		require.Equal(t, mcpcontract.ActionRunCommand, got[1].Action)
 		require.Equal(t, e.Steps[:1], got[:1], "only OPERATOR steps change")

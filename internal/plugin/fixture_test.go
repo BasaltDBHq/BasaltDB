@@ -14,7 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginfs"
 )
+
+// testFiles is the file system adapter the app builds the host on.
+var testFiles Files = pluginfs.Files{}
 
 // Contents of the test plugin's files. They stand in for a binary and a
 // model; tests check that no error ever quotes them.
@@ -45,7 +49,7 @@ func newFixture(t *testing.T) *fixture {
 	require.NoError(t, os.Mkdir(f.configDir, 0o700))
 	f.root, err = Root(pluginmodel.ModeSameUser, runtime.GOOS, f.configDir)
 	require.NoError(t, err)
-	f.trust, err = NewTrustStore(pluginmodel.ModeSameUser, runtime.GOOS, f.configDir)
+	f.trust, err = NewTrustStore(testFiles, pluginmodel.ModeSameUser, runtime.GOOS, f.configDir)
 	require.NoError(t, err)
 	f.signer, err = GenerateKey()
 	require.NoError(t, err)
@@ -117,7 +121,7 @@ func (f *fixture) writeSigned(dir string, manifest []byte, signer *ecdsa.Private
 
 func (f *fixture) install(instance string) pluginmodel.Verified {
 	f.t.Helper()
-	v, err := Install(f.src, f.root, instance, f.trust, pluginmodel.ModeSameUser)
+	v, err := installCopy(f.src, f.root, instance, f.trust)
 	require.NoError(f.t, err)
 	return v
 }
@@ -149,4 +153,20 @@ func entries(t *testing.T, dir string) []string {
 		out = append(out, d.Name())
 	}
 	return out
+}
+
+// installCopy stages the plugin in src as a same-user install and commits
+// it, with no consent step in between, and returns the installed copy.
+func installCopy(src, root, instance string, trust TrustStore, opts ...Option) (pluginmodel.Verified, error) {
+	s, err := Stage(src, root, instance, trust, pluginmodel.ModeSameUser, opts...)
+	if err != nil {
+		return pluginmodel.Verified{}, err
+	}
+	dir, err := s.Commit()
+	if err != nil {
+		return pluginmodel.Verified{}, err
+	}
+	v := s.Verified
+	v.Dir = dir
+	return v, nil
 }

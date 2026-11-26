@@ -133,7 +133,7 @@ func TestWatchAsRootRefusesFIFOConfig(t *testing.T) {
 	for _, link := range []bool{true, false} {
 		state, err := filepath.EvalSymlinks(t.TempDir())
 		require.NoError(t, err)
-		store, err := NewPluginhost(state, time.Now)
+		store, err := NewPluginhost(testFiles, state, time.Now)
 		require.NoError(t, err)
 		rw := newReadWatchKept(t, 0, store)
 		fifo := filepath.Join(filepath.Dir(rw.f.configPath), "fifo")

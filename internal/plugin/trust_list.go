@@ -3,7 +3,6 @@ package plugin
 import (
 	"errors"
 	"io/fs"
-	"os"
 	"slices"
 	"strings"
 
@@ -17,13 +16,13 @@ import (
 // The engine records PLUGIN_TRUST_ADDED for each id an agent's ledger does
 // not have yet.
 func (t TrustStore) AddedKeys() ([]string, error) {
-	if _, err := os.Lstat(t.dir); errors.Is(err, fs.ErrNotExist) {
+	if _, err := t.files.Lstat(t.dir); errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
 	if err := t.check(); err != nil {
 		return nil, err
 	}
-	entries, err := os.ReadDir(t.dir)
+	entries, err := t.files.ReadDir(t.dir)
 	if err != nil {
 		return nil, pluginmodel.PathRefusal(t.dir, "cannot be read")
 	}

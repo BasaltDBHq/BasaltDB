@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-
 	"github.com/google/uuid"
 )
 
@@ -172,20 +170,6 @@ type PersonPluginServing struct {
 	Agent      string     `json:"agent"`
 	ApprovalID *uuid.UUID `json:"approvalId,omitempty"`
 	Ready      bool       `json:"ready"`
-}
-
-// PluginApproveParams are PLUGIN_APPROVE's params: the approval and the
-// person's passkey assertion.
-type PluginApproveParams struct {
-	ApprovalID uuid.UUID
-	Assertion  passkey.Assertion
-}
-
-// PluginApproveResult is PLUGIN_APPROVE's result.
-type PluginApproveResult struct {
-	ApprovalID uuid.UUID `json:"approvalId"`
-	Status     string    `json:"status"`
-	ApprovedAt time.Time `json:"approvedAt"`
 }
 
 // PluginEntryParams name an entry: PLUGIN_DISABLE and PLUGIN_REMOVE.

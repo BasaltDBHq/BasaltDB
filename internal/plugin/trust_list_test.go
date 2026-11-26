@@ -15,7 +15,7 @@ import (
 // file that is not a trusted key is not, and the built-in keys never are.
 func TestAddedKeys(t *testing.T) {
 	t.Parallel()
-	empty, err := NewTrustStore(pluginmodel.ModeSameUser, runtime.GOOS, t.TempDir())
+	empty, err := NewTrustStore(testFiles, pluginmodel.ModeSameUser, runtime.GOOS, t.TempDir())
 	require.NoError(t, err)
 	none, err := empty.AddedKeys()
 	require.NoError(t, err)

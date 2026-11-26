@@ -12,7 +12,6 @@ import (
 	"sync"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
-	"github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
 )
 
 // trustFileExt is a trusted key's file extension: <keyId>.pem.
@@ -30,6 +29,7 @@ const (
 // store). It reads the directory at each use, so a key added or removed is
 // seen by the next verification.
 type TrustStore struct {
+	files    Files
 	dir      string
 	owner    uint32
 	embedded map[string]*ecdsa.PublicKey
@@ -37,8 +37,8 @@ type TrustStore struct {
 
 // NewTrustStore is the trust store of an engine run in mode on goos, whose
 // engine.json is in configDir: TrustDir(mode, goos, configDir), with the
-// owner the path rule requires in that mode.
-func NewTrustStore(mode pluginmodel.Mode, goos, configDir string) (TrustStore, error) {
+// owner the path rule requires in that mode, read and written through files.
+func NewTrustStore(files Files, mode pluginmodel.Mode, goos, configDir string) (TrustStore, error) {
 	owner, err := requiredOwner(mode)
 	if err != nil {
 		return TrustStore{}, err
@@ -51,7 +51,7 @@ func NewTrustStore(mode pluginmodel.Mode, goos, configDir string) (TrustStore, e
 	if err != nil {
 		return TrustStore{}, err
 	}
-	return TrustStore{dir: dir, owner: owner, embedded: embedded}, nil
+	return TrustStore{files: files, dir: dir, owner: owner, embedded: embedded}, nil
 }
 
 // Dir is the trust store's directory, TrustDir.
@@ -64,7 +64,7 @@ var errTrustMode = errors.New("plugin: the trust store was made for another engi
 // matches refuses a trust store made for another mode, or not made by
 // NewTrustStore, so one check never mixes two required owners.
 func (t TrustStore) matches(owner uint32) error {
-	if t.dir == "" || t.owner != owner {
+	if t.dir == "" || t.files == nil || t.owner != owner {
 		return errTrustMode
 	}
 	return nil
@@ -102,16 +102,16 @@ var builtInKeys = sync.OnceValues(embeddedKeys)
 // to plugin-trust/, and each entry in it. A trust store that does not exist
 // holds no keys and passes.
 func (t TrustStore) check() error {
-	if _, err := os.Lstat(t.dir); errors.Is(err, fs.ErrNotExist) {
+	if _, err := t.files.Lstat(t.dir); errors.Is(err, fs.ErrNotExist) {
 		// No keys are stored; the directories that exist above it still
 		// follow the rule, so none can be swapped in before a key is read.
-		_, err := checkExisting(t.dir, t.dir, t.owner)
+		_, err := checkExisting(t.files, t.dir, t.dir, t.owner)
 		return err
 	}
 	if err := checkUnder(t.owner, t.dir); err != nil {
 		return err
 	}
-	entries, err := os.ReadDir(t.dir)
+	entries, err := t.files.ReadDir(t.dir)
 	if err != nil {
 		return pluginmodel.PathRefusal(t.dir, "cannot be read")
 	}
@@ -136,7 +136,7 @@ func (t TrustStore) key(keyID string) (*ecdsa.PublicKey, error) {
 		return pub, nil
 	}
 	notTrusted := &pluginmodel.VerifyError{Reason: pluginmodel.RefusedNotTrusted, File: SignatureFile, Why: WhyKeyNotTrusted}
-	entries, err := os.ReadDir(t.dir)
+	entries, err := t.files.ReadDir(t.dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, notTrusted
 	}
@@ -149,7 +149,7 @@ func (t TrustStore) key(keyID string) (*ecdsa.PublicKey, error) {
 			continue
 		}
 		path := filepath.Join(t.dir, name)
-		b, err := readOwned(path, MaxKeyFileBytes, t.owner)
+		b, err := readOwned(t.files, path, MaxKeyFileBytes, t.owner)
 		if err != nil {
 			return nil, err
 		}
@@ -183,7 +183,7 @@ func (t TrustStore) Add(pemBytes []byte) (keyID string, added bool, err error) {
 	if _, ok := t.embedded[id]; ok {
 		return id, false, nil
 	}
-	if err := ensureDir(t.dir, t.dir, t.owner); err != nil {
+	if err := ensureDir(t.files, t.dir, t.dir, t.owner); err != nil {
 		return "", false, err
 	}
 	if err := t.check(); err != nil {
@@ -199,7 +199,7 @@ func (t TrustStore) Add(pemBytes []byte) (keyID string, added bool, err error) {
 	// A trusted key records the person's decision: the directory is synced
 	// so it survives a crash.
 	path := filepath.Join(t.dir, id+trustFileExt)
-	if err := atomicfile.Write(path, canonical, atomicfile.Options{Mode: keyFileMode, SyncDir: true}); err != nil {
+	if err := t.files.WriteAtomic(path, canonical, keyFileMode, true); err != nil {
 		return "", false, pluginmodel.PathRefusal(path, "cannot be written")
 	}
 	return id, true, nil
@@ -212,22 +212,22 @@ func (t TrustStore) Add(pemBytes []byte) (keyID string, added bool, err error) {
 // write, and only then creates each missing directory with mode 0755, set
 // explicitly so a umask cannot leave group or other write on it. A
 // directory that appears meanwhile is refused, never reused.
-func ensureDir(boundary, dir string, owner uint32) error {
+func ensureDir(files Files, boundary, dir string, owner uint32) error {
 	boundary, dir = filepath.Clean(boundary), filepath.Clean(dir)
 	if !within(boundary, dir) {
 		return pluginmodel.PathRefusal(dir, "is not inside "+boundary)
 	}
-	missing, err := checkExisting(boundary, dir, owner)
+	missing, err := checkExisting(files, boundary, dir, owner)
 	if err != nil {
 		return err
 	}
 	for i := len(missing) - 1; i >= 0; i-- {
 		// The parent passed the path rule, so only its owner or root can
 		// put anything at this name; Mkdir fails rather than reuse it.
-		if err := os.Mkdir(missing[i], dirMode); err != nil {
+		if err := files.Mkdir(missing[i], dirMode); err != nil {
 			return pluginmodel.PathRefusal(missing[i], "cannot be created")
 		}
-		if err := os.Chmod(missing[i], dirMode); err != nil {
+		if err := files.Chmod(missing[i], dirMode); err != nil {
 			return pluginmodel.PathRefusal(missing[i], "cannot be set to mode 0755")
 		}
 	}
@@ -238,7 +238,7 @@ func ensureDir(boundary, dir string, owner uint32) error {
 // dir that exists (strictly when it is at or below boundary, as above a
 // root otherwise) and returns the missing directories below it, deepest
 // first.
-func checkExisting(boundary, dir string, owner uint32) ([]string, error) {
+func checkExisting(files Files, boundary, dir string, owner uint32) ([]string, error) {
 	boundary, dir = filepath.Clean(boundary), filepath.Clean(dir)
 	if !within(boundary, dir) {
 		return nil, pluginmodel.PathRefusal(dir, "is not inside "+boundary)
@@ -246,7 +246,7 @@ func checkExisting(boundary, dir string, owner uint32) ([]string, error) {
 	var missing []string
 	existing := dir
 	for {
-		_, err := os.Lstat(existing)
+		_, err := files.Lstat(existing)
 		if err == nil {
 			break
 		}
@@ -294,11 +294,11 @@ func chain(base, p string) []string {
 
 // readOwned is readNoFollow that also applies the path rule to the file it
 // opened: owned by owner and writable by no one else.
-func readOwned(path string, limit int64, owner uint32) ([]byte, error) {
-	f, err := os.OpenFile(path, noFollowFlags(), 0)
+func readOwned(files Files, path string, limit int64, owner uint32) ([]byte, error) {
+	f, err := files.OpenFile(path, noFollowFlags(), 0)
 	if err != nil {
 		// A symlink in the trust store is the path rule's refusal.
-		if fi, lerr := os.Lstat(path); lerr == nil && fi.Mode()&fs.ModeSymlink != 0 {
+		if fi, lerr := files.Lstat(path); lerr == nil && fi.Mode()&fs.ModeSymlink != 0 {
 			return nil, ruleRefusal(path, "is a symlink", pluginmodel.PathSymlink, fi)
 		}
 		return nil, pluginmodel.PathRefusal(path, "cannot be opened, or is a symlink")
@@ -317,8 +317,8 @@ func readOwned(path string, limit int64, owner uint32) ([]byte, error) {
 // readNoFollow reads a regular file, refusing a symlink as its last
 // component, a file larger than limit, and anything not regular. Errors name
 // the path, never the contents.
-func readNoFollow(path string, limit int64) ([]byte, error) {
-	f, err := os.OpenFile(path, noFollowFlags(), 0)
+func readNoFollow(files Files, path string, limit int64) ([]byte, error) {
+	f, err := files.OpenFile(path, noFollowFlags(), 0)
 	if err != nil {
 		return nil, pluginmodel.PathRefusal(path, "cannot be opened, or is a symlink")
 	}

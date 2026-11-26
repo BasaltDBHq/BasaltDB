@@ -201,7 +201,7 @@ func newPluginFixture(t *testing.T) *pluginFixture {
 	require.NoError(t, os.Mkdir(f.report, 0o700))
 	f.root, err = Root(pluginmodel.ModeSameUser, runtime.GOOS, configDir)
 	require.NoError(t, err)
-	f.trust, err = NewTrustStore(pluginmodel.ModeSameUser, runtime.GOOS, configDir)
+	f.trust, err = NewTrustStore(testFiles, pluginmodel.ModeSameUser, runtime.GOOS, configDir)
 	require.NoError(t, err)
 	// Socket paths must be short; t.TempDir() is too long on macOS.
 	f.sockBase, err = os.MkdirTemp("", "bs")
@@ -243,7 +243,7 @@ func (f *pluginFixture) install(instance, transport string, agents ...string) co
 	sig, err := SignManifest([]byte(manifest), key)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(src, SignatureFile), sig, 0o644))
-	v, err := Install(src, f.root, instance, f.trust, pluginmodel.ModeSameUser)
+	v, err := installCopy(src, f.root, instance, f.trust)
 	require.NoError(t, err)
 	p := config.Plugin{Name: "acme-ner", Instance: instance, ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: agents, TimeoutMs: config.MaxPluginTimeoutMs}
 	f.cfg.Plugins = append(f.cfg.Plugins, p)

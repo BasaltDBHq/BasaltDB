@@ -5,7 +5,6 @@ package pluginledger
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -67,19 +66,9 @@ func (Ledger) OpenPluginApproval(ctx context.Context, db q, d guardmodel.PluginA
 	return a, openApprovalError(err)
 }
 
-func (Ledger) ReadPluginApproval(ctx context.Context, db q, id uuid.UUID) (guardmodel.PluginApprovalRecord, bool, error) {
-	r, ok, err := guard.ReadPluginApproval(ctx, asPgx(db), id)
-	return r, ok, MapError(err)
-}
-
 func (Ledger) ReadPluginApprovals(ctx context.Context, db q) ([]guardmodel.PluginApprovalRecord, error) {
 	r, err := guard.ReadPluginApprovals(ctx, asPgx(db))
 	return r, MapError(err)
-}
-
-func (Ledger) SubmitPluginApproval(ctx context.Context, db q, r guardmodel.PluginApprovalResponse) (time.Time, error) {
-	at, err := guard.SubmitPluginApproval(ctx, asPgx(db), r)
-	return at, MapError(err)
 }
 
 func (Ledger) PluginSettingsSHA256(ctx context.Context, db q, s guardmodel.PluginSettings) (string, error) {

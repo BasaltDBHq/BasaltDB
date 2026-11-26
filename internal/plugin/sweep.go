@@ -3,7 +3,6 @@ package plugin
 import (
 	"errors"
 	"io/fs"
-	"os"
 	"path/filepath"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
@@ -16,8 +15,8 @@ import (
 // whole, and <root>/<name>/ too when no other instance is left in it.
 // Nothing outside the entry's directory is touched, and nothing at all
 // unless the path rule holds from "/" down to it. A missing directory is
-// not an error.
-func Sweep(root string, key pluginmodel.EntryKey, keep string, mode pluginmodel.Mode) error {
+// not an error. It reads and removes through files.
+func Sweep(files Files, root string, key pluginmodel.EntryKey, keep string, mode pluginmodel.Mode) error {
 	owner, err := requiredOwner(mode)
 	if err != nil {
 		return err
@@ -27,21 +26,21 @@ func Sweep(root string, key pluginmodel.EntryKey, keep string, mode pluginmodel.
 	}
 	nameDir := filepath.Join(root, key.Name)
 	instDir := filepath.Join(nameDir, key.Instance)
-	if _, err := os.Lstat(instDir); errors.Is(err, fs.ErrNotExist) {
+	if _, err := files.Lstat(instDir); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
 	if err := checkUnder(owner, root, nameDir, instDir); err != nil {
 		return err
 	}
 	if keep == "" {
-		if err := os.RemoveAll(instDir); err != nil {
+		if err := files.RemoveAll(instDir); err != nil {
 			return pluginmodel.PathRefusal(instDir, "cannot be removed")
 		}
 		// Only when empty: another instance of the plugin keeps it.
-		_ = os.Remove(nameDir)
+		_ = files.Remove(nameDir)
 		return nil
 	}
-	des, err := os.ReadDir(instDir)
+	des, err := files.ReadDir(instDir)
 	if err != nil {
 		return pluginmodel.PathRefusal(instDir, "cannot be read")
 	}
@@ -50,7 +49,7 @@ func Sweep(root string, key pluginmodel.EntryKey, keep string, mode pluginmodel.
 			continue
 		}
 		p := filepath.Join(instDir, de.Name())
-		if err := os.RemoveAll(p); err != nil {
+		if err := files.RemoveAll(p); err != nil {
 			return pluginmodel.PathRefusal(p, "cannot be removed")
 		}
 	}

@@ -3,7 +3,8 @@ package plugin
 import (
 	"context"
 	"io"
-	"time"
+	"io/fs"
+	"os"
 
 	"github.com/google/uuid"
 
@@ -45,9 +46,7 @@ type Guard interface {
 	NoAnswer(err error) bool
 
 	OpenPluginApproval(ctx context.Context, q Querier, d guardmodel.PluginApprovalDetail, s guardmodel.PluginSettings) (guardmodel.PluginApproval, error)
-	ReadPluginApproval(ctx context.Context, q Querier, id uuid.UUID) (guardmodel.PluginApprovalRecord, bool, error)
 	ReadPluginApprovals(ctx context.Context, q Querier) ([]guardmodel.PluginApprovalRecord, error)
-	SubmitPluginApproval(ctx context.Context, q Querier, r guardmodel.PluginApprovalResponse) (time.Time, error)
 	PluginSettingsSHA256(ctx context.Context, q Querier, s guardmodel.PluginSettings) (string, error)
 
 	RecordPluginEntryEvent(ctx context.Context, q Querier, kind guardmodel.PluginEventKind, d guardmodel.PluginDetail) error
@@ -83,6 +82,47 @@ type Ports struct {
 	// WriteFeedCursor writes a feed cursor file whole: raw as name in dir,
 	// which it makes when missing, mode 0600, without syncing dir.
 	WriteFeedCursor func(dir, name string, raw []byte) error
+	// ReadFeedCursor reads the feed cursor file name in dir whole.
+	ReadFeedCursor func(dir, name string) ([]byte, error)
+	// Files is the file system the engine's plugin host reads and writes.
+	Files Files
+}
+
+// Files is the port to the file system: the plugin service does no file
+// I/O itself (plugin/out/pluginfs implements it). Each method is the os call
+// of the same name unless its comment says otherwise; the service keeps the
+// steps, their order, the checks and the refusals. The files and roots it
+// opens are handles the service reads and writes.
+type Files interface {
+	OpenRoot(dir string) (*os.Root, error)
+	OpenFile(name string, flag int, perm fs.FileMode) (*os.File, error)
+	ReadFile(name string) ([]byte, error)
+	Lstat(name string) (fs.FileInfo, error)
+	ReadDir(name string) ([]fs.DirEntry, error)
+	// WalkDir is filepath.WalkDir.
+	WalkDir(root string, fn fs.WalkDirFunc) error
+	Mkdir(name string, perm fs.FileMode) error
+	MkdirAll(name string, perm fs.FileMode) error
+	MkdirTemp(dir, pattern string) (string, error)
+	Chmod(name string, mode fs.FileMode) error
+	Rename(oldpath, newpath string) error
+	Remove(name string) error
+	RemoveAll(name string) error
+	// WriteAtomic writes raw whole as name: a temporary file renamed into
+	// place with mode, and the directory synced after the rename when
+	// syncDir is set.
+	WriteAtomic(name string, raw []byte, mode fs.FileMode, syncDir bool) error
+	// Lock takes an exclusive lock on name; the function releases it.
+	Lock(name string) (func(), error)
+	// NoFollow are the open flags that refuse a final symlink and do not
+	// block on a FIFO or a device.
+	NoFollow() int
+	// Owner is the uid that owns the file fi describes; false when fi
+	// carries none.
+	Owner(fi fs.FileInfo) (uint32, bool)
+	// Links is the hard link count of the file fi describes; false when fi
+	// carries none.
+	Links(fi fs.FileInfo) (uint64, bool)
 }
 
 // UnitHost is the plugin units a service engine expects: the OS service
@@ -126,6 +166,10 @@ func (p Ports) check() string {
 		return "ReadConfig"
 	case p.WriteFeedCursor == nil:
 		return "WriteFeedCursor"
+	case p.ReadFeedCursor == nil:
+		return "ReadFeedCursor"
+	case p.Files == nil:
+		return "Files"
 	}
 	return ""
 }

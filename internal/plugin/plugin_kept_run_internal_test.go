@@ -80,7 +80,7 @@ func (f *keptFixture) runWith(euid int, inGroup error, set func(*Options)) *kept
 		ledgers[name] = AgentLedger{ports: testPorts, db: a.db}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	RecordEvents(ctx, cfg, f.configPath, ep, ledgers, log)
+	RecordEvents(ctx, testFiles, cfg, f.configPath, ep, ledgers, log)
 	done := make(chan struct{})
 	go func() { ep.Serve(ctx, cfg, f.configPath, ledgers); close(done) }()
 	f.s.changed, f.s.serving, f.s.health = ep.applyNow, ep.servingOf, ep.healthOf

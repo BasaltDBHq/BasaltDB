@@ -136,6 +136,8 @@ var testPorts = Ports{
 		return cli.ReadEngineConfigAs(trustedOpener{}, euid, path)
 	},
 	WriteFeedCursor: pluginstate.WriteFeedCursor,
+	ReadFeedCursor:  pluginstate.ReadFeedCursor,
+	Files:           testFiles,
 }
 
 // trustedOpener is the app shell's hardened open (osservice.OpenTrustedFile).

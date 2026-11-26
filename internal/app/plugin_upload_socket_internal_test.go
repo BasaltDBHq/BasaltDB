@@ -27,6 +27,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginfs"
 )
 
 // uploadPerson and uploadOther are two OS user ids other than the test's own:
@@ -69,7 +70,7 @@ func TestUploadThroughTheEnginesAgentSocket(t *testing.T) {
 	dir, err := os.MkdirTemp("", "bu")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	store, err := plugin.NewPluginhost(filepath.Join(dir, "state"), time.Now)
+	store, err := plugin.NewPluginhost(pluginfs.Files{}, filepath.Join(dir, "state"), time.Now)
 	require.NoError(t, err)
 	p := newPluginRequests(map[string]uint32{"bot": uploadPerson, "other": uploadOther}, []uint32{uploadPerson})
 	p.SetKept(plugin.OpenKeptPlugins(config.Config{}, "", store, nil, nil, slog.New(slog.DiscardHandler), pluginPorts))
@@ -133,7 +134,7 @@ func TestUploadMethodsAnswerWithTheirCodes(t *testing.T) {
 	dir, err := os.MkdirTemp("", "bu")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	store, err := plugin.NewPluginhost(filepath.Join(dir, "state"), time.Now)
+	store, err := plugin.NewPluginhost(pluginfs.Files{}, filepath.Join(dir, "state"), time.Now)
 	require.NoError(t, err)
 	p := newPluginRequests(map[string]uint32{"bot": uploadPerson, "other": uploadOther}, []uint32{uploadPerson})
 	p.SetKept(plugin.OpenKeptPlugins(config.Config{}, "", store, nil, nil, slog.New(slog.DiscardHandler), pluginPorts))

@@ -41,7 +41,7 @@ func serviceUnitEntries(cfg config.Config, goos, configPath string, warn io.Writ
 	}
 	dir := filepath.Dir(configPath)
 	root, rootErr := plugin.Root(pluginmodel.ModeService, goos, dir)
-	trust, trustErr := plugin.NewTrustStore(pluginmodel.ModeService, goos, dir)
+	trust, trustErr := plugin.NewTrustStore(pluginPorts.Files, pluginmodel.ModeService, goos, dir)
 	var out []servicespec.PluginEntry
 	for _, p := range cfg.Plugins {
 		k := p.Key()

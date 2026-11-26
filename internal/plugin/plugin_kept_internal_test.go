@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -30,6 +31,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
@@ -105,7 +107,7 @@ func newKeptFixture(t *testing.T, names []string, scoped ...string) *keptFixture
 	raw, err := json.Marshal(f.cfg)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(f.configPath, raw, 0o600))
-	store, err := NewPluginhost(f.state, time.Now)
+	store, err := NewPluginhost(testFiles, f.state, time.Now)
 	require.NoError(t, err)
 	f.s = &KeptPlugins{
 		ports: testPorts,
@@ -152,16 +154,29 @@ func (f *keptFixture) add(instance string, agents ...string) (PluginOpenResult, 
 	})
 }
 
-// sign signs approval a with the person's passkey and relays it over the
-// socket.
+// sign signs approval a with the person's passkey and submits it through
+// the agent that opened it (the one whose row carries the binding text),
+// as the approval page does.
 func (f *keptFixture) sign(a PluginOpenedApproval) {
 	f.t.Helper()
 	require.NotNil(f.t, a.ApprovalID, a.Refused)
 	as, err := f.pk.Sign(approval.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(f.t, err)
-	res, err := f.client.PluginApprove(context.Background(), PluginApproveParams{ApprovalID: *a.ApprovalID, Assertion: as})
-	require.NoError(f.t, err)
-	require.Equal(f.t, "APPROVED", res.Status)
+	ctx := context.Background()
+	for _, name := range slices.Sorted(maps.Keys(f.agents)) {
+		r, ok, err := guard.ReadPluginApproval(ctx, pgxOf(f.agents[name].db), *a.ApprovalID)
+		if err != nil || !ok || r.BindingText == "" {
+			continue
+		}
+		_, err = guard.SubmitPluginApproval(ctx, pgxOf(f.agents[name].db), guardmodel.PluginApprovalResponse{ApprovalID: *a.ApprovalID, Assertion: as})
+		require.NoError(f.t, err)
+		r, ok, err = guard.ReadPluginApproval(ctx, pgxOf(f.agents[name].db), *a.ApprovalID)
+		require.NoError(f.t, err)
+		require.True(f.t, ok)
+		require.Equal(f.t, guardmodel.PluginApprovalStatusApproved, r.Status)
+		return
+	}
+	f.t.Fatalf("no agent opened plugin approval %s", *a.ApprovalID)
 }
 
 func (f *keptFixture) entries() []config.Plugin {

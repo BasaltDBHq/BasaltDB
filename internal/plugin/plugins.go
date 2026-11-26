@@ -43,9 +43,8 @@ type Options struct {
 	units *UnitSource
 	// Ports are the adapters the host is built on; every one is required.
 	Ports Ports
-	// stateDir is where a same-user engine writes which entries it serves
-	// (pluginServingFile), and where every engine keeps its feed cursors;
-	// "" writes nothing and feeds no plugin.
+	// stateDir is where the engine keeps its feed cursors; "" feeds no
+	// plugin.
 	stateDir string
 	// feedTiming replaces the feed's intervals (tests); nil is the
 	// contract's.
@@ -227,7 +226,7 @@ func NewFor(cfg config.Config, configPath string, o Options, log *slog.Logger) *
 	}
 	dir := filepath.Dir(configPath)
 	root, rootErr := Root(ep.mode, o.goos, dir)
-	trust, trustErr := NewTrustStore(ep.mode, o.goos, dir)
+	trust, trustErr := NewTrustStore(o.Ports.Files, ep.mode, o.goos, dir)
 	ep.root, ep.trust = root, trust
 	ep.rootErr = errors.Join(rootErr, trustErr)
 	for _, p := range configured {

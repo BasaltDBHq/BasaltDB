@@ -141,7 +141,7 @@ func TestTrustStoreKeyFiles(t *testing.T) {
 	require.NoError(t, err)
 	keyFile := filepath.Join(f.trust.Dir(), signerID+trustFileExt)
 	require.NoError(t, os.WriteFile(keyFile, impostorPEM, 0o644))
-	_, err = Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser)
+	_, err = installCopy(f.src, f.root, "", f.trust)
 	ve := requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 	require.Equal(t, keyFile, ve.File)
 	require.Contains(t, ve.Why, "name is not the id")
@@ -150,7 +150,7 @@ func TestTrustStoreKeyFiles(t *testing.T) {
 	signerPEM, err := MarshalPublicKey(&f.signer.PublicKey)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(keyFile, append(append([]byte{}, signerPEM...), impostorPEM...), 0o644))
-	_, err = Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser)
+	_, err = installCopy(f.src, f.root, "", f.trust)
 	ve = requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 	require.Equal(t, keyFile, ve.File)
 	requireNoSecrets(t, err)
@@ -160,7 +160,7 @@ func TestTrustStoreKeyFiles(t *testing.T) {
 	require.NoError(t, os.WriteFile(elsewhere, signerPEM, 0o644))
 	require.NoError(t, os.Remove(keyFile))
 	require.NoError(t, os.Symlink(elsewhere, keyFile))
-	_, err = Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser)
+	_, err = installCopy(f.src, f.root, "", f.trust)
 	ve = requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 	require.Equal(t, keyFile, ve.File)
 	require.Contains(t, ve.Why, "symlink")
@@ -168,7 +168,7 @@ func TestTrustStoreKeyFiles(t *testing.T) {
 	// Back to the real key: it verifies again.
 	require.NoError(t, os.Remove(keyFile))
 	require.NoError(t, os.WriteFile(keyFile, signerPEM, 0o644))
-	_, err = Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser)
+	_, err = installCopy(f.src, f.root, "", f.trust)
 	require.NoError(t, err)
 }
 
@@ -188,7 +188,7 @@ func TestEmbeddedKeys(t *testing.T) {
 	trust := f.trust
 	trust.embedded = map[string]*ecdsa.PublicKey{id: &publisher.PublicKey}
 	f.writeSigned(f.src, localManifest(), publisher)
-	v, err := Install(f.src, f.root, "", trust, pluginmodel.ModeSameUser)
+	v, err := installCopy(f.src, f.root, "", trust)
 	require.NoError(t, err)
 	require.Equal(t, id, v.SignerKeyID)
 	_, err = Verify(f.root, pluginmodel.EntryKey{Name: "acme-ner", Instance: pluginmodel.DefaultInstance}, v.ManifestSHA256, f.trust, pluginmodel.ModeSameUser)
@@ -244,12 +244,12 @@ func TestSignatureFileStrict(t *testing.T) {
 			t.Fatalf("%s: the case did not change the signature", name)
 		}
 		require.NoError(t, os.WriteFile(filepath.Join(f.src, SignatureFile), b, 0o644))
-		_, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser)
+		_, err := installCopy(f.src, f.root, "", f.trust)
 		require.Error(t, err, name)
 		requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(f.src, SignatureFile), raw, 0o644))
-	_, err = Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser)
+	_, err = installCopy(f.src, f.root, "", f.trust)
 	require.NoError(t, err)
 }
 

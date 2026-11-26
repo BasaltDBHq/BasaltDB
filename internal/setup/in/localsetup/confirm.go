@@ -3,10 +3,6 @@ package localsetup
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
-	"github.com/basaltdbhq/basaltdb/pkg/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -25,6 +21,20 @@ type ConfirmCertificate struct {
 	Issuer string `json:"issuer,omitempty"`
 }
 
+// The kinds of ConfirmCertificate.
+const (
+	// certPublic: an authority of the system's trust store.
+	certPublic = "PUBLIC"
+	// certProvider: a built-in trust profile (Amazon RDS, Supabase).
+	certProvider = "PROVIDER"
+	// certOwn: a root this host was given: a pin the person trusted, an
+	// operator's trust profile or the string's sslrootcert.
+	certOwn = "OWN"
+	// certNotVerified: TLS without a check of the certificate (sslmode
+	// below verify-full).
+	certNotVerified = "NOT_VERIFIED"
+)
+
 // confirmFacts are the confirm step's fields of a check's answer.
 type confirmFacts struct {
 	host        string
@@ -35,22 +45,22 @@ type confirmFacts struct {
 
 // readConfirm reads the confirm step's facts of conn, the admin connection
 // open reached with dsn; pinned is the pin it logged in against, or nil.
-func (s *Service) readConfirm(ctx context.Context, tx pgx.Tx, conn *pgx.Conn, dsn string, pinned *pin) (confirmFacts, error) {
-	var user string
-	// A SQL keyword squirrel cannot express.
-	if err := tx.QueryRow(ctx, `SELECT session_user::text`).Scan(&user); err != nil {
-		return confirmFacts{}, setupFailed("read the admin user", err)
+func (s *Service) readConfirm(ctx context.Context, tx Tx, conn Conn, dsn string, pinned *pin) (confirmFacts, error) {
+	user, err := s.be.SessionUser(ctx, tx.Port())
+	if err != nil {
+		return confirmFacts{}, s.setupFailed("read the admin user", err)
 	}
-	kind, provider := setup.CertificateOwn, ""
+	kind, provider := certOwn, ""
 	if pinned == nil {
 		kind, provider = s.certificateKind(dsn)
 	}
-	c := setup.CertificateOf(conn, kind, provider)
+	shown, issuer := s.be.ConnCertificate(conn, kind, provider)
 	host, port, ok := hostPort(dsn)
 	if !ok { // a key=value string, or one with several hosts: where it went
-		host, port = trustprofile.NormalizeHost(conn.Config().Host), int(conn.Config().Port)
+		h, p := s.be.ConnHost(conn)
+		host, port = trustprofile.NormalizeHost(h), p
 	}
-	return confirmFacts{host: host, port: port, sessionUser: user, certificate: ConfirmCertificate{Kind: string(c.Kind), Issuer: c.Issuer}}, nil
+	return confirmFacts{host: host, port: port, sessionUser: user, certificate: ConfirmCertificate{Kind: shown, Issuer: issuer}}, nil
 }
 
 // certificateKind is what verifies dsn's certificate as the engine dials it
@@ -58,25 +68,24 @@ func (s *Service) readConfirm(ctx context.Context, tx pgx.Tx, conn *pgx.Conn, ds
 // the provider's, an operator's profile (a pin among them) or the string's
 // sslrootcert is a root this host was given, and below verify-full nothing
 // verifies it.
-func (s *Service) certificateKind(dsn string) (setup.CertificateKind, string) {
-	cfg, err := pgconn.ParseConfig(dsn)
+func (s *Service) certificateKind(dsn string) (string, string) {
+	a, err := s.be.ExplainTrust(dsn, s.opts.Profiles())
 	if err != nil {
-		return setup.CertificateNotVerified, ""
+		return certNotVerified, ""
 	}
-	a := trustprofile.Explain(cfg, s.opts.Profiles())
 	switch a.Applies {
 	case trustprofile.AppliesNotVerified:
-		return setup.CertificateNotVerified, ""
+		return certNotVerified, ""
 	case trustprofile.AppliesRootCert:
-		return setup.CertificateOwn, ""
+		return certOwn, ""
 	case trustprofile.AppliesProfile:
 		if a.Profile.Origin == trustprofile.BuiltIn {
-			return setup.CertificateProvider, a.Profile.Name
+			return certProvider, a.Profile.Name
 		}
-		return setup.CertificateOwn, ""
+		return certOwn, ""
 	case trustprofile.AppliesSystem:
 	}
-	return setup.CertificatePublic, ""
+	return certPublic, ""
 }
 
 // apply sets the confirm step's fields of out.

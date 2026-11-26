@@ -49,7 +49,7 @@ func TestCertificateKindIsWhatTheEngineDialsWith(t *testing.T) {
 		{"postgres://u@public.example:5432/app?sslmode=disable", setup.CertificateNotVerified, ""},
 	} {
 		kind, provider := s.certificateKind(tc.dsn)
-		require.Equal(t, tc.kind, kind, tc.dsn)
+		require.Equal(t, string(tc.kind), kind, tc.dsn)
 		require.Equal(t, tc.provider, provider, tc.dsn)
 	}
 
@@ -68,7 +68,7 @@ func TestCertificateKindIsWhatTheEngineDialsWith(t *testing.T) {
 		{"postgres://u@public.example:5432/app", setup.CertificateNotVerified, ""},
 	} {
 		kind, provider := s.certificateKind(s.verifyByDefault(tc.dsn))
-		require.Equal(t, tc.kind, kind, tc.dsn)
+		require.Equal(t, string(tc.kind), kind, tc.dsn)
 		require.Equal(t, tc.provider, provider, tc.dsn)
 	}
 }

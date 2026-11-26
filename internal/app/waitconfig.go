@@ -11,8 +11,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/platform/httpserver"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
@@ -31,7 +29,7 @@ type WaitOptions struct {
 	Log        *slog.Logger
 	// Dial, Users and Prefix replace the setup's defaults (tests only:
 	// localsetup.Options).
-	Dial   func(ctx context.Context, dsn string) (*pgx.Conn, error)
+	Dial   func(ctx context.Context, dsn string) (localsetup.Conn, error)
 	Users  localsetup.Users
 	Prefix string
 }

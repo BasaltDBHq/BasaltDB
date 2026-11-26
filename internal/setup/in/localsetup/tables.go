@@ -78,51 +78,32 @@ type listing struct {
 	more     bool
 }
 
-// listSQL reads the ordinary and partitioned tables of the schemas $1 (one
-// more than the cap, so a longer list is known). Plain SQL: a catalog read
-// squirrel cannot express. Partitions are left out: the agent reaches their
-// rows through the partitioned table.
-const listSQL = `SELECT n.nspname || '.' || c.relname,
-       r.rolname,
-       r.rolname = current_user,
-       EXISTS (SELECT 1 FROM pg_catalog.pg_constraint k WHERE k.conrelid = c.oid AND k.contype = 'p'),
-       c.relname ~ '^` + plainName + `$'
-  FROM pg_catalog.pg_class c
-  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-  JOIN pg_catalog.pg_roles r ON r.oid = c.relowner
- WHERE n.nspname = ANY($1)
-   AND c.relkind IN ('r', 'p')
-   AND NOT c.relispartition
- ORDER BY n.nspname COLLATE "C", c.relname COLLATE "C"
- LIMIT $2`
-
-func readListing(ctx context.Context, q setup.Querier, schemas []string) (listing, error) {
-	rows, err := q.Query(ctx, listSQL, schemas, maxTables+1)
+// readListing reads the ordinary and partitioned tables of schemas (one
+// more than the cap, so a longer list is known; Backend.ListTables): a
+// table whose name is not plain, or that the admin does not own, is
+// excluded with the reason. Partitions are left out: the agent reaches
+// their rows through the partitioned table.
+func (s *Service) readListing(ctx context.Context, q setup.Querier, schemas []string) (listing, error) {
+	rows, err := s.be.ListTables(ctx, q, schemas, maxTables+1)
 	if err != nil {
 		return listing{}, err
 	}
-	defer rows.Close()
 	out := listing{tables: []ListedTable{}, excluded: []ExcludedTable{}}
-	for rows.Next() {
-		var table, owner string
-		var mine, keyed, plain bool
-		if err := rows.Scan(&table, &owner, &mine, &keyed, &plain); err != nil {
-			return listing{}, err
-		}
+	for _, t := range rows {
 		if len(out.tables)+len(out.excluded) == maxTables {
 			out.more = true
 			break
 		}
 		switch {
-		case !plain:
-			out.excluded = append(out.excluded, ExcludedTable{Table: printable(table), Owner: unsupportedName})
-		case !mine:
-			out.excluded = append(out.excluded, ExcludedTable{Table: table, Owner: printable(owner)})
+		case !t.Plain:
+			out.excluded = append(out.excluded, ExcludedTable{Table: printable(t.Name), Owner: unsupportedName})
+		case !t.Mine:
+			out.excluded = append(out.excluded, ExcludedTable{Table: t.Name, Owner: printable(t.Owner)})
 		default:
-			out.tables = append(out.tables, ListedTable{Table: table, CanWrite: keyed})
+			out.tables = append(out.tables, ListedTable{Table: t.Name, CanWrite: t.Keyed})
 		}
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // printable replaces what a person cannot read safely in a name from the

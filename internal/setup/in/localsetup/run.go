@@ -18,9 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -100,13 +97,23 @@ func (r *RefusalError) Error() string { return r.Message }
 func refuse(code, message string) *RefusalError { return &RefusalError{Code: code, Message: message} }
 
 // AsRefusal is err as a refusal; anything else is SETUP_FAILED, its text
-// only in the redacted Cause.
+// only in the redacted Cause. The Service's calls return only refusals
+// (Service.refused), so this reads no database error itself.
 func AsRefusal(err error) *RefusalError {
 	var r *RefusalError
 	if errors.As(err, &r) {
 		return r
 	}
-	return setupFailed("setup", err)
+	return failed("setup", err, nil)
+}
+
+// asRefusal is AsRefusal with the database error's message in the Cause.
+func (s *Service) asRefusal(err error) *RefusalError {
+	var r *RefusalError
+	if errors.As(err, &r) {
+		return r
+	}
+	return s.setupFailed("setup", err)
 }
 
 // Challenge is the passkey challenge check hands the page: the connect
@@ -265,7 +272,7 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 	given := req.DatabaseURL
 	req.DatabaseURL = s.verifyByDefault(given)
 	a, err := s.run(ctx, req)
-	return a, scrub(scrub(err, given), req.DatabaseURL)
+	return a, scrub(scrub(s.refused(err), given), req.DatabaseURL)
 }
 
 func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
@@ -320,7 +327,7 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 	files := s.files(req.Agent)
 	var warnings, lines []string
 	wrote := false
-	err = inTx(ctx, conn, func(tx pgx.Tx) error {
+	err = s.inTx(ctx, conn, func(tx Tx) error {
 		database, err := s.currentDatabase(ctx, tx)
 		if err != nil {
 			return err
@@ -337,16 +344,16 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 		script, keep := p.script, p.keep
 		needed, err := passkeyNeeded(ctx, s.be, tx, s.opts.Origin)
 		if err != nil {
-			return setupFailed("read the passkeys", err)
+			return s.setupFailed("read the passkeys", err)
 		}
 		if needed && cred == nil {
 			return refuse(CodePasskeyRequired, "The database has no passkey for this computer yet: create one on this page first. Nothing changed.")
 		}
-		if err := setup.ApplyInitTx(ctx, s.be, s.be.Port(tx), script); err != nil {
-			if r := grantsNotRevoked(err, j.role); r != nil {
+		if err := setup.ApplyInitTx(ctx, s.be, tx.Port(), script); err != nil {
+			if r := s.grantsNotRevoked(err, j.role); r != nil {
 				return r
 			}
-			return setupFailed("install script", err)
+			return s.setupFailed("install script", err)
 		}
 		if !req.Demo {
 			n, err := s.writeLabels(ctx, tx, guardmodel.Names{Prefix: s.opts.Prefix}, j.picks, req, s.opts.Now())
@@ -356,15 +363,15 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 			p.labeled = n
 		}
 		if cred != nil {
-			if err := s.be.RegisterPasskey(ctx, s.be.Port(tx), *cred, req.Passkey.Label); err != nil {
-				return setupFailed("register the passkey", err)
+			if err := s.be.RegisterPasskey(ctx, tx.Port(), *cred, req.Passkey.Label); err != nil {
+				return s.setupFailed("register the passkey", err)
 			}
 		}
 		warnings = script.Warnings
 		if req.Demo {
-			leads, notes, err := s.be.DemoCounts(ctx, s.be.Port(tx))
+			leads, notes, err := s.be.DemoCounts(ctx, tx.Port())
 			if err != nil {
-				return setupFailed("count the sample data", err)
+				return s.setupFailed("count the sample data", err)
 			}
 			lines = []string{fmt.Sprintf("demo ready: leads %d, lead_notes %d", leads, notes)}
 		} else {
@@ -376,7 +383,7 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 		if pinned != nil {
 			// Before the commit, once the SQL succeeded: a pin that stays after
 			// a failed commit was approved and checked.
-			if err := pinned.write(ctx, s.be, tx, s.opts.ConfigPath); err != nil {
+			if err := s.writePin(ctx, pinned, tx); err != nil {
 				return err
 			}
 		}
@@ -400,7 +407,7 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 		if wrote {
 			files.removeCredential() // its role was rolled back
 		}
-		return RunAnswer{}, timeLimit(ctx, AsRefusal(err))
+		return RunAnswer{}, timeLimit(ctx, s.asRefusal(err))
 	}
 	// The credential is never removed after the commit: a run that finds
 	// its role finishes with it (ownRole).
@@ -524,11 +531,11 @@ func (u *unknownOutcomeError) Error() string {
 
 func (u *unknownOutcomeError) Unwrap() error { return u.err }
 
-// inTx runs fn in a transaction on conn. It is pgx.BeginFunc, except that a
+// inTx runs fn in a transaction on conn. It is beginFunc, except that a
 // commit that fails without the server's answer is an unknownOutcomeError; one the
 // server answered (an error of its own, or a commit that became a rollback)
 // is a known failure, and so is fn's.
-func inTx(ctx context.Context, conn *pgx.Conn, fn func(pgx.Tx) error) error {
+func (s *Service) inTx(ctx context.Context, conn Conn, fn func(Tx) error) error {
 	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return err
@@ -538,14 +545,34 @@ func inTx(ctx context.Context, conn *pgx.Conn, fn func(pgx.Tx) error) error {
 		return err
 	}
 	err = tx.Commit(ctx)
-	var pg *pgconn.PgError
 	switch {
 	case err == nil:
 		return nil
-	case errors.As(err, &pg), errors.Is(err, pgx.ErrTxCommitRollback), pgconn.SafeToRetry(err):
+	case s.be.CommitAnswered(err):
 		return err // answered, rolled back, or never sent
 	}
 	return &unknownOutcomeError{err: err}
+}
+
+// beginFunc runs fn in a transaction on conn, as pgx.BeginFunc does:
+// committed when fn returns nil, rolled back when it returns an error,
+// which beginFunc returns; a failed commit is its error as it is, and a
+// rollback that fails after the transaction ended is the error.
+func beginFunc(ctx context.Context, conn Conn, fn func(Tx) error) (err error) {
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if rerr := tx.Rollback(ctx); rerr != nil {
+			err = rerr
+		}
+	}()
+	if ferr := fn(tx); ferr != nil {
+		_ = tx.Rollback(ctx) // pgx.BeginFunc drops this rollback's error
+		return ferr
+	}
+	return tx.Commit(ctx)
 }
 
 // maxLeftTables bounds the list of tables and sequences a GRANTS_NOT_REVOKED names.
@@ -556,12 +583,12 @@ const maxLeftTables = 300
 // a setup grant on a table or sequence not picked now that this admin
 // cannot revoke (guardmodel.UnpickedGrantsDetail, then the relations). nil for any other
 // error.
-func grantsNotRevoked(err error, role string) *RefusalError {
-	var pg *pgconn.PgError
-	if !errors.As(err, &pg) || pg.Code != sqlstateLedgerInputInvalid {
+func (s *Service) grantsNotRevoked(err error, role string) *RefusalError {
+	_, detail, ok := s.be.DatabaseError(err)
+	if !ok || setup.SQLStateOf(err) != sqlstateLedgerInputInvalid {
 		return nil
 	}
-	_, tables, ok := strings.Cut(pg.Detail, guardmodel.UnpickedGrantsDetail)
+	_, tables, ok := strings.Cut(detail, guardmodel.UnpickedGrantsDetail)
 	if !ok {
 		return nil
 	}

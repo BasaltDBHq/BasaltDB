@@ -373,7 +373,7 @@ func newTrustFixture(t *testing.T) *trustFixture {
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix, Configured: true,
 		Now:      func() time.Time { return f.now },
 		Profiles: func() *trustprofile.Set { return trustdir.Set(f.config) },
-		Dial: func(ctx context.Context, dsn string) (*pgx.Conn, error) {
+		Dial: setupbackend.Dialer(func(ctx context.Context, dsn string) (*pgx.Conn, error) {
 			if !strings.Contains(dsn, pinHost) {
 				return pgdial.Connect(ctx, dsn)
 			}
@@ -381,11 +381,11 @@ func newTrustFixture(t *testing.T) *trustFixture {
 				return nil, x509.UnknownAuthorityError{}
 			}
 			return pgdial.Connect(ctx, agentURL)
-		},
-		DialPinned: func(ctx context.Context, _ string, pin *trustprofile.Profile) (*pgx.Conn, error) {
+		}),
+		DialPinned: setupbackend.PinnedDialer(func(ctx context.Context, _ string, pin *trustprofile.Profile) (*pgx.Conn, error) {
 			tf.pinned = append(tf.pinned, pin)
 			return pgdial.Connect(ctx, f.db.URL)
-		},
+		}),
 		Probe: func(_ context.Context, host string, _ int) ([]*x509.Certificate, error) {
 			require.Equal(t, pinHost, host)
 			return *tf.chain.Load(), nil

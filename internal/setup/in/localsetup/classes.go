@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
@@ -150,7 +148,7 @@ func labelsSQL(req Request) string {
 // grants (pkg/setup's writeLabels takes those): the person labels only the
 // columns this page showed, and a role finished after an interrupted run
 // can hold grants beyond the picks, whose columns restPublic must not mark.
-func (s *Service) writeLabels(ctx context.Context, tx pgx.Tx, names guardmodel.Names, picks []TablePick, req Request, now time.Time) (int, error) {
+func (s *Service) writeLabels(ctx context.Context, tx Tx, names guardmodel.Names, picks []TablePick, req Request, now time.Time) (int, error) {
 	if len(req.ColumnClasses) == 0 && !req.RestPublic {
 		return 0, nil
 	}
@@ -162,64 +160,40 @@ func (s *Service) writeLabels(ctx context.Context, tx pgx.Tx, names guardmodel.N
 	for i, p := range picks {
 		tables[i] = p.Table
 	}
-	n, err := s.be.WriteLabels(ctx, tx, names, tables, changes, req.RestPublic, now)
+	n, err := s.be.WriteLabels(ctx, tx.Port(), names, tables, changes, req.RestPublic, now)
 	if errors.Is(err, guardmodel.ErrClassesChanged) {
 		return 0, refuse(CodeClassesChanged, "A column's label changed since the page showed it (someone classified it, or the column is gone), so nothing changed. Read the labels again.")
 	}
 	if err != nil {
-		return 0, setupFailed("write the labels", err)
+		return 0, s.setupFailed("write the labels", err)
 	}
 	return n, nil
 }
-
-// columnsSQL reads the ordinary columns of the picked tables, with their
-// schema and table names apart, in table and column order, one more than
-// the cap.
-const columnsSQL = `SELECT n.nspname::text, c.relname::text, a.attname::text,
-       pg_catalog.format_type(a.atttypid, NULL)
-  FROM pg_catalog.unnest($1::text[]) WITH ORDINALITY AS t(name, ord)
-  JOIN pg_catalog.pg_namespace n ON n.nspname::text = pg_catalog.split_part(t.name, '.', 1)
-  JOIN pg_catalog.pg_class c ON c.relnamespace = n.oid AND c.relname::text = pg_catalog.split_part(t.name, '.', 2)
-  JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
- WHERE a.attnum > 0 AND NOT a.attisdropped AND c.relkind IN ('r', 'p')
- ORDER BY t.ord, a.attnum
- LIMIT $2`
 
 // columns lists the columns of the picked tables, at most 500, with the
 // class each has now and, for a column whose sample could be read in time,
 // the classifier's suggestion. A failed listing fails the check (the person
 // must see the columns a label or restPublic covers); a failed sample or key
 // read only leaves a column without a suggestion.
-func (s *Service) columns(ctx context.Context, conn *pgx.Conn, j job) ([]ColumnInfo, bool, error) {
+func (s *Service) columns(ctx context.Context, conn Conn, j job) ([]ColumnInfo, bool, error) {
 	tables := make([]string, len(j.picks))
 	for i, p := range j.picks {
 		tables[i] = p.Table
 	}
-	rows, err := conn.Query(ctx, columnsSQL, tables, maxColumns+1)
+	// One more than the cap, so a longer list is known.
+	listed, err := s.be.ListColumns(ctx, conn.Port(), tables, maxColumns+1)
 	if err != nil {
 		return nil, false, err
 	}
-	var (
-		cols   []ColumnInfo
-		listed []piistore.Column
-	)
-	for rows.Next() {
-		var c piistore.Column
-		if err := rows.Scan(&c.Namespace, &c.Resource, &c.Name, &c.DataType); err != nil {
-			rows.Close()
-			return nil, false, err
-		}
-		listed = append(listed, c)
+	var cols []ColumnInfo
+	for _, c := range listed {
 		cols = append(cols, ColumnInfo{Table: c.Namespace + "." + c.Resource, Column: c.Name, DataType: c.DataType})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, false, err
 	}
 	more := len(cols) > maxColumns
 	if more {
 		cols, listed = cols[:maxColumns], listed[:maxColumns]
 	}
-	labels, err := s.be.ReadLabels(ctx, conn, guardmodel.Names{Prefix: s.opts.Prefix}, tables)
+	labels, err := s.be.ReadLabels(ctx, conn.Port(), guardmodel.Names{Prefix: s.opts.Prefix}, tables)
 	if err != nil {
 		return nil, false, err
 	}
@@ -247,13 +221,13 @@ func (s *Service) columns(ctx context.Context, conn *pgx.Conn, j job) ([]ColumnI
 // stops after sampleBudget, and a column whose sample fails or runs out of
 // time gets no suggestion. The values stay in memory and are dropped as
 // each column is scored.
-func (s *Service) suggest(ctx context.Context, conn *pgx.Conn, listed []piistore.Column, out []ColumnInfo) {
+func (s *Service) suggest(ctx context.Context, conn Conn, listed []piistore.Column, out []ColumnInfo) {
 	// A failed catalog read leaves the columns' keys unknown; each still
 	// carries its kind, so the check goes on.
-	cc, _ := s.be.PIIColumns(ctx, conn, listed)
+	cc, _ := s.be.PIIColumns(ctx, conn.Port(), listed)
 	sctx, cancel := context.WithTimeout(ctx, sampleBudget)
 	defer cancel()
-	read := s.be.PIISampler(conn, sampleStatementTimeout, sampleChars)
+	read := s.be.PIISampler(conn.Port(), sampleStatementTimeout, sampleChars)
 	if s.opts.SampleColumn != nil {
 		read = func(ctx context.Context, col pii.Column) (pii.Sample, error) {
 			return s.opts.SampleColumn(ctx, conn, col)

@@ -25,10 +25,10 @@ func TestAdminStringVerifiesByDefaultForABuiltInProfile(t *testing.T) {
 		Backend:    setupbackend.Backend{},
 		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin, Users: okUsers{},
 		Profiles: trustprofile.BuiltInSet,
-		Dial: func(_ context.Context, dsn string) (*pgx.Conn, error) {
+		Dial: setupbackend.Dialer(func(_ context.Context, dsn string) (*pgx.Conn, error) {
 			dialed = append(dialed, dsn)
 			return nil, errors.New("not here")
-		},
+		}),
 	})
 	require.NoError(t, err)
 	const supabase = "postgresql://postgres:" + "pw@db.abcdefghijklmnopqrst.supabase.co:5432/postgres"

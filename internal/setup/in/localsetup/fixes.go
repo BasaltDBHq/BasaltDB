@@ -8,9 +8,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
@@ -42,7 +39,7 @@ func nothingToFix() *RefusalError { return refuse(CodeNothingToFix, "There is no
 // anything, after the agent and the admin string's target (validateAgentJob):
 // a guard of this engine's prefix and the agent's role. It returns the
 // database the server names.
-func (s *Service) fixDatabase(ctx context.Context, tx pgx.Tx, j agentJob) (string, error) {
+func (s *Service) fixDatabase(ctx context.Context, tx Tx, j agentJob) (string, error) {
 	database, err := s.currentDatabase(ctx, tx)
 	if err != nil {
 		return "", err
@@ -71,7 +68,7 @@ func (s *Service) checkFix(ctx context.Context, j agentJob) (CheckAnswer, error)
 	defer conn.Close(context.WithoutCancel(ctx))
 	tx, err := conn.Begin(ctx)
 	if err != nil {
-		return CheckAnswer{}, setupFailed("begin", err)
+		return CheckAnswer{}, s.setupFailed("begin", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	database, err := s.fixDatabase(ctx, tx, j)
@@ -126,7 +123,7 @@ func (s *Service) runFix(ctx context.Context, j agentJob) (RunAnswer, error) {
 	}
 	defer conn.Close(context.WithoutCancel(ctx))
 	answer := RunAnswer{Agent: j.req.Agent, Warnings: []string{}, Passkeys: []RegisteredPasskey{}}
-	err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
+	err = beginFunc(ctx, conn, func(tx Tx) error {
 		database, err := s.fixDatabase(ctx, tx, j)
 		if err != nil {
 			return err
@@ -140,7 +137,7 @@ func (s *Service) runFix(ctx context.Context, j agentJob) (RunAnswer, error) {
 		return s.runPasskeyRemove(ctx, tx, j, &answer)
 	})
 	if err != nil {
-		return RunAnswer{}, timeLimit(ctx, AsRefusal(err))
+		return RunAnswer{}, timeLimit(ctx, s.asRefusal(err))
 	}
 	return answer, nil
 }
@@ -150,10 +147,10 @@ func (s *Service) runFix(ctx context.Context, j agentJob) (RunAnswer, error) {
 // checkLabels lists the columns the agent's role may read whose class is
 // UNCLASSIFIED, at most 500, with the classifier's suggestion for each,
 // sampled with the admin connection under the install's limits.
-func (s *Service) checkLabels(ctx context.Context, conn *pgx.Conn, tx pgx.Tx, j agentJob, database string) (CheckAnswer, error) {
-	cols, err := s.be.AgentUnlabeled(ctx, tx, j.names, j.role)
+func (s *Service) checkLabels(ctx context.Context, conn Conn, tx Tx, j agentJob, database string) (CheckAnswer, error) {
+	cols, err := s.be.AgentUnlabeled(ctx, tx.Port(), j.names, j.role)
 	if err != nil {
-		return CheckAnswer{}, setupFailed("read the unlabeled columns", err)
+		return CheckAnswer{}, s.setupFailed("read the unlabeled columns", err)
 	}
 	// The listing is read; the transaction ends before the columns are
 	// sampled on the connection.
@@ -178,7 +175,7 @@ func (s *Service) checkLabels(ctx context.Context, conn *pgx.Conn, tx pgx.Tx, j 
 
 // runLabels writes the person's labels as the install writes them, for the
 // columns the agent's role may read that have no class.
-func (s *Service) runLabels(ctx context.Context, tx pgx.Tx, j agentJob, database string, answer *RunAnswer) error {
+func (s *Service) runLabels(ctx context.Context, tx Tx, j agentJob, database string, answer *RunAnswer) error {
 	if err := checkFixClasses(j.req.ColumnClasses); err != nil {
 		return err
 	}
@@ -186,14 +183,14 @@ func (s *Service) runLabels(ctx context.Context, tx pgx.Tx, j agentJob, database
 	for i, c := range j.req.ColumnClasses {
 		changes[i] = guardmodel.LabelChange{Table: c.Table, Column: c.Column, Label: c.label(), Was: c.Was.guard()}
 	}
-	n, err := s.be.WriteAgentLabels(ctx, tx, j.names, j.role, changes, j.req.RestPublic, s.opts.Now())
+	n, err := s.be.WriteAgentLabels(ctx, tx.Port(), j.names, j.role, changes, j.req.RestPublic, s.opts.Now())
 	switch {
 	case errors.Is(err, guardmodel.ErrLabelNotListed):
 		return refuse(CodeAnswersInvalid, "The column labels are not valid: a column the check does not list. Nothing changed.")
 	case errors.Is(err, guardmodel.ErrClassesChanged):
 		return refuse(CodeClassesChanged, "A column's label changed since the page showed it (someone classified it, or the column is gone), so nothing changed. Read the labels again.")
 	case err != nil:
-		return setupFailed("write the labels", err)
+		return s.setupFailed("write the labels", err)
 	}
 	answer.Lines = []string{fmt.Sprintf("%d columns labeled in the database %s", n, database)}
 	return nil
@@ -227,13 +224,13 @@ func checkFixClasses(classes []ColumnClass) error {
 
 // ---- PASSKEY_ADD: a passkey on this device ----
 
-func (s *Service) checkPasskeyAdd(ctx context.Context, tx pgx.Tx, j agentJob, database string) (CheckAnswer, error) {
+func (s *Service) checkPasskeyAdd(ctx context.Context, tx Tx, j agentJob, database string) (CheckAnswer, error) {
 	if err := s.passkeyRoom(ctx, tx); err != nil {
 		return CheckAnswer{}, err
 	}
 	ch, err := s.challenge(j.req, bound{database: database, host: j.host})
 	if err != nil {
-		return CheckAnswer{}, setupFailed("make the passkey challenge", err)
+		return CheckAnswer{}, s.setupFailed("make the passkey challenge", err)
 	}
 	out := fixAnswer(database, []string{
 		fmt.Sprintf("This adds a passkey on this device for the database %s. It can approve your agents' held writes and sign undos.", database),
@@ -244,10 +241,10 @@ func (s *Service) checkPasskeyAdd(ctx context.Context, tx pgx.Tx, j agentJob, da
 
 // passkeyRoom refuses a database that holds as many active passkeys as
 // the list shows.
-func (s *Service) passkeyRoom(ctx context.Context, tx pgx.Tx) error {
-	keys, err := s.be.ActivePasskeys(ctx, s.be.Port(tx))
+func (s *Service) passkeyRoom(ctx context.Context, tx Tx) error {
+	keys, err := s.be.ActivePasskeys(ctx, tx.Port())
 	if err != nil {
-		return setupFailed("read the passkeys", err)
+		return s.setupFailed("read the passkeys", err)
 	}
 	if len(keys) >= maxActivePasskeys {
 		return refuse(CodeAnswersInvalid, "The database holds 100 passkeys, as many as the list shows. Remove one you no longer use first; nothing changed.")
@@ -255,7 +252,7 @@ func (s *Service) passkeyRoom(ctx context.Context, tx pgx.Tx) error {
 	return nil
 }
 
-func (s *Service) runPasskeyAdd(ctx context.Context, tx pgx.Tx, j agentJob, database string, cred passkey.Credential, answer *RunAnswer) error {
+func (s *Service) runPasskeyAdd(ctx context.Context, tx Tx, j agentJob, database string, cred passkey.Credential, answer *RunAnswer) error {
 	// The challenge was made for this job, agent, database and host.
 	if err := s.checkBinding(j.req, bound{database: database, host: j.host}); err != nil {
 		return err
@@ -263,8 +260,8 @@ func (s *Service) runPasskeyAdd(ctx context.Context, tx pgx.Tx, j agentJob, data
 	if err := s.passkeyRoom(ctx, tx); err != nil {
 		return err
 	}
-	if err := s.be.RegisterPasskey(ctx, s.be.Port(tx), cred, j.req.Passkey.Label); err != nil {
-		return setupFailed("register the passkey", err)
+	if err := s.be.RegisterPasskey(ctx, tx.Port(), cred, j.req.Passkey.Label); err != nil {
+		return s.setupFailed("register the passkey", err)
 	}
 	code, _ := cred.CheckCode()
 	answer.Lines = []string{fmt.Sprintf("passkey added in the database %s", database)}
@@ -281,14 +278,14 @@ func notActive() *RefusalError {
 
 // removedPasskey is the active passkey the request names, with the
 // passkeys of this page's origin that stay.
-func (s *Service) removedPasskey(ctx context.Context, tx pgx.Tx, j agentJob) (guardmodel.RegisteredPasskey, int, error) {
+func (s *Service) removedPasskey(ctx context.Context, tx Tx, j agentJob) (guardmodel.RegisteredPasskey, int, error) {
 	id, err := base64.RawURLEncoding.DecodeString(j.req.CredentialID)
 	if err != nil || len(id) == 0 || len(id) > maxCredentialIDBytes {
 		return guardmodel.RegisteredPasskey{}, 0, notActive()
 	}
-	keys, err := s.be.ActivePasskeys(ctx, s.be.Port(tx))
+	keys, err := s.be.ActivePasskeys(ctx, tx.Port())
 	if err != nil {
-		return guardmodel.RegisteredPasskey{}, 0, setupFailed("read the passkeys", err)
+		return guardmodel.RegisteredPasskey{}, 0, s.setupFailed("read the passkeys", err)
 	}
 	var found *guardmodel.RegisteredPasskey
 	others := 0
@@ -306,7 +303,7 @@ func (s *Service) removedPasskey(ctx context.Context, tx pgx.Tx, j agentJob) (gu
 	return *found, others, nil
 }
 
-func (s *Service) checkPasskeyRemove(ctx context.Context, tx pgx.Tx, j agentJob, database string) (CheckAnswer, error) {
+func (s *Service) checkPasskeyRemove(ctx context.Context, tx Tx, j agentJob, database string) (CheckAnswer, error) {
 	k, others, err := s.removedPasskey(ctx, tx, j)
 	if err != nil {
 		return CheckAnswer{}, err
@@ -320,17 +317,16 @@ func (s *Service) checkPasskeyRemove(ctx context.Context, tx pgx.Tx, j agentJob,
 
 // runPasskeyRemove revokes the passkey, always forced: the admin string is
 // what allows it, so the last passkey can go.
-func (s *Service) runPasskeyRemove(ctx context.Context, tx pgx.Tx, j agentJob, answer *RunAnswer) error {
+func (s *Service) runPasskeyRemove(ctx context.Context, tx Tx, j agentJob, answer *RunAnswer) error {
 	k, others, err := s.removedPasskey(ctx, tx, j)
 	if err != nil {
 		return err
 	}
-	if _, err := s.be.RevokePasskey(ctx, s.be.Port(tx), k.ID, true); err != nil {
-		var pg *pgconn.PgError
-		if errors.As(err, &pg) && pg.Code == sqlstateLedgerInputInvalid {
+	if _, err := s.be.RevokePasskey(ctx, tx.Port(), k.ID, true); err != nil {
+		if setup.SQLStateOf(err) == sqlstateLedgerInputInvalid {
 			return notActive()
 		}
-		return setupFailed("revoke the passkey", err)
+		return s.setupFailed("revoke the passkey", err)
 	}
 	answer.Lines = []string{fmt.Sprintf("passkey %s removed", passkeyLabel(k.Label))}
 	answer.Remaining = &others

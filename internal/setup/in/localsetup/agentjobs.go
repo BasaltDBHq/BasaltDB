@@ -9,9 +9,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
@@ -149,11 +146,11 @@ func (s *Service) validateAgentJob(req Request, run bool) (agentJob, error) {
 	if err != nil {
 		return agentJob{}, err
 	}
-	got, err := adminTarget(req.DatabaseURL)
+	got, err := s.adminTarget(req.DatabaseURL)
 	if err != nil {
 		return agentJob{}, err
 	}
-	want, err := credentialTarget(a)
+	want, err := credentialTarget(a, s.be.ParseTarget)
 	missing := false
 	switch {
 	case err != nil && req.Job == JobRepair && errors.Is(err, os.ErrNotExist):
@@ -182,7 +179,7 @@ func (s *Service) validateAgentJob(req Request, run bool) (agentJob, error) {
 		}
 		// An agent whose credential cannot be read cannot be served
 		// either: it goes with the removal rather than stay behind.
-		if t, err := credentialTarget(o); err != nil || setup.SameDatabase(want, t) {
+		if t, err := credentialTarget(o, s.be.ParseTarget); err != nil || setup.SameDatabase(want, t) {
 			j.others = append(j.others, o.Name)
 		}
 	}
@@ -260,24 +257,25 @@ func checkFields(req Request, run bool) error {
 	return nil
 }
 
-// credentialTarget is the database the agent's credential connects to.
-func credentialTarget(a config.Agent) (setupcode.Target, error) {
+// credentialTarget is the database the agent's credential connects to, as
+// parse reads it (Backend.ParseTarget).
+func credentialTarget(a config.Agent, parse func(dsn string) (setup.Target, error)) (setupcode.Target, error) {
 	dsn, err := config.ReadCredential(a.Store.CredentialFile)
 	if err != nil {
 		return setupcode.Target{}, err
 	}
-	pc, err := pgconn.ParseConfig(dsn)
+	pc, err := parse(dsn)
 	if err != nil {
 		return setupcode.Target{}, err
 	}
-	return setupcode.ConnTarget(pc.Host, int(pc.Port), pc.Database, pc.User), nil
+	return setupcode.ConnTarget(pc.Host, pc.Port, pc.Database, pc.User), nil
 }
 
 // adminTarget is the database the admin connection string connects to, as
 // pgx would connect: one host, its port and the database.
-func adminTarget(admin string) (setupcode.Target, error) {
+func (s *Service) adminTarget(admin string) (setupcode.Target, error) {
 	bad := refuse(CodeConnectionStringRefused, "The admin connection string must be a postgres:// URL with the admin's user and password, the host and the database, as your provider shows it.")
-	pc, err := pgconn.ParseConfig(admin)
+	pc, err := s.be.ParseTarget(admin)
 	if err != nil {
 		return setupcode.Target{}, bad
 	}
@@ -286,7 +284,7 @@ func adminTarget(admin string) (setupcode.Target, error) {
 			return setupcode.Target{}, refuse(CodeConnectionStringRefused, "The admin connection string names more than one host; give the one database host the agent connects to.")
 		}
 	}
-	return setupcode.ConnTarget(pc.Host, int(pc.Port), pc.Database, pc.User), nil
+	return setupcode.ConnTarget(pc.Host, pc.Port, pc.Database, pc.User), nil
 }
 
 // agentPlan is what an UPDATE or REMOVE runs, read in the job's
@@ -311,7 +309,7 @@ func (p agentPlan) sql(job string) string {
 
 // planAgentJob reads the database for j in tx and changes nothing: the
 // refusals, then what the job runs.
-func (s *Service) planAgentJob(ctx context.Context, tx pgx.Tx, j agentJob, database string) (agentPlan, error) {
+func (s *Service) planAgentJob(ctx context.Context, tx Tx, j agentJob, database string) (agentPlan, error) {
 	if j.req.Job == JobUpdate {
 		return s.planUpdate(ctx, tx, j, database)
 	}
@@ -323,10 +321,10 @@ func (s *Service) planAgentJob(ctx context.Context, tx pgx.Tx, j agentJob, datab
 
 // installedPrefix is the prefix of the guard in the database, "" when it
 // has none; another prefix than this engine's is PREFIX_MISMATCH.
-func (s *Service) installedPrefix(ctx context.Context, tx pgx.Tx) (string, error) {
-	prefix, err := s.be.InstalledPrefix(ctx, s.be.Port(tx))
+func (s *Service) installedPrefix(ctx context.Context, tx Tx) (string, error) {
+	prefix, err := s.be.InstalledPrefix(ctx, tx.Port())
 	if err != nil {
-		return "", setupFailed("read the guard prefix", err)
+		return "", s.setupFailed("read the guard prefix", err)
 	}
 	if prefix != "" && prefix != s.opts.Prefix {
 		return "", refuse(CodePrefixMismatch, "This database's Basalt uses the prefix "+prefix+", not "+s.opts.Prefix+".")
@@ -337,14 +335,14 @@ func (s *Service) installedPrefix(ctx context.Context, tx pgx.Tx) (string, error
 // installedGuard is the version of this engine's guard in the database:
 // another prefix is PREFIX_MISMATCH, no guard GUARD_MISSING (what names
 // the job in the message, as "to update").
-func (s *Service) installedGuard(ctx context.Context, tx pgx.Tx, database, what string) (int, error) {
+func (s *Service) installedGuard(ctx context.Context, tx Tx, database, what string) (int, error) {
 	prefix, err := s.installedPrefix(ctx, tx)
 	if err != nil {
 		return 0, err
 	}
-	installed, err := s.be.InstalledVersion(ctx, s.be.Port(tx))
+	installed, err := s.be.InstalledVersion(ctx, tx.Port())
 	if err != nil {
-		return 0, setupFailed("read the guard version", err)
+		return 0, s.setupFailed("read the guard version", err)
 	}
 	if prefix == "" || installed == 0 {
 		return 0, refuse(CodeGuardMissing, fmt.Sprintf("The database %s has no Basalt guard %s. Nothing changed.", database, what))
@@ -354,10 +352,10 @@ func (s *Service) installedGuard(ctx context.Context, tx pgx.Tx, database, what 
 
 // agentRole refuses a database without the agent's role: it is not the
 // agent's database.
-func (s *Service) agentRole(ctx context.Context, tx pgx.Tx, j agentJob, database string) error {
-	exists, err := s.be.AgentRoleExists(ctx, s.be.Port(tx), j.names, j.req.Agent)
+func (s *Service) agentRole(ctx context.Context, tx Tx, j agentJob, database string) error {
+	exists, err := s.be.AgentRoleExists(ctx, tx.Port(), j.names, j.req.Agent)
 	if err != nil {
-		return setupFailed("read the agent role", err)
+		return s.setupFailed("read the agent role", err)
 	}
 	if !exists {
 		return refuse(CodeRoleMissing, fmt.Sprintf("The database %s has no role %s, so it is not the agent's database. Nothing changed.", database, j.role))
@@ -367,7 +365,7 @@ func (s *Service) agentRole(ctx context.Context, tx pgx.Tx, j agentJob, database
 
 // planUpdate plans the basalt_meta migrations the build has and the
 // database lacks, and nothing else: no password, grant, policy or passkey.
-func (s *Service) planUpdate(ctx context.Context, tx pgx.Tx, j agentJob, database string) (agentPlan, error) {
+func (s *Service) planUpdate(ctx context.Context, tx Tx, j agentJob, database string) (agentPlan, error) {
 	installed, err := s.installedGuard(ctx, tx, database, "to update")
 	if err != nil {
 		return agentPlan{}, err
@@ -385,9 +383,9 @@ func (s *Service) planUpdate(ctx context.Context, tx pgx.Tx, j agentJob, databas
 	if err := s.agentRole(ctx, tx, j, database); err != nil {
 		return agentPlan{}, err
 	}
-	script, err := s.be.PlanInit(ctx, s.be.Port(tx), guardmodel.InitOptions{Names: j.names})
+	script, err := s.be.PlanInit(ctx, tx.Port(), guardmodel.InitOptions{Names: j.names})
 	if err != nil {
-		return agentPlan{}, setupFailed("plan the update", err)
+		return agentPlan{}, s.setupFailed("plan the update", err)
 	}
 	return agentPlan{
 		lines: []string{
@@ -403,8 +401,8 @@ func (s *Service) planUpdate(ctx context.Context, tx pgx.Tx, j agentJob, databas
 // says what this engine forgets. A database BasaltDB is already gone from
 // (a removal whose engine.json write failed) plans only IF EXISTS drops,
 // and the run finishes the removal on this engine.
-func (s *Service) planRemove(ctx context.Context, tx pgx.Tx, j agentJob) (agentPlan, error) {
-	rp, err := setup.PlanRemove(ctx, s.be, s.be.Port(tx), s.opts.Prefix)
+func (s *Service) planRemove(ctx context.Context, tx Tx, j agentJob) (agentPlan, error) {
+	rp, err := setup.PlanRemove(ctx, s.be, tx.Port(), s.opts.Prefix)
 	if err != nil {
 		return agentPlan{}, err
 	}
@@ -446,7 +444,7 @@ func (s *Service) checkAgentJob(ctx context.Context, req Request) (CheckAnswer, 
 	defer conn.Close(context.WithoutCancel(ctx))
 	tx, err := conn.Begin(ctx)
 	if err != nil {
-		return CheckAnswer{}, setupFailed("begin", err)
+		return CheckAnswer{}, s.setupFailed("begin", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	database, err := s.currentDatabase(ctx, tx)
@@ -489,7 +487,7 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 	var p agentPlan
 	var database string
 	demoKept := false
-	err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
+	err = beginFunc(ctx, conn, func(tx Tx) error {
 		if database, err = s.currentDatabase(ctx, tx); err != nil {
 			return err
 		}
@@ -497,9 +495,9 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 			// The typed name is read against the database inside the
 			// transaction, before anything is planned or dropped
 			// (setup.RunRemove, as the connect page's removal).
-			rp, kept, err := setup.RunRemove(ctx, s.be, s.be.Port(tx), s.opts.Prefix, req.ConfirmName)
+			rp, kept, err := setup.RunRemove(ctx, s.be, tx.Port(), s.opts.Prefix, req.ConfirmName)
 			if err != nil {
-				return removeRefusal(err)
+				return s.removeRefusal(err)
 			}
 			p, demoKept = agentPlan{remove: rp, removed: append([]string{j.req.Agent}, j.others...)}, kept
 			return nil
@@ -507,13 +505,13 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 		if p, err = s.planAgentJob(ctx, tx, j, database); err != nil {
 			return err
 		}
-		if err := setup.ApplyInitTx(ctx, s.be, s.be.Port(tx), p.script); err != nil {
-			return setupFailed("update script", err)
+		if err := setup.ApplyInitTx(ctx, s.be, tx.Port(), p.script); err != nil {
+			return s.setupFailed("update script", err)
 		}
 		return nil
 	})
 	if err != nil {
-		return RunAnswer{}, timeLimit(ctx, AsRefusal(err))
+		return RunAnswer{}, timeLimit(ctx, s.asRefusal(err))
 	}
 	answer := RunAnswer{Agent: req.Agent, Warnings: []string{}, Passkeys: []RegisteredPasskey{}}
 	if req.Job == JobUpdate {
@@ -537,16 +535,16 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 }
 
 // removeRefusal is an internal/setup removal refusal as this page's.
-func removeRefusal(err error) error {
+func (s *Service) removeRefusal(err error) error {
 	var r *setup.SetuprunRefusalError
 	if errors.As(err, &r) {
 		out := refuse(r.Code, r.Message)
 		if r.Code == CodeSetupFailed {
-			out.Cause = causeOf("remove", r.Err)
+			out.Cause = causeOf("remove", r.Err, s.be.DatabaseError)
 		}
 		return out
 	}
-	return setupFailed("remove", err)
+	return s.setupFailed("remove", err)
 }
 
 // forget removes agents from engine.json, then deletes their credential

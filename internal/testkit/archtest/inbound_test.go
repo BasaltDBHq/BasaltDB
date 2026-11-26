@@ -1,9 +1,16 @@
 package archtest
 
 import (
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"os"
+	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 // inboundReachBaseline pins the outbound packages an inbound adapter links
@@ -207,5 +214,112 @@ func TestInboundOnlyTranslates(t *testing.T) {
 	}
 	for _, s := range stale {
 		t.Errorf("crossDomainInbound lists %s, which no longer exists: remove it", s)
+	}
+}
+
+// inboundDriverBaseline pins the non-test files of inbound packages that
+// import a database driver today, with the reason. The list only shrinks: a
+// new file fails, and so does a listed file that no longer imports one.
+var inboundDriverBaseline = map[string]string{
+	"internal/handoff/in/handoffcli/login.go":    "maps a pgconn.PgError from the login probe to a refusal",
+	"internal/platform/cli/host.go":              "its host port returns a *pgx.Conn",
+	"internal/platform/cli/io.go":                "its querier port uses pgx rows and command tags",
+	"internal/platform/cli/trust.go":             "parses the connection string and returns a *pgx.Conn",
+	"internal/setup/in/localsetup/agentjobs.go":  "runs the agent job SQL in a transaction",
+	"internal/setup/in/localsetup/backend.go":    "runs setup SQL on a pgx connection and transaction",
+	"internal/setup/in/localsetup/cause.go":      "reads the SQLSTATE of a pgconn.PgError",
+	"internal/setup/in/localsetup/classes.go":    "reads columns and writes labels with SQL",
+	"internal/setup/in/localsetup/confirm.go":    "reads the confirm facts with SQL",
+	"internal/setup/in/localsetup/doctor.go":     "runs the doctor checks with SQL",
+	"internal/setup/in/localsetup/fixes.go":      "applies fixes in a transaction",
+	"internal/setup/in/localsetup/localsetup.go": "checks role membership and runs setup SQL",
+	"internal/setup/in/localsetup/pin.go":        "dials the pinned admin connection",
+	"internal/setup/in/localsetup/repair.go":     "repairs the guard in a transaction",
+	"internal/setup/in/localsetup/run.go":        "runs the setup transaction",
+	"internal/setup/in/localsetup/trustfix.go":   "applies the trust fix in a transaction",
+}
+
+// driverImport reports whether an import path is a database driver: pgx and
+// its subpackages, the old jackc/pgconn and pgtype modules, and database/sql.
+func driverImport(p string) bool {
+	return p == "github.com/jackc/pgx" || strings.HasPrefix(p, "github.com/jackc/pgx/") ||
+		p == "github.com/jackc/pgconn" || strings.HasPrefix(p, "github.com/jackc/pgconn/") ||
+		p == "github.com/jackc/pgtype" || strings.HasPrefix(p, "github.com/jackc/pgtype/") ||
+		p == "database/sql" || strings.HasPrefix(p, "database/sql/")
+}
+
+// inboundDriverFiles returns, sorted, the non-test Go files of inbound
+// packages under internal/ in fsys that import a database driver directly.
+func inboundDriverFiles(t *testing.T, fsys fs.FS) []string {
+	t.Helper()
+	var out []string
+	err := fs.WalkDir(fsys, "internal", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+			return nil
+		}
+		dir := path.Dir(p)
+		if layerOf(dir) != lInbound || slices.Contains(testHelpers, dir) {
+			return nil
+		}
+		src, err := fs.ReadFile(fsys, p)
+		if err != nil {
+			return err
+		}
+		f, err := parser.ParseFile(token.NewFileSet(), p, src, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, imp := range f.Imports {
+			if ip, _ := strconv.Unquote(imp.Path.Value); driverImport(ip) {
+				out = append(out, p)
+				break
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scanning inbound packages: %v", err)
+	}
+	slices.Sort(out)
+	return out
+}
+
+func TestInboundDriverCheckCatchesAProbe(t *testing.T) {
+	fsys := fstest.MapFS{
+		"internal/agent/in/agentmcp/a.go":      {Data: []byte("package agentmcp\nimport \"github.com/jackc/pgx/v5/pgconn\"\n")},
+		"internal/agent/in/agentmcp/a_test.go": {Data: []byte("package agentmcp\nimport \"database/sql\"\n")},
+		"internal/agent/in/agentmcp/b.go":      {Data: []byte("package agentmcp\nimport \"fmt\"\n")},
+		"internal/platform/cli/c.go":           {Data: []byte("package cli\nimport sq \"database/sql\"\n")},
+		"internal/platform/cli/d.go":           {Data: []byte("package cli\nimport \"github.com/jackc/pgconn\"\n")},
+		"internal/platform/postgres/e.go":      {Data: []byte("package postgres\nimport \"github.com/jackc/pgx/v5\"\n")},
+		"internal/agent/f.go":                  {Data: []byte("package agent\nimport \"github.com/jackc/pgtype\"\n")},
+		"internal/testkit/connecttest/g.go":    {Data: []byte("package connecttest\nimport \"database/sql\"\n")},
+	}
+	got := inboundDriverFiles(t, fsys)
+	want := []string{"internal/agent/in/agentmcp/a.go", "internal/platform/cli/c.go", "internal/platform/cli/d.go"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	added, stale := pinnedDiff(got, []string{"internal/platform/cli/c.go", "internal/platform/cli/gone.go"})
+	if !slices.Equal(added, []string{"internal/agent/in/agentmcp/a.go", "internal/platform/cli/d.go"}) || !slices.Equal(stale, []string{"internal/platform/cli/gone.go"}) {
+		t.Errorf("pinnedDiff: added %q, stale %q", added, stale)
+	}
+}
+
+func TestInboundImportsNoDriver(t *testing.T) {
+	got := inboundDriverFiles(t, os.DirFS(moduleRoot(t)))
+	pinned := make([]string, 0, len(inboundDriverBaseline))
+	for f := range inboundDriverBaseline {
+		pinned = append(pinned, f)
+	}
+	added, stale := pinnedDiff(got, pinned)
+	for _, a := range added {
+		t.Errorf("an inbound file imports a database driver: %s\n\tinbound translates and calls a service; SQL belongs in an outbound adapter behind the service's port", a)
+	}
+	for _, s := range stale {
+		t.Errorf("inboundDriverBaseline lists %s, which no longer imports a driver: remove it", s)
 	}
 }

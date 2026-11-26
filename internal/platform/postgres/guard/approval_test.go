@@ -94,8 +94,7 @@ func TestApprovalFlow(t *testing.T) {
 	const stmt = `DELETE FROM public.leads WHERE id = $1`
 	params := []any{3}
 
-	requireApprovalRefused(t, applyApproved(context.Background(), a.Conn, in, uuid.Must(uuid.NewV7()), stmt, params),
-		guard.NoSuchApproval, "no such approval")
+	requireNoSuchApproval(t, applyApproved(context.Background(), a.Conn, in, uuid.Must(uuid.NewV7()), stmt, params))
 	err := pgx.BeginFunc(context.Background(), a.Conn, func(tx pgx.Tx) error {
 		if err := guard.BeginGuarded(context.Background(), tx, in, guardtest.Timeout); err != nil {
 			return err
@@ -133,6 +132,10 @@ func TestApprovalFlow(t *testing.T) {
 		forger.ID = p.ID
 		_, err = guard.SubmitApproval(context.Background(), a.Conn, held.ApprovalID, sign(t, forger, held, nil))
 		requireInvalid(t, err, "bad passkey signature")
+	})
+	t.Run("an unknown approval", func(t *testing.T) {
+		_, err := guard.SubmitApproval(context.Background(), a.Conn, uuid.Must(uuid.NewV7()), sign(t, p, held, nil))
+		requireNoSuchApproval(t, err)
 	})
 	t.Run("an unregistered passkey", func(t *testing.T) {
 		stranger, err := passkeytest.New(passkey.Production)

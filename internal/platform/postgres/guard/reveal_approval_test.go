@@ -85,6 +85,8 @@ type rerun struct {
 	in         *guard.Intent
 	skipFinish bool
 	after      func(ctx context.Context, tx pgx.Tx)
+	// id is the approval reveal_approval_rows names; the held one when nil.
+	id uuid.UUID
 }
 
 func (e heldEnv) reveal(t *testing.T, ticket []byte, r rerun) ([]approval.RevealedRow, error) {
@@ -114,7 +116,11 @@ func (e heldEnv) reveal(t *testing.T, ticket []byte, r rerun) ([]approval.Reveal
 	// deferred rollback runs cleanly.
 	_, err = tx.Exec(ctx, `SAVEPOINT reveal`)
 	require.NoError(t, err)
-	rows, rerr := guard.RevealApprovalRows(ctx, tx, e.held.ApprovalID, ticket)
+	id := e.held.ApprovalID
+	if r.id != uuid.Nil {
+		id = r.id
+	}
+	rows, rerr := guard.RevealApprovalRows(ctx, tx, id, ticket)
 	if rerr != nil {
 		_, err = tx.Exec(ctx, `ROLLBACK TO SAVEPOINT reveal`)
 		require.NoError(t, err)
@@ -137,12 +143,12 @@ func requireApprovalInvalid(t *testing.T, err error, detail string) {
 	require.Contains(t, scopeErrorText(t, err), "|"+detail+"|")
 }
 
-// requireApprovalRefused is APPROVAL_INVALID with the typed detail code
-// and the hint hint (version 13).
-func requireApprovalRefused(t *testing.T, err error, code, hint string) {
+// requireNoSuchApproval is APPROVAL_INVALID with the typed detail
+// NO_SUCH_APPROVAL and the sentence as its hint (version 13).
+func requireNoSuchApproval(t *testing.T, err error) {
 	t.Helper()
 	requireCode(t, err, guard.CodeApprovalInvalid)
-	require.True(t, strings.HasSuffix(scopeErrorText(t, err), "|"+code+"|"+hint), scopeErrorText(t, err))
+	require.True(t, strings.HasSuffix(scopeErrorText(t, err), "|"+guard.NoSuchApproval+"|no such approval"), scopeErrorText(t, err))
 }
 
 // The person's proof opens a ticket; a re-run preview with it returns the
@@ -189,6 +195,10 @@ func TestRevealApprovalRows(t *testing.T) {
 	// A second re-run in the window works with the same ticket.
 	_, err = e.reveal(t, ticket, rerun{})
 	require.NoError(t, err)
+
+	// An approval the role does not hold, or none, is the typed detail.
+	_, err = e.reveal(t, ticket, rerun{id: uuid.Must(uuid.NewV7())})
+	requireNoSuchApproval(t, err)
 
 	_, err = guard.SubmitApproval(ctx, e.a.Conn, e.held.ApprovalID, sign(t, e.p, e.held, nil))
 	require.NoError(t, err)
@@ -299,10 +309,10 @@ func TestOpenRevealRefused(t *testing.T) {
 	helper := e.d.NewAgent(t, "helper", leads, leads)
 	_, theirs := guard.OpenReveal(ctx, helper.Conn, id, valid, key)
 	_, unknown := guard.OpenReveal(ctx, e.a.Conn, uuid.Must(uuid.NewV7()), valid, key)
-	requireApprovalRefused(t, theirs, guard.NoSuchApproval, "no such approval")
+	requireNoSuchApproval(t, theirs)
 	require.Equal(t, scopeErrorText(t, theirs, id), scopeErrorText(t, unknown))
 	_, err = guard.RevealNonce(ctx, helper.Conn, approval.KindApprove, id)
-	requireApprovalRefused(t, err, guard.NoSuchApproval, "no such approval")
+	requireNoSuchApproval(t, err)
 
 	// Approved, then used: no reveal either way.
 	_, err = guard.SubmitApproval(ctx, e.a.Conn, id, sign(t, e.p, e.held, nil))

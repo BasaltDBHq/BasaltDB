@@ -188,5 +188,5 @@ func truncate(s string, n int) string {
 }
 
 func newID() uuid.UUID {
-	return uuid.Must(uuid.NewV7())
+	return uuid.Must(uuid.NewV7()) //nolint:forbidigo // baseline: move to internal/lib/uniqueid
 }

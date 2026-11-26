@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -102,13 +101,9 @@ func runKeyset(b sq.SelectBuilder, desc bool, cursor string) (sq.SelectBuilder, 
 	if cursor == "" {
 		return b, nil
 	}
-	raw, err := pagination.DecodeIDCursor(cursor)
+	id, err := pagination.DecodeIDCursor(cursor)
 	if err != nil {
 		return b, err
-	}
-	id, err := uuid.Parse(raw)
-	if err != nil {
-		return b, fmt.Errorf("invalid cursor: %w", err)
 	}
 	if desc {
 		return b.Where(sq.Lt{runIDColumn: id.String()}), nil

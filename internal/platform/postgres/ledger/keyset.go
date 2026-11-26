@@ -18,9 +18,9 @@ func applyIDKeyset(b sq.SelectBuilder, column string, desc bool, cursor string) 
 		return b, err
 	}
 	if desc {
-		return b.Where(fmt.Sprintf("%s < ?", column), id), nil
+		return b.Where(fmt.Sprintf("%s < ?", column), id.String()), nil
 	}
-	return b.Where(fmt.Sprintf("%s > ?", column), id), nil
+	return b.Where(fmt.Sprintf("%s > ?", column), id.String()), nil
 }
 
 // applySeqKeyset adds a keyset predicate on monotonic seq (ASC).

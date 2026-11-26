@@ -132,12 +132,12 @@ func NewService(d Deps) *Service {
 // approval records from the store, so it comes first, then revert, approval
 // and the agent.
 func (s *Service) wire() {
-	s.status = statussvc.NewService(s.statusCore(), &s.deps.Status)
+	s.status = statussvc.New(s.statusCore(), &s.deps.Status)
 	s.delivery = linksvc.New(s.linksCore(), &s.deps.Delivery, s.approvalReads(), s.Failure)
 	s.revert = revertsvc.New(s.revertCore(), s.revertStoreSet(), &s.deps.Revert.Deps, s.deps.Core.Store, s.delivery, s.statementLimit(), s)
 	s.approval = approvalsvc.New(s.approvalCore(), s.approvalStoreSet(), &s.deps.Approval.Deps, s.delivery, s.revert, runChecker{s.deps.Core.Store}, s)
 	s.agent = agentsvc.New(s.agentCore(), s.agentStoreSet(), s.deps.Agent.PII, s.status.UpdateInfo, s.delivery, s.approval, s.status, s, s)
-	s.plugin = pluginsvc.NewService(s.pluginCore(), &s.deps.Plugin, s.delivery, s.status, s)
+	s.plugin = pluginsvc.New(s.pluginCore(), &s.deps.Plugin, s.delivery, s.status, s)
 	s.ledger = ledgersvc.NewReads(s.deps.Core.Store)
 }
 

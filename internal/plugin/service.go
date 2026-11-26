@@ -74,7 +74,7 @@ type Admitter interface {
 	Admit(ctx context.Context) error
 }
 
-// NewService builds the plugin use case over core and deps.
-func NewService(core Core, deps *Deps, delivery Delivery, status StatusView, admit Admitter) *Service {
+// New builds the plugin use case over core and deps.
+func New(core Core, deps *Deps, delivery Delivery, status StatusView, admit Admitter) *Service {
 	return &Service{core: core, deps: deps, delivery: delivery, status: status, admit: admit}
 }

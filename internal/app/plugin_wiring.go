@@ -94,7 +94,7 @@ func (o pluginOptions) engine() plugin.Options {
 }
 
 func newEnginePlugins(cfg config.Config, configPath string, o pluginOptions, log *slog.Logger) *plugin.Plugins {
-	return plugin.New(cfg, configPath, o.engine(), log)
+	return plugin.NewPlugins(cfg, configPath, o.engine(), log)
 }
 
 func newEnginePluginsFor(cfg config.Config, configPath string, o pluginOptions, log *slog.Logger) *plugin.Plugins {

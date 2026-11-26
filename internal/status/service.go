@@ -160,10 +160,10 @@ type Service struct {
 	pending *handoff.SetupKeeper
 }
 
-// NewService returns the status use case over core and deps. It fills in
+// New returns the status use case over core and deps. It fills in
 // what deps leaves out: no probe reads a current guard, no finisher only
 // forgets the setup in memory, and the upgrade check asks the probe.
-func NewService(core Core, deps *Deps) *Service {
+func New(core Core, deps *Deps) *Service {
 	if deps.Probe == nil {
 		deps.Probe = noProbe{latest: deps.LatestGuardVersion}
 	}

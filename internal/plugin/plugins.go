@@ -151,10 +151,10 @@ type Plugins struct {
 	serving PluginServing
 }
 
-// New verifies the enabled plugin entries of cfg, read from
+// NewPlugins verifies the enabled plugin entries of cfg, read from
 // configPath. It returns nil, touching nothing on disk, when no entry is
 // enabled for an agent.
-func New(cfg config.Config, configPath string, o Options, log *slog.Logger) *Plugins {
+func NewPlugins(cfg config.Config, configPath string, o Options, log *slog.Logger) *Plugins {
 	if len(configuredPlugins(cfg)) == 0 && o.kept == nil {
 		return nil
 	}

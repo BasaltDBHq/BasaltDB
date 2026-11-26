@@ -140,16 +140,11 @@ func (l localStatus) report(ctx context.Context) (guidance.StatusReport, error) 
 
 func (s statusDeps) report(ctx context.Context) (guidance.StatusReport, error) {
 	s.cmds = s.cmds.OperatedBy(s.operatedBy)
-	r := guidance.StatusReport{
-		Agent: s.name, OperatedBy: OperatedBy(s.operatedBy), Enforcement: Enforcement(s.operatedBy, s.sameUser),
-		Engine: guidance.EngineStatus{Reachable: s.engineReachable, Build: s.build, StartedBy: StartedByEnum(s.startedBy)},
-		Pages:  guidance.PagesStatus{Served: s.pagesOrigin != "", URL: s.pagesBase},
-		Update: s.update,
-	}
-	if s.vault != nil {
-		v := s.vault.VaultStatus()
-		r.Vault = &v
-	}
+	r := Head{
+		Agent: s.name, OperatedBy: s.operatedBy, SameUser: s.sameUser, Build: s.build, StartedBy: s.startedBy,
+		PagesBase: s.pagesBase, PagesOrigin: s.pagesOrigin, Vault: s.vault,
+	}.report()
+	r.Engine.Reachable, r.Update = s.engineReachable, s.update
 	ps := guidance.Problems{Cmds: s.cmds, ConnectBudget: s.connectBudget}
 	if s.devLocalPages {
 		ps.Add(problemDevLocalPages, "the pages are development pages on this machine, not the portal",
@@ -211,12 +206,7 @@ func (s statusDeps) report(ctx context.Context) (guidance.StatusReport, error) {
 	case s.engineKey != nil:
 		r.EngineRecord = s.engineRecordStatus(ctx, *s.engineKey, readable, &ps)
 	}
-	list, err := ps.Sorted()
-	if err != nil {
-		return guidance.StatusReport{}, err
-	}
-	r.Problems, r.Ready = list, Ready(list)
-	return r, nil
+	return finish(r, ps)
 }
 
 func configAgent(cfg *config.Config, name string) (config.Agent, bool) {

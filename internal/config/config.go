@@ -166,11 +166,8 @@ func (c Config) PIIOrDefault() PII {
 	return p
 }
 
-// bytesPerMB converts pii.maxMemoryMB.
-const bytesPerMB = 1 << 20
-
 // MaxMemoryBytes is MaxMemoryMB in bytes.
-func (p PII) MaxMemoryBytes() int64 { return int64(p.MaxMemoryMB) * bytesPerMB }
+func (p PII) MaxMemoryBytes() int64 { return int64(p.MaxMemoryMB) * pii.BytesPerMB }
 
 // Mode is how the engine runs (owner decision SM-3).
 type Mode string

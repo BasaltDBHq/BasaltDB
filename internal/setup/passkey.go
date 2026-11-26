@@ -12,7 +12,7 @@ import (
 )
 
 // MaxPasskeyLabel is the registration request's label limit in bytes.
-const MaxPasskeyLabel = 64
+const MaxPasskeyLabel = passkey.MaxLabelLen
 
 // NewRegistrationRequest draws a passkey registration request from rnd
 // (crypto/rand.Reader outside tests) for a passkey named label on

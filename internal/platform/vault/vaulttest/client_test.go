@@ -14,6 +14,8 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 )
 
 // A minimal engine and page, written from the contract, to drive the fake.
@@ -97,7 +99,7 @@ func dialRaw(t *testing.T, v *Vault, engineID, keyHeader string) (*websocket.Con
 	}
 	require.Equal(t, websocket.MessageText, typ)
 	var c Challenge
-	require.NoError(t, decodeStrict(data, &c))
+	require.NoError(t, strictjson.Decode(data, &c))
 	require.Equal(t, TypeChallenge, c.Type)
 	return conn, c.Challenge, 0
 }

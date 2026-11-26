@@ -3,11 +3,7 @@ package handoff
 import (
 	"encoding/json"
 	"net/netip"
-	"os"
-	"path/filepath"
 	"time"
-
-	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
 // Cached is what the engine keeps of its last PREVIEW probe across
@@ -34,22 +30,28 @@ type ProbeCache interface {
 	Save(c Cached) error
 }
 
-// FileCache is a ProbeCache in the engine's state directory, a 0600 file
-// of the engine's user.
-type FileCache struct{ Dir string }
+// CacheFile is the file a FileCache keeps its probe in, read and written
+// whole (handofffiles.ProbeCacheFile in the engine's state directory).
+type CacheFile interface {
+	Read() (string, error)
+	Write(raw []byte) error
+}
 
-// ProbeCacheName is FileCache's file in the state directory.
-const ProbeCacheName = "connect-probe.json"
+// FileCache is a ProbeCache in one file.
+type FileCache struct{ file CacheFile }
 
-// cacheDirMode is the state directory's mode when Save makes it.
-const cacheDirMode = 0o700
-
-func (f FileCache) path() string { return filepath.Join(f.Dir, ProbeCacheName) }
+// NewFileCache is the ProbeCache in f. It panics on a nil f.
+func NewFileCache(f CacheFile) FileCache {
+	if f == nil {
+		panic("handoff: the probe cache needs its file")
+	}
+	return FileCache{file: f}
+}
 
 // Load is the cached probe of setupID; false for none, another setup, or a
 // file it cannot read.
 func (f FileCache) Load(setupID string) (Cached, bool) {
-	raw, _, err := config.ReadOwnCredential(f.path())
+	raw, err := f.file.Read()
 	if err != nil {
 		return Cached{}, false
 	}
@@ -66,8 +68,5 @@ func (f FileCache) Save(c Cached) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(f.Dir, cacheDirMode); err != nil {
-		return err
-	}
-	return config.WriteFile(f.path(), raw)
+	return f.file.Write(raw)
 }

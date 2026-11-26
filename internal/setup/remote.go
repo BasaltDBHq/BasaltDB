@@ -15,16 +15,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
 
-const (
-	// PendingSuffix names the new password's file while an AGENT code that
-	// rotates it waits: the old password keeps working until the person runs
-	// the code (RI-5).
-	PendingSuffix = ".pending"
-	// LockSuffix names the lock file that keeps two runs of init --remote
-	// for one agent apart.
-	LockSuffix = ".lock"
-)
-
 // RemoteVaultWhy says why the vault is off by default for an engine
 // another init made person-operated.
 const RemoteVaultWhy = "default for a person-operated engine"

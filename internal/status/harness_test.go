@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
@@ -172,7 +173,7 @@ const statusCredential = "/etc/basalt/agents/bot.url"
 func testEngineHost() EngineHost {
 	return EngineHost{
 		LatestGuardVersion: guard.LatestVersion,
-		ReadLastStop:       engine.ReadLastStop,
+		ReadLastStop:       engine.LastStopReader(engineos.OS{}),
 		StartHoldOffUntil: func(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool) {
 			return laststop.StartHoldOffUntil(servicespec.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
 		},

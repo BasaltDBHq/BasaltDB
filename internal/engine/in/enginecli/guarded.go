@@ -39,6 +39,8 @@ type Host interface {
 	ChildStarter(startedFrom, configPath, lockPath, stateDir string, io cli.Stdio, log *slog.Logger) func(context.Context, string) (func() error, error)
 	// RunServiceAt is basalt service on the engine config at configPath.
 	RunServiceAt(ctx context.Context, args []string, io cli.Stdio, configPath string) int
+	// SocketAgents are the agents with a socket in dir.
+	SocketAgents(dir string) []string
 }
 
 // Guarded runs f, which runs the command line args, and turns a panic into

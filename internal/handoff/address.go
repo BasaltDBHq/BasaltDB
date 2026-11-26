@@ -10,39 +10,16 @@ package handoff
 import (
 	"context"
 	"errors"
-	"fmt"
-	"net"
 	"net/netip"
 	"slices"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
-// Resolver looks up a host name. *net.Resolver's LookupNetIP is one.
+// Resolver looks up a host name. *net.Resolver's LookupNetIP is one, and
+// lib/sysdns's outside tests.
 type Resolver interface {
 	LookupNetIP(ctx context.Context, network, host string) ([]netip.Addr, error)
-}
-
-// SystemResolver resolves with the system's DNS. It asks for A and AAAA
-// records separately, so an A record is an IPv4 address.
-type SystemResolver struct{ R *net.Resolver }
-
-// LookupNetIP returns the A addresses and then the AAAA addresses of host.
-func (s SystemResolver) LookupNetIP(ctx context.Context, _, host string) ([]netip.Addr, error) {
-	r := s.R
-	if r == nil {
-		r = net.DefaultResolver
-	}
-	v4, err4 := r.LookupNetIP(ctx, "ip4", host)
-	v6, err6 := r.LookupNetIP(ctx, "ip6", host)
-	if err4 != nil && err6 != nil {
-		return nil, fmt.Errorf("resolve the database's host: %w", errors.Join(err4, err6))
-	}
-	out := make([]netip.Addr, 0, len(v4)+len(v6))
-	for _, a := range v4 {
-		out = append(out, a.Unmap())
-	}
-	return append(out, v6...), nil
 }
 
 // refusedPrefixes are the ranges the engine never connects a collected

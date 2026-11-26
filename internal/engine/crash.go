@@ -41,8 +41,10 @@ type StarterHost interface {
 	LastStopStartHoldOffUntil(rec servicespec.LastStopFileRecord, configPath string, now time.Time) (time.Time, bool)
 }
 
-// Terminal is what the engine's use cases read from the CLI shell.
+// Terminal is what the engine's use cases read from the CLI shell, and the
+// machine's files it reaches.
 type Terminal interface {
+	Machine
 	// TerminalText is s safe to print on a terminal.
 	TerminalText(s string) string
 	// InfoOwnerUID is the owner of the file fi describes; false where the

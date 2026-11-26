@@ -23,7 +23,7 @@ func TestAgentHostDepsFillsEveryAdapterPort(t *testing.T) {
 	supplied := []string{
 		"Core.Errors.InvalidParams", "Core.Errors.InvalidIntent", "Core.Errors.RowTooLarge", "Core.ServiceManager",
 		"Agent.Record", "Revert.AfterAnswer", "Revert.RotateSession",
-		"Delivery.VaultConflict", "Delivery.ErrVaultNotConnected", "Status.CrashReports",
+		"Delivery.VaultConflict", "Delivery.ErrVaultNotConnected", "Status.CrashReports", "Status.CrashFile",
 		"Status.LatestGuardVersion", "Status.UpdateMessage", "Status.StartHoldOffUntil",
 	}
 	for _, name := range supplied {

@@ -54,6 +54,8 @@ var outImportBaseline = []string{
 // pkgLogicBaseline lists the functions under pkg/ that are more than a
 // forward today, as "<package>: <function>".
 var pkgLogicBaseline = []string{
+	"pkg/setup: (*Passkey).verified",
+	"pkg/setup: (Description).AcceptsTrustRoot",
 	"pkg/setup: (PasskeyRequest).Link",
 	"pkg/setup: (PasskeyRequest).Verify",
 	"pkg/setup: activePasskeys",
@@ -88,6 +90,7 @@ var pkgLogicBaseline = []string{
 	"pkg/setup: RunRemove",
 	"pkg/setup: sameTx",
 	"pkg/setup: writeLabels",
+	"pkg/trustpin: (Seen).Pinnable",
 	"pkg/trustpin: Approved",
 	"pkg/trustpin: bidiControl",
 	"pkg/trustpin: Check",
@@ -100,9 +103,11 @@ var pkgLogicBaseline = []string{
 	"pkg/trustpin: ValidSHA256",
 	"pkg/trustprofile: (*Profile).Certificates",
 	"pkg/trustprofile: (*Profile).matchLen",
+	"pkg/trustprofile: (*Profile).VerifiesCA",
 	"pkg/trustprofile: (*Set).For",
 	"pkg/trustprofile: (*Set).Named",
 	"pkg/trustprofile: (*Set).Replacing",
+	"pkg/trustprofile: allNumeric",
 	"pkg/trustprofile: BuiltIns",
 	"pkg/trustprofile: BuiltInSet",
 	"pkg/trustprofile: CertificateNotVerified",
@@ -139,6 +144,8 @@ var pkgLogicBaseline = []string{
 	"pkg/trustprofile: SetSystemRootsForTest",
 	"pkg/trustprofile: Trust",
 	"pkg/trustprofile: uniqueByName",
+	"pkg/trustprofile: ValidFileName",
+	"pkg/trustprofile: verifiesHost",
 	"pkg/trustprofile: VerifyFullByDefault",
 	"pkg/trustprofile: withSystem",
 	"pkg/trustprofile/trustprofiletest: Chain",
@@ -200,9 +207,28 @@ func funcName(fd *ast.FuncDecl) string {
 	return fd.Name.Name
 }
 
+// counted turns entries into one line per distinct entry, with "(N times)"
+// when it occurs more than once, so a second occurrence in an entry the
+// baseline lists already is a new line and fails.
+func counted(entries []string) []string {
+	n := map[string]int{}
+	for _, e := range entries {
+		n[e]++
+	}
+	out := make([]string, 0, len(n))
+	for e, c := range n {
+		if c > 1 {
+			e = fmt.Sprintf("%s (%d times)", e, c)
+		}
+		out = append(out, e)
+	}
+	slices.Sort(out)
+	return out
+}
+
 // libLiteralsNamingBasalt returns, for every package under internal/lib, the
-// declarations whose string literals name BasaltDB. Comments are not
-// literals; test files are not loaded.
+// declarations whose string literals name BasaltDB, counted. Comments and
+// import paths are not checked; test files are not loaded.
 func libLiteralsNamingBasalt(pkgs map[string]*goPkg) []string {
 	var out []string
 	for rel, pk := range pkgs {
@@ -211,6 +237,9 @@ func libLiteralsNamingBasalt(pkgs map[string]*goPkg) []string {
 		}
 		for _, f := range pk.files {
 			for _, d := range f.ast.Decls {
+				if gd, ok := d.(*ast.GenDecl); ok && gd.Tok == token.IMPORT {
+					continue
+				}
 				ast.Inspect(d, func(n ast.Node) bool {
 					lit, ok := n.(*ast.BasicLit)
 					if !ok || lit.Kind != token.STRING {
@@ -228,58 +257,90 @@ func libLiteralsNamingBasalt(pkgs map[string]*goPkg) []string {
 			}
 		}
 	}
-	return sortedUnique(out)
+	return counted(out)
 }
 
-// syncState reports whether the type expression t is a sync.Mutex,
-// sync.RWMutex or sync.Map, or a pointer to one, given the file's import
-// names. sync.Once is not state: it builds a table once.
-func syncState(t ast.Expr, names map[string]string) bool {
-	if s, ok := t.(*ast.StarExpr); ok {
-		t = s.X
-	}
-	sel, ok := t.(*ast.SelectorExpr)
-	if !ok {
+// localType is a type declared in the package, with the import names of
+// its file.
+type localType struct {
+	spec  *ast.TypeSpec
+	names map[string]string
+}
+
+// holdsState reports whether a value of type t holds a sync.Mutex,
+// sync.RWMutex or sync.Map: as the type itself, behind a pointer, as a
+// struct field (embedded or nested), as an array, slice, map or channel
+// element, or inside a struct type of the same package it names. A function
+// type's parameters and an interface's methods hold nothing. sync.Once is
+// not state: it builds a table once.
+func holdsState(t ast.Expr, names map[string]string, types map[string]localType, seen map[string]bool) bool {
+	switch t := t.(type) {
+	case *ast.ParenExpr:
+		return holdsState(t.X, names, types, seen)
+	case *ast.StarExpr:
+		return holdsState(t.X, names, types, seen)
+	case *ast.ArrayType:
+		return holdsState(t.Elt, names, types, seen)
+	case *ast.MapType:
+		return holdsState(t.Key, names, types, seen) || holdsState(t.Value, names, types, seen)
+	case *ast.ChanType:
+		return holdsState(t.Value, names, types, seen)
+	case *ast.IndexExpr:
+		return holdsState(t.X, names, types, seen) || holdsState(t.Index, names, types, seen)
+	case *ast.IndexListExpr:
+		if holdsState(t.X, names, types, seen) {
+			return true
+		}
+		for _, i := range t.Indices {
+			if holdsState(i, names, types, seen) {
+				return true
+			}
+		}
 		return false
-	}
-	id, ok := sel.X.(*ast.Ident)
-	if !ok || names[id.Name] != "sync" {
+	case *ast.StructType:
+		for _, fld := range t.Fields.List {
+			if holdsState(fld.Type, names, types, seen) {
+				return true
+			}
+		}
 		return false
+	case *ast.SelectorExpr:
+		id, ok := t.X.(*ast.Ident)
+		return ok && names[id.Name] == "sync" && in([]string{"Mutex", "RWMutex", "Map"}, t.Sel.Name)
+	case *ast.Ident:
+		lt, ok := types[t.Name]
+		if !ok || seen[t.Name] {
+			return false
+		}
+		seen[t.Name] = true
+		return holdsState(lt.spec.Type, lt.names, types, seen)
 	}
-	return in([]string{"Mutex", "RWMutex", "Map"}, sel.Sel.Name)
+	return false // func types, interfaces
 }
 
 // coreTypesWithState returns the exported types under internal/core whose
-// struct, or a struct nested in it, has a mutex or sync.Map field.
+// values hold a mutex or a sync.Map (holdsState).
 func coreTypesWithState(pkgs map[string]*goPkg) []string {
 	var out []string
 	for rel, pk := range pkgs {
 		if layerOf(rel) != lCore {
 			continue
 		}
+		types := map[string]localType{}
 		for _, f := range pk.files {
 			names := localNames(f.ast)
 			for _, d := range f.ast.Decls {
-				gd, ok := d.(*ast.GenDecl)
-				if !ok || gd.Tok != token.TYPE {
-					continue
-				}
-				for _, s := range gd.Specs {
-					ts := s.(*ast.TypeSpec)
-					if !ts.Name.IsExported() {
-						continue
-					}
-					found := false
-					ast.Inspect(ts.Type, func(n ast.Node) bool {
-						if fld, ok := n.(*ast.Field); ok && syncState(fld.Type, names) {
-							found = true
-						}
-						return !found
-					})
-					if found {
-						out = append(out, rel+": "+ts.Name.Name)
+				if gd, ok := d.(*ast.GenDecl); ok && gd.Tok == token.TYPE {
+					for _, s := range gd.Specs {
+						ts := s.(*ast.TypeSpec)
+						types[ts.Name.Name] = localType{spec: ts, names: names}
 					}
 				}
+			}
+		}
+		for name, lt := range types {
+			if ast.IsExported(name) && holdsState(lt.spec.Type, lt.names, types, map[string]bool{name: true}) {
+				out = append(out, rel+": "+name)
 			}
 		}
 	}
@@ -331,7 +392,9 @@ func outImportsAcrossOwners(pkgs map[string]*goPkg) []string {
 }
 
 // forward reports whether fd is no more than a forward: an empty body, or
-// one statement that returns or calls, with no branch, loop or assignment.
+// one statement that returns or calls, with no branch, loop, assignment,
+// function literal, comparison or boolean operator. Arithmetic and string
+// concatenation are allowed.
 func forward(fd *ast.FuncDecl) bool {
 	if fd.Body == nil || len(fd.Body.List) == 0 {
 		return true
@@ -340,15 +403,34 @@ func forward(fd *ast.FuncDecl) bool {
 		return false
 	}
 	switch s := fd.Body.List[0].(type) {
-	case *ast.ReturnStmt:
-		return !hasFuncLit(s)
-	case *ast.ExprStmt:
-		return !hasFuncLit(s)
+	case *ast.ReturnStmt, *ast.ExprStmt:
+		return !hasLogic(s)
 	}
 	return false
 }
 
-// hasFuncLit reports whether n holds a function literal: logic in a forward.
+// logicOps are the operators that decide: a statement holding one is logic.
+var logicOps = []token.Token{token.LAND, token.LOR, token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ}
+
+// hasLogic reports whether n holds a function literal, a comparison or a
+// boolean operator: logic in what would otherwise be a forward.
+func hasLogic(n ast.Node) bool {
+	found := false
+	ast.Inspect(n, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.FuncLit:
+			found = true
+		case *ast.BinaryExpr:
+			found = found || slices.Contains(logicOps, x.Op)
+		case *ast.UnaryExpr:
+			found = found || x.Op == token.NOT
+		}
+		return !found
+	})
+	return found
+}
+
+// hasFuncLit reports whether n holds a function literal.
 func hasFuncLit(n ast.Node) bool {
 	found := false
 	ast.Inspect(n, func(n ast.Node) bool {
@@ -361,8 +443,9 @@ func hasFuncLit(n ast.Node) bool {
 }
 
 // pkgLogic returns every function under pkg/ that is more than a forward,
-// as "<package>: <function>". A package-level var whose value is a function
-// literal counts as a function.
+// as "<package>: <function>", counted (a package may hold several init
+// functions). A package-level var whose value is a function literal counts
+// as a function.
 func pkgLogic(pkgs map[string]*goPkg) []string {
 	var out []string
 	for rel, pk := range pkgs {
@@ -386,7 +469,40 @@ func pkgLogic(pkgs map[string]*goPkg) []string {
 			}
 		}
 	}
-	return sortedUnique(out)
+	return counted(out)
+}
+
+// pkgPackages returns the packages under pkg/, relative to it: each
+// directory directly under pkg/, and each deeper directory with Go files.
+func pkgPackages(root string, pkgs map[string]*goPkg) ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(root, lPkg))
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() {
+			out = append(out, e.Name())
+		}
+	}
+	for rel := range pkgs {
+		if strings.HasPrefix(rel, lPkg+"/") {
+			out = append(out, strings.TrimPrefix(rel, lPkg+"/"))
+		}
+	}
+	return sortedUnique(out), nil
+}
+
+// layerLoaded fails the test when pkgs holds no package of the layer: a
+// check that saw nothing must not pass.
+func layerLoaded(t *testing.T, pkgs map[string]*goPkg, layer string) {
+	t.Helper()
+	for rel := range pkgs {
+		if layerOf(rel) == layer {
+			return
+		}
+	}
+	t.Fatalf("no %s package was loaded; the check would pass on nothing", layer)
 }
 
 // pkgListLine is ARCHITECTURE.md's tree line for pkg/, which names the
@@ -458,6 +574,7 @@ func loadModule(t *testing.T) (string, map[string]*goPkg) {
 // BasaltDB or one of its /v1/ paths: lib helpers know nothing of BasaltDB.
 func TestLibKnowsNoBasalt(t *testing.T) {
 	_, pkgs := loadModule(t)
+	layerLoaded(t, pkgs, lLib)
 	compareBaseline(t, "a string literal in internal/lib names BasaltDB",
 		"move the value to the package that owns it and pass it in",
 		libLiteralsNamingBasalt(pkgs), libKnowsBasaltBaseline)
@@ -468,6 +585,7 @@ func TestLibKnowsNoBasalt(t *testing.T) {
 // state belongs to a service or an adapter. sync.Once is allowed.
 func TestCoreHoldsNoState(t *testing.T) {
 	_, pkgs := loadModule(t)
+	layerLoaded(t, pkgs, lCore)
 	compareBaseline(t, "an exported core type holds mutable shared state",
 		"move the type to the domain or adapter that owns the state",
 		coreTypesWithState(pkgs), coreStateBaseline)
@@ -478,6 +596,15 @@ func TestCoreHoldsNoState(t *testing.T) {
 // internal/app, pkg/setup, the test kit and the named exceptions.
 func TestOutAdaptersStayInTheirDomain(t *testing.T) {
 	_, pkgs := loadModule(t)
+	outs := 0
+	for rel := range pkgs {
+		if outOwner(rel) != "" {
+			outs++
+		}
+	}
+	if outs == 0 {
+		t.Fatal("no internal/<domain>/out package was loaded; the check would pass on nothing")
+	}
 	got := outImportsAcrossOwners(pkgs)
 	var rest []string
 	for _, g := range got {
@@ -495,8 +622,8 @@ func TestOutAdaptersStayInTheirDomain(t *testing.T) {
 		rest, outImportBaseline)
 }
 
-// TestPkgIsTheDocumentedPublicAPI fails when the directories under pkg/
-// differ from the packages ARCHITECTURE.md names for it, and on a function
+// TestPkgIsTheDocumentedPublicAPI fails when the packages under pkg/
+// (each top directory and each nested directory with Go files) differ from the packages ARCHITECTURE.md names for it, and on a function
 // under pkg/ that is more than a forward: the logic lives under internal/.
 func TestPkgIsTheDocumentedPublicAPI(t *testing.T) {
 	root, pkgs := loadModule(t)
@@ -504,15 +631,10 @@ func TestPkgIsTheDocumentedPublicAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entries, err := os.ReadDir(filepath.Join(root, lPkg))
+	layerLoaded(t, pkgs, lPkg)
+	have, err := pkgPackages(root, pkgs)
 	if err != nil {
 		t.Fatal(err)
-	}
-	var have []string
-	for _, e := range entries {
-		if e.IsDir() {
-			have = append(have, e.Name())
-		}
 	}
 	if !slices.Equal(have, want) {
 		t.Errorf("the packages under pkg/ are %q; ARCHITECTURE.md names %q. pkg/ is public API: add a package only with the line in ARCHITECTURE.md", have, want)
@@ -554,10 +676,13 @@ func wantList(t *testing.T, what string, got, want []string) {
 func TestPurityRulesOnProbes(t *testing.T) {
 	pkgs := parsePkgs(t, map[string]string{
 		"internal/lib/probe/a.go": `package probe
+import "github.com/basaltdbhq/basaltdb/internal/lib/atomicfile"
+var _ = atomicfile.Write
 // Package probe is used by basalt mcp: a comment is not a literal.
 const Origin = "https://relay.BasaltVault.app"
 var path = "/api/v1/links/"
 func Build() string { return "/v1/runs" }
+func Twice() (string, string) { return "basalt", "Basalt" }
 func (p *T) Plain() string { return "generic" }
 type T struct{ Tag string ` + "`json:\"basalt\"`" + ` }
 `,
@@ -569,6 +694,7 @@ const Origin = "https://basalt.example"
 		"internal/lib/probe: Build",
 		"internal/lib/probe: Origin",
 		"internal/lib/probe: T",
+		"internal/lib/probe: Twice (2 times)",
 		"internal/lib/probe: path",
 	})
 
@@ -584,6 +710,13 @@ type Mapped struct{ inner struct{ m sync.Map } }
 type Embedded struct{ sync.Mutex }
 type Once struct{ once sync.Once }
 type unexported struct{ mu sync.Mutex }
+type HoldsUnexported struct{ u *unexported }
+type Slice struct{ locks []sync.Mutex }
+type MapOf[K comparable] struct{ m map[K]*sync.Mutex }
+type Chain struct{ next *Chain; n int }
+type Fn struct{ f func(mu *sync.Mutex) }
+type Port interface{ Lock(mu *sync.RWMutex) }
+type FuncType func(m sync.Map)
 `,
 		"internal/agent/probe/a.go": `package probe
 import "sync"
@@ -592,9 +725,12 @@ type Service struct{ mu sync.Mutex }
 	})
 	wantList(t, "core state", coreTypesWithState(pkgs), []string{
 		"internal/core/probe: Embedded",
+		"internal/core/probe: HoldsUnexported",
 		"internal/core/probe: Locked",
+		"internal/core/probe: MapOf",
 		"internal/core/probe: Mapped",
 		"internal/core/probe: RLocked",
+		"internal/core/probe: Slice",
 	})
 
 	imp := func(ps ...string) string {
@@ -629,6 +765,16 @@ type Service struct{ mu sync.Mutex }
 		"pkg/probe/a.go": `package probe
 type T struct{}
 func Forward(x int) int { return impl(x) }
+func Field(p *T) error { return p.f() }
+func Nil() error { return nil }
+func Sum(a, b int) int { return impl(a + b*2) }
+func Concat(s string) string { return "x" + s }
+func Or(a *T, b string) bool { return a == nil || b != "" }
+func Not(b bool) bool { return !b }
+func Less(a, b int) bool { return impl(a < b) }
+func init() { impl(1) }
+func init() { if true { impl(2) } }
+func init() { for {} }
 func Call() { impl(1) }
 func Empty() {}
 func (t *T) Method() error { return nil }
@@ -646,9 +792,13 @@ func Logic(x int) int { if x > 0 { return 1 }; return 0 }
 	wantList(t, "pkg logic", pkgLogic(pkgs), []string{
 		"pkg/probe: Branch",
 		"pkg/probe: Closure",
+		"pkg/probe: Less",
 		"pkg/probe: Loop",
+		"pkg/probe: Not",
+		"pkg/probe: Or",
 		"pkg/probe: Two",
 		"pkg/probe: hook",
+		"pkg/probe: init (2 times)",
 	})
 }
 
@@ -672,4 +822,25 @@ func TestDocumentedPkgsParsesTheTreeLine(t *testing.T) {
 	if _, err := documentedPkgs(bad); err == nil {
 		t.Error("a file with no pkg/ tree line must fail")
 	}
+}
+
+// TestPkgPackagesListsNestedPackages lists each top directory under pkg/ and
+// each nested directory with Go files, not a nested data directory.
+func TestPkgPackagesListsNestedPackages(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"pkg/a/data", "pkg/b"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pkgs := parsePkgs(t, map[string]string{
+		"pkg/a/a.go":          "package a\n",
+		"pkg/a/atest/a.go":    "package atest\n",
+		"internal/lib/x/a.go": "package x\n",
+	})
+	got, err := pkgPackages(root, pkgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantList(t, "pkg packages", got, []string{"a", "a/atest", "b"})
 }

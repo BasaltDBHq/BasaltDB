@@ -8,9 +8,10 @@ import (
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // Reinstalls on the record (basalt_meta version 36, CONTRACT.md "Version 36:

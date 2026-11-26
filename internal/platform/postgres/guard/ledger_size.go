@@ -4,6 +4,7 @@ import (
 	"context"
 
 	sq "github.com/Masterminds/squirrel"
+
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 

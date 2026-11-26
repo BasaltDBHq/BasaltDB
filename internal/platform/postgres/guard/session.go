@@ -10,9 +10,10 @@ import (
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // Values of basalt.mode.

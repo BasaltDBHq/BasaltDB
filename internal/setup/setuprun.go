@@ -590,7 +590,17 @@ func (p *Prepared) Plan(ctx context.Context, allRows []string) (guardmodel.Scrip
 	return script, nil
 }
 
+// errPlannedUnticked is a plan of a setup whose tables are ticked on the
+// page (Ticked) made without its ticks. Prepare refuses such a setup
+// NO_TABLES first, so it never happens; the check keeps plan from ever
+// granting every listed table if it did.
+var errPlannedUnticked = errors.New("setup: a setup with ticks planned without them")
+
 func (p *Prepared) plan(ctx context.Context, policies []guardmodel.BlindTable) (guardmodel.Script, error) {
+	if p.Ticked() && !p.ticks {
+		// Never every table in public: only the ones the person ticked.
+		return guardmodel.Script{}, errPlannedUnticked
+	}
 	opts := guardmodel.InitOptions{Names: p.Names, UpTo: p.P.Guard.To}
 	agent := ""
 	if p.P.Agent != nil {
@@ -725,7 +735,7 @@ func Refused(ctx context.Context, b SetuprunBackend, q Querier, p setupcode.Payl
 		expires, _ := p.ExpiresTime() // the code passed Decode, so it parses
 		return &SetuprunRefusalError{Code: detail, Err: err, Message: fmt.Sprintf("this setup code expired on %s by the database's clock. Ask %s for a new one", expires.UTC().Format("2006-01-02 15:04 UTC"), agent)}
 	default:
-		return &SetuprunRefusalError{Code: detail, Err: err, Message: fmt.Sprintf("the database's clock refuses this setup code (%s): check the database's and this computer's clocks, or ask %s for a new code", detail, agent)}
+		return &SetuprunRefusalError{Code: detail, Err: err, Message: fmt.Sprintf("the database's clock refuses this setup code (%s): check the database's clock, or ask %s for a new code", detail, agent)}
 	}
 }
 

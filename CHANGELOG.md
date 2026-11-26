@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- A setup code run against the wrong database (`TARGET_MISMATCH`) now tells the person to paste the admin connection string of the code's database on the page, or to ask the agent for a new code. It no longer says to run a command.
+- A setup code run against the wrong database (`TARGET_MISMATCH`) now tells the person to paste the admin connection string of the code's database on the page, or to ask the agent for a new code. It no longer says to run a command. The refusals that told the person to fix or update "this computer" now say what to do on the connect page: `UNSUPPORTED_FORMAT` and `BINARY_TOO_OLD` say to try again later, since the connect service runs the code; `SETUP_ID_IN_FUTURE` and `EXPIRY_TOO_FAR` say to check the clock of the agent's machine.
 
 ### Removed
 

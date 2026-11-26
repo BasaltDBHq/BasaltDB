@@ -47,7 +47,7 @@ func CheckLocal(p Payload, now time.Time, binaryGuardVersion int) error {
 	case expires.After(now.Add(Lifetime + ClockSkew)):
 		return refuseWith(RefusalExpiryTooFar, futureMessage(agent))
 	case p.Guard.To > binaryGuardVersion:
-		return refuseWith(RefusalBinaryTooOld, "Update basalt on this computer to at least "+p.Build+".")
+		return refuseWith(RefusalBinaryTooOld, "This setup code needs BasaltDB "+p.Build+" or later, and the connect service runs an older one: try again shortly.")
 	case p.Guard.To < MinGuardVersion:
 		return refuseWith(RefusalGuardTooOld, fmt.Sprintf("This setup code is for guard version %d, but setup codes need guard version %d or later. "+
 			"Ask %s for a new code made with an up-to-date basalt.", p.Guard.To, MinGuardVersion, agent))
@@ -69,7 +69,7 @@ func (p Payload) KeepsGrants() bool {
 }
 
 func futureMessage(agent string) string {
-	return "This setup code claims a time in the future. Check this computer's clock, or ask " + agent + " for a new code."
+	return "This setup code claims a time in the future. Check the clock of the machine " + agent + " runs on, or ask " + agent + " for a new code."
 }
 
 // agentWord names the agent in messages: its name, or "your agent" for an

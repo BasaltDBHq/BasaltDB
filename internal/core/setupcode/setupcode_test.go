@@ -195,7 +195,7 @@ func TestDecodeMessages(t *testing.T) {
 	_, err = setupcode.Decode("basalt-setup.1.abc.AAAAAA")
 	require.EqualError(t, err, "This setup code is damaged; copy it again.")
 	_, err = setupcode.Decode("basalt-setup.2.abc.AAAAAA")
-	require.EqualError(t, err, "This setup code is newer than basalt on this computer: update it from the release page.")
+	require.EqualError(t, err, "This setup code is in a newer format than the connect service reads yet: try again later.")
 	// Layout version 1 cut short is not a newer layout.
 	for _, code := range []string{"basalt-setup.1", "basalt-setup.1\n"} {
 		_, err = setupcode.Decode(code)

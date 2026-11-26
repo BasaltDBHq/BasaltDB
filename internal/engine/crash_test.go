@@ -39,8 +39,9 @@ func (r fakeRecorder) SaveIn(dir string, shared bool, in servicespec.CrashInput)
 
 // fakeCrashHost has its per-user config directory at base.
 type fakeCrashHost struct {
-	rec  fakeRecorder
-	base string
+	engine.Machine // never reached by a crash report
+	rec            fakeRecorder
+	base           string
 }
 
 func (h fakeCrashHost) UserConfigDir() (string, error) { return h.base, nil }

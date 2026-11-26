@@ -32,7 +32,9 @@ import (
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/handoff/out/handofffiles"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
@@ -128,7 +130,7 @@ func runWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	}
 	// Folders first: an update of the computer drops empty ones and resets
 	// the rest to 0755, and the lock below makes the socket directory.
-	if err := engine.EnsureOwnDirs(cfg, agentUIDs, os.Geteuid()); err != nil {
+	if err := engine.EnsureOwnDirs(engineos.OS{}, cfg, agentUIDs, os.Geteuid()); err != nil {
 		return err
 	}
 	lock, err := pidlock.AcquireLock(engine.LockPath(cfg.SocketDir))
@@ -337,7 +339,7 @@ func runWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if site != nil {
 		wg.Go(func() { site.serve(ctx, log) })
 	}
-	err = engine.New(log, mcpLines{}, agents).WithGate(gate).WithRestart(restart.Restart).Serve(ctx)
+	err = engine.New(log, mcpLines{}, engineos.OS{}, agents).WithGate(gate).WithRestart(restart.Restart).Serve(ctx)
 	select {
 	case <-reloading:
 		if errors.Is(err, engine.ErrRestart) {
@@ -751,7 +753,7 @@ const guardLogTimeout = 15 * time.Second
 // following a link, from the computed credential path only (rootFiles).
 func agentFilesFor(env agentEnv, a config.Agent) (handoff.AgentFiles, error) {
 	if !env.asRoot {
-		return handoff.PathFiles{ConfigPath: env.configPath, CredFile: a.Store.CredentialFile}, nil
+		return handofffiles.PathFiles{ConfigPath: env.configPath, CredFile: a.Store.CredentialFile}, nil
 	}
 	return openRootFiles(env.configPath, a.Name, a.Store.CredentialFile)
 }

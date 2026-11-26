@@ -19,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 )
@@ -66,6 +67,7 @@ func (r *starterRig) socket() string { return filepath.Join(r.cfg.SocketDir, "bo
 
 func (r *starterRig) deps(owner int, launchErr error) engine.StarterDeps {
 	return engine.StarterDeps{
+		OS:    engineos.OS{},
 		Owner: func(string) (int, error) { return owner, nil },
 		Launch: func(exe string, args []string, logFile *os.File) error {
 			r.launches.Add(1)
@@ -116,6 +118,17 @@ func (r *starterRig) deps(owner int, launchErr error) engine.StarterDeps {
 		},
 		Wait: 3 * time.Second,
 	}
+}
+
+// A starter without the machine's files is refused when it is built.
+func TestEngineStarterRefusesNoOS(t *testing.T) {
+	t.Parallel()
+	r := newStarterRig(t)
+	d := r.deps(testEuid, nil)
+	d.OS = nil
+	require.Panics(t, func() {
+		engine.NewStarter(holdOff{}, d, "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	})
 }
 
 func TestEngineStarterNilForServiceConfig(t *testing.T) {

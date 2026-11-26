@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 )
 
 // failingAccepter fails with errs in turn, then reports the listener
@@ -34,7 +36,7 @@ func (f *failingAccepter) AcceptUnix() (*net.UnixConn, error) {
 // loop backs off and accepts again. Any other error ends it.
 func TestAcceptRetriesATemporaryError(t *testing.T) {
 	t.Parallel()
-	e := &Engine{log: slog.New(slog.DiscardHandler)}
+	e := &Engine{log: slog.New(slog.DiscardHandler), sockets: engineos.OS{}}
 	emfile := &net.OpError{Op: "accept", Err: os.NewSyscallError("accept", syscall.EMFILE)}
 	ln := &failingAccepter{errs: []error{emfile, emfile}}
 	e.acceptLoop(context.Background(), context.Background(), Agent{Name: "bot"}, ln)

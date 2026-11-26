@@ -13,20 +13,10 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/lib/peercred"
-)
-
-const (
-	// socketDirMode lets agents' OS users reach their sockets.
-	socketDirMode = 0o755
-	// socketMode lets any local user connect; the peer uid check on accept
-	// is what authorizes a connection.
-	socketMode = 0o666
 )
 
 // Agent is one agent the engine serves on its own socket.
@@ -66,6 +56,7 @@ type PeerUIDFunc func(*net.UnixConn) (uint32, error)
 type Engine struct {
 	log     *slog.Logger
 	mcp     MCP
+	sockets Sockets
 	agents  []Agent
 	peerUID PeerUIDFunc
 	// drains holds, per agent, a slot for each refused connection being
@@ -82,19 +73,19 @@ type Engine struct {
 // at a time (refusePeer); more are answered and closed at once.
 const refusedDrains = 8
 
-// New returns an engine for agents, writing its refusals through m. It
-// panics on a nil logger or m, no agents, or an agent without a socket or
-// server.
-func New(log *slog.Logger, m MCP, agents []Agent) *Engine {
-	if log == nil || m == nil || len(agents) == 0 {
-		panic("engine: logger, MCP and at least one agent required")
+// New returns an engine for agents, listening on their sockets through s
+// and writing its refusals through m. It panics on a nil logger, m or s, no
+// agents, or an agent without a socket or server.
+func New(log *slog.Logger, m MCP, s Sockets, agents []Agent) *Engine {
+	if log == nil || m == nil || s == nil || len(agents) == 0 {
+		panic("engine: logger, MCP, sockets and at least one agent required")
 	}
 	for _, a := range agents {
 		if a.Name == "" || a.SocketPath == "" || a.Server == nil {
 			panic("engine: agent needs a name, a socket path and a server")
 		}
 	}
-	e := &Engine{log: log, mcp: m, agents: agents, peerUID: peercred.UID, gate: NewCallGate(), drainFor: refuseDrain}
+	e := &Engine{log: log, mcp: m, sockets: s, agents: agents, peerUID: peercred.UID, gate: NewCallGate(), drainFor: refuseDrain}
 	return e.WithRefusedDrains(refusedDrains)
 }
 
@@ -144,7 +135,7 @@ func (e *Engine) Serve(ctx context.Context) error {
 		})
 	}
 	for _, a := range e.agents {
-		ln, err := listenSocket(a.SocketPath)
+		ln, err := e.sockets.ListenSocket(a.SocketPath)
 		if err != nil {
 			closeAll()
 			return fmt.Errorf("agent %s: %w", a.Name, err)
@@ -246,7 +237,7 @@ func (e *Engine) acceptLoop(ctx, draining context.Context, a Agent, ln unixAccep
 			if ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
 				return
 			}
-			if !temporaryAccept(err) {
+			if !e.sockets.TemporaryAccept(err) {
 				e.log.Error("accept", "agent", a.Name, "err", err)
 				return
 			}
@@ -262,17 +253,6 @@ func (e *Engine) acceptLoop(ctx, draining context.Context, a Agent, ln unixAccep
 		backoff = 0
 		conns.Go(func() { e.serveConn(ctx, draining, a, conn) })
 	}
-}
-
-// temporaryAccept reports an accept error that passes: out of file
-// descriptors or memory, or a connection aborted before it was taken.
-func temporaryAccept(err error) bool {
-	for _, errno := range []syscall.Errno{syscall.EMFILE, syscall.ENFILE, syscall.ENOBUFS, syscall.ENOMEM, syscall.ECONNABORTED, syscall.EINTR} {
-		if errors.Is(err, errno) {
-			return true
-		}
-	}
-	return false
 }
 
 func (e *Engine) serveConn(ctx, draining context.Context, a Agent, conn *net.UnixConn) {
@@ -330,33 +310,4 @@ func (e *Engine) refusePeer(ctx context.Context, conn *net.UnixConn, agentName s
 	stop := context.AfterFunc(ctx, func() { _ = conn.SetReadDeadline(time.Now()) })
 	defer stop()
 	_, _ = io.Copy(io.Discard, io.LimitReader(conn, refuseDrainBytes))
-}
-
-// listenSocket listens on path, replacing a stale socket file but never any
-// other kind of file, and opens the socket to local users.
-func listenSocket(path string) (*net.UnixListener, error) {
-	if err := os.MkdirAll(filepath.Dir(path), socketDirMode); err != nil {
-		return nil, err
-	}
-	fi, err := os.Lstat(path)
-	switch {
-	case err == nil && fi.Mode()&os.ModeSocket == 0:
-		return nil, fmt.Errorf("%s exists and is not a socket; refusing to replace it", path)
-	case err == nil:
-		if err := os.Remove(path); err != nil {
-			return nil, err
-		}
-	case !errors.Is(err, os.ErrNotExist):
-		return nil, err
-	}
-	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
-	if err != nil {
-		return nil, err
-	}
-	ln.SetUnlinkOnClose(true)
-	if err := os.Chmod(path, socketMode); err != nil {
-		ln.Close()
-		return nil, err
-	}
-	return ln, nil
 }

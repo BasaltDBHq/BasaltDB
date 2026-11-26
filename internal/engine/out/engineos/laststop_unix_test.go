@@ -1,6 +1,6 @@
 //go:build unix
 
-package engine
+package engineos
 
 import (
 	"os"
@@ -16,11 +16,12 @@ func TestReadLastStopRefusesASymlinkAndAFifo(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target.json")
 	require.NoError(t, os.WriteFile(target, []byte(`{"reason":"x","at":"2026-11-20T01:02:03Z"}`), 0o600))
-	require.NoError(t, os.Symlink(target, filepath.Join(dir, LastStopFile)))
-	_, ok := ReadLastStop(dir)
+	record := filepath.Join(dir, "last-stop.json")
+	require.NoError(t, os.Symlink(target, record))
+	_, ok := OS{}.ReadLastStop(record)
 	require.False(t, ok, "a symlink is not the record")
-	require.NoError(t, os.Remove(filepath.Join(dir, LastStopFile)))
-	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, LastStopFile), 0o600))
-	_, ok = ReadLastStop(dir)
+	require.NoError(t, os.Remove(record))
+	require.NoError(t, syscall.Mkfifo(record, 0o600))
+	_, ok = OS{}.ReadLastStop(record)
 	require.False(t, ok, "a pipe is not the record and does not block")
 }

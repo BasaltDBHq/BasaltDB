@@ -10,6 +10,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/lib/sysdns"
 )
 
 // This file is the engine's side of what the connect service must agree on
@@ -39,7 +40,7 @@ type SystemResolver struct{ R *net.Resolver }
 
 // LookupNetIP returns the A addresses and then the AAAA addresses of host.
 func (s SystemResolver) LookupNetIP(ctx context.Context, network, host string) ([]netip.Addr, error) {
-	return handoff.SystemResolver(s).LookupNetIP(ctx, network, host)
+	return sysdns.Resolver(s).LookupNetIP(ctx, network, host)
 }
 
 // PickAddress resolves host once and returns the one address to connect

@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/handoff/out/handofffiles"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 )
@@ -86,7 +87,7 @@ func TestRootEngineUsesOnlyTheComputedCredentialPath(t *testing.T) {
 	// Not as root, the config's path as it is.
 	files, err = agentFilesFor(agentEnv{configPath: cfgPath}, config.Agent{Name: "bot", Store: config.PostgresStore(elsewhere)})
 	require.NoError(t, err)
-	_, ok := files.(handoff.PathFiles)
+	_, ok := files.(handofffiles.PathFiles)
 	require.True(t, ok)
 }
 
@@ -117,7 +118,7 @@ func TestRootEngineReachesItsFilesThroughTheOpenedDirectories(t *testing.T) {
 	files, err := openRootFiles(cfgPath, "bot", credFile)
 	require.NoError(t, err)
 	defer files.Close()
-	require.NoError(t, config.WriteFile(credFile+handoff.PendingSuffix, []byte("postgres://bt_agent_bot:new@db:5432/app\n")))
+	require.NoError(t, config.WriteFile(credFile+config.PendingSuffix, []byte("postgres://bt_agent_bot:new@db:5432/app\n")))
 	swap()
 
 	pw := &recordingPassword{}
@@ -152,9 +153,9 @@ func TestRootEngineReachesItsFilesThroughTheOpenedDirectories(t *testing.T) {
 	require.Nil(t, c.Agents[0].Setup, "the setup is cleared through the opened config directory")
 
 	unswap()
-	require.NoError(t, os.Symlink(filepath.Join(agents, "x"), credFile+handoff.LockSuffix+".tmp"))
-	require.NoError(t, os.Remove(credFile+handoff.LockSuffix))
-	require.NoError(t, os.Rename(credFile+handoff.LockSuffix+".tmp", credFile+handoff.LockSuffix))
+	require.NoError(t, os.Symlink(filepath.Join(agents, "x"), credFile+config.LockSuffix+".tmp"))
+	require.NoError(t, os.Remove(credFile+config.LockSuffix))
+	require.NoError(t, os.Rename(credFile+config.LockSuffix+".tmp", credFile+config.LockSuffix))
 	_, err = files.Lock()
 	var unusable *config.LockUnusableError
 	require.True(t, errors.As(err, &unusable), err)
@@ -180,7 +181,7 @@ func TestTheEngineDoesNotPromoteAPendingCredentialChangedAfterItsLogin(t *testin
 	}
 	adapters := map[string]func(t *testing.T, cfgPath, credFile string) handoff.AgentFiles{
 		"path": func(_ *testing.T, cfgPath, credFile string) handoff.AgentFiles {
-			return handoff.PathFiles{ConfigPath: cfgPath, CredFile: credFile}
+			return handofffiles.PathFiles{ConfigPath: cfgPath, CredFile: credFile}
 		},
 		"root": func(t *testing.T, cfgPath, credFile string) handoff.AgentFiles {
 			t.Helper()
@@ -197,7 +198,7 @@ func TestTheEngineDoesNotPromoteAPendingCredentialChangedAfterItsLogin(t *testin
 				cfgPath, credFile := rootLayout(t, id)
 				files := open(t, cfgPath, credFile)
 				defer files.Close()
-				require.NoError(t, config.WriteFile(credFile+handoff.PendingSuffix, []byte(pending)))
+				require.NoError(t, config.WriteFile(credFile+config.PendingSuffix, []byte(pending)))
 				pw := &recordingPassword{}
 				f := &handoff.Finisher{
 					ConfigPath: cfgPath, Agent: "bot", CredFile: credFile, Files: files,
@@ -210,7 +211,7 @@ func TestTheEngineDoesNotPromoteAPendingCredentialChangedAfterItsLogin(t *testin
 				require.True(t, recorded)
 				require.True(t, has)
 
-				apply(t, credFile+handoff.PendingSuffix)
+				apply(t, credFile+config.PendingSuffix)
 				require.Error(t, f.Finish(context.Background(), id.String(), true))
 				require.Empty(t, pw.set, "the pool keeps its password")
 				raw, err := os.ReadFile(credFile)
@@ -236,7 +237,7 @@ func TestTheEngineRefusesAPendingCredentialOver4096Bytes(t *testing.T) {
 	require.Len(t, exact, 4096)
 	adapters := map[string]func(t *testing.T, cfgPath, credFile string) handoff.AgentFiles{
 		"path": func(_ *testing.T, cfgPath, credFile string) handoff.AgentFiles {
-			return handoff.PathFiles{ConfigPath: cfgPath, CredFile: credFile}
+			return handofffiles.PathFiles{ConfigPath: cfgPath, CredFile: credFile}
 		},
 		"root": func(t *testing.T, cfgPath, credFile string) handoff.AgentFiles {
 			t.Helper()
@@ -262,13 +263,13 @@ func TestTheEngineRefusesAPendingCredentialOver4096Bytes(t *testing.T) {
 				},
 				Password: &recordingPassword{}, Reset: func() {}, Log: slog.New(slog.DiscardHandler),
 			}
-			require.NoError(t, config.WriteFile(credFile+handoff.PendingSuffix, []byte(over)))
+			require.NoError(t, config.WriteFile(credFile+config.PendingSuffix, []byte(over)))
 			_, _, err := f.PendingRecorded(context.Background(), id)
 			require.ErrorContains(t, err, "too large")
 			require.NotContains(t, err.Error(), "ppp", "the credential is not echoed")
 			require.Zero(t, logins, "nothing logs in with it")
 
-			require.NoError(t, config.WriteFile(credFile+handoff.PendingSuffix, []byte(exact)))
+			require.NoError(t, config.WriteFile(credFile+config.PendingSuffix, []byte(exact)))
 			recorded, has, err := f.PendingRecorded(context.Background(), id)
 			require.NoError(t, err)
 			require.True(t, recorded)
@@ -328,7 +329,7 @@ func TestRootEngineChecksTheOwnersCredential(t *testing.T) {
 		{dsn: "postgres://bt_agent_bot@db.example.com:5432/app"},
 		{dsn: "host=db.example.com user=bt_agent_bot password=pw sslkey=/root/k"},
 	} {
-		for _, name := range []string{credFile, credFile + handoff.PendingSuffix} {
+		for _, name := range []string{credFile, credFile + config.PendingSuffix} {
 			require.NoError(t, os.WriteFile(name, []byte(tc.dsn+"\n"), config.FileMode))
 		}
 		read := func() []error {

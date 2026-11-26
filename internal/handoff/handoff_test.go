@@ -141,12 +141,12 @@ type fakeFiles struct {
 	failPin    bool
 }
 
-func (f *fakeFiles) WritePin(_ string, pin Pin) error {
+func (f *fakeFiles) WritePin(_ string, top *x509.Certificate, caOnly bool) error {
 	f.ops = append(f.ops, "write pin")
 	if f.failPin {
 		return errors.New("a profile covers the host now")
 	}
-	f.pinned = append(f.pinned, pin)
+	f.pinned = append(f.pinned, Pin{Top: top, CAOnly: caOnly})
 	return nil
 }
 

@@ -220,6 +220,7 @@ func (d Deps) missing() []string {
 	need("Delivery.ErrVaultNotConnected", d.Delivery.ErrVaultNotConnected == nil)
 	need("Status.Passkeys", d.Status.Passkeys == nil)
 	need("Status.CrashReports", d.Status.CrashReports == nil)
+	need("Status.CrashFile", d.Status.CrashFile == nil)
 	need("Status.LatestGuardVersion", d.Status.LatestGuardVersion == nil)
 	need("Status.UpdateMessage", d.Status.UpdateMessage == nil)
 	need("Status.StartHoldOffUntil", d.Status.StartHoldOffUntil == nil)

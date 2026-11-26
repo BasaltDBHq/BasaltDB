@@ -97,6 +97,9 @@ type Deps struct {
 	// The functions that read the host: all required.
 	// CrashReports are the crash reports in dirs, newest first.
 	CrashReports func(dirs ...string) []CrashReport
+	// CrashFile is the file of report id in the first of dirs that has
+	// one, "" when none does.
+	CrashFile func(dirs []string, id string) string
 	// LatestGuardVersion is the basalt_meta version this build installs.
 	LatestGuardVersion func() int
 	// UpdateMessage is the notice for the agent to relay, for the binary

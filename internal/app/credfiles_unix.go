@@ -77,7 +77,7 @@ func (r *rootFiles) ReadCredential() (string, error) {
 }
 
 func (r *rootFiles) ReadPending(limit int) (string, os.FileInfo, error) {
-	return r.read(r.name+handoff.PendingSuffix, limit)
+	return r.read(r.name+config.PendingSuffix, limit)
 }
 
 // read reads the credential file name in agents/ (config.ReadCredentialAt:
@@ -110,14 +110,14 @@ func (r *rootFiles) read(name string, limit int) (string, os.FileInfo, error) {
 }
 
 func (r *rootFiles) Promote(pending os.FileInfo) error {
-	if err := config.SameFileAt(r.agentsDir, r.name+handoff.PendingSuffix, pending); err != nil {
+	if err := config.SameFileAt(r.agentsDir, r.name+config.PendingSuffix, pending); err != nil {
 		return err
 	}
-	return r.agentsDir.Rename(r.name+handoff.PendingSuffix, r.name)
+	return r.agentsDir.Rename(r.name+config.PendingSuffix, r.name)
 }
 
 func (r *rootFiles) Lock() (func(), error) {
-	return config.LockAt(r.agentsDir, r.name+handoff.LockSuffix)
+	return config.LockAt(r.agentsDir, r.name+config.LockSuffix)
 }
 
 func (r *rootFiles) ClearSetup(agent, id string) (bool, error) {

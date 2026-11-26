@@ -2,8 +2,6 @@ package status
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"slices"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -30,11 +28,8 @@ func (s statusDeps) crashStatus() *guidance.CrashStatus {
 	rep := reports[0]
 	link := rep.IssueURL(s.linkBudget)
 	path := ""
-	for _, d := range s.crashDirs {
-		if p := filepath.Join(d, rep.ID+".json"); fileExists(p) {
-			path = p
-			break
-		}
+	if s.crashFile != nil {
+		path = s.crashFile(s.crashDirs, rep.ID)
 	}
 	return &guidance.CrashStatus{
 		ID: rep.ID, Time: rep.Time.UTC().Format("2006-01-02T15:04:05Z"), Version: rep.Version, Command: rep.Command,
@@ -75,9 +70,4 @@ func (s statusDeps) pluginHealth() []guidance.PluginHealth {
 		return nil
 	}
 	return s.plugins.PluginHealth(s.name)
-}
-
-func fileExists(p string) bool {
-	_, err := os.Stat(p)
-	return err == nil
 }

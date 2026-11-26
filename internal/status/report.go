@@ -60,6 +60,7 @@ type statusDeps struct {
 	errs         guidance.ErrorMap
 	latestGuard  func() int
 	crashReports func(dirs ...string) []CrashReport
+	crashFile    func(dirs []string, id string) string
 }
 
 func (sc *Service) statusDeps() statusDeps {
@@ -68,7 +69,7 @@ func (sc *Service) statusDeps() statusDeps {
 		sameUser: sc.deps.SameUser, devLocalPages: sc.deps.DevLocalPages, connectBudget: sc.deps.ConnectBudget, engineReachable: true, vault: sc.deps.Vault, portal: sc.deps.Portal, plugins: sc.deps.Plugins,
 		crashDirs: sc.deps.CrashDirs, linkBudget: sc.core.LinkBudget, access: sc.deps.Access,
 		engineRecord: sc.deps.EngineRecord, trust: sc.deps.Trust, cmds: sc.core.Commands, probe: sc.deps.Probe, watch: sc.setupWatch(),
-		errs: sc.core.Errors, latestGuard: sc.deps.LatestGuardVersion, crashReports: sc.deps.CrashReports,
+		errs: sc.core.Errors, latestGuard: sc.deps.LatestGuardVersion, crashReports: sc.deps.CrashReports, crashFile: sc.deps.CrashFile,
 		update: sc.UpdateInfo(), passkeys: sc.deps.Passkeys.Passkeys, log: sc.core.Log, now: sc.core.Now,
 	}
 }

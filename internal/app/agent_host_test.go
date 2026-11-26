@@ -9,6 +9,7 @@ import (
 	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 
 	"github.com/stretchr/testify/require"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
+	"github.com/basaltdbhq/basaltdb/internal/status/out/crashfile"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 )
 
@@ -48,6 +50,7 @@ func testDeps() Deps {
 		}
 		return out
 	}
+	d.Status.CrashFile = crashfile.Find
 	d.Status.LatestGuardVersion = guard.LatestVersion
 	d.Status.UpdateMessage = func(n statussvc.ReleaseNotice, exe string) string {
 		return updatecheck.Notice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}.AgentMessage(exe)
@@ -83,7 +86,7 @@ func testErrors() guidance.ErrorMap {
 func testEngineHost() statussvc.EngineHost {
 	return statussvc.EngineHost{
 		LatestGuardVersion: guard.LatestVersion,
-		ReadLastStop:       engine.ReadLastStop,
+		ReadLastStop:       engine.LastStopReader(engineos.OS{}),
 		StartHoldOffUntil: func(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool) {
 			return laststop.StartHoldOffUntil(servicespec.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
 		},
@@ -117,7 +120,7 @@ func TestNewServiceRequiresEveryAdapterPort(t *testing.T) {
 	for _, name := range []string{
 		"Core.ServiceManager", "Core.Errors.InvalidParams", "Core.Errors.InvalidIntent", "Core.Errors.RowTooLarge",
 		"Agent.Record", "Revert.AfterAnswer", "Revert.RotateSession",
-		"Delivery.VaultConflict", "Delivery.ErrVaultNotConnected", "Status.CrashReports",
+		"Delivery.VaultConflict", "Delivery.ErrVaultNotConnected", "Status.CrashReports", "Status.CrashFile",
 		"Status.LatestGuardVersion", "Status.UpdateMessage", "Status.StartHoldOffUntil",
 	} {
 		require.Contains(t, missing, name)

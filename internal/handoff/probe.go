@@ -123,10 +123,16 @@ func ReachOf(err error) (Reach, bool) {
 // every login it makes sends a random one (CONTRACT.md, The engine and a
 // connect-only code, The probe, with a wrong password).
 type Prober struct {
-	// Resolver resolves the host once; SystemResolver outside tests.
+	// Resolver resolves the host once; internal/app gives
+	// sysdns.Resolver. It is required to resolve.
 	Resolver Resolver
 	// Dial opens the TCP connection to the checked address; nil dials it.
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
+	// ReadChain reads the chain host presents at ip and port with the TLS
+	// handshake alone, over dial (nil: the system's TCP), connecting to ip
+	// whatever address is asked for. It is required to read a chain;
+	// internal/app gives handoffnet.ReadChain.
+	ReadChain func(ctx context.Context, dial trustpin.Dial, ip netip.Addr, host string, port int) ([]*x509.Certificate, error)
 	// Roots, when set, replace every root the server's certificate is
 	// verified against; nil uses the system's, plus the roots of the trust
 	// profile that matches the host (Supabase, Amazon RDS, the operator's).
@@ -181,7 +187,10 @@ func (p Prober) Approve(ctx context.Context, a setupcode.Address, ip netip.Addr,
 	if p.Roots != nil || p.profiles().For(a.Host) != nil {
 		return Pin{}, nil
 	}
-	chain, err := trustpin.Fetch(ctx, p.dialTo(ip, a.Port), a.Host, a.Port)
+	if p.ReadChain == nil {
+		return Pin{}, errors.New("handoff: the prober has no chain reader")
+	}
+	chain, err := p.ReadChain(ctx, p.Dial, ip, a.Host, a.Port)
 	switch {
 	case errors.Is(err, trustpin.ErrNoTLS):
 		return Pin{}, &ReachError{Reason: ReasonTLSNotVerified}
@@ -222,19 +231,6 @@ func (p Prober) Repin(ctx context.Context, a setupcode.Address, ip netip.Addr, a
 		return Pin{}, &ReachError{Reason: ReasonTrustRootMismatch}
 	}
 	return pin, nil
-}
-
-// dialTo dials ip, whatever address is asked for: the one the host
-// resolved to and the checks passed.
-func (p Prober) dialTo(ip netip.Addr, port int) trustpin.Dial {
-	to := net.JoinHostPort(ip.String(), strconv.Itoa(port))
-	return func(ctx context.Context, network, _ string) (net.Conn, error) {
-		if p.Dial != nil {
-			return p.Dial(ctx, network, to)
-		}
-		var d net.Dialer
-		return d.DialContext(ctx, network, to)
-	}
 }
 
 func (p Prober) profiles() *trustprofile.Set {
@@ -279,7 +275,10 @@ func (p Prober) Resolve(ctx context.Context, a setupcode.Address) (netip.Addr, e
 	if err := a.Check(); err != nil {
 		return netip.Addr{}, err
 	}
-	ip, err := Pick(ctx, p.resolver(), a.Host)
+	if p.Resolver == nil {
+		return netip.Addr{}, errors.New("handoff: the prober has no resolver")
+	}
+	ip, err := Pick(ctx, p.Resolver, a.Host)
 	switch {
 	case errors.Is(err, setupcode.ErrAddressInvalid):
 		return netip.Addr{}, &ReachError{Reason: ReasonAddressRefused}
@@ -308,13 +307,6 @@ func (p Prober) ProbeAt(ctx context.Context, a setupcode.Address, ip netip.Addr,
 		}
 	}
 	return Probed{}, &ReachError{Reason: reasonOf(last)}
-}
-
-func (p Prober) resolver() Resolver {
-	if p.Resolver == nil {
-		return SystemResolver{}
-	}
-	return p.Resolver
 }
 
 // reasonOf is why a probe login that proved nothing failed: TIMEOUT for no

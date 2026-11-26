@@ -33,7 +33,7 @@ func (p *recordingPassword) Set(pw string) { p.set = append(p.set, pw) }
 type pathFinishFiles struct{ configPath, credFile string }
 
 func (p pathFinishFiles) ReadPending(limit int) (string, os.FileInfo, error) {
-	path := p.credFile + PendingSuffix
+	path := p.credFile + config.PendingSuffix
 	if _, err := os.Lstat(path); err != nil {
 		return "", nil, err
 	}
@@ -41,14 +41,16 @@ func (p pathFinishFiles) ReadPending(limit int) (string, os.FileInfo, error) {
 }
 
 func (p pathFinishFiles) Promote(pending os.FileInfo) error {
-	path := p.credFile + PendingSuffix
+	path := p.credFile + config.PendingSuffix
 	if err := config.SameCredentialFile(path, pending); err != nil {
 		return err
 	}
 	return os.Rename(path, p.credFile)
 }
 
-func (p pathFinishFiles) Lock() (func(), error) { return config.LockFile(p.credFile + LockSuffix) }
+func (p pathFinishFiles) Lock() (func(), error) {
+	return config.LockFile(p.credFile + config.LockSuffix)
+}
 
 func (p pathFinishFiles) ClearSetup(agent, id string) (bool, error) {
 	return config.ClearSetup(p.configPath, agent, id)
@@ -120,7 +122,7 @@ func TestAPendingCredentialForAnotherDatabaseIsLoggedOncePerSetup(t *testing.T) 
 	t.Parallel()
 	id := uuid.Must(uuid.NewV7())
 	f, _, logs := fileFinisher(t, id)
-	require.NoError(t, config.WriteFile(f.CredFile+PendingSuffix, []byte("postgres://bt_agent_bot:new@other:5432/app\n")))
+	require.NoError(t, config.WriteFile(f.CredFile+config.PendingSuffix, []byte("postgres://bt_agent_bot:new@other:5432/app\n")))
 	for range 3 {
 		recorded, has, err := f.PendingRecorded(context.Background(), id)
 		require.NoError(t, err)
@@ -139,7 +141,7 @@ func TestASecondFinishOfAPromotedSetupIsDone(t *testing.T) {
 	t.Parallel()
 	id := uuid.Must(uuid.NewV7())
 	f, pw, _ := fileFinisher(t, id)
-	pending := f.CredFile + PendingSuffix
+	pending := f.CredFile + config.PendingSuffix
 	require.NoError(t, config.WriteFile(pending, []byte("postgres://bt_agent_bot:new@db:5432/app\n")))
 	fi, err := os.Lstat(pending)
 	require.NoError(t, err)
@@ -161,7 +163,7 @@ func TestAReplacedPendingCredentialIsNotPromoted(t *testing.T) {
 	t.Parallel()
 	id := uuid.Must(uuid.NewV7())
 	f, pw, _ := fileFinisher(t, id)
-	pending := f.CredFile + PendingSuffix
+	pending := f.CredFile + config.PendingSuffix
 	require.NoError(t, config.WriteFile(pending, []byte("postgres://bt_agent_bot:new@db:5432/app\n")))
 	fi, err := os.Lstat(pending)
 	require.NoError(t, err)
@@ -184,7 +186,7 @@ func TestARefusedPendingLoginIsNotAnError(t *testing.T) {
 	t.Parallel()
 	id := uuid.Must(uuid.NewV7())
 	f, _, _ := fileFinisher(t, id)
-	require.NoError(t, config.WriteFile(f.CredFile+PendingSuffix, []byte("postgres://bt_agent_bot:new@db:5432/app\n")))
+	require.NoError(t, config.WriteFile(f.CredFile+config.PendingSuffix, []byte("postgres://bt_agent_bot:new@db:5432/app\n")))
 	f.Connect = func(context.Context, string) (AgentLogin, error) {
 		return nil, fmt.Errorf("failed to connect: %w", &pgconn.PgError{Code: "28P01", Message: "password authentication failed"})
 	}
@@ -201,7 +203,7 @@ func TestThePoolerNotKnowingTheRoleIsARefusedLogin(t *testing.T) {
 	t.Parallel()
 	id := uuid.Must(uuid.NewV7())
 	f, _, _ := fileFinisher(t, id)
-	require.NoError(t, config.WriteFile(f.CredFile+PendingSuffix, []byte("postgres://bt_agent_bot:new@db:5432/app\n")))
+	require.NoError(t, config.WriteFile(f.CredFile+config.PendingSuffix, []byte("postgres://bt_agent_bot:new@db:5432/app\n")))
 	f.Connect = func(context.Context, string) (AgentLogin, error) {
 		return nil, fmt.Errorf("failed to connect: %w", &pgconn.PgError{Code: "XX000", Message: "Tenant or user not found"})
 	}
@@ -231,7 +233,7 @@ func TestAPendingCredentialOver4096BytesIsRefused(t *testing.T) {
 	// 4096 bytes of URL and a newline: 4097 bytes stored.
 	over := "postgres://bt_agent_bot:" + pw(4096) + "@db:5432/app\n"
 	require.Len(t, over, 4097)
-	require.NoError(t, config.WriteFile(f.CredFile+PendingSuffix, []byte(over)))
+	require.NoError(t, config.WriteFile(f.CredFile+config.PendingSuffix, []byte(over)))
 	_, _, err := f.PendingRecorded(context.Background(), id)
 	require.ErrorContains(t, err, "too large")
 	require.NotContains(t, err.Error(), "ppp", "the credential is not echoed")
@@ -239,7 +241,7 @@ func TestAPendingCredentialOver4096BytesIsRefused(t *testing.T) {
 	// 4096 bytes stored, its newline included: read, and logs in.
 	exact := "postgres://bt_agent_bot:" + pw(4095) + "@db:5432/app\n"
 	require.Len(t, exact, 4096)
-	require.NoError(t, config.WriteFile(f.CredFile+PendingSuffix, []byte(exact)))
+	require.NoError(t, config.WriteFile(f.CredFile+config.PendingSuffix, []byte(exact)))
 	recorded, has, err := f.PendingRecorded(context.Background(), id)
 	require.NoError(t, err)
 	require.True(t, recorded)

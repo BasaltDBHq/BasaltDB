@@ -1,12 +1,11 @@
 //go:build unix
 
-package engine
+package engineos
 
 import (
 	"encoding/json"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"unicode"
@@ -21,12 +20,13 @@ const (
 	maxReasonRunes   = 300
 )
 
-// ReadLastStop reads why the supervisor gave up, from dir (the state
-// directory): ok is false when there is no usable record. It is read as
-// text and shown, never trusted for anything else.
-func ReadLastStop(dir string) (guidance.LastStop, bool) {
+// ReadLastStop reads why the supervisor gave up, from the record at path
+// (last-stop.json in the state directory): ok is false when there is no
+// usable record. It is read as text and shown, never trusted for anything
+// else.
+func (OS) ReadLastStop(path string) (guidance.LastStop, bool) {
 	// Not a symlink, and never blocking on a pipe someone left there.
-	f, err := os.OpenFile(filepath.Join(dir, LastStopFile), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return guidance.LastStop{}, false
 	}

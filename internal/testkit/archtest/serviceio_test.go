@@ -67,6 +67,7 @@ var serviceIOBanned = map[string][]string{
 	modulePath + "/pkg/trustpin": {"Fetch"},
 	// the pid file lock and its reader
 	modulePath + "/internal/lib/pidlock": {"AcquireLock", "Running"},
+	modulePath + "/internal/lib/sysdns":  {"Resolver"},
 	// the config functions that open, stat, lock, read or write a file; the
 	// path builders, validators and methods on a loaded Config are pure
 	modulePath + "/internal/config": {
@@ -222,7 +223,7 @@ func TestServiceIOCatchesViolations(t *testing.T) {
 		"internal/ledger/dot.go":         "package ledger\n\nimport . \"os\"\n\nvar _ = Remove\n",
 		"internal/ledger/resolve.go":     "package ledger\n\nimport \"net\"\n\nvar _ = net.ResolveTCPAddr\n",
 		"internal/ledger/tls.go":         "package ledger\n\nimport \"crypto/tls\"\n\nvar _ = tls.Dial\nvar _ = tls.NewListener\nvar _ tls.Config\n",
-		"internal/ledger/helpers.go":     "package ledger\n\nimport (\n\t\"" + m + "internal/config\"\n\t\"" + m + "internal/lib/atomicfile\"\n\t\"" + m + "internal/lib/pidlock\"\n\t\"" + m + "internal/lib/browser\"\n\t\"" + m + "pkg/trustpin\"\n)\n\nvar _ = atomicfile.Write\nvar _ = pidlock.AcquireLock\nvar _ = config.Load\nvar _ = config.SocketPath\nvar _ = browser.Open\nvar _ = browser.Command\nvar _ = trustpin.Fetch\nvar _ = trustpin.Check\nvar _ atomicfile.Options\n",
+		"internal/ledger/helpers.go":     "package ledger\n\nimport (\n\t\"" + m + "internal/config\"\n\t\"" + m + "internal/lib/atomicfile\"\n\t\"" + m + "internal/lib/pidlock\"\n\t\"" + m + "internal/lib/browser\"\n\t\"" + m + "internal/lib/sysdns\"\n\t\"" + m + "pkg/trustpin\"\n)\n\nvar _ = sysdns.Resolver{}\nvar _ = atomicfile.Write\nvar _ = pidlock.AcquireLock\nvar _ = config.Load\nvar _ = config.SocketPath\nvar _ = browser.Open\nvar _ = browser.Command\nvar _ = trustpin.Fetch\nvar _ = trustpin.Check\nvar _ atomicfile.Options\n",
 		"internal/ledger/clean.go":       "package ledger\n\nimport (\n\t\"net\"\n\t\"os\"\n\t\"os/user\"\n\t\"path/filepath\"\n)\n\nvar _ = os.Getenv\nvar _ = os.ErrNotExist\nvar _ = os.O_RDONLY\nvar _ = os.ModeDir\nvar _ *os.File\nvar _ = net.JoinHostPort\nvar _ net.Conn\nvar _ = filepath.Join\nvar _ = user.Current\n",
 		"internal/ledger/out/disk/d.go":  src("disk"),
 		"internal/ledger/in/cli/c.go":    src("cli"),
@@ -243,6 +244,7 @@ func TestServiceIOCatchesViolations(t *testing.T) {
 		"internal/ledger helpers.go: internal/lib/atomicfile.Write",
 		"internal/ledger helpers.go: internal/lib/browser.Open",
 		"internal/ledger helpers.go: internal/lib/pidlock.AcquireLock",
+		"internal/ledger helpers.go: internal/lib/sysdns.Resolver",
 		"internal/ledger helpers.go: pkg/trustpin.Fetch",
 		"internal/ledger io.go: net.Dialer",
 		"internal/ledger io.go: os.ReadFile",

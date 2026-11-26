@@ -1,6 +1,6 @@
 //go:build unix
 
-package engine
+package engineos
 
 import (
 	"os"
@@ -8,15 +8,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
 func TestEnsurePrivateDirsRecreates(t *testing.T) {
 	t.Parallel()
 	d := filepath.Join(t.TempDir(), "a", "run")
 
-	require.NoError(t, ensurePrivateDirs(os.Geteuid(), d))
+	require.NoError(t, OS{}.MakePrivateDirs(os.Geteuid(), 0o700, d))
 
 	fi, err := os.Stat(d)
 	require.NoError(t, err)
@@ -31,7 +29,7 @@ func TestEnsurePrivateDirsTightens(t *testing.T) {
 	inside := filepath.Join(d, "pii.key")
 	require.NoError(t, os.WriteFile(inside, []byte("k"), 0o600))
 
-	require.NoError(t, ensurePrivateDirs(os.Geteuid(), d))
+	require.NoError(t, OS{}.MakePrivateDirs(os.Geteuid(), 0o700, d))
 
 	fi, err := os.Stat(d)
 	require.NoError(t, err)
@@ -48,7 +46,7 @@ func TestEnsurePrivateDirsLeavesOthers(t *testing.T) {
 	require.NoError(t, os.Mkdir(d, 0o755))
 	require.NoError(t, os.Chmod(d, 0o755))
 
-	require.NoError(t, ensurePrivateDirs(os.Geteuid()+1, d))
+	require.NoError(t, OS{}.MakePrivateDirs(os.Geteuid()+1, 0o700, d))
 
 	fi, err := os.Stat(d)
 	require.NoError(t, err)
@@ -64,7 +62,7 @@ func TestEnsurePrivateDirsRefusesSymlink(t *testing.T) {
 	link := filepath.Join(base, "run")
 	require.NoError(t, os.Symlink(target, link))
 
-	err := ensurePrivateDirs(os.Geteuid(), link)
+	err := OS{}.MakePrivateDirs(os.Geteuid(), 0o700, link)
 
 	require.ErrorContains(t, err, "not a plain directory")
 	fi, err := os.Stat(target)
@@ -72,43 +70,10 @@ func TestEnsurePrivateDirsRefusesSymlink(t *testing.T) {
 	require.Equal(t, os.FileMode(0o755), fi.Mode().Perm(), "what it points at is not changed")
 }
 
-// A socket directory other agents' OS users reach is left at 0755; a
-// service engine's folders are the service manager's.
-func TestEnsureOwnDirsKeepsASharedSocketDir(t *testing.T) {
-	t.Parallel()
-	base := t.TempDir()
-	cfg := config.Config{SocketDir: filepath.Join(base, "run"), StateDir: filepath.Join(base, "state"), Mode: config.ModeSameUser}
-	require.NoError(t, os.MkdirAll(cfg.SocketDir, 0o755))
-	require.NoError(t, os.Chmod(cfg.SocketDir, 0o755))
-	euid := os.Geteuid()
-
-	require.NoError(t, EnsureOwnDirs(cfg, map[string]uint32{"a": uint32(euid), "b": uint32(euid + 1)}, euid))
-	fi, err := os.Stat(cfg.SocketDir)
-	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o755), fi.Mode().Perm(), "another user's agent reaches it")
-	fi, err = os.Stat(cfg.StateDir)
-	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o700), fi.Mode().Perm())
-
-	require.NoError(t, EnsureOwnDirs(cfg, map[string]uint32{"a": uint32(euid)}, euid))
-	fi, err = os.Stat(cfg.SocketDir)
-	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o700), fi.Mode().Perm())
-}
-
-func TestEnsureOwnDirsSkipsAServiceEngine(t *testing.T) {
-	t.Parallel()
-	base := t.TempDir()
-	cfg := config.Config{SocketDir: filepath.Join(base, "run"), StateDir: filepath.Join(base, "state"), Mode: config.ModeService}
-	require.NoError(t, EnsureOwnDirs(cfg, map[string]uint32{"a": uint32(os.Geteuid())}, os.Geteuid()))
-	_, err := os.Stat(cfg.StateDir)
-	require.ErrorIs(t, err, os.ErrNotExist)
-}
-
 // A dangling symlink is named for what it is, not as a failed mkdir.
 func TestEnsurePrivateDirsRefusesADanglingSymlink(t *testing.T) {
 	t.Parallel()
 	link := filepath.Join(t.TempDir(), "run")
 	require.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "nowhere"), link))
-	require.ErrorContains(t, ensurePrivateDirs(os.Geteuid(), link), "not a plain directory")
+	require.ErrorContains(t, OS{}.MakePrivateDirs(os.Geteuid(), 0o700, link), "not a plain directory")
 }

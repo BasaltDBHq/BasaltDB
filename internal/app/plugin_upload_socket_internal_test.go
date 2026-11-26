@@ -23,6 +23,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
@@ -86,7 +87,7 @@ func TestUploadThroughTheEnginesAgentSocket(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- engine.New(slog.New(slog.DiscardHandler), mcpLines{}, []engine.Agent{bot, stranger}).Serve(ctx)
+		done <- engine.New(slog.New(slog.DiscardHandler), mcpLines{}, engineos.OS{}, []engine.Agent{bot, stranger}).Serve(ctx)
 	}()
 	t.Cleanup(func() { cancel(); <-done })
 	require.Eventually(t, func() bool {

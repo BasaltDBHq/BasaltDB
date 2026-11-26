@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/lib/sysdns"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
@@ -22,6 +23,15 @@ func TestWireHandoffReadsTheServerMessage(t *testing.T) {
 	noTenant := fmt.Errorf("failed to connect: %w", &pgconn.PgError{Code: setup.SQLStateInternal, Message: setup.SupavisorNoTenant})
 	require.True(t, setup.LoginRefused(o.Prober.Errors, noTenant))
 	require.True(t, setup.LoginProves(o.Prober.Errors, "verify-full", false, noTenant))
+}
+
+// The connect probe is wired with the system's DNS and the chain read: the
+// handoff service reaches the network only through them.
+func TestWireHandoffFillsTheNetwork(t *testing.T) {
+	t.Parallel()
+	o := wireHandoff(handoffOptions{})
+	require.Equal(t, sysdns.Resolver{}, o.Prober.Resolver)
+	require.NotNil(t, o.Prober.ReadChain)
 }
 
 // The engine's setup finisher is built with the same reader, so the

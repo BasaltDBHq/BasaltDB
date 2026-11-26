@@ -226,7 +226,7 @@ A codec function is a function of a decision package that only decodes, parses o
 
 ## Known violations
 
-The code does not meet every rule yet. `internal/testkit/archtest/baseline/` lists what is left, one file per importing package. A violation that is not listed fails the test, and so does a listed one that no longer exists: remove the line when you fix it, or run `go test ./internal/testkit/archtest -update`, which removes the fixed lines and never adds one. The baseline only shrinks: CI fails a pull request that adds a line to a baseline its base branch already has (`scripts/baseline-shrink.sh`, which reads the baselines from `scripts/shrink-only.txt`). A change that moves code and so renames a line lists the pair in `scripts/baseline-renames.txt`, which is empty once the renames are on master.
+The code does not meet every rule yet. `internal/testkit/archtest/baseline/` lists what is left, one file per importing package. A violation that is not listed fails the test, and so does a listed one that no longer exists: remove the line when you fix it, or run `go test ./internal/testkit/archtest -update`, which removes the fixed lines and never adds one. The baseline only shrinks: CI fails a pull request that adds a line to a baseline its base branch already has (`scripts/baseline-shrink.sh`, which reads the baselines from `scripts/shrink-only.txt`). A change that moves a package lists the move in `scripts/baseline-renames.txt` (`old/pkg<TAB>new/pkg`); the check rewrites the base's baseline paths, file names and lines through it before comparing, and refuses a move unless the old package is gone and the new one is new. The file is empty once its moves are on master.
 
 ## Where is a feature
 

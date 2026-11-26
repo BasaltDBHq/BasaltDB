@@ -1,2 +1,3 @@
-# Baseline lines a change renames: "old line<TAB>new line", one per line.
-# scripts/baseline-shrink.sh pairs them; empty once they are on master.
+# Package moves the baselines follow: "old/pkg<TAB>new/pkg", one per line.
+# scripts/baseline-shrink.sh rewrites the base baselines through them;
+# empty once the moves are on master.

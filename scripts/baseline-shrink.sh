@@ -3,16 +3,19 @@
 # base commit already has. The baselines are the paths in
 # scripts/shrink-only.txt, at the base and here; a path the base does not
 # have is a new baseline and is not checked. A directory's files are each a
-# baseline: a line that moves from one of its files to another, or a new
-# file in it, adds lines. Blank lines, trailing spaces and the order of
-# lines do not count.
+# baseline: a line that moves to another of its files, or a new file in it,
+# adds lines. Blank lines, trailing spaces and the order of lines do not
+# count.
 #
-# A change that moves code renames lines: scripts/baseline-renames.txt pairs
-# them, one "old line<TAB>new line" per line (the same line twice for a line
-# that moves to another file). A removed line paired with an added one is a
-# rename, not growth; each pair is used once. A pair whose old line no
-# baseline at the base holds fails, so the file is emptied once the renames
-# are on the base.
+# A change that moves a package renames its baseline lines and files:
+# scripts/baseline-renames.txt lists the moves, one "old/pkg<TAB>new/pkg"
+# per line. The base's baseline paths, file names and lines are rewritten
+# through them (whole path segments only; in a file name the package may be
+# written with "_" for "/", as archtest names its files) before they are
+# compared with the working tree. A move is refused unless old/pkg is a
+# directory at the base and gone here, and new/pkg is absent at the base
+# and a directory here; so the file is emptied once its moves are on the
+# base.
 #
 # usage: sh scripts/baseline-shrink.sh <base-commit>
 set -eu
@@ -40,52 +43,103 @@ tagged() {
 	sed -e 's/[[:space:]]*$//' | grep -v '^$' | sed "s|^|$1	|" || true
 }
 
+renames=scripts/baseline-renames.txt
+fail=0
+: >"$tmp/moves"
+if [ -f "$renames" ]; then
+	entries <"$renames" >"$tmp/pairs"
+	while IFS= read -r pair; do
+		old=${pair%%"	"*}
+		new=${pair#*"	"}
+		if [ "$old" = "$pair" ] || [ -z "$old" ] || [ -z "$new" ] || [ "$new" != "${new%%"	"*}" ]; then
+			echo "$renames: not \"old/pkg<TAB>new/pkg\": $pair" >&2
+			fail=1
+			continue
+		fi
+		if [ "$(git cat-file -t "$base:$old" 2>/dev/null)" != tree ] || [ -e "$old" ]; then
+			echo "$renames: $old must be a package at the base and gone here" >&2
+			fail=1
+			continue
+		fi
+		if git cat-file -e "$base:$new" 2>/dev/null || [ ! -d "$new" ]; then
+			echo "$renames: $new must be absent at the base and a package here" >&2
+			fail=1
+			continue
+		fi
+		printf '%s\t%s\n' "$old" "$new" >>"$tmp/moves"
+	done <"$tmp/pairs"
+fi
+
+# map.awk rewrites through the moves: mp(s, "/") a path or a line, mp(s,
+# "_") an archtest baseline file name.
+cat >"$tmp/map.awk" <<'AWK'
+BEGIN {
+	FS = "\t"
+	while ((getline l < moves) > 0) { split(l, m, "\t"); mo[++nm] = m[1]; mn[nm] = m[2] }
+}
+function seg(c) { return c == "" || c !~ /[A-Za-z0-9_.-]/ }
+function mp(s, sep,    i, o, n, out, rest, p, before, after) {
+	for (i = 1; i <= nm; i++) {
+		o = mo[i]; n = mn[i]
+		if (sep == "_") { gsub("/", "_", o); gsub("/", "_", n) }
+		out = ""; rest = s
+		while ((p = index(rest, o)) > 0) {
+			before = p > 1 ? substr(rest, p - 1, 1) : substr(out, length(out), 1)
+			after = substr(rest, p + length(o), 1)
+			if ((sep == "_" ? (p == 1 && out == "" || before == "/") : seg(before)) && (after == "" || after == sep || (sep == "_" ? after == "." : seg(after)))) {
+				out = out substr(rest, 1, p - 1) n
+			} else {
+				out = out substr(rest, 1, p - 1 + length(o))
+			}
+			rest = substr(rest, p + length(o))
+		}
+		s = out rest
+	}
+	return s
+}
+function mpfile(f,    d, b) {
+	f = mp(f, "/")
+	d = f; sub(/[^\/]*$/, "", d)
+	b = substr(f, length(d) + 1)
+	return d mp(b, "_")
+}
+AWK
+
 {
 	git show "$base:scripts/shrink-only.txt" 2>/dev/null || true
 	cat scripts/shrink-only.txt
 } | entries | LC_ALL=C sort -u >"$tmp/paths"
 
 : >"$tmp/old"
-: >"$tmp/new"
+: >"$tmp/heads"
 while IFS= read -r p; do
 	git cat-file -e "$base:$p" 2>/dev/null || continue
 	git ls-tree -r --name-only "$base" -- "$p" | while IFS= read -r f; do
 		git show "$base:$f" | tagged "$f"
 	done >>"$tmp/old"
-	if [ -e "$p" ]; then
-		find "$p" -type f | LC_ALL=C sort | while IFS= read -r f; do
-			tagged "$f" <"$f"
-		done >>"$tmp/new"
-	fi
+	echo "$p" | LC_ALL=C awk -v moves="$tmp/moves" "$(cat "$tmp/map.awk")"' { print mp($0, "/") }' >>"$tmp/heads"
 done <"$tmp/paths"
 
-renames=scripts/baseline-renames.txt
-if [ -f "$renames" ]; then
-	sed -e '/^#/d' -e 's/[[:space:]]*$//' "$renames" | grep -v '^$' >"$tmp/renames" || true
-else
-	: >"$tmp/renames"
-fi
+: >"$tmp/new"
+LC_ALL=C sort -u "$tmp/heads" | while IFS= read -r p; do
+	[ -e "$p" ] || continue
+	find "$p" -type f | LC_ALL=C sort | while IFS= read -r f; do
+		tagged "$f" <"$f"
+	done
+done >>"$tmp/new"
 
-# The old and new baselines as multisets of file and line; a rename pairs
-# a removed line (any file) with an added one.
-LC_ALL=C awk -F '	' -v renames="$renames" '
-FILENAME == ARGV[1] { if (NF != 2 || $1 == "" || $2 == "") { bad[++nbad] = $0; next } ro[++nr] = $1; rn[nr] = $2; next }
-FILENAME == ARGV[2] { old[$1 FS $2]++; oldline[$2] = 1; next }
-{ new[$1 FS $2]++ }
+# Base lines rewritten through the moves, then: no file holds a line more
+# often than the rewritten base does.
+LC_ALL=C awk -v moves="$tmp/moves" "$(cat "$tmp/map.awk")"'
+FILENAME == ARGV[1] { split($0, a, "\t"); old[mpfile(a[1]) "\t" mp(a[2], "/")]++; next }
+{ new[$0]++ }
 END {
 	fail = 0
-	for (i = 1; i <= nbad; i++) { printf "%s: not \"old line<TAB>new line\": %s\n", renames, bad[i] > "/dev/stderr"; fail = 1 }
-	for (i = 1; i <= nr; i++) if (!(ro[i] in oldline)) {
-		printf "%s: no baseline at the base holds %s (empty the file once its renames are on the base)\n", renames, ro[i] > "/dev/stderr"; fail = 1
-	}
-	for (k in old) { d = old[k] - new[k]; if (d > 0) { split(k, a, FS); freed[a[2]] += d } }
-	n = 0
-	for (k in new) { d = new[k] - old[k]; if (d > 0) { for (j = 0; j < d; j++) add[++n] = k } }
-	for (i = 1; i <= n; i++) {
-		split(add[i], a, FS)
-		ok = 0
-		for (r = 1; r <= nr && !ok; r++) if (!used[r] && rn[r] == a[2] && freed[ro[r]] > 0) { used[r] = 1; freed[ro[r]]--; ok = 1 }
-		if (!ok) { printf "%s adds a line to a shrink-only baseline (fix the violation instead):\n\t%s\n", a[1], a[2] > "/dev/stderr"; fail = 1 }
+	for (k in new) if (new[k] > old[k]) {
+		split(k, a, "\t")
+		printf "%s adds a line to a shrink-only baseline (fix the violation instead):\n\t%s\n", a[1], a[2] > "/dev/stderr"
+		fail = 1
 	}
 	exit fail
-}' "$tmp/renames" "$tmp/old" "$tmp/new"
+}' "$tmp/old" "$tmp/new" || fail=1
+exit "$fail"

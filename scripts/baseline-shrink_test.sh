@@ -16,9 +16,15 @@ setup() {
 	mkdir -p "$work/r/scripts" "$work/r/$bl"
 	cp "$ROOT/scripts/baseline-shrink.sh" "$work/r/scripts/"
 	printf '# baselines\n%s\nallow.txt\n' "$bl" >"$work/r/scripts/shrink-only.txt"
-	printf '# renames\n' >"$work/r/scripts/baseline-renames.txt"
+	printf '# moves\n' >"$work/r/scripts/baseline-renames.txt"
 	printf 'a\nb\n' >"$work/r/$bl/internal_one.txt"
+	printf 's.go imports net/http\ns.go imports internal/platform/db\n' >"$work/r/$bl/internal_status.txt"
+	printf 'imports internal/status (no service)\nimports internal/statusx (no service)\n' >"$work/r/$bl/internal_platform_shim.txt"
 	printf 'x\n' >"$work/r/allow.txt"
+	for d in internal/status internal/statusx internal/platform/db internal/platform/store internal/platform/shim; do
+		mkdir -p "$work/r/$d"
+		printf 'package x\n' >"$work/r/$d/x.go"
+	done
 	git -C "$work/r" init -q
 	git -C "$work/r" add -A
 	git -C "$work/r" -c user.name=t -c user.email=t@t commit -qm base
@@ -76,33 +82,75 @@ rm -r "$work/r/$bl"
 check 0 "a removed baseline passes"
 
 setup
-printf 'a2\nb\n' >"$work/r/$bl/internal_one.txt"
-renames "a${tab}a2"
-check 0 "a listed rename passes"
-
-setup
-printf 'a2\nb\nc\n' >"$work/r/$bl/internal_one.txt"
-renames "a${tab}a2"
-check 1 "a line beside a listed rename still fails"
-
-setup
-printf 'a\nb\na2\n' >"$work/r/$bl/internal_one.txt"
-renames "a${tab}a2"
-check 1 "a rename whose old line stays is growth"
-
-setup
 printf 'b\n' >"$work/r/$bl/internal_one.txt"
 printf 'a\n' >"$work/r/$bl/internal_moved.txt"
-check 1 "a line moved to another file without a rename fails"
+check 1 "a line moved to another file fails"
+
+# move_status moves internal/status to internal/health in the tree and in
+# its baseline lines and file name, as wave 3's moves do.
+move_status() {
+	git -C "$work/r" mv internal/status internal/health
+	git -C "$work/r" mv "$bl/internal_status.txt" "$bl/internal_health.txt"
+	printf 'imports internal/health (no service)\nimports internal/statusx (no service)\n' >"$work/r/$bl/internal_platform_shim.txt"
+}
 
 setup
-printf 'b\n' >"$work/r/$bl/internal_one.txt"
-printf 'a\n' >"$work/r/$bl/internal_moved.txt"
-renames "a${tab}a"
-check 0 "a line moved to another file with a rename passes"
+move_status
+renames "internal/status${tab}internal/health"
+check 0 "a package move rewrites its baseline lines and file name"
 
 setup
-renames "gone${tab}new"
-check 1 "a rename whose old line no base baseline holds fails"
+move_status
+check 1 "a package move without its pair fails"
+
+setup
+move_status
+renames "internal/status${tab}internal/health"
+printf 's.go imports net/http\ns.go imports internal/platform/db\ns.go imports os/exec\n' >"$work/r/$bl/internal_health.txt"
+check 1 "a line added beside a move fails"
+
+setup
+printf 's.go imports net/http\ns.go imports internal/platform/store\n' >"$work/r/$bl/internal_status.txt"
+renames "internal/platform/db${tab}internal/platform/store"
+check 1 "a fixed import swapped for a different store import fails, paired or not"
+
+setup
+printf 's.go imports net/http\ns.go imports internal/platform/store\n' >"$work/r/$bl/internal_status.txt"
+renames "s.go imports internal/platform/db${tab}s.go imports internal/platform/store"
+check 1 "a line pair is no move and fails"
+
+setup
+move_status
+mkdir -p "$work/r/internal/status"
+printf 'package x\n' >"$work/r/internal/status/x.go"
+renames "internal/status${tab}internal/health"
+check 1 "a move whose old package is still here fails"
+
+setup
+git -C "$work/r" rm -rq internal/statusx
+renames "internal/statusx${tab}internal/platform/store"
+check 1 "a move onto a package the base has fails"
+
+# own_baseline gives internal/status a baseline file of its own, listed in
+# shrink-only.txt at the base.
+own_baseline() {
+	printf 'own\n' >"$work/r/internal/status/allow.txt"
+	printf 'internal/status/allow.txt\n' >>"$work/r/scripts/shrink-only.txt"
+	git -C "$work/r" add -A
+	git -C "$work/r" -c user.name=t -c user.email=t@t commit -qm own
+}
+
+setup
+own_baseline
+move_status
+renames "internal/status${tab}internal/health"
+check 0 "a moved package's own baseline moves with it"
+
+setup
+own_baseline
+move_status
+renames "internal/status${tab}internal/health"
+printf 'own\nmore\n' >"$work/r/internal/health/allow.txt"
+check 1 "a moved package's own baseline still only shrinks"
 
 exit "$fail"

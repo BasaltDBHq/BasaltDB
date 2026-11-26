@@ -144,7 +144,7 @@ func (s *Service) wire() {
 // approvalReads is what the delivery use case reads of the approval
 // records: the approval's store and its column order.
 func (s *Service) approvalReads() approvalReads {
-	return approvalReads{Records: s.approvalStoreSet().Records, columns: s.deps.Approval.Columns}
+	return approvalReads{records: s.approvalStoreSet().Records, columns: s.deps.Approval.Columns}
 }
 
 // storeStatementLimit is the agent's statement timeout, which a revert's

@@ -4,19 +4,19 @@ import (
 	"context"
 	"encoding/hex"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // Secrets returns the SECRET fields of the map, in the store's order,
 // loading it first when nothing is loaded. describe hides them and search
 // never matches them (CONTRACT.md, describe).
-func (m *Map) Secrets(ctx context.Context, c Classes) ([]agentstore.FieldRef, error) {
+func (m *Map) Secrets(ctx context.Context, c Classes) ([]action.FieldRef, error) {
 	s, err := m.current(ctx, c, nil)
 	if err != nil {
 		return nil, err
 	}
-	var out []agentstore.FieldRef
+	var out []action.FieldRef
 	for _, f := range s.fields {
 		if f.class.Class == guardmodel.ClassSecret {
 			out = append(out, f.ref)
@@ -50,12 +50,12 @@ type BoundMap struct {
 }
 
 // Resolve is Map.Resolve through the bound class store.
-func (b BoundMap) Resolve(ctx context.Context, refs []agentstore.FieldRef) ([]Class, error) {
+func (b BoundMap) Resolve(ctx context.Context, refs []action.FieldRef) ([]Class, error) {
 	return b.m.Resolve(ctx, b.c, refs)
 }
 
 // Secrets is Map.Secrets through the bound class store.
-func (b BoundMap) Secrets(ctx context.Context) ([]agentstore.FieldRef, error) {
+func (b BoundMap) Secrets(ctx context.Context) ([]action.FieldRef, error) {
 	return b.m.Secrets(ctx, b.c)
 }
 

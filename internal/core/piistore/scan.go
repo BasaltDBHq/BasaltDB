@@ -3,13 +3,13 @@ package piistore
 import (
 	"errors"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 )
 
 // ScanTarget is one resource the dictionary scan reads: its IDENTIFIER
 // fields, in the order the scan's value callback numbers them.
 type ScanTarget struct {
-	Resource agentstore.ResourceRef
+	Resource action.ResourceRef
 	// Namespace and Name are the resource's printed names (never PII).
 	Namespace, Name string
 	Fields          []FieldClass

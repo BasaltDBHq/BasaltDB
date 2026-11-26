@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -25,11 +24,11 @@ type holdStore struct {
 	previewErr error
 	holdErr    error
 
-	previewed []agentstore.Request
+	previewed []action.Request
 	held      []approvalstore.HoldRequest
 }
 
-func (s *holdStore) Preview(_ context.Context, _ action.Intent, req agentstore.Request) (approvalstore.HeldPreview, error) {
+func (s *holdStore) Preview(_ context.Context, _ action.Intent, req action.Request) (approvalstore.HeldPreview, error) {
 	s.previewed = append(s.previewed, req)
 	return s.preview, s.previewErr
 }
@@ -48,11 +47,11 @@ func TestHoldPassesTheRequestOnUnread(t *testing.T) {
 	t.Parallel()
 	st := &holdStore{preview: approvalstore.HeldPreview{Assigned: []string{"status"}, Lines: []string{`{"op":"UPDATE"}`}}}
 	ac := newService(t, "linux", "", func(s *settings) { s.store = st })
-	req := agentstore.Request{Text: `{"filter": {"status": "open"}}`, Params: []any{1}}
+	req := action.Request{Text: `{"filter": {"status": "open"}}`, Params: []any{1}}
 
 	held, err := ac.Hold(context.Background(), action.Intent{Text: "close"}, req, action.OpUpdate)
 	require.NoError(t, err)
-	require.Equal(t, []agentstore.Request{req}, st.previewed)
+	require.Equal(t, []action.Request{req}, st.previewed)
 	require.Equal(t, []approvalstore.HoldRequest{{Op: action.OpUpdate, Request: req, Assigned: []string{"status"}, Lines: st.preview.Lines}}, st.held)
 	require.Equal(t, st.preview.Lines, held.Lines)
 	require.Equal(t, "binding", held.BindingText)
@@ -91,7 +90,7 @@ func TestHoldExits(t *testing.T) {
 			t.Parallel()
 			st := tc.store
 			ac := newService(t, "linux", "", func(s *settings) { s.store = &st })
-			_, err := ac.Hold(context.Background(), action.Intent{}, agentstore.Request{Text: "w"}, action.OpDelete)
+			_, err := ac.Hold(context.Background(), action.Intent{}, action.Request{Text: "w"}, action.OpDelete)
 			require.Error(t, err)
 			var refusal *HoldRefusalError
 			require.Equal(t, tc.refusal, errors.As(err, &refusal), "recorded by the agent")

@@ -14,8 +14,8 @@ func TestStatusAccessListsAreEmptyNotNullAndBounded(t *testing.T) {
 	for i := range many {
 		many[i] = "public.t"
 	}
-	svc := newService(func(_ *Core, d *Deps) {
-		d.Access = func(context.Context) (CatalogAccess, error) { return CatalogAccess{Read: many}, nil }
+	svc := newService(func(s *settings) {
+		s.deps.Access = func(context.Context) (CatalogAccess, error) { return CatalogAccess{Read: many}, nil }
 	})
 	r, err := svc.Status(context.Background())
 	require.NoError(t, err)

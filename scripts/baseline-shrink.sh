@@ -39,8 +39,10 @@
 # here and absent at the base may hold no line of a baseline the base
 # registers, with or without its declaration and count, unless the renames
 # file declares it new with "new<TAB>path" (registered here, absent at the
-# base; skipped once the base has it). Every archtest file named
-# *baseline*.txt or under a *baseline* directory must be registered. Lines
+# base; skipped once the base has it), and then only while the registered
+# baselines keep each such line at its full weight. Every archtest file
+# named *baseline*.txt or *allowlist*.txt, or under a *baseline* or
+# *allowlist* directory, must be registered. Lines
 # are read as archtest reads them: trimmed at both ends.
 #
 # usage: sh scripts/baseline-shrink.sh <base-commit>
@@ -244,21 +246,30 @@ done >>"$tmp/new"
 cut -f2 "$tmp/filepairs" | LC_ALL=C sort -u >"$tmp/pairnew"
 : >"$tmp/freshlines"
 : >"$tmp/freshall"
+: >"$tmp/declaredlines"
+cp "$tmp/new" "$tmp/headkept"
 LC_ALL=C sort -u "$tmp/fresh" | while IFS= read -r p; do
 	[ -e "$p" ] || continue
 	find "$p" -type f | LC_ALL=C sort | while IFS= read -r f; do
 		tagged "$f" <"$f" >>"$tmp/freshall"
-		grep -qxF -- "$f" "$tmp/pairnew" && continue
-		grep -qxF -- "$p" "$tmp/declared" && continue
+		if grep -qxF -- "$f" "$tmp/pairnew"; then
+			tagged "$f" <"$f" >>"$tmp/headkept"
+			continue
+		fi
+		if grep -qxF -- "$p" "$tmp/declared"; then
+			tagged "$f" <"$f" >>"$tmp/declaredlines"
+			continue
+		fi
 		tagged "$f" <"$f"
 	done
 done >>"$tmp/freshlines"
 
-# Every archtest baseline file (a *baseline*.txt, or a file under a
-# *baseline* directory) is covered by a path shrink-only.txt registers.
+# Every archtest baseline or allowlist file (a *baseline*.txt or
+# *allowlist*.txt, or a file under a *baseline* or *allowlist* directory) is
+# covered by a path shrink-only.txt registers.
 entries <scripts/shrink-only.txt >"$tmp/here"
 git ls-files --cached --others --exclude-standard -- internal/testkit/archtest |
-	grep -E '^internal/testkit/archtest/(.*/)?[^/]*baseline[^/]*(\.txt$|/)' |
+	grep -E '^internal/testkit/archtest/(.*/)?[^/]*(baseline|allowlist)[^/]*(\.txt$|/)' |
 	LC_ALL=C sort -u | while IFS= read -r f; do
 	[ -e "$f" ] || continue
 	covered=
@@ -266,7 +277,7 @@ git ls-files --cached --others --exclude-standard -- internal/testkit/archtest |
 		case $f in "$p" | "$p"/*) covered=1 ;; esac
 	done <"$tmp/here"
 	[ -n "$covered" ] && continue
-	echo "$f: a baseline file that scripts/shrink-only.txt does not register" >&2
+	echo "$f: a baseline or allowlist file that scripts/shrink-only.txt does not register" >&2
 	echo x
 done >"$tmp/unregistered"
 [ -s "$tmp/unregistered" ] && fail=1
@@ -299,6 +310,23 @@ FILENAME == ARGV[1] { split($0, a, "\t"); c = countless(mp(a[2], "/")); seen[c] 
 	}
 }
 END { exit f }' "$tmp/old" "$tmp/freshlines" || fail=1
+
+# A declared new baseline may hold a line of a baseline the base registers
+# only while the registered baselines here (and the files that pairs rename
+# them to) keep that line at its full weight: an overlapping check passes, and
+# emptying the old files into a declared one fails.
+LC_ALL=C awk -v moves="$tmp/moves" "$(cat "$tmp/map.awk")"'
+function add(arr, s,    c, d, w) { c = countless(s); w = weight; arr[c] += w; d = declless(c); if (d != "") arr[d] += w }
+FILENAME == ARGV[1] { split($0, a, "\t"); add(based, mp(a[2], "/")); next }
+FILENAME == ARGV[2] { split($0, a, "\t"); add(head, a[2]); next }
+{
+	split($0, a, "\t"); c = countless(a[2]); d = declless(c)
+	if ((c in based && head[c] < based[c]) || (d != "" && d in based && head[d] < based[d])) {
+		printf "%s: a declared new baseline holds a line the registered baselines no longer keep in full (fix the violation instead):\n\t%s\n", a[1], a[2] > "/dev/stderr"
+		f = 1
+	}
+}
+END { exit f }' "$tmp/old" "$tmp/headkept" "$tmp/declaredlines" || fail=1
 
 # Each renamed file's lines come from its old files: a line matches an old
 # line as it is, or without its declaration when the old line has one

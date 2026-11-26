@@ -392,4 +392,25 @@ setup
 printf '  b\n\ta\n' >"$work/r/$bl/internal_one.txt"
 check 0 "a listed line indented is the same line"
 
+setup
+: >"$work/r/allow.txt"
+printf 'fresh.txt\n' >>"$work/r/scripts/shrink-only.txt"
+printf 'x\n' >"$work/r/fresh.txt"
+renames "new${tab}fresh.txt"
+check 1 "old files emptied into a declared new baseline fail"
+
+setup
+counted_base
+printf 'p h.go: H: os/user.Current\n' >"$work/r/lookups.txt"
+printf 'fresh.txt\n' >>"$work/r/scripts/shrink-only.txt"
+printf 'p h.go: os/user.Current\n' >"$work/r/fresh.txt"
+renames "new${tab}fresh.txt"
+check 1 "a declared new baseline holding a line whose registered count dropped fails"
+
+setup
+printf 'z\n' >"$work/r/internal/testkit/archtest/foo_allowlist.txt"
+check 1 "an archtest allowlist file no path registers fails"
+printf 'internal/testkit/archtest/foo_allowlist.txt\n' >>"$work/r/scripts/shrink-only.txt"
+check 0 "the same allowlist registered passes"
+
 exit "$fail"

@@ -62,12 +62,7 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Comm
 			setup.AddProblem(&ps)
 		}
 	}
-	list, err := ps.Sorted()
-	if err != nil {
-		return guidance.StatusReport{}, err
-	}
-	r.Problems, r.Ready = list, Ready(list)
-	return r, nil
+	return finish(r, ps)
 }
 
 // engineRecordStatus reads this engine's record for status and adds its

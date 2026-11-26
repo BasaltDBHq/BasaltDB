@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/vault-limits.v1.json",
   "title": "Vault channel limits",
-  "description": "The limits of the Vault channel (limits.json) that the engine and the Vault both apply, so neither can change one alone. Sizes are the most the Vault must carry; rates are the engine's, and the Vault may apply lower ones of its own. Limits only the engine and the page apply stay in the contract's table. See CONTRACT.md, Vault channel, Limits.",
+  "description": "The Vault channel's limits (limits.json) that the engine and the Vault must agree on: message sizes, timings (link expiry ahead, the challenge's lifetime, the handshake window) and counts (live links, sessions and handshakes). The Vault carries messages up to the sizes, accepts at least the minimum count of live links, and may apply lower rates of its own where the contract says so. Limits only the engine and the page apply stay in the contract's table. See CONTRACT.md, Vault channel, Limits.",
   "type": "object",
   "additionalProperties": false,
   "required": ["limits"],

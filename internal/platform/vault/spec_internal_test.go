@@ -13,9 +13,7 @@ import (
 
 // TestChannelSpecMatchesVaultLimits checks the limits the outside-reviewer
 // spec quotes (docs/security/vault-channel-spec.md, the "vault" constants
-// block) against the engine's socket and session code, in both directions.
-// TestChannelSpecMatchesVaultLimits checks the limits the outside-reviewer
-// spec quotes that only the engine and the page apply; the ones the Vault
+// block) that only the engine and the page apply; the ones the Vault
 // applies too are in api/mcp/vault/limits.json (TestLimitsMatchSharedFile).
 func TestChannelSpecMatchesVaultLimits(t *testing.T) {
 	t.Parallel()

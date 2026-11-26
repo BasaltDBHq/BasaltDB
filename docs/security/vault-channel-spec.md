@@ -272,7 +272,7 @@ Evidence: [contract, Frames](../../contract/vault-channel.md#frames), [Limits](.
 3. The engine answers `AUTH` with `version` 1 and `sig` over `basalt-vault-engine.1\n` + the challenge (as sent, base64url text) + `\n` + the host, where the host is the engine's own Vault host, never one the Vault names. A bad or late answer: `AUTH_FAILED`.
 4. The Vault sends `READY`. One live socket per engine id: a newer authenticated socket replaces the older, which is closed with `REPLACED`. After every `READY` the engine registers every live link again.
 
-Control messages are text WebSocket messages of at most 4 KiB, JSON ([schema](../../api/mcp/vault/control-message.schema.json)). Session bytes are binary `ROUTE` messages: `0x01` `||` `0x10` `||` `sid` (16 bytes) `||` the page's message exactly as received, or the engine's message for the page.
+Control messages are text WebSocket messages of at most `MAX_CONTROL` ([`limits.json`](../../api/mcp/vault/limits.json)), JSON ([schema](../../api/mcp/vault/control-message.schema.json)). Session bytes are binary `ROUTE` messages: `0x01` `||` `0x10` `||` `sid` (16 bytes) `||` the page's message exactly as received, or the engine's message for the page.
 
 | Message | Direction | Fields | Meaning |
 |---|---|---|---|

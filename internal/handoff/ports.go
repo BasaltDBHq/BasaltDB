@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/connecthandoff"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
@@ -87,6 +88,14 @@ type AgentLogin interface {
 type Collector interface {
 	Collect(ctx context.Context, setupID, fingerprint string) (Collected, error)
 	Report(ctx context.Context, setupID, fingerprint string, a setupcode.Address, r Reach) error
+}
+
+// SetupService is the connect service's SetupService: out/connectrpc.
+// Its errors are ErrNotHeld, ErrClockSkew, a *RateLimitedError, or another
+// error for a service that did not answer or refused otherwise.
+type SetupService interface {
+	CollectAddress(ctx context.Context, req connecthandoff.CollectRequest) (connecthandoff.Collected, error)
+	ReportReach(ctx context.Context, req connecthandoff.ReachReport) error
 }
 
 // AddressProber probes an address with logins bound to fail: Prober.

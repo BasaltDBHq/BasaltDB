@@ -50,7 +50,7 @@ Each row lists what a package in that layer may import from this repo. Anything 
 
 Three more rules sit on top of the table, all in `internal/testkit/archtest`.
 
-- **A service imports no driver, directly or through another package.** `TestArchitecture` fails a non-test file under a domain root that imports `github.com/jackc/pgx` (including `pgconn`), `database/sql` or `net/http`: the service declares a port and an outbound adapter holds the driver. `net/http`'s sub-packages (`httptest`, `httputil`) count too. The portal check fetches through `status/out/portalfetch` and the connect service client calls through `handoff/out/connectrpc`. `TestServicesLinkNoDatabaseDriver` runs `go list -deps` for every domain root on linux and darwin and fails when a database driver is among the transitive imports, with no exception: `pkg/trustprofile`'s `TrustTLS` and `ExplainTLS` take a host and its `*tls.Config`, and `pgdial` holds the `pgconn` glue that calls them for each host.
+- **A service imports no driver, directly or through another package.** `TestArchitecture` fails a non-test file under a domain root that imports `github.com/jackc/pgx` (including `pgconn`), `database/sql`, `net/http`, or a protocol client library: `connectrpc.com/...`, `google.golang.org/grpc/...` or a client generated from the module's protos (an `api/` package named `<pkg>connect`, such as `connectv1connect`; the proto messages are allowed). The service declares a port and an outbound adapter holds the driver or the client. `net/http`'s sub-packages (`httptest`, `httputil`) count too. The portal check fetches through `status/out/portalfetch`; the connect service's calls go through `handoff/out/connectrpc`, which implements `handoff.SetupService` in the types of `core/connecthandoff` and maps the service's refusals to the engine's errors. `TestServicesLinkNoDatabaseDriver` runs `go list -deps` for every domain root on linux and darwin and fails when a database driver is among the transitive imports, with no exception: `pkg/trustprofile`'s `TrustTLS` and `ExplainTLS` take a host and its `*tls.Config`, and `pgdial` holds the `pgconn` glue that calls them for each host.
 - **A platform inbound package imports no domain service.** `httpserver`, `mcpserver`, `pageserver`, `shim` and `cli` serve every domain, so none of them may import one domain's use case. What they need from a domain they take as a port that `internal/app` fills in. The packages that still break this are in the baseline (below), and the list only shrinks.
 - **Only `internal/app` installs the plugin path rule.** No other non-test file calls `UsePathRules` on the plugin package; test files and the test helper packages are exempt, as they are from the layer rules.
 
@@ -249,6 +249,7 @@ A codec function is a function of a decision package that only encodes, decodes,
 | `guardmodel` | ledger | types | 2 | - | - |
 | `pluginmodel` | plugin | types | 2 | - | - |
 | `supabase` | setup | types | 2 | - | - |
+| `connecthandoff` | setup handoff | types | 2 | - | - |
 | `channel` | Vault channel | codec | 3 | `crypto/rand` | - |
 | `links` | links | codec | 3 | - | - |
 | `linkcodec` | links | codec | 3 | - | - |

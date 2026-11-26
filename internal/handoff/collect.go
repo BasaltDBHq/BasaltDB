@@ -3,15 +3,10 @@ package handoff
 import (
 	"context"
 	"encoding/base64"
-	"errors"
-	"fmt"
 	"time"
 
-	"connectrpc.com/connect"
-
-	connectv1 "github.com/basaltdbhq/basaltdb/api/connect/proto/basalt/connect/v1"
-	"github.com/basaltdbhq/basaltdb/api/connect/proto/basalt/connect/v1/connectv1connect"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/connecthandoff"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
@@ -21,32 +16,23 @@ const ServiceURL = "https://" + channel.ConnectAudience
 // collectTimeout bounds one CollectAddress or ReportReach call.
 const collectTimeout = 20 * time.Second
 
-// The refusals CollectAddress and ReportReach answer with (CONTRACT.md, Connect refusals).
-const (
-	reasonHandoffUnknown = "HANDOFF_UNKNOWN"
-	reasonClockSkew      = "CLOCK_SKEW"
-	reasonRateLimited    = "RATE_LIMITED"
-)
-
+// The refusals CollectAddress and ReportReach answer with (CONTRACT.md,
+// Connect refusals), as the connect service's adapter maps them.
 var (
 	// ErrNotHeld is HANDOFF_UNKNOWN: no hold for this setup and key (the
 	// setup has not run, the hold expired or the service restarted).
-	ErrNotHeld = errors.New("the connect service holds no address for this setup yet")
+	ErrNotHeld = connecthandoff.ErrNotHeld
 	// ErrClockSkew is CLOCK_SKEW: the engine's clock is more than 5 minutes
 	// off the service's.
-	ErrClockSkew = errors.New("the clock of the bot's machine is more than 5 minutes off")
+	ErrClockSkew = connecthandoff.ErrClockSkew
 )
 
 // RateLimitedError is RATE_LIMITED: wait After before the next call.
-type RateLimitedError struct{ After time.Duration }
-
-func (e *RateLimitedError) Error() string {
-	return fmt.Sprintf("the connect service asks to wait %s before collecting again", e.After)
-}
+type RateLimitedError = connecthandoff.RateLimitedError
 
 // Client calls the connect service's CollectAddress and ReportReach.
 type Client struct {
-	rpc    connectv1connect.SetupServiceClient
+	rpc    SetupService
 	signer Signer
 	now    func() time.Time
 }
@@ -54,7 +40,7 @@ type Client struct {
 // NewClient is a client of the connect service that rpc calls
 // (out/connectrpc, at ServiceURL outside tests), signing with signer. The
 // signed audience is always the contract's, whatever address rpc calls.
-func NewClient(rpc connectv1connect.SetupServiceClient, signer Signer, now func() time.Time) *Client {
+func NewClient(rpc SetupService, signer Signer, now func() time.Time) *Client {
 	if signer == nil || now == nil {
 		panic("handoff: a client needs a signer and a clock")
 	}
@@ -67,28 +53,16 @@ var b64 = base64.RawURLEncoding
 const (
 	// HoldPreview is CheckSetup's hold: the person has not approved yet,
 	// so the engine only checks, probes and reports.
-	HoldPreview = "PREVIEW"
+	HoldPreview = connecthandoff.HoldPreview
 	// HoldSetUp is RunSetup's hold: the setup ran, and the engine asks the
 	// person about the database after a probe that passed.
-	HoldSetUp = "SET_UP"
+	HoldSetUp = connecthandoff.HoldSetUp
 )
 
 // Collected is an address the connect service handed over, unchecked (see
-// Address.Check and Probe), with its hold's phase: HoldPreview, HoldSetUp,
-// or anything else the service sent, which the engine treats as a preview.
-type Collected struct {
-	Address setupcode.Address
-	Phase   string
-	// TrustRoot is the SHA-256 of the certificate authority the person
-	// trusted on the connect page for the address's host, or "". It adds
-	// no trust by itself: Prober.Approve checks it against the chain the
-	// engine reads.
-	TrustRoot string
-}
-
-// SetUp reports whether the address is the setup's own: only then may the
-// engine ask the person about it. Any phase but SET_UP is a preview.
-func (c Collected) SetUp() bool { return c.Phase == HoldSetUp }
+// Address.Check and Probe), with its hold's phase; SetUp reports whether it
+// is the setup's own.
+type Collected = connecthandoff.Collected
 
 // Collect asks for the address of setupID, whose code's fingerprint is
 // fingerprint: the address the service holds and its phase, ErrNotHeld,
@@ -102,21 +76,9 @@ func (c *Client) Collect(ctx context.Context, setupID, fingerprint string) (Coll
 	}
 	ctx, cancel := context.WithTimeout(ctx, collectTimeout)
 	defer cancel()
-	res, err := c.rpc.CollectAddress(ctx, connect.NewRequest(&connectv1.CollectAddressRequest{
-		SetupId: setupID, EnginePublicKey: b64.EncodeToString(c.signer.PublicKeySPKI()), Time: at, Signature: b64.EncodeToString(sig),
-	}))
-	if err != nil {
-		return Collected{}, collectError(err)
-	}
-	t := res.Msg.GetAddress()
-	if t == nil {
-		return Collected{}, errors.New("the connect service answered without an address")
-	}
-	return Collected{
-		Address:   setupcode.Address{Host: t.GetHost(), Port: int(t.GetPort()), Database: t.GetDatabase(), SupabaseRef: t.GetSupabaseRef()},
-		Phase:     res.Msg.GetPhase(),
-		TrustRoot: res.Msg.GetTrustRoot(),
-	}, nil
+	return c.rpc.CollectAddress(ctx, connecthandoff.CollectRequest{
+		SetupID: setupID, EnginePublicKey: b64.EncodeToString(c.signer.PublicKeySPKI()), Time: at, Signature: b64.EncodeToString(sig),
+	})
 }
 
 func (c *Client) at() string { return c.now().UTC().Truncate(time.Second).Format(time.RFC3339) }
@@ -138,41 +100,8 @@ func (c *Client) Report(ctx context.Context, setupID, fingerprint string, a setu
 	}
 	ctx, cancel := context.WithTimeout(ctx, collectTimeout)
 	defer cancel()
-	_, err = c.rpc.ReportReach(ctx, connect.NewRequest(&connectv1.ReportReachRequest{
-		SetupId: setupID, EnginePublicKey: b64.EncodeToString(c.signer.PublicKeySPKI()), Time: at,
-		Address: &connectv1.Target{Host: canon.Host, Port: int32(canon.Port), Database: canon.Database, SupabaseRef: canon.SupabaseRef},
-		Result:  result, Reason: r.Reason, Signature: b64.EncodeToString(sig),
-	}))
-	if err != nil {
-		return collectError(err)
-	}
-	return nil
-}
-
-// collectError maps the service's refusal to the engine's errors. The
-// service's message is never passed on: it is not the engine's to trust.
-func collectError(err error) error {
-	var ce *connect.Error
-	if !errors.As(err, &ce) {
-		return fmt.Errorf("the connect service did not answer: %w", err)
-	}
-	for _, d := range ce.Details() {
-		v, derr := d.Value()
-		if derr != nil {
-			continue
-		}
-		r, ok := v.(*connectv1.Refusal)
-		if !ok {
-			continue
-		}
-		switch r.GetReason() {
-		case reasonHandoffUnknown:
-			return ErrNotHeld
-		case reasonClockSkew:
-			return ErrClockSkew
-		case reasonRateLimited:
-			return &RateLimitedError{After: time.Duration(max(r.GetRetryAfterSeconds(), 1)) * time.Second}
-		}
-	}
-	return fmt.Errorf("the connect service refused the call (%s)", ce.Code())
+	return c.rpc.ReportReach(ctx, connecthandoff.ReachReport{
+		SetupID: setupID, EnginePublicKey: b64.EncodeToString(c.signer.PublicKeySPKI()), Time: at,
+		Address: canon, Result: result, Reason: r.Reason, Signature: b64.EncodeToString(sig),
+	})
 }

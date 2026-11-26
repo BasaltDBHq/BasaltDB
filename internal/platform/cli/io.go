@@ -14,27 +14,41 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
-// Querier runs a statement or a query on a pgx connection, pool or
-// transaction. It is the same type as the Postgres adapters' querier (an
-// unnamed interface), declared here because an inbound adapter does not
-// import an outbound one.
+// Rows, Row and Result are the parts of a query's answer the CLI's
+// connections give, written as unnamed interfaces: the same types as the
+// setup service's, with no import of it and no driver type.
+type (
+	Rows = interface {
+		Close()
+		Err() error
+		Next() bool
+		Scan(dest ...any) error
+	}
+	Row    = interface{ Scan(dest ...any) error }
+	Result = interface{ RowsAffected() int64 }
+)
+
+// Querier runs a statement or a query on a connection the shell opened. It
+// is the setup service's query port (setup.Querier), declared here because
+// an inbound adapter names no driver.
 type Querier = interface {
-	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Exec(ctx context.Context, sql string, args ...any) (Result, error)
+	Query(ctx context.Context, sql string, args ...any) (Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) Row
 }
 
-// AgentConn is the agent's own connection init --remote reads with.
-type AgentConn interface {
+// Conn is a database connection the shell opened (Host.Connect): its
+// queries and its close. The app's adapter behind it keeps the driver.
+type Conn interface {
 	Querier
 	Close(ctx context.Context) error
 }
+
+// AgentConn is the agent's own connection init --remote reads with.
+type AgentConn = Conn
 
 // IO is everything a command touches outside its arguments, so tests
 // can drive commands without a terminal.
@@ -76,7 +90,7 @@ type IO struct {
 	// --remote): nil and no error when the database refuses the login.
 	AgentLogin func(ctx context.Context, dsn string) (AgentConn, error)
 	// Dial opens a database connection (Connect outside tests).
-	Dial func(ctx context.Context, dsn string) (*pgx.Conn, error)
+	Dial func(ctx context.Context, dsn string) (Conn, error)
 	// Probe tries a login bound to fail, to confirm a credential's TLS
 	// protection (hardenedCredential); probeLogin outside tests.
 	Probe func(ctx context.Context, dsn string) error

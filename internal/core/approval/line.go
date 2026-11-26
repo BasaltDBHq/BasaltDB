@@ -1,11 +1,11 @@
 package approval
 
 import (
-	"bytes"
 	"encoding/json"
 	"regexp"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/textrule"
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 )
 
 // Row operations in a preview line.
@@ -59,9 +59,7 @@ func ParseLine(text string) (Line, error) {
 		return Line{}, Invalid("preview line: %v", err)
 	}
 	var l Line
-	dec := json.NewDecoder(bytes.NewReader([]byte(text)))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&l); err != nil {
+	if err := strictjson.Decode([]byte(text), &l); err != nil {
 		return Line{}, Invalid("preview line: %v", err)
 	}
 	switch l.Op {

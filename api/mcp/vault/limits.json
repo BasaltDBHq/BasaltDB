@@ -1,0 +1,64 @@
+{
+  "limits": [
+    {
+      "name": "MAX_FRAME",
+      "value": 32786,
+      "unit": "BYTES",
+      "meaning": "The largest page message (a frame): 32 768 bytes of padded plaintext, 2 of header, 16 of tag. Over it: TOO_LARGE."
+    },
+    {
+      "name": "MAX_ROUTE",
+      "value": 32804,
+      "unit": "BYTES",
+      "meaning": "The largest ROUTE message on the engine's socket: a frame plus its 18-byte header (version, type, sid). Over it: TOO_LARGE."
+    },
+    {
+      "name": "MAX_CONTROL",
+      "value": 4096,
+      "unit": "BYTES",
+      "meaning": "The largest control (text) message on the engine's socket. Over it: TOO_LARGE."
+    },
+    {
+      "name": "MAX_EXPIRY_AHEAD",
+      "value": 86700,
+      "unit": "SECONDS",
+      "meaning": "How far ahead of now REGISTER_LINK may set expiresAt: 24 hours and 5 minutes. Later: ERROR INVALID_EXPIRY."
+    },
+    {
+      "name": "CHALLENGE_TTL",
+      "value": 30,
+      "unit": "SECONDS",
+      "meaning": "How long the Vault's CHALLENGE stays valid; a later AUTH closes with AUTH_FAILED."
+    },
+    {
+      "name": "MIN_LINKS_PER_ENGINE",
+      "value": 1000,
+      "unit": "COUNT",
+      "meaning": "The fewest live links the Vault accepts per engine; over the Vault's own number: ERROR LINK_LIMIT."
+    },
+    {
+      "name": "MAX_SESSIONS_PER_LINK",
+      "value": 4,
+      "unit": "COUNT",
+      "meaning": "The most open sessions one link may have. Over it: SESSION_LIMIT."
+    },
+    {
+      "name": "MAX_SESSIONS_PER_ENGINE",
+      "value": 64,
+      "unit": "COUNT",
+      "meaning": "The most open sessions one engine may have. Over it: SESSION_LIMIT."
+    },
+    {
+      "name": "MAX_HANDSHAKES_PER_LINK",
+      "value": 20,
+      "unit": "COUNT",
+      "meaning": "The most handshakes (message 1s) one link token may start within HANDSHAKE_WINDOW. Over it: RATE_LIMITED."
+    },
+    {
+      "name": "HANDSHAKE_WINDOW",
+      "value": 600,
+      "unit": "SECONDS",
+      "meaning": "The window MAX_HANDSHAKES_PER_LINK counts over: 10 minutes."
+    }
+  ]
+}

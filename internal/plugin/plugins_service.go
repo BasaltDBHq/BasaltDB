@@ -3,7 +3,6 @@ package plugin
 import (
 	"bytes"
 	"errors"
-	"io"
 	"os"
 	"os/user"
 	"strconv"
@@ -55,12 +54,7 @@ type UnitSource struct {
 func osUnitSource(p Ports) *UnitSource {
 	return &UnitSource{
 		ReadUnit: func(path string) ([]byte, error) {
-			f, err := p.Files.OpenFile(path, os.O_RDONLY, 0)
-			if err != nil {
-				return nil, err
-			}
-			defer f.Close()
-			return io.ReadAll(io.LimitReader(f, maxUnitBytes+1))
+			return p.Files.ReadOpen(path, os.O_RDONLY, maxUnitBytes+1, nil)
 		},
 		LookupUID: func(name string) (int, error) {
 			u, err := user.Lookup(name)

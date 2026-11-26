@@ -131,7 +131,7 @@ func TestScanSkipsAKeylessRelationThatTimesOut(t *testing.T) {
 	require.NoError(t, err, "the slow view is skipped, the cycle commits")
 	require.Equal(t, 1, res.Skipped)
 	require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "order7@corp.ee", "")))
-	require.Contains(t, out.String(), "pii: skipped a relation in this scan")
+	require.Contains(t, out.String(), "pii: skipped a resource in this scan")
 	require.Contains(t, out.String(), "public.slow_v")
 	require.NotContains(t, out.String(), "corp.ee", "names and counts only")
 }

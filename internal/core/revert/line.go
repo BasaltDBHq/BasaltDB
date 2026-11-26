@@ -1,7 +1,6 @@
 package revert
 
 import (
-	"bytes"
 	"encoding/json"
 
 	"github.com/google/uuid"
@@ -9,6 +8,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/textrule"
+	"github.com/basaltdbhq/basaltdb/internal/lib/strictjson"
 )
 
 // What a revert does with a row.
@@ -90,9 +90,7 @@ func ParseLine(text string) (Line, error) {
 // guard.PreviewRevertPage).
 func ParseMarkedLine(text string) (Line, error) {
 	var l Line
-	dec := json.NewDecoder(bytes.NewReader([]byte(text)))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&l); err != nil {
+	if err := strictjson.Decode([]byte(text), &l); err != nil {
 		return Line{}, Invalid("revert line: %v", err)
 	}
 	switch l.Op {

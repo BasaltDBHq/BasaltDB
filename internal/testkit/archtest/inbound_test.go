@@ -198,11 +198,7 @@ func TestInboundOnlyTranslates(t *testing.T) {
 // inboundDriverBaseline pins the non-test files of inbound packages that
 // import a database driver today, with the reason. The list only shrinks: a
 // new file fails, and so does a listed file that no longer imports one.
-var inboundDriverBaseline = map[string]string{
-	"internal/platform/cli/host.go":  "its host port returns a *pgx.Conn",
-	"internal/platform/cli/io.go":    "its querier port uses pgx rows and command tags",
-	"internal/platform/cli/trust.go": "parses the connection string and returns a *pgx.Conn",
-}
+var inboundDriverBaseline = map[string]string{}
 
 // driverImport reports whether an import path is a database driver: pgx and
 // its subpackages, the old jackc/pgconn and pgtype modules, and database/sql.

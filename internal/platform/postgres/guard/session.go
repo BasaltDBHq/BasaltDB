@@ -10,12 +10,10 @@ import (
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
-
-// psql builds calls with Postgres placeholders.
-var psql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 
 // Values of basalt.mode.
 const (
@@ -99,10 +97,16 @@ func SetTimeouts(ctx context.Context, tx pgx.Tx, timeout time.Duration) error {
 	}
 	ms := strconv.FormatInt(timeout.Milliseconds(), 10)
 	idle := strconv.FormatInt(max(timeout, IdleFloor).Milliseconds(), 10)
-	return execCall(ctx, tx, sq.Expr(
-		"pg_catalog.set_config('statement_timeout', ?, true), pg_catalog.set_config('lock_timeout', ?, true), "+
-			"pg_catalog.set_config('idle_in_transaction_session_timeout', ?, true)",
-		ms, ms, idle))
+	sql, args, err := sqlport.Builder.Select().
+		Column(sqlport.StatementTimeout(timeout)).
+		Column(sq.Expr("pg_catalog.set_config('lock_timeout', ?, true)", ms)).
+		Column(sq.Expr("pg_catalog.set_config('idle_in_transaction_session_timeout', ?, true)", idle)).
+		ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, sql, args...)
+	return err
 }
 
 // Finish describes the statement that just ran in a guarded transaction.
@@ -249,7 +253,7 @@ func storable(v any) any {
 
 // execCall runs SELECT <call> and discards the result.
 func execCall(ctx context.Context, q Querier, call sq.Sqlizer) error {
-	sql, args, err := psql.Select().Column(call).ToSql()
+	sql, args, err := sqlport.Builder.Select().Column(call).ToSql()
 	if err != nil {
 		return err
 	}
@@ -258,7 +262,7 @@ func execCall(ctx context.Context, q Querier, call sq.Sqlizer) error {
 }
 
 func returnUUID(ctx context.Context, q Querier, call sq.Sqlizer) (uuid.UUID, error) {
-	sql, args, err := psql.Select().Column(call).ToSql()
+	sql, args, err := sqlport.Builder.Select().Column(call).ToSql()
 	if err != nil {
 		return uuid.Nil, err
 	}

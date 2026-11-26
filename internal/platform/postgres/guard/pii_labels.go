@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // The column labels of the connect page (CONTRACT.md, Connect, Column
@@ -54,7 +55,7 @@ func tableColumns(ctx context.Context, q Querier, tables []string) ([]tableColum
 // storedLabels reads, as the guard role, the rows of pii_columns for
 // tables (FOR UPDATE when lock), by schema.table and column.
 func storedLabels(ctx context.Context, tx pgx.Tx, tables []string, lock bool) (map[[2]string]guardmodel.PIIColumn, error) {
-	b := psql.Select("table_schema", "table_name", "column_name", "data_type", "class",
+	b := sqlport.Builder.Select("table_schema", "table_name", "column_name", "data_type", "class",
 		"coalesce(entity_type, '')", "coalesce(suggested_class, '')", "coalesce(suggested_entity_type, '')",
 		"coalesce(reason, '')", "needs_review", "coalesce(phone_region, '')").
 		From("basalt_meta.pii_columns").

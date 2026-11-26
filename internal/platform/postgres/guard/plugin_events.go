@@ -8,6 +8,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
 
 // pluginTrustDetail is PLUGIN_TRUST_ADDED's detail.
@@ -54,7 +55,7 @@ func recordPluginEvent(ctx context.Context, q Querier, kind guardmodel.PluginEve
 // a detail that does not decode is skipped rather than trusted.
 func ReadPluginRecords(ctx context.Context, q Querier) (guardmodel.PluginRecords, error) {
 	var out guardmodel.PluginRecords
-	sql, args, err := psql.Select("kind", "detail").
+	sql, args, err := sqlport.Builder.Select("kind", "detail").
 		Options("DISTINCT ON (detail->>'name', detail->>'instance')").
 		From("basalt_meta.agent_ledger").
 		Where(sq.Eq{"kind": []string{string(guardmodel.PluginEnabled), string(guardmodel.PluginDisabled), string(guardmodel.PluginChanged)}}).
@@ -83,7 +84,7 @@ func ReadPluginRecords(ctx context.Context, q Querier) (guardmodel.PluginRecords
 		return out, err
 	}
 	// Each key's latest PLUGIN_TRUST_ADDED or PLUGIN_TRUST_REMOVED.
-	sql, args, err = psql.Select("kind", "detail->>'signerKeyId'").
+	sql, args, err = sqlport.Builder.Select("kind", "detail->>'signerKeyId'").
 		Options("DISTINCT ON (detail->>'signerKeyId')").
 		From("basalt_meta.agent_ledger").
 		Where(sq.Eq{"kind": []string{string(guardmodel.PluginTrustAdded), string(guardmodel.PluginTrustRemoved)}}).

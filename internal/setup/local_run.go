@@ -279,7 +279,14 @@ func (s *LocalService) run(ctx context.Context, req Request) (RunAnswer, error) 
 	ctx, cancel := context.WithTimeout(ctx, callLimit)
 	defer cancel()
 	if s.opts.Configured {
-		return s.runAgentJob(ctx, req)
+		a, err := s.runAgentJob(ctx, req)
+		if err == nil && req.Job == JobUpdate {
+			// Only an UPDATE that ran ends basalt init's wait: its done
+			// screen tells the person to let the agent go on. A fix ends
+			// back on the check, where Remove is still a pick.
+			s.markUpdated(req.Agent)
+		}
+		return a, err
 	}
 	j, err := s.validate(req)
 	if err != nil {

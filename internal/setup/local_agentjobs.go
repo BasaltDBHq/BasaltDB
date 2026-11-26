@@ -123,9 +123,16 @@ func (s *LocalService) validateAgentJob(req Request, run bool) (agentJob, error)
 	if req.Job == JobChange {
 		return agentJob{}, refuse(CodeInvalidArgument, "Pick Update or Remove on the page first.")
 	}
+	if req.Since != nil && (run || req.Job != "") {
+		return agentJob{}, refuse(CodeInvalidArgument, "Only basalt init's probe, a check with no job, carries since.")
+	}
 	if req.Job == "" && s.resetAsked() {
 		// basalt init's probe, after the person's "No, this isn't mine".
 		return agentJob{}, refuse(CodeResetAsked, "You answered that this database is not yours. basalt init asks for your computer's administrator password next, to reset BasaltDB on this computer.")
+	}
+	if req.Job == "" && req.Since != nil && s.updatedSince(req.Agent, *req.Since) {
+		// basalt init's probe, after the page's Update for its agent.
+		return agentJob{}, refuse(CodeGuardUpdated, "The guard is updated. basalt init tells the agent to go on.")
 	}
 	if !isAgentJob(req.Job) {
 		return agentJob{}, refuse(CodeJobUnavailable, alreadySetUp)

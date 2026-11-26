@@ -91,13 +91,28 @@ const pagesProbeTimeout = 2 * time.Second
 // maxLinkAnswer bounds the engine's answer to a pages API request.
 const maxLinkAnswer = 16 << 10
 
-// SetupState posts an empty request to the engine's setup check route,
-// origin+path, and returns the refusal code it answers. An error when
-// nothing answers.
-func SetupState(ctx context.Context, origin, path string) (string, error) {
+// setupProbe is basalt init's probe after it opened an agent's CHANGE
+// link: the agent, and when.
+type setupProbe struct {
+	Agent string    `json:"agent"`
+	Since time.Time `json:"since"`
+}
+
+// SetupState posts basalt init's probe to the engine's setup check route,
+// origin+path, and returns the refusal code it answers: an empty request
+// when agent is "", else one that names agent and since, when init opened
+// that agent's CHANGE link. An error when nothing answers.
+func SetupState(ctx context.Context, origin, path, agent string, since time.Time) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, pagesProbeTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, origin+path, strings.NewReader("{}"))
+	body := []byte("{}")
+	if agent != "" {
+		var err error
+		if body, err = json.Marshal(setupProbe{Agent: agent, Since: since}); err != nil {
+			return "", err
+		}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, origin+path, bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}

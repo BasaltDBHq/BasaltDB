@@ -45,7 +45,7 @@ func TestHelpSaysOneEngineServesManyAgents(t *testing.T) {
 		code, stdout, stderr := runArgs(args...)
 		require.Equal(t, cli.ExitOK, code, stderr)
 		out := stdout + stderr
-		for _, want := range []string{"One engine serves many agents", "one database", "basalt init --remote --agent NAME"} {
+		for _, want := range []string{"One engine serves many agents", "one database", "add another agent: basalt init --agent NAME (on a bot's machine, basalt init --remote --agent NAME)."} {
 			require.Contains(t, out, want, args)
 		}
 	}

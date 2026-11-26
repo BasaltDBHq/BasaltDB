@@ -116,6 +116,48 @@ func TestUpdateAddsOnlyTheMissingMigrations(t *testing.T) {
 	refusal(t, err, setup.CodeGuardCurrent)
 }
 
+// basalt init's probe after it opened the CHANGE link names the agent and
+// when it opened it: the page's Update for that agent, finished after,
+// answers GUARD_UPDATED to every such probe; a refused Update, an Update
+// that finished before, or another agent's probe does not.
+func TestTheProbeSeesAnUpdateThatRanAfterInitOpenedTheLink(t *testing.T) {
+	f, svc := installed(t)
+	ctx := context.Background()
+	probe := func(agent string, since time.Time) error {
+		_, err := svc.Check(ctx, setup.Request{Agent: agent, Since: &since})
+		return err
+	}
+	opened := f.now.Add(-time.Second)
+	_, err := svc.Run(ctx, f.agentJob(setup.JobUpdate))
+	refusal(t, err, setup.CodeGuardCurrent)
+	refusal(t, probe("demo_bot", opened), setup.CodeJobUnavailable)
+
+	guardtest.NextVersion(t, false)
+	_, err = svc.Run(ctx, f.agentJob(setup.JobUpdate))
+	require.NoError(t, err)
+	refusal(t, probe("demo_bot", opened), setup.CodeGuardUpdated)
+	refusal(t, probe("demo_bot", opened), setup.CodeGuardUpdated)
+	refusal(t, probe("demo_bot", f.now), setup.CodeJobUnavailable)
+	refusal(t, probe("other_bot", opened), setup.CodeJobUnavailable)
+	_, err = svc.Check(ctx, setup.Request{})
+	refusal(t, err, setup.CodeJobUnavailable)
+
+	// A later init's probe: the Update finished before it opened its link.
+	f.now = f.now.Add(time.Minute)
+	refusal(t, probe("demo_bot", f.now.Add(-time.Second)), setup.CodeJobUnavailable)
+	_, err = svc.Run(ctx, f.agentJob(setup.JobUpdate))
+	refusal(t, err, setup.CodeGuardCurrent)
+	refusal(t, probe("demo_bot", f.now.Add(-time.Second)), setup.CodeJobUnavailable)
+
+	for _, req := range []setup.Request{f.agentJob(setup.JobUpdate), f.agentJob(setup.JobRemove)} {
+		req.Since = &opened
+		_, err = svc.Check(ctx, req)
+		refusal(t, err, setup.CodeInvalidArgument)
+	}
+	_, err = svc.Run(ctx, setup.Request{Agent: "demo_bot", Since: &opened})
+	refusal(t, err, setup.CodeInvalidArgument)
+}
+
 func TestAgentJobsRefuseWhatIsNotTheAgentsBeforeConnecting(t *testing.T) {
 	t.Parallel()
 	f, svc := installed(t)

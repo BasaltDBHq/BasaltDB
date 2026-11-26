@@ -75,6 +75,10 @@ type Request struct {
 	Answers      []Answer   `json:"answers,omitempty"`
 	Challenge    *Challenge `json:"challenge,omitempty"`
 	Passkey      *Passkey   `json:"passkey,omitempty"`
+	// Since is basalt init's probe only (a check with no job, with Agent):
+	// when it opened the CHANGE link. It is answered GUARD_UPDATED once an
+	// UPDATE for the agent finished after it.
+	Since *time.Time `json:"since,omitempty"`
 }
 
 // Answer answers one row-level security question.
@@ -207,6 +211,9 @@ type LocalService struct {
 	busy sync.Mutex
 	// mark is the person's "No, this isn't mine" (Not your database).
 	mark resetMark
+	// updated is when each agent's last UPDATE finished, for basalt init's
+	// probe.
+	updated updateMarks
 }
 
 // New returns the setup of an engine with no config.

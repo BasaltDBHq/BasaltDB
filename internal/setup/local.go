@@ -12,7 +12,8 @@ const (
 	SetupWait     = 30 * time.Second
 	SetupWaitStep = 250 * time.Millisecond
 	// RemovalWait is how long init waits, after it opened the Update/Remove
-	// link, for the page's Remove: as long as an approval wait.
+	// link, for the page's Remove: as long as an approval wait. The page's
+	// Update ends it sooner.
 	RemovalWait     = guidance.DefaultApprovalWait
 	RemovalWaitStep = 500 * time.Millisecond
 )
@@ -25,4 +26,5 @@ const (
 	EngineSetUp                               // it has a config
 	EngineRemoved                             // the page removed its last agent
 	EngineResetAsked                          // the person said the database is not theirs
+	EngineUpdated                             // the page's Update for the agent finished
 )

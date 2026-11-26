@@ -25,15 +25,17 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/enginefiles"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/osusers"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 	psetup "github.com/basaltdbhq/basaltdb/pkg/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
-// Backend implements localsetup's Backend: the setup store (which is also
-// internal/setup's backend) and the connection, trust and passkey calls localsetup
-// makes itself.
+// Backend implements the setup service's LocalBackend: the setup store
+// (which is also the shared run's SetuprunBackend), the engine's files, and
+// the connection, trust, classifier and passkey calls the local setup page's
+// jobs make.
 type Backend struct {
 	setupstore.Store
 	enginefiles.Files
@@ -211,6 +213,9 @@ func (Backend) ListPasskeys(ctx context.Context, q setup.Querier) ([]setup.Activ
 	}
 	return out, nil
 }
+
+// OSUsers looks the computer's OS users up.
+func (Backend) OSUsers() setup.Users { return osusers.Users{} }
 
 // FetchChain reads the chain host:port presents with the TLS handshake alone.
 func (Backend) FetchChain(ctx context.Context, host string, port int) ([]*x509.Certificate, error) {

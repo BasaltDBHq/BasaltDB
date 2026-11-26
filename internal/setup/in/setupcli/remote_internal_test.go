@@ -133,7 +133,7 @@ func TestSetupPersonMessageFitsForTheLongestName(t *testing.T) {
 		}
 	}
 	require.GreaterOrEqual(t, len(name), 50)
-	pm := setupPersonMessage(name, "3f9a 21c0 7d44 e1b2 90ac")
+	pm := setup.SetupPersonMessage(name, "3f9a 21c0 7d44 e1b2 90ac")
 	withoutURL := strings.Replace(pm, releasePage+"\n", "", 1)
 	require.LessOrEqual(t, utf8.RuneCountInString(withoutURL), guidance.MaxPersonMessageLength, pm)
 	require.Equal(t, 1, strings.Count(pm, name), "the agent is named once")

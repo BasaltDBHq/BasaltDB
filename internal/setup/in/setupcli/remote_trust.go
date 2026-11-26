@@ -4,7 +4,6 @@ import (
 	"crypto/x509"
 	"fmt"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
@@ -98,15 +97,4 @@ func pinned(certs []*x509.Certificate, top *x509.Certificate) bool {
 		}
 	}
 	return false
-}
-
-// certificatePlan is the code for a changed certificate (CONTRACT.md,
-// basalt init --remote, step 3): a code that changes no grant, no password
-// and no policy, carrying engine. Never a new password: the credential is
-// not refused, its server's certificate is. An UPGRADE code from guard
-// version 0: it names no agent, so the role keeps its password and its
-// grants, and its migrations are the ones the database lacks, none when it
-// has them.
-func (r *remoteInit) certificatePlan() (setup.Plan, error) {
-	return setup.Plan{Kind: setupcode.KindUpgrade}, nil
 }

@@ -58,25 +58,6 @@ type RemoteInitResult struct {
 	OSUser string
 }
 
-// CredFiles reads and writes the agent's credential file, its .pending and
-// its .lock for init --remote, each named by its full path. It is an alias
-// of the interface itself, so the adapter (setup/out/credfiles) returns it
-// with no import of this package.
-type CredFiles = interface {
-	Lock(path string) (func(), error)
-	// Read reads a credential file this process wrote (with the checks of
-	// credfiles' readOwnCredential); an error wrapping fs.ErrNotExist when
-	// there is none.
-	Read(path string) (string, os.FileInfo, error)
-	// Stat is the file at path, not following a link.
-	Stat(path string) (os.FileInfo, error)
-	Write(path string, data []byte) error
-	Rename(from, to string) error
-	// Remove removes the file at path, not following a link.
-	Remove(path string) error
-	Close()
-}
-
 // Credential is a credential file as read: its connection string, the
 // database it names, and the file it was read from (to check, before
 // moving it, that the path still names that file).
@@ -203,17 +184,6 @@ var ErrNoEngineForTrust = errors.New("the database's certificate changed, and th
 
 // StateDirName is the engine's state directory next to a per-user config.
 const StateDirName = "state"
-
-// RootConfigDir is the config directory init --remote opened as root. It is
-// an alias of the interface itself, so the adapter (setup/out/credfiles)
-// returns it with no import of this package.
-type RootConfigDir = interface {
-	// Upsert is config.UpsertAgentVault on the config file name, relative to
-	// the opened directory.
-	Upsert(name string, s config.Settings, a config.Agent) (config.VaultWritten, error)
-	// Close closes the directory.
-	Close()
-}
 
 // ConnTarget is where a connection string connects: its first host and
 // port, and SystemRoots, TLS on with the system's roots. It is an alias of

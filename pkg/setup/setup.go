@@ -24,7 +24,6 @@
 package setup
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"slices"
@@ -346,12 +345,7 @@ func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
 	for _, l := range c.Columns {
 		out.Columns = append(out.Columns, ColumnLabel{Table: l.Table, Column: l.Column, Label: Label(l.Label)})
 	}
-	if c.Passkeys != nil {
-		out.Passkeys = make([]ActivePasskey, 0, len(c.Passkeys))
-		for _, k := range c.Passkeys {
-			out.Passkeys = append(out.Passkeys, ActivePasskey{CredentialID: bytes.Clone(k.ID), Label: k.Label, RPID: k.RPID, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt})
-		}
-	}
+	out.Passkeys = activePasskeys(c.Passkeys)
 	return out, nil
 }
 

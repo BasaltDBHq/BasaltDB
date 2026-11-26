@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
 )
@@ -62,9 +63,19 @@ func RevokePasskey(ctx context.Context, conn *pgx.Conn, req Request, credentialI
 	if err != nil {
 		return Revoked{}, asError(err)
 	}
-	out := Revoked{Lines: r.Lines}
-	for _, k := range r.Remaining {
-		out.Remaining = append(out.Remaining, ActivePasskey{CredentialID: bytes.Clone(k.ID), Label: k.Label, RPID: k.RPID, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt})
+	return Revoked{Remaining: activePasskeys(r.Remaining), Lines: r.Lines}, nil
+}
+
+// activePasskeys are the service's passkeys as the contract shows them:
+// nil stays nil (a database without the guard, or none left), and an
+// empty list stays empty (the guard, and no active passkey).
+func activePasskeys(keys []guardmodel.RegisteredPasskey) []ActivePasskey {
+	if keys == nil {
+		return nil
 	}
-	return out, nil
+	out := make([]ActivePasskey, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, ActivePasskey{CredentialID: bytes.Clone(k.ID), Label: k.Label, RPID: k.RPID, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt})
+	}
+	return out
 }

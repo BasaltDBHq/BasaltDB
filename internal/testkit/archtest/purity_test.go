@@ -55,6 +55,7 @@ var outImportBaseline = []string{
 // forward today, as "<package>: <function>".
 var pkgLogicBaseline = []string{
 	"pkg/setup: (Description).AcceptsTrustRoot",
+	"pkg/setup: activePasskeys",
 	"pkg/setup: adminAt",
 	"pkg/setup: asError",
 	"pkg/setup: Check",

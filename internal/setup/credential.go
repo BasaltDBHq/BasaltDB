@@ -11,14 +11,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/supabase"
 )
 
-// DBErrors reads what SQLStateOf cannot: the message of a database
-// error, whose type the setup domain cannot name.
-type DBErrors interface {
-	// ServerMessage is the message of the error the database server sent,
-	// when err is (or wraps) one; false otherwise.
-	ServerMessage(err error) (string, bool)
-}
-
 // ConnectPageTrust is what init --remote says about a certificate no
 // authority on this machine verifies.
 const ConnectPageTrust = "the person checks its certificate authority and trusts it on the connect page; " +

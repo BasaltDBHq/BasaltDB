@@ -20,40 +20,6 @@ import (
 // translates its types to and from these). It is its own use case, apart
 // from the local setup page's jobs (LocalService).
 
-// ContractBackend is the database side of the setup contract: the shared
-// run's backend, the setup's transaction on the admin connection, and the
-// label, trust pin and passkey calls it makes.
-type ContractBackend interface {
-	SetuprunBackend
-	// BeginTx begins a transaction on the connection q runs on; CommitTx
-	// and RollbackTx end it (a rollback after a commit is a no-op).
-	BeginTx(ctx context.Context, q Querier) (Querier, error)
-	CommitTx(ctx context.Context, tx Querier) error
-	// BeginFunc runs fn in a transaction on the connection q runs on:
-	// committed when fn returns nil, rolled back when it returns an error.
-	BeginFunc(ctx context.Context, q Querier, fn func(tx Querier) error) error
-	RollbackTx(ctx context.Context, tx Querier) error
-	// CommitAnswered reports whether a failed commit's outcome is known:
-	// answered with an error, turned into a rollback, or never sent.
-	CommitAnswered(err error) bool
-	// ConnectedAs is the database and role q reached, as the server says
-	// them: current_database() and session_user.
-	ConnectedAs(ctx context.Context, q Querier) (database, user string, err error)
-	// ReadLabels and ReadReadableLabels run on a connection's port;
-	// ReadableTables and WriteLabels on a transaction's.
-	ReadLabels(ctx context.Context, conn Querier, n guardmodel.Names, tables []string) ([]guardmodel.ColumnLabel, error)
-	ReadReadableLabels(ctx context.Context, conn Querier, n guardmodel.Names) ([]guardmodel.ColumnLabel, error)
-	ReadableTables(ctx context.Context, tx Querier, n guardmodel.Names) ([]string, error)
-	WriteLabels(ctx context.Context, tx Querier, n guardmodel.Names, tables []string, changes []guardmodel.LabelChange, restPublic bool, at time.Time) (int, error)
-	RecordTrustPin(ctx context.Context, q Querier, host string, port int, sha256 string) error
-	// PasskeysInstalled reports whether the database has the guard's
-	// passkeys table.
-	PasskeysInstalled(ctx context.Context, q Querier) (bool, error)
-	ActivePasskeys(ctx context.Context, q Querier) ([]guardmodel.RegisteredPasskey, error)
-	RegisterPasskey(ctx context.Context, q Querier, cred passkey.Credential, label string) error
-	RevokePasskey(ctx context.Context, q Querier, credentialID []byte, force bool) (int, error)
-}
-
 // Contract runs the setup contract on its backend.
 type Contract struct{ be ContractBackend }
 

@@ -89,7 +89,7 @@ func PgService(t *testing.T, url string, opts ...PgOption) PgEnv {
 	var pool *pgxpool.Pool
 	if w.poolCfg == nil {
 		var err error
-		pool, err = postgres.NewPool(context.Background(), url, w.conns)
+		pool, _, err = postgres.NewSwitchablePool(context.Background(), url, w.conns)
 		require.NoError(t, err)
 	} else {
 		cfg, err := pgdial.PoolConfig(url)

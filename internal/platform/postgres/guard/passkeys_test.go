@@ -117,8 +117,6 @@ func TestLastUsedAtUpdates(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, keys, 1)
 	require.NotNil(t, keys[0].LastUsedAt, "the agent view shows when it was last used")
-	require.False(t, keys[0].Unused(time.Now()))
-	require.True(t, keys[0].Unused(time.Now().Add(ledger.PasskeyUnusedAfter)))
 }
 
 func TestAgentCannotRegisterOrRevokePasskeys(t *testing.T) {

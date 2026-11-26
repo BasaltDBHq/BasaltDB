@@ -106,15 +106,6 @@ func runMCP(ctx context.Context, args []string, io cli.Stdio) int {
 	return enginecli.RunMCPOn(ctx, args, io, osHost{}, engineCLIHost{})
 }
 
-// engineDownServer is what basalt mcp answers while the engine is down.
-func engineDownServer(name, configPath string, log *slog.Logger) (EngineDownServer, error) {
-	down, err := engineDown(name, configPath, log)
-	if err != nil {
-		return EngineDownServer{}, err
-	}
-	return NewEngineDownServer(down), nil
-}
-
 // engineDown is what basalt mcp answers with while the engine is down, with
 // the config it could read, as the agent's own user (the shim never runs as
 // root).

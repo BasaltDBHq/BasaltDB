@@ -165,8 +165,6 @@ func commandsAt(configPath string) guidance.Commands {
 	return guidance.NewCommands("bot", configPath, config.DefaultPath("linux"), "linux", testManager())
 }
 
-const testEngineID = "AAAAAAAAAAAAAAAAAAAAAA"
-
 // statusCredential is a credential file path no status output may hold.
 const statusCredential = "/etc/basalt/agents/bot.url"
 
@@ -177,17 +175,5 @@ func testEngineHost() EngineHost {
 		StartHoldOffUntil: func(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool) {
 			return laststop.StartHoldOffUntil(servicespec.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
 		},
-	}
-}
-
-// recordOf reads this engine's record, revoked or not.
-func recordOf(revoked bool) func(context.Context, string) (*EngineRecord, error) {
-	return func(_ context.Context, _ string) (*EngineRecord, error) {
-		e := &EngineRecord{RecordedAt: statusNow.Add(-48 * time.Hour)}
-		if revoked {
-			at := statusNow.Add(-time.Hour)
-			e.RevokedAt = &at
-		}
-		return e, nil
 	}
 }

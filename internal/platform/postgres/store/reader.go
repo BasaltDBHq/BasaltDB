@@ -19,7 +19,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgproto3"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
@@ -315,11 +314,4 @@ func textValue(oid uint32, raw []byte) any {
 		return json.RawMessage(bytes.Clone(raw)) // pgx reuses raw for the next read on the connection
 	}
 	return s
-}
-
-// NewPool opens a lazy pool on an agent's credential: no connection is made
-// until the first statement, so the engine starts while the database is down.
-func NewPool(ctx context.Context, url string, maxConns int32) (*pgxpool.Pool, error) {
-	pool, _, err := NewSwitchablePool(ctx, url, maxConns)
-	return pool, err
 }

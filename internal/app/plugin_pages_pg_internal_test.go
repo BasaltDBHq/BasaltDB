@@ -216,7 +216,7 @@ func TestPluginRoutesOnOlderGuard(t *testing.T) {
 	pg := newPGAgent(t, old.URL, 2)
 	origin := "http://localhost:8787"
 	srv := newPages(origin, quietLog())
-	pool, err := store.NewPool(context.Background(), old.URL, 1)
+	pool, _, err := store.NewSwitchablePool(context.Background(), old.URL, 1)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	secrets := links.NewSecrets(time.Now, rand.Reader)

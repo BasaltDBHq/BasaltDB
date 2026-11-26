@@ -62,7 +62,7 @@ func newFixture(t *testing.T) fixture {
 	d.Exec(t, fixtureSQL)
 	a := d.NewAgent(t, "bot", []string{"public.customers"},
 		[]string{"public.nokey", "public.orders", "public.emails_v", "public.plain"})
-	pool, err := postgres.NewPool(context.Background(), a.URL, 4)
+	pool, _, err := postgres.NewSwitchablePool(context.Background(), a.URL, 4)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	return fixture{db: d, agent: a, pool: pool}

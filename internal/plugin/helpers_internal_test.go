@@ -67,7 +67,7 @@ type pgAgent struct {
 // in the store and reader, with the default limits and the real clock.
 func newPGAgent(t *testing.T, url string, conns int32) pgAgent {
 	t.Helper()
-	pool, err := postgres.NewPool(context.Background(), url, conns)
+	pool, _, err := postgres.NewSwitchablePool(context.Background(), url, conns)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	limits := sqlguard.DefaultLimits()
@@ -91,7 +91,7 @@ func problemCodes(r guidance.StatusReport) []string {
 // agent by.
 func runtimeOf(t *testing.T, a *guardtest.Agent, ep *Plugins) (*status.Service, map[string]AgentLedger) {
 	t.Helper()
-	pool, err := postgres.NewPool(context.Background(), a.URL, 2)
+	pool, _, err := postgres.NewSwitchablePool(context.Background(), a.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	pg := newPGAgent(t, a.URL, 2)

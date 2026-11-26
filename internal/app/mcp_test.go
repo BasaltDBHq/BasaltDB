@@ -78,3 +78,12 @@ func TestShimAgentNamesTheSocket(t *testing.T) {
 	require.Equal(t, "bot", engine.ShimAgent("bot", "/x/other.sock"))
 	require.Equal(t, "other", engine.ShimAgent("", "/x/other.sock"))
 }
+
+// engineDownServer is what basalt mcp answers while the engine is down.
+func engineDownServer(name, configPath string, log *slog.Logger) (EngineDownServer, error) {
+	down, err := engineDown(name, configPath, log)
+	if err != nil {
+		return EngineDownServer{}, err
+	}
+	return NewEngineDownServer(down), nil
+}

@@ -134,8 +134,7 @@ func (s statusDeps) report(ctx context.Context) (guidance.StatusReport, error) {
 	if readable {
 		s.addReinstalled(ctx, &ps)
 	}
-	switch {
-	case s.vault != nil && r.Vault != nil:
+	if s.vault != nil && r.Vault != nil {
 		r.EngineRecord = s.engineRecordStatus(ctx, r.Vault.EngineID, readable, &ps)
 	}
 	list, err := ps.Sorted()

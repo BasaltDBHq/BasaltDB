@@ -140,7 +140,7 @@ func TestScanWarnsWhenBuildsKeepFailing(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	f.classify(t, time.Now())
-	pool, err := postgres.NewPool(context.Background(), f.agent.URL, 1)
+	pool, _, err := postgres.NewSwitchablePool(context.Background(), f.agent.URL, 1)
 	require.NoError(t, err)
 	pool.Close() // every cycle fails
 	dict, _, _ := scanDict(t, nil)

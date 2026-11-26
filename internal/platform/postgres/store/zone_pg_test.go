@@ -45,7 +45,7 @@ func zoned(t *testing.T, agentURL, zone string) string {
 
 func zonedPool(t *testing.T, agentURL, zone string) *pgxpool.Pool {
 	t.Helper()
-	pool, err := postgres.NewPool(context.Background(), zoned(t, agentURL, zone), 2)
+	pool, _, err := postgres.NewSwitchablePool(context.Background(), zoned(t, agentURL, zone), 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	var got string

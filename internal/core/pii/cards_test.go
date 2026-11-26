@@ -97,12 +97,16 @@ func TestValidIBAN(t *testing.T) {
 func TestCardsAndIBANsGetOneTokenHoweverSpaced(t *testing.T) {
 	t.Parallel()
 	k := newKeys(t, testMaster)
-	for typ, g := range map[pii.EntityType][]string{
-		pii.EntityCard: {"4111 1111 1111 1111", "4111-1111-1111-1111", "4111111111111111", "4111‑1111‑1111‑1111"},
-		pii.EntityIBAN: {"EE38 2200 2210 2014 5685", "EE382200221020145685", "ee38-2200-2210-2014-5685", "EE38  2200  2210  2014  5685"},
+	for _, c := range []struct {
+		typ pii.EntityType
+		g   []string
+	}{
+		{pii.EntityCard, []string{"4111 1111 1111 1111", "4111-1111-1111-1111", "4111111111111111", "4111‑1111‑1111‑1111"}},
+		{pii.EntityIBAN, []string{"EE38 2200 2210 2014 5685", "EE382200221020145685", "ee38-2200-2210-2014-5685", "EE38  2200  2210  2014  5685"}},
 	} {
-		first := mustToken(t, k, typ, g[0], "")
-		for _, v := range g {
+		typ := c.typ
+		first := mustToken(t, k, typ, c.g[0], "")
+		for _, v := range c.g {
 			require.Equal(t, first, mustToken(t, k, typ, v, ""), v)
 			stored := mustToken(t, k, pii.EntityOther, v, "")
 			require.Equal(t, typ, stored.Type, "%s: an OTHER value that is a %s is tokenized as one", v, typ)

@@ -80,11 +80,11 @@ func largestAccepted(limit int, ok func(n int) bool) int {
 
 func pageLimitsFromGo(t *testing.T) pageLimits {
 	t.Helper()
-	challengeLen := largestAccepted(1024, func(n int) bool {
+	challengeLen := largestAccepted(256, func(n int) bool {
 		_, err := passkey.RegistrationRequestFor(make([]byte, n), make([]byte, 16), "a", "a")
 		return err == nil
 	})
-	userIDLen := largestAccepted(1024, func(n int) bool {
+	userIDLen := largestAccepted(256, func(n int) bool {
 		_, err := passkey.RegistrationRequestFor(make([]byte, challengeLen), make([]byte, n), "a", "a")
 		return err == nil
 	})

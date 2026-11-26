@@ -146,7 +146,9 @@ func shrinkBaselineDir(t *testing.T, dir string, got violations) []string {
 	}
 	listed := map[string]bool{} // baseline file -> listed
 	for _, e := range entries {
-		if !e.IsDir() {
+		// .gitkeep keeps the registered directory when every file is gone:
+		// scripts/baseline-shrink.sh fails a registered baseline that is gone.
+		if !e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
 			listed[filepath.Join(dir, e.Name())] = true
 		}
 	}
@@ -188,6 +190,7 @@ func shrinkBaselineDir(t *testing.T, dir string, got violations) []string {
 // violation, in a listed package or a new one, is returned, not written.
 func TestShrinkBaselineDirNeverAdds(t *testing.T) {
 	dir := fixture(t, map[string]string{
+		".gitkeep":       "",
 		"internal_a.txt": "fixed\nkept\n",
 		"internal_b.txt": "gone\n",
 	})
@@ -205,6 +208,9 @@ func TestShrinkBaselineDirNeverAdds(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, gone)); !os.IsNotExist(err) {
 			t.Errorf("%s exists after -update (err %v); a fixed file is removed and a new one never written", gone, err)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".gitkeep")); err != nil {
+		t.Errorf(".gitkeep is gone after -update (%v); it keeps the registered directory", err)
 	}
 }
 

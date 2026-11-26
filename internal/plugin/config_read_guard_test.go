@@ -16,25 +16,36 @@ import (
 
 // fileReads are the calls that open or read a file by path: the plugin
 // package reads engine.json only through Ports.ReadConfig (as root, the
-// engine's hardened read), so every other one must be listed here. "files"
-// is the Files port, whatever value holds it (a field or a parameter named
-// files or Files).
+// engine's hardened read), so every other one must be listed here. A
+// method call reads too when its name is in methodReads, whatever value it
+// is called on: the Files port (named "files", whatever holds it) or a
+// handle it returned, such as an *os.Root.
 var fileReads = map[string]map[string]bool{
 	"os":     {"ReadFile": true, "Open": true, "OpenFile": true},
 	"config": {"Load": true, "LoadOpen": true, "LoadOpenRaw": true, "LoadNoFollow": true},
-	"files":  {"ReadFile": true, "OpenFile": true, "OpenRoot": true},
 }
 
-// isFilesPort reports whether x names the Files port: an identifier or a
-// field selector named files or Files.
-func isFilesPort(x ast.Expr) bool {
+// methodReads are the method names that open or read a file by path (not
+// Open: the plugin methods have one).
+var methodReads = map[string]bool{"ReadFile": true, "OpenFile": true, "OpenRoot": true}
+
+// receiverName names the value a read method is called on: "files" for the
+// Files port (an identifier or a field named files or Files), else the
+// expression as written.
+func receiverName(x ast.Expr) string {
 	switch x := x.(type) {
 	case *ast.Ident:
-		return x.Name == "files" || x.Name == "Files"
+		if x.Name == "files" || x.Name == "Files" {
+			return "files"
+		}
 	case *ast.SelectorExpr:
-		return x.Sel.Name == "files" || x.Sel.Name == "Files"
+		if x.Sel.Name == "files" || x.Sel.Name == "Files" {
+			return "files"
+		}
 	}
-	return false
+	var b strings.Builder
+	_ = printer.Fprint(&b, token.NewFileSet(), x)
+	return b.String()
 }
 
 // pluginFileReads are the only places in the plugin package's own sources
@@ -43,11 +54,15 @@ func isFilesPort(x ast.Expr) bool {
 // engine.json.
 var pluginFileReads = map[string]string{
 	"install.go:Stage:files.OpenRoot(src)":                                                  "the plugin source directory the person named, opened as a root",
+	"install.go:copyFile:srcRoot.OpenFile(filepath.FromSlash(rel))":                         "a listed file of the source, inside its root, no link followed",
+	"install.go:readSource:srcRoot.OpenFile(name)":                                          "the source's manifest or signature, inside its root, no link followed",
 	"install.go:copyFile:files.OpenFile(dst)":                                               "creates a copy's file in the plugin root (O_EXCL)",
 	"install.go:writeNew:files.OpenFile(p)":                                                 "creates a new file in the plugin root (O_EXCL)",
 	"kept_entries.go:Manifest:files.OpenRoot(t.Dir)":                                        "an upload's directory in the state directory, opened as a root",
+	"kept_entries.go:Manifest:root.OpenFile(ManifestFile)":                                  "an upload's manifest, inside the upload's root, no link followed",
 	"kept_entries.go:readEntries:files.OpenFile(p)":                                         "the engine-kept entries file in the state directory, no link followed",
 	"kept_upload.go:MarkExecutables:files.OpenRoot(t.Dir)":                                  "an upload's directory in the state directory, opened as a root",
+	"kept_upload.go:writePart:root.OpenFile(name)":                                          "writes a part of an upload, inside the upload's root, no link followed",
 	"kept_upload.go:writePart:files.OpenRoot(filepath.Join(s.uploadsDir(), u.id.String()))": "an upload's directory in the state directory, opened as a root",
 	"plugin_watch.go:step:files.ReadFile(w.ep.kept.EntriesPath())":                          "the engine-kept entries file, for its change",
 	"plugin_watch.go:stepKept:files.ReadFile(w.ep.kept.EntriesPath())":                      "the engine-kept entries file, for its change",
@@ -83,9 +98,9 @@ func fileReadsIn(name string, f *ast.File) []string {
 		if !ok {
 			return "", false
 		}
-		if isFilesPort(sel.X) && fileReads["files"][sel.Sel.Name] {
+		if methodReads[sel.Sel.Name] {
 			if id, ok := sel.X.(*ast.Ident); !ok || names[id.Name] == "" {
-				return "files." + sel.Sel.Name, true
+				return receiverName(sel.X) + "." + sel.Sel.Name, true
 			}
 		}
 		id, ok := sel.X.(*ast.Ident)
@@ -195,10 +210,12 @@ func a() { stdos.ReadFile("p"); cfg.LoadOpenRaw("p", nil) }
 import "os"
 func a() { os.Stat("p"); os.WriteFile("p", nil, 0) }
 `)))
-	require.Equal(t, []string{"x.go:a:files.ReadFile(\"p\")", "x.go:b:files.OpenFile(path)", "x.go:c:files.OpenRoot(dir)"},
+	require.Equal(t, []string{"x.go:a:files.ReadFile(\"p\")", "x.go:b:files.OpenFile(path)", "x.go:c:files.OpenRoot(dir)", "x.go:d:root.OpenFile(name)", "x.go:e:fsys.ReadFile(p)"},
 		fileReadsIn("x.go", parse(`package p
 func a(files Files) { files.ReadFile("p"); files.Lstat("p") }
 func b() { s.files.OpenFile(path, 0, 0) }
 func c() { ep.o.Ports.Files.OpenRoot(dir) }
-`)), "a read through the Files port is seen")
+func d() { root.OpenFile(name, 0, 0) }
+func e(fsys Files) { fsys.ReadFile(p) }
+`)), "a read through the Files port, or a handle, under any name, is seen")
 }

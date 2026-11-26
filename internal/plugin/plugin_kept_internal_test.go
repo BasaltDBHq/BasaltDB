@@ -164,11 +164,11 @@ func (f *keptFixture) sign(a PluginOpenedApproval) {
 	require.NoError(f.t, err)
 	ctx := context.Background()
 	for _, name := range slices.Sorted(maps.Keys(f.agents)) {
-		r, ok, err := testPorts.Guard.ReadPluginApproval(ctx, f.agents[name].db, *a.ApprovalID)
+		r, ok, err := guard.ReadPluginApproval(ctx, pgxOf(f.agents[name].db), *a.ApprovalID)
 		if err != nil || !ok || r.BindingText == "" {
 			continue
 		}
-		_, err = testPorts.Guard.SubmitPluginApproval(ctx, f.agents[name].db, guardmodel.PluginApprovalResponse{ApprovalID: *a.ApprovalID, Assertion: as})
+		_, err = guard.SubmitPluginApproval(ctx, pgxOf(f.agents[name].db), guardmodel.PluginApprovalResponse{ApprovalID: *a.ApprovalID, Assertion: as})
 		require.NoError(f.t, err)
 		return
 	}

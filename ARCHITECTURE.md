@@ -69,7 +69,7 @@ These rules sit beside the layer table. The last two are review rules; the other
 - **Code lives with its callers and its data,** not with the topic in its name. A builder that only the status report uses stays in `internal/status`, even if it talks about setup.
 - **Type names that reach output never change.** The validator prints an argument struct's Go type name in MCP errors (`Key: 'confirmArgs.Database' …`), and the served goldens pin it. Never rename, export or alias an args or DTO struct, and look for `%T` and reflection before renaming any type.
 - **Export only what production code outside the package calls.** No test-only exports; a test that needs internals lives in the package.
-- **Tests set options before construction.** A test helper takes a `func(*Deps)` applied before the service is built; no test wires a service twice or swaps a dependency on a built service.
+- **Tests set options before construction.** A test harness takes `opts ...option`, with `type option func(*settings)`, applied before the service is built; no test wires a service twice or swaps a dependency on a built service.
 
 ## Guards beyond the layer rules
 

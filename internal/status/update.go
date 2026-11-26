@@ -25,29 +25,6 @@ const RefreshGrace = time.Second
 // MCP server run for long and tell agents through MCP, help is a page.
 var NoUpdateLine = []string{"engine", "mcp", "help", "-h", "--help"}
 
-// Host is what the update check reads from the environment and the build:
-// the environment's off switch and the version of a build with no release
-// number.
-type Host interface {
-	// UpdateDisabled reports whether the environment turns the check off.
-	UpdateDisabled(getenv func(string) string) bool
-	// UpdateDevVersion is the version of a build with no release number.
-	UpdateDevVersion() string
-}
-
-// Terminal is the engine config a command would read by default, as the
-// CLI shell finds and reads it.
-type Terminal interface {
-	// Euid is the effective user id.
-	Euid() int
-	// DiscoverConfig is the engine.json a command finds by itself, system
-	// being the system path.
-	DiscoverConfig(system string) (string, error)
-	// LoadEngineConfigAs reads the engine config at path for a process
-	// with effective uid euid.
-	LoadEngineConfigAs(euid int, path string) (config.Config, error)
-}
-
 // UpdateOff reports whether the check is turned off: the environment, or
 // updateCheck OFF in the config a command would read by default. When that
 // config exists but this person cannot read it (service mode: engine.json

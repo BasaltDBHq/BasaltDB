@@ -868,10 +868,8 @@ func (*listed) Ask() int {
 }
 
 type fields struct {
-	helperFn, forwardFn, litFn, paramFn, methodFn, unsetFn, pairFn func() int
+	helperFn, forwardFn, litFn, paramFn, methodFn, unsetFn func() int
 }
-
-func pair() (func() int, error) { return helper, nil }
 
 var varFn = helper
 
@@ -879,9 +877,6 @@ func wire(p port, c checked, fn func() int) fields {
 	f := fields{helperFn: helper, forwardFn: func() int { return p.Ask() }, methodFn: c.Ask}
 	f.litFn = func() int { n := 1; return n }
 	f.paramFn = fn
-	var err error
-	f.pairFn, err = pair()
-	_ = err
 	return f
 }
 
@@ -892,7 +887,6 @@ func (f fields) ViaParam() int   { return f.paramFn() }
 func (f fields) ViaMethod() int  { return f.methodFn() }
 func (f fields) ViaUnset() int   { return f.unsetFn() }
 func (f fields) ViaVar() int     { return varFn() }
-func (f fields) ViaPair() int    { return f.pairFn() }
 
 type Service struct{ u uses }
 
@@ -908,12 +902,12 @@ func (s *Service) Helper() int  { return helper() }
 		"checked.Ask", "uses.Interface", "uses.Checked", "uses.Helper", "uses.Discard", "uses.Unchecked",
 		"uses.ViaHelper", "uses.Listed", "uses.InArgument", "listed.Ask", "Service.Forward", "Service.Helper",
 		"fields.ViaHelper", "fields.ViaForward", "fields.ViaLiteral", "fields.ViaParam", "fields.ViaMethod",
-		"fields.ViaUnset", "fields.ViaVar", "fields.ViaPair",
+		"fields.ViaUnset", "fields.ViaVar",
 	} {
 		checked[key] = true
 	}
 	require.Equal(t, []string{
-		"Service.Helper", "fields.ViaHelper", "fields.ViaLiteral", "fields.ViaPair", "fields.ViaParam", "fields.ViaUnset", "fields.ViaVar",
+		"Service.Helper", "fields.ViaHelper", "fields.ViaLiteral", "fields.ViaParam", "fields.ViaUnset", "fields.ViaVar",
 		"uses.Discard", "uses.Helper", "uses.Listed", "uses.Unchecked", "uses.ViaHelper",
 	}, forwardsIntoApp([]*ast.File{f}, pkg, info, checked))
 }
@@ -945,3 +939,51 @@ func TestDeclaresPorts(t *testing.T) {
 type importerFunc func(path string) (*types.Package, error)
 
 func (f importerFunc) Import(path string) (*types.Package, error) { return f(path) }
+
+// A function-typed field another package declares is followed through the
+// values app assigns it: one a multi-value assignment sets (d.Fn, err =
+// pair()) cannot be followed and is logic; one app never sets is the other
+// package's, a forward.
+func TestForwardIntoAppFollowsAnotherPackagesField(t *testing.T) {
+	fset := token.NewFileSet()
+	parse := func(src string) *ast.File {
+		f, err := parser.ParseFile(fset, "probe.go", src, parser.SkipObjectResolution)
+		require.NoError(t, err)
+		return f
+	}
+	domain, err := (&types.Config{}).Check("example.com/m/internal/dom", fset, []*ast.File{parse(`package dom
+
+type Deps struct{ Fn, Unset func() int }
+`)}, nil)
+	require.NoError(t, err)
+	f := parse(`package app
+
+import "example.com/m/internal/dom"
+
+func pair() (func() int, error) { return nil, nil }
+
+type host struct{ d dom.Deps }
+
+func wire() host {
+	var h host
+	var err error
+	h.d.Fn, err = pair()
+	_ = err
+	return h
+}
+
+func (h host) ViaPair() int  { return h.d.Fn() }
+func (h host) ViaUnset() int { return h.d.Unset() }
+`)
+	imp := importerFunc(func(path string) (*types.Package, error) {
+		if path == domain.Path() {
+			return domain, nil
+		}
+		return nil, errors.New("no package " + path)
+	})
+	info := &types.Info{Uses: map[*ast.Ident]types.Object{}, Defs: map[*ast.Ident]types.Object{}}
+	pkg, err := (&types.Config{Importer: imp}).Check("example.com/m/internal/app", fset, []*ast.File{f}, info)
+	require.NoError(t, err)
+	require.Equal(t, []string{"host.ViaPair"},
+		forwardsIntoApp([]*ast.File{f}, pkg, info, map[string]bool{"host.ViaPair": true, "host.ViaUnset": true}))
+}

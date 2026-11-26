@@ -58,7 +58,9 @@ func (noPII) ObserveReturned(context.Context, pii.Classes, []action.Column, []ma
 type Service struct {
 	core  Core
 	store StoreSet
-	// pii sees every read's rows before they are returned.
+	// pii sees every read's rows before they are returned, and every
+	// write's returned rows inside the write's transaction, before it
+	// commits.
 	pii PIIObserver
 	// update is the newer release the engine knows of, as describe's overview
 	// reports it; the status use case owns it and hands it in.

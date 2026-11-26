@@ -36,8 +36,9 @@ type Store struct {
 // transaction, before COMMIT: the caller adds their PII values to the
 // dictionary there, reading the classes on tx. An error rolls the write
 // back, so no value it could not handle is applied or returned (fail
-// closed). tx is the write's transaction, driver-free. It is an alias, so
-// the wiring names the same type without importing this package.
+// closed). tx is the write's transaction, driver-free. It is an alias of a
+// plain func type, so the wiring's SQL store port declares the same shape
+// itself and stays a port, not a reference to this adapter.
 type Returned = func(ctx context.Context, tx sqlport.Port, cols []action.Column, rows []map[string]any) error
 
 // NewStore returns a store on db. Every transaction it begins is pinned

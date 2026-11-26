@@ -78,7 +78,7 @@ func (r remoteAgent) configSetup(t *testing.T) *config.Setup {
 
 func (r remoteAgent) record(t *testing.T, d *guardtest.DB, kind string) {
 	t.Helper()
-	_, err := guard.RecordSetup(context.Background(), d.Admin, d.Names,
+	_, err := guardtest.RecordSetup(context.Background(), d.Admin, d.Names,
 		guardmodel.Setup{ID: r.setupID, Kind: kind, Agent: "bot", GuardVersion: guard.LatestVersion(), ExpiresAt: r.expires})
 	require.NoError(t, err)
 }
@@ -187,7 +187,7 @@ func TestTheSetupIsNotClearedWhileInitHoldsTheLock(t *testing.T) {
 	a := d.NewAgent(t, "bot", demoTables, demoTables)
 	r := newRemoteAgent(t, a.URL, guardmodel.SetupUpgrade)
 	rt := r.start(t)
-	_, err := guard.RecordSetup(ctx, d.Admin, d.Names,
+	_, err := guardtest.RecordSetup(ctx, d.Admin, d.Names,
 		guardmodel.Setup{ID: r.setupID, Kind: guardmodel.SetupUpgrade, GuardVersion: guard.LatestVersion(), ExpiresAt: r.expires})
 	require.NoError(t, err)
 

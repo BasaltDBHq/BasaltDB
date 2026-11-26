@@ -276,9 +276,9 @@ func TestRunRefusesByTheDatabasesState(t *testing.T) {
 
 	// A revoked engine is refused, after the role checks.
 	eng, der, id := engineKey(t)
-	_, err = guard.RecordEngine(ctx, d.Admin, der)
+	_, err = guardtest.RecordEngine(ctx, d.Admin, der)
 	require.NoError(t, err)
-	_, err = guard.RevokeEngine(ctx, d.Admin, id)
+	_, err = guardtest.RevokeEngine(ctx, d.Admin, id)
 	require.NoError(t, err)
 	install := newCode(t, d, func(p *setupcode.Payload) { p.Engine = eng })
 	_, err = setup.Run(ctx, d.Admin, request(install), setup.RunInput{})
@@ -316,7 +316,7 @@ func TestRunRecordsTheEngine(t *testing.T) {
 	_, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Passkey: verified(t, give)})
 	require.NoError(t, err)
 	_, oldDER, oldID := engineKey(t)
-	_, err = guard.RecordEngine(ctx, d.Admin, oldDER)
+	_, err = guardtest.RecordEngine(ctx, d.Admin, oldDER)
 	require.NoError(t, err)
 
 	eng, _, newID := engineKey(t)

@@ -39,12 +39,12 @@ func TestRecordEngine(t *testing.T) {
 	ctx := context.Background()
 	key := engineKey(t)
 
-	id, err := guard.RecordEngine(ctx, d.Admin, key)
+	id, err := guardtest.RecordEngine(ctx, d.Admin, key)
 	require.NoError(t, err)
 	require.Equal(t, channel.EngineIDOf(key), id, "the id is computed from the key")
 
 	// Recording it again writes nothing.
-	again, err := guard.RecordEngine(ctx, d.Admin, key)
+	again, err := guardtest.RecordEngine(ctx, d.Admin, key)
 	require.NoError(t, err)
 	require.Equal(t, id, again)
 	require.Equal(t, 1, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger WHERE kind = 'ENGINE_RECORDED'
@@ -90,7 +90,7 @@ func TestEngineAddressRemovedUpgrade(t *testing.T) {
 	}
 	_, err := d.Admin.Exec(ctx, `UPDATE basalt_meta.engines SET url = 'https://engine.example.com' WHERE engine_id = $1`, channel.EngineIDOf(key))
 	require.NoError(t, err)
-	_, err = guard.RevokeEngine(ctx, d.Admin, channel.EngineIDOf(revoked))
+	_, err = guardtest.RevokeEngine(ctx, d.Admin, channel.EngineIDOf(revoked))
 	require.NoError(t, err)
 	rec, err := guard.EngineRecord(ctx, a.Conn, channel.EngineIDOf(key))
 	require.NoError(t, err, "the engine reads its record on a guard without version 8")
@@ -108,7 +108,7 @@ func TestEngineAddressRemovedUpgrade(t *testing.T) {
 	for _, e := range engines {
 		require.Equal(t, e.ID == channel.EngineIDOf(revoked), e.RevokedAt != nil)
 	}
-	_, err = guard.RecordEngine(ctx, d.Admin, revoked)
+	_, err = guardtest.RecordEngine(ctx, d.Admin, revoked)
 	requireEngineRefused(t, err, guard.EngineRefusedRevoked)
 	require.Equal(t, 0, count(t, d.Admin, `SELECT count(oid)::int FROM pg_catalog.pg_proc
 		WHERE proname = 'record_engine' AND pronamespace = 'basalt_meta'::regnamespace AND pronargs = 2`))
@@ -133,11 +133,11 @@ func TestRecordEngineRefusesABadKey(t *testing.T) {
 		"empty": {}, "short": key[:90], "long": append(bytes.Clone(key), 0),
 		"off the curve": offCurve, "compressed": compressed, "another curve": wrongCurve,
 	} {
-		_, err := guard.RecordEngine(ctx, d.Admin, k)
+		_, err := guardtest.RecordEngine(ctx, d.Admin, k)
 		requireEngineRefused(t, err, guard.EngineRefusedKey)
 		t.Log(name, "refused")
 	}
-	_, err := guard.RecordEngine(ctx, d.Admin, nil)
+	_, err := guardtest.RecordEngine(ctx, d.Admin, nil)
 	requireEngineRefused(t, err, guard.EngineRefusedKey)
 	require.Equal(t, 0, count(t, d.Admin, `SELECT count(engine_id)::int FROM basalt_meta.engines`))
 }
@@ -150,12 +150,12 @@ func TestRevokeEngine(t *testing.T) {
 	a := d.NewAgent(t, "bot", leads, leads)
 	ctx := context.Background()
 	key := engineKey(t)
-	id, err := guard.RecordEngine(ctx, d.Admin, key)
+	id, err := guardtest.RecordEngine(ctx, d.Admin, key)
 	require.NoError(t, err)
-	_, err = guard.RecordEngine(ctx, d.Admin, engineKey(t))
+	_, err = guardtest.RecordEngine(ctx, d.Admin, engineKey(t))
 	require.NoError(t, err)
 
-	remaining, err := guard.RevokeEngine(ctx, d.Admin, id)
+	remaining, err := guardtest.RevokeEngine(ctx, d.Admin, id)
 	require.NoError(t, err)
 	require.Equal(t, 1, remaining)
 
@@ -166,11 +166,11 @@ func TestRevokeEngine(t *testing.T) {
 		require.Equal(t, e.ID == id, e.RevokedAt != nil)
 	}
 
-	_, err = guard.RecordEngine(ctx, d.Admin, key)
+	_, err = guardtest.RecordEngine(ctx, d.Admin, key)
 	requireEngineRefused(t, err, guard.EngineRefusedRevoked)
-	_, err = guard.RevokeEngine(ctx, d.Admin, id)
+	_, err = guardtest.RevokeEngine(ctx, d.Admin, id)
 	requireEngineRefused(t, err, guard.EngineRefusedUnknown)
-	_, err = guard.RevokeEngine(ctx, d.Admin, "AAAAAAAAAAAAAAAAAAAAAA")
+	_, err = guardtest.RevokeEngine(ctx, d.Admin, "AAAAAAAAAAAAAAAAAAAAAA")
 	requireEngineRefused(t, err, guard.EngineRefusedUnknown)
 
 	require.Equal(t, 1, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger WHERE kind = 'ENGINE_REVOKED'
@@ -189,9 +189,9 @@ func TestAgentCannotRecordOrRevokeAnEngine(t *testing.T) {
 	a := d.NewAgent(t, "bot", leads, leads)
 	ctx := context.Background()
 	key := engineKey(t)
-	id, err := guard.RecordEngine(ctx, d.Admin, key)
+	id, err := guardtest.RecordEngine(ctx, d.Admin, key)
 	require.NoError(t, err)
-	_, err = guard.RevokeEngine(ctx, d.Admin, id)
+	_, err = guardtest.RevokeEngine(ctx, d.Admin, id)
 	require.NoError(t, err)
 
 	requireDenied := func(err error) {
@@ -200,9 +200,9 @@ func TestAgentCannotRecordOrRevokeAnEngine(t *testing.T) {
 		require.True(t, errors.As(err, &pg), "%v", err)
 		require.Equal(t, "42501", pg.Code, pg.Message)
 	}
-	_, err = guard.RecordEngine(ctx, a.Conn, engineKey(t))
+	_, err = guardtest.RecordEngine(ctx, a.Conn, engineKey(t))
 	requireDenied(err)
-	_, err = guard.RevokeEngine(ctx, a.Conn, id)
+	_, err = guardtest.RevokeEngine(ctx, a.Conn, id)
 	requireDenied(err)
 	_, err = a.Conn.Exec(ctx, `UPDATE basalt_meta.engines SET revoked_at = NULL, revoked_by = NULL`)
 	requireDenied(err)

@@ -287,9 +287,6 @@ func TestServicesDoNoHandleIO(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if scan.packages == 0 || scan.handles == 0 {
-		t.Fatalf("the handle scan type-checked %d domain root packages and saw %d handles: it checks nothing", scan.packages, scan.handles)
-	}
 	file := filepath.Join(root, "internal", "testkit", "archtest", handleIOBaseline)
 	var base []string
 	if _, err := os.Stat(file); err == nil {
@@ -306,16 +303,20 @@ func TestServicesDoNoHandleIO(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, p := range handleBaselineProblems(base, scan.lines) {
+	for _, p := range handleBaselineProblems(scan.packages, base, scan.lines) {
 		t.Error(p)
 	}
 }
 
-// handleBaselineProblems compares the findings with the baseline: a finding
-// the baseline does not list is new I/O, a baseline line that is no longer
-// found is stale. A count that drops changes the line, so the old line is
-// stale and the new one is new: edit the count down by hand.
-func handleBaselineProblems(base, got []string) []string {
+// handleBaselineProblems compares the findings with the baseline: a scan
+// that type-checked no package checks nothing, a finding the baseline does
+// not list is new I/O, a baseline line that is no longer found is stale. A
+// count that drops changes the line, so the old line is stale and the new
+// one is new: edit the count down by hand.
+func handleBaselineProblems(packages int, base, got []string) []string {
+	if packages == 0 {
+		return []string{handleScansNothing}
+	}
 	var out []string
 	for _, l := range got {
 		if !slices.Contains(base, l) {
@@ -330,6 +331,8 @@ func handleBaselineProblems(base, got []string) []string {
 	return out
 }
 
+const handleScansNothing = "the handle scan type-checked no domain root package: it checks nothing"
+
 func TestHandleBaselineProblems(t *testing.T) {
 	base := []string{"a", "b (2 times)"}
 	got := []string{"a", "b", "new"}
@@ -338,10 +341,10 @@ func TestHandleBaselineProblems(t *testing.T) {
 		"new\n\tnew I/O on a file or root handle in a service; move it into the port's out/ adapter (do not add it to " + handleIOBaseline + ")",
 		"b (2 times)\n\tno longer true; remove it from " + handleIOBaseline + " (or lower its count)",
 	}
-	if p := handleBaselineProblems(base, got); !slices.Equal(p, want) {
+	if p := handleBaselineProblems(1, base, got); !slices.Equal(p, want) {
 		t.Errorf("problems:\n got %q\nwant %q", p, want)
 	}
-	if p := handleBaselineProblems(got, got); len(p) != 0 {
+	if p := handleBaselineProblems(1, got, got); len(p) != 0 {
 		t.Errorf("a matching baseline has problems: %q", p)
 	}
 }
@@ -423,6 +426,9 @@ func TestHandleIOScansNothingWithoutDomainRoots(t *testing.T) {
 		t.Fatal(err)
 	}
 	if scan.packages != 0 || scan.handles != 0 || len(scan.lines) != 0 {
-		t.Errorf("handleIO outside domain roots = %+v, want an empty scan (which TestServicesDoNoHandleIO fails)", scan)
+		t.Errorf("handleIO outside domain roots = %+v, want an empty scan", scan)
+	}
+	if p := handleBaselineProblems(scan.packages, nil, scan.lines); !slices.Equal(p, []string{handleScansNothing}) {
+		t.Errorf("an empty scan's problems = %q, want %q", p, handleScansNothing)
 	}
 }

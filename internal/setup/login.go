@@ -29,13 +29,14 @@ const SupavisorNoTenant = "Tenant or user not found"
 // LoginRefused reports whether err is the database refusing a login, on
 // any connection: any class 28 error, or Supabase's pooler not knowing the
 // user (XX000 with SupavisorNoTenant in the server's message, read through
-// e). e is consulted only for an XX000.
+// e). e is consulted only for an XX000; a nil e fails closed: the pooler's
+// answer is then no refusal.
 func LoginRefused(e DBErrors, err error) bool {
 	code := SQLStateOf(err)
 	if strings.HasPrefix(code, SQLStateClassAuth) {
 		return true
 	}
-	if code != SQLStateInternal {
+	if code != SQLStateInternal || e == nil {
 		return false
 	}
 	message, _ := e.ServerMessage(err)

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -36,6 +37,20 @@ func connectAgent(ctx context.Context, dsn string) (handoff.AgentLogin, error) {
 		return nil, store.MapError(err)
 	}
 	return agentConn{conn}, nil
+}
+
+// agentFinisher is the setup finisher of one agent: its config entry, its
+// credential file and the pool the engine serves it on, logging in with
+// the Postgres adapter and reading a refused login's server message with
+// it.
+func agentFinisher(configPath, agent, credFile string, files handoff.FinishFiles, login handoff.LoginTarget,
+	password interface{ Set(string) }, reset func(), log *slog.Logger,
+) *handoff.Finisher {
+	return &handoff.Finisher{
+		ConfigPath: configPath, Agent: agent, CredFile: credFile, Files: files,
+		Login: login, Parse: parseLogin, Password: password, Reset: reset,
+		Connect: connectAgent, Errors: pgErrors{}, Log: log,
+	}
 }
 
 // parseLogin is the target and password of a credential.

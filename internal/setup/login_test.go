@@ -47,10 +47,16 @@ func TestLoginRefusedAndLoginProves(t *testing.T) {
 }
 
 // The server's message is read only for an internal_error: a class 28
-// refusal needs no reader.
-func TestLoginRefusedReadsTheMessageOnlyForAnInternalError(t *testing.T) {
+// refusal needs no reader, and without one the pooler's answer fails
+// closed (no refusal, no proof) instead of panicking.
+func TestLoginRefusedWithoutAReader(t *testing.T) {
 	t.Parallel()
+	noTenant := &pgconn.PgError{Code: SQLStateInternal, Message: SupavisorNoTenant}
 	require.True(t, LoginRefused(nil, &pgconn.PgError{Code: "28P01"}))
+	require.True(t, LoginRefused(nil, &pgconn.PgError{Code: "28000"}))
 	require.False(t, LoginRefused(nil, &pgconn.PgError{Code: "57P03"}))
+	require.False(t, LoginRefused(nil, noTenant))
 	require.True(t, LoginProves(nil, sslVerifyFull, true, &pgconn.PgError{Code: "28P01"}))
+	require.True(t, LoginProves(nil, sslVerifyFull, false, &pgconn.PgError{Code: "28000"}))
+	require.False(t, LoginProves(nil, sslVerifyFull, false, noTenant))
 }

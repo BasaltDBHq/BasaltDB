@@ -49,14 +49,14 @@ func (setupHost) GuardAgentConnString(adminURL, role, password string) (string, 
 	return guard.AgentConnString(adminURL, role, password)
 }
 
-func (setupHost) GuardAgentVersion(ctx context.Context, q pgquerier.Querier) (int, error) {
-	return guard.AgentVersion(ctx, q)
+func (setupHost) GuardAgentVersion(ctx context.Context, q setup.Querier) (int, error) {
+	return guard.AgentVersion(ctx, pgquerier.Of(q))
 }
 
 func (setupHost) GuardLatestVersion() int { return guard.LatestVersion() }
 
-func (setupHost) GuardSetupRecorded(ctx context.Context, q pgquerier.Querier, id uuid.UUID) (bool, error) {
-	return guard.SetupRecorded(ctx, q, id)
+func (setupHost) GuardSetupRecorded(ctx context.Context, q setup.Querier, id uuid.UUID) (bool, error) {
+	return guard.SetupRecorded(ctx, pgquerier.Of(q), id)
 }
 
 func (setupHost) LoadOrCreateEngineKeys(path string, now func() time.Time) (*channel.EngineKeys, error) {

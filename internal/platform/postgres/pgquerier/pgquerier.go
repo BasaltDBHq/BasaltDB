@@ -60,6 +60,17 @@ func Unwrap(q any) Querier {
 	return n.Pgx()
 }
 
+// Of returns the Querier of q, a query port that carries its driver
+// connection (a Pgx method, as Neutral and an inbound adapter's own port
+// over a connection it holds have). Any other q is a programming error.
+func Of(q any) Querier {
+	p, ok := q.(interface{ Pgx() Querier })
+	if !ok {
+		panic("pgquerier: Of a query port that carries no driver connection")
+	}
+	return p.Pgx()
+}
+
 // ReadOnlyTx runs fn in a read-only transaction on b (a pool or a
 // connection), always rolled back: for reads that change nothing. It returns
 // fn's error, or the error of beginning the transaction.

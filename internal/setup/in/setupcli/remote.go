@@ -27,7 +27,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
-	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 // basalt init --remote runs on the engine's machine, which the agent may
@@ -183,53 +182,9 @@ type remoteInit struct {
 	certChanged bool
 }
 
-// Host is what basalt init --remote reaches outside the CLI: the guard's
-// versions, records and agent connection string, the engine's keys, the
-// trust profiles next to the config, the database's server errors, and the
-// credential files and config directory, which root opens without following
-// a link anyone but root or the file's owner controls.
-type Host interface {
-	setup.DBErrors
-	// TrustProfileFor is the profile in the trust.d next to the config at
-	// configPath that names host, or nil.
-	TrustProfileFor(configPath, host string) *trustprofile.Profile
-	// ConnTarget is the host and port a connection string names, and whether
-	// its TLS check uses the system's roots (TLS on, no root certificate
-	// given); the error is the driver's own.
-	ConnTarget(dsn string) (setup.ConnTarget, error)
-	// GuardAgentConnString is adminURL with the agent's role and password.
-	GuardAgentConnString(adminURL, role, password string) (string, error)
-	// GuardAgentVersion is the guard version q's database has, 0 when none.
-	GuardAgentVersion(ctx context.Context, q cli.Querier) (int, error)
-	// GuardLatestVersion is the guard version this binary installs.
-	GuardLatestVersion() int
-	// GuardSetupRecorded reports whether the setup with id is recorded.
-	GuardSetupRecorded(ctx context.Context, q cli.Querier, id uuid.UUID) (bool, error)
-	// LoadOrCreateEngineKeys reads the engine's keys at path, making them
-	// when there are none.
-	LoadOrCreateEngineKeys(path string, now func() time.Time) (*channel.EngineKeys, error)
-	// PathCredFiles reaches the credential files by path: init --remote not
-	// as root, in the user's own directories.
-	PathCredFiles() setup.CredFiles
-	// OpenRootCredFiles opens dir, the agents directory, as root, making it
-	// (and the config directory) when missing. Every directory on the way
-	// must be owned by root or trusted, and no link is followed. Reads
-	// through it check the string another user wrote there.
-	OpenRootCredFiles(dir string, trusted int) (setup.CredFiles, error)
-	// RootTrustedOwner is the owner root trusts on the way to the config
-	// directory dir: dir's, or, when it does not exist yet, that of the
-	// nearest directory above it that does.
-	RootTrustedOwner(dir string) (int, error)
-	// OpenRootConfigDir opens dir, the config directory, as root, making it
-	// when missing; engine.json is then locked, read and written relative
-	// to it, checked as the hardened read checks it.
-	OpenRootConfigDir(dir string, trusted int) (setup.RootConfigDir, error)
-	// RootEngineKey is the engine's public key for a root init --remote:
-	// the key file in stateDir read or, when there is none, created relative
-	// to the state directory opened without following a link anyone but
-	// root controls, owned by the config directory's owner.
-	RootEngineKey(stateDir, goos string, cfg setup.RootConfigDir, now func() time.Time) ([]byte, error)
-}
+// Host is what basalt init --remote reaches outside the CLI: the setup
+// service's port (setup.RemoteHost).
+type Host = setup.RemoteHost
 
 func newRemoteInit(c *cli.IO, h Host, f setup.RemoteFlags) (*remoteInit, error) {
 	r := &remoteInit{c: c, setup: h, f: f}
@@ -523,7 +478,8 @@ func (r *remoteInit) promote(pending *setup.Credential) error {
 // setup is recorded.
 func (r *remoteInit) inspect(conn cli.AgentConn) error {
 	r.loggedIn = true
-	v, err := r.setup.GuardAgentVersion(r.c.Ctx, conn)
+	q := agentQuerier{conn}
+	v, err := r.setup.GuardAgentVersion(r.c.Ctx, q)
 	if err != nil {
 		return err
 	}
@@ -535,7 +491,7 @@ func (r *remoteInit) inspect(conn cli.AgentConn) error {
 	if err != nil {
 		return nil //nolint:nilerr // a malformed pending setup is replaced, not reused
 	}
-	r.recorded, err = r.setup.GuardSetupRecorded(r.c.Ctx, conn, id)
+	r.recorded, err = r.setup.GuardSetupRecorded(r.c.Ctx, q, id)
 	return err
 }
 
@@ -911,3 +867,27 @@ func printConnectOnly(c *cli.IO, res setup.RemoteInitResult, expires time.Time) 
 		res.Agent, res.Kind, until, res.ConnectURL, res.Fingerprint, res.PersonMessage)
 	return err
 }
+
+// agentQuerier is the agent's connection as the setup service's query port:
+// each call is the connection's own. Pgx is the connection, for the adapter
+// that runs the guard's reads on it.
+type agentQuerier struct{ conn cli.Querier }
+
+func (q agentQuerier) Exec(ctx context.Context, sql string, args ...any) (setup.Result, error) {
+	return q.conn.Exec(ctx, sql, args...)
+}
+
+func (q agentQuerier) Query(ctx context.Context, sql string, args ...any) (setup.Rows, error) {
+	rows, err := q.conn.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+func (q agentQuerier) QueryRow(ctx context.Context, sql string, args ...any) setup.Row {
+	return q.conn.QueryRow(ctx, sql, args...)
+}
+
+// Pgx is the agent's connection.
+func (q agentQuerier) Pgx() cli.Querier { return q.conn }

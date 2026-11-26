@@ -1,7 +1,10 @@
 // Package pluginfs is the plugin host's file system: the outbound adapter
 // behind plugin.Files. Each method is the os call of the same name, or the
 // one named in its comment, with nothing added: the plugin service keeps
-// the steps, their order, the checks and the refusals.
+// the steps, their order, the checks and the refusals. The methods that
+// open a file (open.go) do every step on that one open file inside the
+// call and never hand the file out; the service's check runs on the open
+// file's details before anything is read or written.
 package pluginfs
 
 import (
@@ -15,12 +18,6 @@ import (
 
 // Files is the plugin host's file system on this machine.
 type Files struct{}
-
-func (Files) OpenRoot(dir string) (*os.Root, error) { return os.OpenRoot(dir) }
-
-func (Files) OpenFile(name string, flag int, perm fs.FileMode) (*os.File, error) {
-	return os.OpenFile(name, flag, perm)
-}
 
 func (Files) ReadFile(name string) ([]byte, error)          { return os.ReadFile(name) }
 func (Files) Lstat(name string) (fs.FileInfo, error)        { return os.Lstat(name) }

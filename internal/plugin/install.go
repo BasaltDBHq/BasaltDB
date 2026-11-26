@@ -3,7 +3,6 @@ package plugin
 import (
 	"bytes"
 	"errors"
-	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -143,7 +142,7 @@ func Stage(src, root, instance string, trust TrustStore, mode pluginmodel.Mode, 
 // fill writes the manifest and signature bytes already read (no signature
 // when signed is false), and copies each listed file, into the temporary
 // copy.
-func (s *Staged) fill(srcRoot *os.Root, src string, m pluginmodel.Manifest, manifest, sig []byte, signed bool) error {
+func (s *Staged) fill(srcRoot FileRoot, src string, m pluginmodel.Manifest, manifest, sig []byte, signed bool) error {
 	if err := writeNew(s.trust.files, filepath.Join(s.Dir, ManifestFile), manifest, installedFileMode); err != nil {
 		return err
 	}
@@ -164,56 +163,44 @@ func (s *Staged) fill(srcRoot *os.Root, src string, m pluginmodel.Manifest, mani
 	return nil
 }
 
-// copyFile copies one listed file from the source into the copy.
-func (s *Staged) copyFile(srcRoot *os.Root, src, rel string, command bool) error {
+// copyFile copies one listed file from the source into the copy. The type
+// and mode are taken from the source file opened, the one copied.
+func (s *Staged) copyFile(srcRoot FileRoot, src, rel string, command bool) error {
 	srcPath := filepath.Join(src, filepath.FromSlash(rel))
 	if err := noSymlinkBelow(srcRoot, src, rel); err != nil {
 		return err
 	}
-	in, err := srcRoot.OpenFile(filepath.FromSlash(rel), noFollowFlags(), 0)
-	if err != nil {
-		return pluginmodel.PathRefusal(srcPath, "cannot be opened, or is a symlink")
-	}
-	defer func() { _ = in.Close() }()
-	fi, err := in.Stat()
-	if err != nil || !fi.Mode().IsRegular() {
-		return pluginmodel.PathRefusal(srcPath, "is not a regular file")
-	}
-	mode := os.FileMode(installedFileMode)
-	if command || fi.Mode().Perm()&execBits != 0 {
-		mode = installedExecMode
-	}
 	dst := filepath.Join(s.Dir, filepath.FromSlash(rel))
-	if err := mkdirsIn(s.trust.files, s.Dir, path.Dir(rel)); err != nil {
-		return err
-	}
-	out, err := s.trust.files.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, installedFileMode)
-	if err != nil {
+	err := srcRoot.CopyOut(filepath.FromSlash(rel), noFollowFlags(), func(fi fs.FileInfo) (fs.FileMode, error) {
+		if !fi.Mode().IsRegular() {
+			return 0, pluginmodel.PathRefusal(srcPath, "is not a regular file")
+		}
+		mode := os.FileMode(installedFileMode)
+		if command || fi.Mode().Perm()&execBits != 0 {
+			mode = installedExecMode
+		}
+		return mode, mkdirsIn(s.trust.files, s.Dir, path.Dir(rel))
+	}, dst, installedFileMode)
+	switch failedStep(err) {
+	case opOpen:
+		return pluginmodel.PathRefusal(srcPath, "cannot be opened, or is a symlink")
+	case opStat:
+		return pluginmodel.PathRefusal(srcPath, "is not a regular file")
+	case opCreate:
 		return pluginmodel.PathRefusal(dst, "cannot be created")
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
+	case opRead:
 		return pluginmodel.PathRefusal(srcPath, "cannot be read")
-	}
-	if err := out.Chmod(mode); err != nil {
-		_ = out.Close()
+	case opWrite:
 		return pluginmodel.PathRefusal(dst, "cannot be written")
 	}
-	if err := out.Sync(); err != nil {
-		_ = out.Close()
-		return pluginmodel.PathRefusal(dst, "cannot be written")
-	}
-	if err := out.Close(); err != nil {
-		return pluginmodel.PathRefusal(dst, "cannot be written")
-	}
-	return nil
+	return err
 }
 
 // noSymlinkBelow refuses a symlink at any component from the source down to
 // a listed file, the file included. os.Root already keeps every open inside
 // the source; this also refuses a link that stays inside it, and the open
 // that follows uses O_NOFOLLOW for a link swapped in meanwhile.
-func noSymlinkBelow(srcRoot *os.Root, src, rel string) error {
+func noSymlinkBelow(srcRoot FileRoot, src, rel string) error {
 	parts := strings.Split(rel, "/")
 	for i := 1; i <= len(parts); i++ {
 		sub := strings.Join(parts[:i], "/")
@@ -233,23 +220,27 @@ func noSymlinkBelow(srcRoot *os.Root, src, rel string) error {
 
 // readSource reads one file of the source once: no symlink, regular, at most
 // limit bytes.
-func readSource(srcRoot *os.Root, src, name string, limit int64) ([]byte, error) {
+func readSource(srcRoot FileRoot, src, name string, limit int64) ([]byte, error) {
 	p := filepath.Join(src, name)
 	if err := noSymlinkBelow(srcRoot, src, name); err != nil {
 		return nil, err
 	}
-	f, err := srcRoot.OpenFile(name, noFollowFlags(), 0)
-	if err != nil {
+	b, err := srcRoot.ReadOpen(name, noFollowFlags(), limit+1, func(fi fs.FileInfo) error {
+		if !fi.Mode().IsRegular() {
+			return pluginmodel.PathRefusal(p, "is not a regular file")
+		}
+		return nil
+	})
+	switch failedStep(err) {
+	case opOpen:
 		return nil, pluginmodel.PathRefusal(p, "cannot be opened, or is a symlink")
-	}
-	defer func() { _ = f.Close() }()
-	fi, err := f.Stat()
-	if err != nil || !fi.Mode().IsRegular() {
+	case opStat:
 		return nil, pluginmodel.PathRefusal(p, "is not a regular file")
-	}
-	b, err := io.ReadAll(io.LimitReader(f, limit+1))
-	if err != nil {
+	case opRead:
 		return nil, pluginmodel.PathRefusal(p, "cannot be read")
+	}
+	if err != nil {
+		return nil, err
 	}
 	if int64(len(b)) > limit {
 		return nil, pluginmodel.PathRefusal(p, "is too large")
@@ -281,22 +272,14 @@ func mkdirsIn(files Files, base, rel string) error {
 
 // writeNew creates path, which must not exist, with b and mode.
 func writeNew(files Files, p string, b []byte, mode os.FileMode) error {
-	f, err := files.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
-	if err != nil {
+	switch err := files.WriteNew(p, b, mode, false); {
+	case err == nil:
+		return nil
+	case failedStep(err) == opCreate:
 		return pluginmodel.PathRefusal(p, "cannot be created")
-	}
-	if _, err := f.Write(b); err != nil {
-		_ = f.Close()
+	default:
 		return pluginmodel.PathRefusal(p, "cannot be written")
 	}
-	if err := f.Chmod(mode); err != nil {
-		_ = f.Close()
-		return pluginmodel.PathRefusal(p, "cannot be written")
-	}
-	if err := f.Close(); err != nil {
-		return pluginmodel.PathRefusal(p, "cannot be written")
-	}
-	return nil
 }
 
 // Commit renames the verified copy into place as

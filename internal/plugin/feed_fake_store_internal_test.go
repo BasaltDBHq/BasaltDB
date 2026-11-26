@@ -254,8 +254,16 @@ func TestFeedOnAFakeStore(t *testing.T) {
 		}
 	}
 	require.Equal(t, []string{"invoices/2026", "receipts/7"}, resources)
-	for _, f := range l.askedFilters() {
-		require.Equal(t, feedFilter, f, "the feed asks the store for event rows only")
+	// The event kinds of CONTRACT.md, Which ledger rows are events, with no
+	// unapplied change and no refused read.
+	want := guardmodel.FeedFilter{Kinds: []string{
+		"CHANGE", "REFUSED", "APPROVAL_PENDING", "APPROVED",
+		"REVERT_PENDING", "REVERT_SIGNED", "REVERTED", "REVERT_REJECTED",
+	}}
+	asked := l.askedFilters()
+	require.NotEmpty(t, asked)
+	for _, f := range asked {
+		require.Equal(t, want, f, "the feed asks the store for event rows only")
 	}
 
 	e.stop()
@@ -323,15 +331,15 @@ func TestFeedOnAFakeStoreBacksOff(t *testing.T) {
 	e := newFakeFeedEnv(t, l)
 	p := e.serve("acme-feed", "product_a")
 	e.start()
-	at := e.started(p.key, "product_a")
+	require.Equal(t, feedCursor{InstallID: l.install}, e.started(p.key, "product_a"))
 
 	l.fail(3)
 	reads := l.readCount()
 	seq := l.applied("invoices/1")
 	waitSeqs(t, p, "product_a", seq)
 	require.GreaterOrEqual(t, l.readCount()-reads, 4, "three failed reads, then the one that answered")
-	e.waitCursor(p.key, seq)
-	require.Equal(t, at.InstallID, l.install)
+	resumed := e.waitCursor(p.key, seq)
+	require.Equal(t, feedCursor{InstallID: l.install, Seq: seq}, resumed, "the cursor moves on the answer after the store came back")
 
 	logs := e.logs.String()
 	require.Equal(t, 1, strings.Count(logs, "plugin feed paused"), logs)

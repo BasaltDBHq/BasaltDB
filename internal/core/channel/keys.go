@@ -149,6 +149,16 @@ func VerifySignature(pub *ecdsa.PublicKey, context SigningContext, body, sig []b
 	return nil
 }
 
+// VerifyKeySignature is VerifySignature by the key whose SPKI DER is spki
+// (ParseEngineKey's encoding; ErrBadKey for any other).
+func VerifyKeySignature(spki []byte, context SigningContext, body, sig []byte) error {
+	pub, err := ParseEngineKey(spki)
+	if err != nil {
+		return err
+	}
+	return VerifySignature(pub, context, body, sig)
+}
+
 // Signer signs under the engine's identity. EngineKeys is the one
 // implementation outside tests.
 type Signer interface {

@@ -200,7 +200,7 @@ A codec function is a function of a decision package that only decodes, parses o
 | `sqlguard` | SQL policy | decision | 1 | - | - |
 | `approval` | approvals | decision | 1 | - | `DecodeResponse`, `DecodePluginResponse`, `CheckTexts` |
 | `revert` | reverts | decision | 1 | - | `ParseBinding`, `DecodeResponse` |
-| `passkey` | approvals and reverts | decision | 1 | - | `PublicKeyFromXY` |
+| `passkey` | approvals and reverts | decision | 1 | - | `PublicKeyFromXY`, `CheckCode` |
 | `pii` | PII handling | decision | 1 | - | `CheckDictionarySize`, `OpenDictionary`, `NewKeys` |
 | `chainpin` | ledger | decision | 1 | - | `CheckName` |
 | `action` | ledger | types | 2 | - | - |

@@ -356,6 +356,37 @@ var domainNamedTests = map[string]string{
 	"internal/revert/revert_internal_test.go": "without the prefix it would be internal_test.go, which names no use case",
 }
 
+// staleNamedTests returns the entries of allowed that name no file under
+// root, sorted.
+func staleNamedTests(root string, allowed map[string]string) []string {
+	var out []string
+	for rel := range allowed {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			out = append(out, rel)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+func TestDomainNamedTestsExist(t *testing.T) {
+	for _, rel := range staleNamedTests(moduleRoot(t), domainNamedTests) {
+		t.Errorf("domainNamedTests lists %s, which does not exist: stale entry, remove it", rel)
+	}
+}
+
+func TestStaleNamedTestsCatchesAMissingFile(t *testing.T) {
+	t.Parallel()
+	root := fixture(t, map[string]string{"internal/revert/revert_internal_test.go": "package revert\n"})
+	got := staleNamedTests(root, map[string]string{
+		"internal/revert/revert_internal_test.go": "exists",
+		"internal/revert/revert_gone_test.go":     "removed",
+	})
+	if want := []string{"internal/revert/revert_gone_test.go"}; !slices.Equal(got, want) {
+		t.Errorf("staleNamedTests = %q, want %q", got, want)
+	}
+}
+
 // fileRoleFindings returns the file-name findings of the domain root p at
 // root/rel: its files, test files included, and the files its role types
 // are declared in.

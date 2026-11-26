@@ -2,26 +2,14 @@ package revert
 
 import (
 	"context"
-	"log/slog"
-	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 )
 
-// Core is what the revert use case reads of the agent's shared settings: who
-// the agent is, the log and clock, the commands the person runs, how errors map
-// to the contract, where the pages are and the longest long link. It is a copy
-// taken when the service is built.
-type Core struct {
-	Name       string
-	Log        *slog.Logger
-	Now        func() time.Time
-	Commands   guidance.Commands
-	Errors     guidance.ErrorMap
-	PagesBase  string
-	LinkBudget int
-}
+// Core is what the revert use case reads of the agent's shared settings,
+// the same as the approval use case's.
+type Core = guidance.HeldCore
 
 // Deps is what reverts use.
 type Deps struct {

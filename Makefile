@@ -185,4 +185,4 @@ portal-verify: ## Compare the hosted portal with the pages this build embeds and
 	@go run ./scripts/portal-verify --manifest web/portal.sha256
 
 .PHONY: ci
-ci: lint vet deadcode shard-check install-sh-check npm-check web-check portal-build test ## Same steps as the GitHub check job
+ci: lint vet deadcode shard-check install-sh-check npm-check web-check portal-build test ## Local subset of the GitHub check job, which also runs the tests against Postgres, the secret scan and the container, systemd and macOS jobs

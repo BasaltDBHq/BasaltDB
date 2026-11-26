@@ -13,7 +13,7 @@ By opening a pull request you agree to the [Contributor Licence Agreement](#cont
 - The wire rules every surface follows are in [CONTRACT.md](CONTRACT.md) and the section files under [`contract/`](contract/) that it lists. A change to a surface updates its section in the same PR.
 - Follow [Conventional Commits](https://www.conventionalcommits.org/) for commits and PR titles: `type(scope): message`.
 - Include tests for new behaviour. Guard and ledger tests run against a real Postgres.
-- Run `make ci` before opening a PR against `master`. Do not rebase or force-push shared branches; merge the base in.
+- Before you push, run `make fmt` and `make lint`; `make ci` runs a local subset of CI. The gate is GitHub CI: a PR against `master` merges only when its `check` job is green. Do not rebase or force-push shared branches; merge the base in.
 
 ## Contributor Licence Agreement (CLA)
 

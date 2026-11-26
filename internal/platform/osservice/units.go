@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
@@ -67,8 +68,11 @@ func pluginHostOf(s servicespec.Spec) servicespec.PluginHost {
 const (
 	memoryHighFactor = 3
 	memoryMaxFactor  = 4
-	bytesPerMB       = 1 << 20
 )
+
+// bytesPerMB converts the units' MiB limits, which pii.maxMemoryMB sets
+// for the engine, as pii converts its budget.
+const bytesPerMB = pii.BytesPerMB
 
 // memoryLimitsMB are the soft and hard limits for s, in MiB.
 func memoryLimitsMB(s servicespec.Spec) (high, hard int) {

@@ -1262,7 +1262,7 @@ test("a poll answer that arrives after Back neither brings its ticket back nor o
 const ROOT = { subject: "CN=Google Cloud SQL Server CA,O=Google\\, Inc,C=US", sha256: "ab".repeat(32), expiresAt: "2035-01-31T00:00:00Z" };
 // A connection string to a database reached by its IP address, as Cloud SQL's often is.
 const BY_IP = ["postgresql://admin", "Marker-7f3a9c@34.120.1.2:5432/app"].join(":");
-const NOT_VERIFIED = "The database's TLS certificate could not be verified, so the password was not sent. Use a host with a certificate from a public authority, or use the laptop command.";
+const NOT_VERIFIED = "The database's TLS certificate could not be verified, so the password was not sent. Use a host with a certificate from a public authority.";
 
 test("a refusal's certificate authority is read only when every part is well formed", () => {
   const r = refusalFrom(400, refusalBody("failed_precondition", "CERTIFICATE_NOT_VERIFIED", NOT_VERIFIED, 0, ROOT));

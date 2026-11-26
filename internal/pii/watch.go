@@ -26,13 +26,31 @@ type Watch struct {
 	log     *slog.Logger
 }
 
-// NewWatch returns the check for agent's map on store. It panics on a
-// missing dependency.
-func NewWatch(agent string, classes *Map, store Classes, log *slog.Logger) *Watch {
-	if agent == "" || classes == nil || store == nil || log == nil {
+// StoreSet is the agent's store as the classification check reads it: the
+// ports its adapter answers, built by the wiring.
+type StoreSet struct {
+	Classes Classes
+}
+
+// missingPorts names the ports of set that are nil.
+func (set StoreSet) missingPorts() []string {
+	var out []string
+	if set.Classes == nil {
+		out = append(out, "Classes")
+	}
+	return out
+}
+
+// NewWatch returns the check for agent's map on the store of set. It
+// panics on a missing dependency.
+func NewWatch(agent string, classes *Map, set StoreSet, log *slog.Logger) *Watch {
+	if missing := set.missingPorts(); len(missing) > 0 {
+		panic("piidict: store set missing ports: " + strings.Join(missing, ", "))
+	}
+	if agent == "" || classes == nil || log == nil {
 		panic("piidict: agent, classes, store and logger required")
 	}
-	return &Watch{agent: agent, classes: classes, store: store, log: log}
+	return &Watch{agent: agent, classes: classes, store: set.Classes, log: log}
 }
 
 // Tick reloads the map when needed and warns about unclassified columns

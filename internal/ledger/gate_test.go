@@ -49,10 +49,17 @@ func TestATickTheGuardRefusesDoesNothing(t *testing.T) {
 	t.Parallel()
 	pins := &savedPins{}
 	refuse := errors.New("the guard misses breaking migrations 18")
-	u := ledger.New("bot", "test", store.NewUpkeep(noDB{t: t}), slog.New(slog.DiscardHandler), time.Now).
+	u := ledger.New("bot", "test", ledger.StoreSet{Store: store.NewUpkeep(noDB{t: t})}, slog.New(slog.DiscardHandler), time.Now).
 		WithPins(pins).WithGate(func(context.Context) error { return refuse })
 	err := u.Tick(context.Background())
 	require.ErrorIs(t, err, refuse)
 	require.Contains(t, err.Error(), "skipped")
 	require.Zero(t, pins.saved, "no chain head is pinned from a schema the engine does not serve")
+}
+
+func TestNewRefusesAStoreSetWithANilPort(t *testing.T) {
+	t.Parallel()
+	require.PanicsWithValue(t, "upkeep: store set missing ports: Store", func() {
+		ledger.New("bot", "test", ledger.StoreSet{}, slog.New(slog.DiscardHandler), time.Now)
+	})
 }

@@ -186,3 +186,15 @@ func TestEngineFinishesARootInitRotation(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, c.Agents[0].Setup, "the setup is cleared from engine.json")
 }
+
+// requireEmptyDir fails when dir holds anything: root wrote nothing there.
+func requireEmptyDir(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	require.Empty(t, names, "root wrote through the planted link into %s", dir)
+}

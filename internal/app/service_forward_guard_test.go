@@ -528,13 +528,7 @@ var portGlue = map[string]string{
 // still here. The list only shrinks: an entry whose method is gone, has
 // become a forward or no longer implements a port fails the test.
 var portLogic = map[string]string{
-	"rootConfigDir.Upsert":        "the setup domain's config writer as root: checks the directory's owner before it writes",
-	"setupHost.OSOpenTrustedDir":  "the setup host: returns a nil interface on an error",
-	"setupHost.OpenRootConfigDir": "the setup host: returns a nil interface on an error",
-	"setupHost.RootEngineKey":     "the setup host: unwraps the config directory before it reads the key",
-	"engineCLIHost.RunServiceAt":  "forwards to app's runServiceAt, the whole basalt service install command",
-	"setupHost.OpenRootCredFiles": "forwards to app's openRootCredFiles, which opens the credential files as root",
-	"setupHost.RootTrustedOwner":  "forwards to app's rootTrustedOwner, which checks the config directory's owner",
+	"engineCLIHost.RunServiceAt": "forwards to app's runServiceAt, the whole basalt service install command",
 }
 
 // declaresPorts reports whether the package at path, in module, is one whose

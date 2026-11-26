@@ -38,16 +38,16 @@ type RootCredFiles struct {
 
 // OpenRootCredFiles opens dir, the agents directory, as root, making it
 // (and the config directory) when missing, through h. trusted is
-// rootTrustedOwner's.
-func OpenRootCredFiles(h FilesHost, dir string, trusted int) (RootCredFiles, error) {
+// RootTrustedOwner's.
+func OpenRootCredFiles(h FilesHost, dir string, trusted int) (Files, error) {
 	d, err := h.OSOpenTrustedDir(dir, trusted, true)
 	if err != nil {
-		return RootCredFiles{}, fmt.Errorf("the credential directory %s is refused: %w", dir, err)
+		return nil, fmt.Errorf("the credential directory %s is refused: %w", dir, err)
 	}
 	dirUID, err := d.Owner()
 	if err != nil {
 		_ = d.Close()
-		return RootCredFiles{}, err
+		return nil, err
 	}
 	return RootCredFiles{dir: d, owner: CredentialOwner(dirUID), self: os.Geteuid()}, nil
 }

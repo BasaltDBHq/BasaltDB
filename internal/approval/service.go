@@ -45,11 +45,12 @@ func (ac *Service) FindApproval(ctx context.Context, id uuid.UUID) (action.Appro
 	return ac.store.Records.FindApproval(ctx, id)
 }
 
-// HeldWrite is a write held for the person's approval, with the preview
-// lines its notice is built from.
+// HeldWrite is a write held for the person's approval, with the request it
+// is held as and the preview lines its notice is built from.
 type HeldWrite struct {
 	approvalstore.Held
-	Lines []string
+	Request action.Request
+	Lines   []string
 }
 
 // HoldRefusalError is a write the hold refused, which the agent records as a
@@ -65,8 +66,9 @@ func (e *HoldRefusalError) Unwrap() error { return e.Err }
 
 // Hold holds a write for the person's approval (the write use case's one
 // call): the store previews it, Basalt checks the lines (some rows, within
-// the cap), and the store holds it with op, the request as the agent sent it
-// and the preview's bound fields and lines. The request is passed on
+// the cap), and the store holds it with op, the request the preview returns
+// (the agent's, with any value that changes between runs fixed by the
+// store) and the preview's bound fields and lines. The request is passed on
 // unread. A refusal the agent records comes as a *HoldRefusalError; any other
 // error, the agent answers without recording it.
 func (ac *Service) Hold(ctx context.Context, in action.Intent, req action.Request, op action.Op) (HeldWrite, error) {
@@ -88,9 +90,9 @@ func (ac *Service) Hold(ctx context.Context, in action.Intent, req action.Reques
 	if te := HoldTooLarge(p.Lines); te != nil {
 		return HeldWrite{}, &HoldRefusalError{Err: te}
 	}
-	held, err := ac.store.Holds.Hold(ctx, in, approvalstore.HoldRequest{Op: op, Request: req, Assigned: p.Assigned, Lines: p.Lines})
+	held, err := ac.store.Holds.Hold(ctx, in, approvalstore.HoldRequest{Op: op, Request: p.Request, Assigned: p.Assigned, Lines: p.Lines})
 	if err != nil {
 		return HeldWrite{}, err
 	}
-	return HeldWrite{Held: held, Lines: p.Lines}, nil
+	return HeldWrite{Held: held, Request: p.Request, Lines: p.Lines}, nil
 }

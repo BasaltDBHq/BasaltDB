@@ -20,6 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgstatement"
 )
 
 // errPreviewRollback ends a preview transaction: a preview never commits.
@@ -104,7 +105,7 @@ func heldStatement(req approval.HeldRequest) (revealRun, error) {
 	if req.Kind != approval.RequestSQL {
 		return revealRun{}, fmt.Errorf("the held request is of family %q, not SQL", req.Kind)
 	}
-	stmt, err := Check(req.Statement, action.ToolWrite)
+	stmt, err := pgstatement.Check(req.Statement, action.ToolWrite)
 	if err != nil {
 		return revealRun{}, fmt.Errorf("the held statement no longer parses: %w", err)
 	}
@@ -132,15 +133,66 @@ func (s *Store) holdRaw(ctx context.Context, in action.Intent, r approvalstore.H
 }
 
 // tableColumnsRaw is TableColumns before MapError.
-func (s *Store) tableColumnsRaw(ctx context.Context, table string) ([]string, error) {
+func (s *Store) tableColumnsRaw(ctx context.Context, table string) ([]pgstatement.Column, error) {
 	// Plain SQL: a catalog query on to_regclass.
-	rows, err := s.db.Query(ctx, `SELECT a.attname::text FROM pg_catalog.pg_attribute a
-		WHERE a.attrelid = pg_catalog.to_regclass($1) AND a.attnum > 0 AND NOT a.attisdropped AND a.attgenerated = ''
-		ORDER BY a.attnum`, table)
+	// A default's dependencies on functions outside pg_catalog are in
+	// pg_depend; the first volatile one is named.
+	rows, err := s.db.Query(ctx, `SELECT a.attname::text,
+		       coalesce(pg_catalog.pg_get_expr(d.adbin, d.adrelid), ''), a.attidentity <> '', a.attgenerated <> '',
+		       coalesce((SELECT p.oid::pg_catalog.regprocedure::text
+		                   FROM pg_catalog.pg_depend dep
+		                   JOIN pg_catalog.pg_proc p ON p.oid = dep.refobjid
+		                  WHERE dep.classid = 'pg_catalog.pg_attrdef'::pg_catalog.regclass AND dep.objid = d.oid
+		                    AND dep.refclassid = 'pg_catalog.pg_proc'::pg_catalog.regclass AND p.provolatile = 'v'
+		                  ORDER BY 1 LIMIT 1), '')
+		  FROM pg_catalog.pg_attribute a
+		  LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+		 WHERE a.attrelid = pg_catalog.to_regclass($1) AND a.attnum > 0 AND NOT a.attisdropped
+		 ORDER BY a.attnum`, table)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, pgx.RowTo[string])
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (pgstatement.Column, error) {
+		var c pgstatement.Column
+		err := row.Scan(&c.Name, &c.Default, &c.Identity, &c.Generated, &c.Volatile)
+		return c, err
+	})
+}
+
+// fixedTimes runs eval, the SELECT pgstatement.PlanTimes made of a held
+// write's time functions, once, and returns each value as text in ISO form
+// with its zone offset where the type has one, which Postgres reads back
+// the same whatever the session's DateStyle. The read-only transaction
+// sets DateStyle for itself only.
+func (s *Store) fixedTimes(ctx context.Context, eval string) ([]string, error) {
+	var values []string
+	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SET LOCAL datestyle = 'ISO, YMD'`); err != nil {
+			return err
+		}
+		rows, err := tx.Query(ctx, eval)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		if !rows.Next() {
+			if err := rows.Err(); err != nil {
+				return err
+			}
+			return errors.New("fixing the times returned no row")
+		}
+		raw := rows.RawValues()
+		values = make([]string, len(raw))
+		for i, v := range raw {
+			if v == nil {
+				return errors.New("a fixed time is NULL")
+			}
+			values[i] = string(v)
+		}
+		rows.Close()
+		return rows.Err()
+	})
+	return values, MapError(err)
 }
 
 // submitApprovalRaw is SubmitApproval before MapError.
@@ -232,6 +284,8 @@ func pluginApprovalRefusal(err error) error {
 			reason = pluginmodel.ApprovalAlreadyApproved
 		case se.Detail == guard.DetailApprovalCancelled:
 			reason = pluginmodel.ApprovalCancelled
+		case se.Detail == guard.Withdrawn:
+			reason = pluginmodel.ApprovalWithdrawn
 		case se.Detail == guard.DetailApprovalNotFound:
 			reason = pluginmodel.ApprovalNotFound
 		case se.Reason == action.ReasonPasskeyRevoked:

@@ -359,6 +359,14 @@ func (s *memStore) ResetRevert(context.Context, uuid.UUID, time.Duration) (rever
 	return revertstore.RescopedRevert{}, errUnsupported
 }
 
+func (s *memStore) WithdrawRevert(context.Context, uuid.UUID, string) (*time.Time, error) {
+	return nil, errUnsupported
+}
+
+func (s *memStore) WithdrawApproval(context.Context, uuid.UUID, string) (*time.Time, error) {
+	return nil, errUnsupported
+}
+
 // applyLine applies one line: the document goes back to its earlier
 // version, unless someone changed it since the line was prepared.
 func (s *memStore) applyLine(l *memLine, batch int) {

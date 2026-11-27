@@ -6,7 +6,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgcatalog"
 )
 
@@ -16,14 +15,14 @@ import (
 // statistics counters only, never a row.
 type Catalog struct {
 	pool     Pool
-	limits   sqlguard.Limits
+	limits   action.Limits
 	database string
 	host     string
 }
 
 // NewCatalog returns the catalog on pool with limits; database is the name
 // the pool connects to. It panics on a nil pool.
-func NewCatalog(pool Pool, limits sqlguard.Limits, database string) *Catalog {
+func NewCatalog(pool Pool, limits action.Limits, database string) *Catalog {
 	if pool == nil {
 		panic("postgres: pool required")
 	}
@@ -121,4 +120,4 @@ func (c *Catalog) Database() string { return c.database }
 func (c *Catalog) Host() string { return c.host }
 
 // Limits are the limits each call runs within.
-func (c *Catalog) Limits() action.Limits { return action.Limits(c.limits) }
+func (c *Catalog) Limits() action.Limits { return c.limits }

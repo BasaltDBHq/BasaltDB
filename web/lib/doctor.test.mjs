@@ -146,3 +146,32 @@ test("the browser is told of a removed passkey only when it can be", async () =>
   assert.equal(await signalRemoved({}, "localhost", "aWQ"), false);
   assert.equal(await signalRemoved({ signalUnknownCredential: async () => { throw new Error("no"); } }, "localhost", "aWQ"), false, "a failed call is a no-op");
 });
+
+test("a certificate not checked is a warning with its own fix: the page still says Ready", () => {
+  const d = { ...good, certificate: { state: "NOT_CHECKED", host: "db.abc.supabase.co", port: 5432, sslMode: "require", provider: "Supabase" } };
+  const v = checkView(d, ORIGIN, [], "demo_bot");
+  assert.equal(v.title, "Ready");
+  assert.deepEqual(v.done, { enabled: true, why: "" });
+  assert.deepEqual(v.rows.map((r) => `${r.mark} ${r.title} | ${r.text} | ${r.action}`), [
+    "! Certificate not checked | demo_bot connects with sslmode=require. Encrypted, but not proven to be Supabase. | Check it",
+    "✓ Every column has a label |  | ",
+    "✓ Passkeys | 2 devices can approve | Manage",
+  ]);
+  assert.equal(v.rows[0].job, "TRUST");
+  assert.deepEqual(v.allSet.later, ["Certificate not checked"]);
+  assert.deepEqual(fixQueue(d, ORIGIN), [], "a warning is no critical fix");
+  const own = checkView({ ...d, certificate: { state: "NOT_CHECKED", sslMode: "verify-ca" } }, ORIGIN, [], "demo_bot");
+  assert.equal(own.rows[0].text, "demo_bot connects with sslmode=verify-ca. Encrypted, but nothing checks the certificate is your database's.");
+});
+
+test("a connection not encrypted is a warning: Check it on a provider's host, words only elsewhere", () => {
+  const d = { ...good, certificate: { state: "NOT_ENCRYPTED", host: "db.abc.supabase.co", port: 5432, sslMode: "disable", provider: "Supabase" } };
+  const v = checkView(d, ORIGIN, [], "demo_bot");
+  assert.equal(v.title, "Ready");
+  assert.deepEqual([v.rows[0].mark, v.rows[0].title, v.rows[0].text, v.rows[0].action, v.rows[0].job], ["!", "Connection not encrypted", "demo_bot connects with sslmode=disable. Its data and queries travel unencrypted.", "Check it", "TRUST"]);
+  assert.ok(!v.rows.some((r) => r.title === "Database certificate checked"));
+  const local = checkView({ ...d, certificate: { state: "NOT_ENCRYPTED", host: "localhost", sslMode: "disable" } }, ORIGIN, [], "demo_bot");
+  assert.equal(local.rows[0].action, "", "no built-in roots: nothing to click");
+  assert.match(local.rows[0].text, /Use a connection string with sslmode=verify-full\.$/);
+  assert.deepEqual(fixQueue(d, ORIGIN), []);
+});

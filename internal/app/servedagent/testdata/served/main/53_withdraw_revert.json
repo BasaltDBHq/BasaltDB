@@ -1,0 +1,19 @@
+{
+  "body": {
+    "kind": "REVERT",
+    "nextSteps": [
+      {
+        "action": "STOP",
+        "actor": "AGENT",
+        "text": "Tell the person it is withdrawn. Do not ask them to sign it, and do not apply it."
+      }
+    ],
+    "personMessage": "The agent withdrew this request: the person changed their mind. Nothing changed.",
+    "reason": "the person changed their mind",
+    "revertId": "<id-27>",
+    "status": "WITHDRAWN",
+    "withdrawnAt": "<time>"
+  },
+  "isError": false,
+  "tool": "withdraw"
+}

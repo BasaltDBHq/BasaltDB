@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgcatalog"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgstatement"
 )
 
 // The exported store methods map their errors (MapError), so the service
@@ -100,10 +101,10 @@ func (p Probe) Reinstalls(ctx context.Context) (guard.Reinstalls, error) {
 
 // Read runs one SELECT in a read-only transaction within the time limit,
 // and cancels it once it returns more than the row limit. For the
-// statement's row sources (its Handle, the []sqlguard.RowSource of the
+// statement's row sources (its Handle, the []pgstatement.RowSource of the
 // check) that are guarded tables the agent can read, it also returns the version
 // of each row: the statement runs with version columns added through the
-// parse tree (sqlguard.WithRowVersions), which are stripped from the rows.
+// parse tree (pgstatement.WithRowVersions), which are stripped from the rows.
 // If that statement fails to plan, the original runs as given and the read
 // carries no versions.
 func (r *Reader) Read(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error) {
@@ -112,22 +113,24 @@ func (r *Reader) Read(ctx context.Context, sql string, params []any, stmt action
 }
 
 // Preview previews a held write. It refuses a write whose values change
-// between runs (*action.RefusalError NOT_REPEATABLE), works out the columns
-// whose new values the approval binds (holdColumns, which may read the
-// catalog), then runs the write in a preview transaction (basalt.mode =
-// PREVIEW) on the agent's credential that always rolls back, and returns
-// the columns with the preview lines. An error of the preview run is marked
+// between runs and cannot be fixed (*action.RefusalError NOT_REPEATABLE),
+// fixes the time functions it uses and works out the columns whose new
+// values the approval binds (holdPlan, which may read the catalog and
+// evaluates the times), then runs the write it holds in a preview
+// transaction (basalt.mode = PREVIEW) on the agent's credential that always
+// rolls back, and returns that request with the columns and the preview
+// lines. An error of the preview run is marked
 // *approvalstore.PreviewFailedError; a catalog read's error is not.
 func (s *Store) Preview(ctx context.Context, in action.Intent, req agentstore.Request) (approvalstore.HeldPreview, error) {
-	assigned, err := s.holdColumns(ctx, req.Text, req.Params)
+	held, assigned, err := s.holdPlan(ctx, req)
 	if err != nil {
 		return approvalstore.HeldPreview{}, err
 	}
-	lines, err := s.previewRaw(ctx, in, req.Text, req.Params, assigned)
+	lines, err := s.previewRaw(ctx, in, held.Text, held.Params, assigned)
 	if err != nil {
 		return approvalstore.HeldPreview{}, &approvalstore.PreviewFailedError{Err: MapError(err)}
 	}
-	return approvalstore.HeldPreview{Assigned: assigned, Lines: lines}, nil
+	return approvalstore.HeldPreview{Request: held, Assigned: assigned, Lines: lines}, nil
 }
 
 // RevealHeld checks the person's reveal proof for a held write
@@ -148,10 +151,10 @@ func (s *Store) Hold(ctx context.Context, in action.Intent, r approvalstore.Hold
 	return r0, MapError(err)
 }
 
-// TableColumns returns the columns an INSERT without a column list assigns:
-// every non-generated column of table, in order, resolved as the agent's
-// session would.
-func (s *Store) TableColumns(ctx context.Context, table string) ([]string, error) {
+// TableColumns returns the columns of table an INSERT without a column
+// list fills by position, in order, with their defaults, resolved as the
+// agent's session would.
+func (s *Store) TableColumns(ctx context.Context, table string) ([]pgstatement.Column, error) {
 	r0, err := s.tableColumnsRaw(ctx, table)
 	return r0, MapError(err)
 }
@@ -330,7 +333,7 @@ func (s *Store) RevealRevertRows(ctx context.Context, id uuid.UUID, proof passke
 // ListRuns returns one page of the agent's own runs, read through the
 // guard's agent views (agent_runs filters on session_user in Postgres).
 // Keyset on run_id; the time filters narrow the same keyset.
-func (s *Store) ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error) {
+func (s *Store) ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunListItem], error) {
 	r0, err := s.listRunsRaw(ctx, p)
 	return r0, MapError(err)
 }

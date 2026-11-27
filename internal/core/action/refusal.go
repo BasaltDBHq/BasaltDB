@@ -14,7 +14,10 @@ const (
 // (STATEMENT_REFUSED's reason; CONTRACT.md, Error codes).
 type RefusalReason string
 
-// The refusal reasons a store's check can give.
+// The refusal reasons a store's check can give. They are contract enums
+// (CONTRACT.md, Error codes), so they stay here in core even where only a
+// SQL store gives them: SELECT_INTO, LOCKING_READ, MERGE_NOT_ALLOWED and
+// DATA_MODIFYING_WITH name SQL statements.
 const (
 	ReasonParseError         RefusalReason = "PARSE_ERROR"
 	ReasonMultipleStatements RefusalReason = "MULTIPLE_STATEMENTS"

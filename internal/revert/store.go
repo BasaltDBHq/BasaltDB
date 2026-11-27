@@ -70,6 +70,10 @@ type Undo interface {
 	// ApplyRevertBatch applies lines of a plan the person signed; the store
 	// checks each line against that plan.
 	ApplyRevertBatch(ctx context.Context, id uuid.UUID, lines []int) (revertstore.BatchResult, error)
+	// WithdrawRevert withdraws a revert the agent prepared while it waits
+	// for the person's signature, with the agent's reason: when it was
+	// withdrawn, nil when it was no longer waiting (left as it is).
+	WithdrawRevert(ctx context.Context, id uuid.UUID, reason string) (*time.Time, error)
 }
 
 // Proofs is the person's side: the page's calls, through the local pages or

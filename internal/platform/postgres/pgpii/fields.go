@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -17,7 +19,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/lib/sqlident"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 )
@@ -48,7 +49,7 @@ const (
 // dictionary scan (pii.Fields), on the agent's pool.
 type FieldReader struct {
 	pool        Pool
-	limits      sqlguard.Limits
+	limits      action.Limits
 	loadTimeout time.Duration
 }
 
@@ -57,7 +58,7 @@ type FieldReader struct {
 // a table's relkind and key under loadTimeout, so a pool with no free
 // connection cannot hold the scan for good. It panics on a nil pool or a
 // load timeout that is not positive.
-func Fields(pool Pool, limits sqlguard.Limits, loadTimeout time.Duration) *FieldReader {
+func Fields(pool Pool, limits action.Limits, loadTimeout time.Duration) *FieldReader {
 	if pool == nil || loadTimeout <= 0 {
 		panic("pgpii: pool and load timeout required")
 	}

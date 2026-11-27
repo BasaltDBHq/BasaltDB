@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgquerier"
@@ -28,7 +27,7 @@ type DB interface {
 type Store struct {
 	db     DB
 	reader *Reader
-	limits sqlguard.Limits
+	limits action.Limits
 	now    func() time.Time
 }
 
@@ -52,7 +51,7 @@ var errNoReturned = errors.New("postgres: a write returned rows with no Returned
 // (guard.PinSession), so the row images the guard stores, the lines a
 // person signs and a revert's conflict check do not depend on the
 // session's TimeZone or styles. It panics on a nil db or clock.
-func NewStore(db DB, limits sqlguard.Limits, now func() time.Time) *Store {
+func NewStore(db DB, limits action.Limits, now func() time.Time) *Store {
 	if db == nil || now == nil {
 		panic("postgres: db and clock required")
 	}

@@ -174,6 +174,7 @@ func pluginResultCases() map[string]resultCase {
 		resultKey(toolRequestPlugin, "APPROVED"):   {tool: toolRequestPlugin, args: wait, build: state(PluginStateApproved)},
 		resultKey(toolRequestPlugin, "RUNNING"):    {tool: toolRequestPlugin, args: wait, build: state(PluginStateRunning)},
 		resultKey(toolRequestPlugin, "ENDED"):      {tool: toolRequestPlugin, args: wait, build: state(PluginStateEnded)},
+		resultKey(toolRequestPlugin, "WITHDRAWN"):  {tool: toolRequestPlugin, args: wait, build: state(PluginStateWithdrawn)},
 		resultKey(toolRequestPlugin, "NARROWED"):   {tool: toolRequestPlugin, args: source, build: call(source, narrowed)},
 		resultKey(toolRequestPlugin, "REMOVED"):    {tool: toolRequestPlugin, args: remove, build: call(remove, PluginOpened{})},
 	}

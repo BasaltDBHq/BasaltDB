@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/basaltdbhq/basaltdb/internal/agent/out/sqllang"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -158,6 +160,18 @@ func TestRefusedRecordsTheStatementsResources(t *testing.T) {
 	}
 }
 
+// A refusal is recorded with one of the four ops the ledger names, or
+// OTHER: MERGE, a DDL or utility statement and one that did not parse.
+func TestRefusalOp(t *testing.T) {
+	t.Parallel()
+	for op, want := range map[action.Op]action.Op{
+		action.OpRead: action.OpRead, action.OpInsert: action.OpInsert, action.OpUpdate: action.OpUpdate,
+		action.OpDelete: action.OpDelete, action.OpMerge: action.OpOther, action.OpOther: action.OpOther, "": action.OpOther,
+	} {
+		require.Equal(t, want, refusalOp(op), op)
+	}
+}
+
 // DIFFERENT_WRITE's step sends the held request back as it was held: a
 // parameter past 2^53 keeps its exact value through the step's JSON, and
 // the write the step makes is the held one.
@@ -192,6 +206,69 @@ func TestDifferentWriteStepKeepsExactNumbers(t *testing.T) {
 
 	rounded := WriteParams{RunID: held.RunID, Request: agentstore.Request{Text: call.SQL, Params: callParams(t, `[9007199254740992]`)}}
 	require.Error(t, wc.sameAsHeld(held, rounded))
+}
+
+// fixedChecker says the held text was made from one sent text by fixing
+// its times.
+type fixedChecker struct {
+	noChecker
+	held, sent string
+}
+
+func (c fixedChecker) HeldFrom(_ context.Context, held, sent string) (bool, error) {
+	return held == c.held && sent == c.sent, nil
+}
+
+// The agent may send its own request again with the approval when the
+// store says the held one is it with the times the store fixed: the held
+// text applies. Any other text is left as sent, so sameAsHeld refuses it,
+// and the parameters must still be the held ones.
+func TestWithFixedTimesAppliesTheHeldText(t *testing.T) {
+	t.Parallel()
+	const sent = "UPDATE public.leads SET seen = now() WHERE id <= $1"
+	const fixed = "UPDATE public.leads SET seen = '2026-11-27 10:00:00+00'::timestamp with time zone WHERE id <= $1"
+	wc := newTestService(t, "linux", "", func(s *settings) {
+		s.store.Language = sqllang.New(fixedChecker{held: fixed, sent: sent})
+	})
+	held := action.Approval{
+		ID: uuid.Must(uuid.NewV7()), RunID: uuid.Must(uuid.NewV7()), Status: action.ApprovalPending,
+		Request: action.HeldRequest{Kind: "SQL", Text: fixed, Params: json.RawMessage(`[25]`)},
+	}
+	call := func(text string, param string) WriteParams {
+		p, err := wc.withFixedTimes(context.Background(), held, WriteParams{RunID: held.RunID, Request: agentstore.Request{Text: text, Params: []any{json.Number(param)}}})
+		require.NoError(t, err)
+		return p
+	}
+	p := call(sent, "25")
+	require.Equal(t, fixed, p.Request.Text)
+	require.NoError(t, wc.sameAsHeld(held, p))
+	require.NoError(t, wc.sameAsHeld(held, call(fixed, "25")))
+
+	var te *toolresult.ToolError
+	require.ErrorAs(t, wc.sameAsHeld(held, call(sent, "26")), &te)
+	require.Equal(t, guidance.ReasonDifferentWrite, te.Reason)
+	other := call(sent+" AND true", "25")
+	require.Equal(t, sent+" AND true", other.Request.Text)
+	require.ErrorAs(t, wc.sameAsHeld(held, other), &te)
+	require.Equal(t, guidance.ReasonDifferentWrite, te.Reason)
+}
+
+// A write sent with the approval id of a held write the agent withdrew
+// applies nothing: APPROVAL_INVALID WITHDRAWN, with the agent's reason for
+// the person, even when the call repeats the held write exactly.
+func TestWriteWithWithdrawnApproval(t *testing.T) {
+	t.Parallel()
+	wc := newTestService(t, "linux", "")
+	held := action.Approval{
+		ID: uuid.Must(uuid.NewV7()), RunID: uuid.Must(uuid.NewV7()), Status: action.ApprovalWithdrawn,
+		Request:        action.HeldRequest{Kind: "SQL", Text: "DELETE FROM public.leads WHERE id = 1"},
+		WithdrawReason: "the person changed their mind",
+	}
+	var te *toolresult.ToolError
+	require.ErrorAs(t, wc.sameAsHeld(held, WriteParams{RunID: held.RunID, Request: agentstore.Request{Text: held.Request.Text}}), &te)
+	require.Equal(t, guidance.CodeApprovalInvalid, te.Code)
+	require.Equal(t, guidance.ReasonWithdrawn, te.Reason)
+	require.Equal(t, "The agent withdrew this request: the person changed their mind. Nothing changed.", te.PersonMessage)
 }
 
 // A refusal whose names make recording fail is recorded once more without

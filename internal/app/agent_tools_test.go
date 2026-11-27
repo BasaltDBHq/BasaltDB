@@ -52,8 +52,8 @@ func (nopStore) History(context.Context, action.ChangeListParams) (changeHistory
 	return changeHistory{}, nil
 }
 
-func (nopStore) ListRuns(context.Context, action.RunListParams) (pagination.Page[action.RunSummary], error) {
-	return pagination.Page[action.RunSummary]{}, nil
+func (nopStore) ListRuns(context.Context, action.RunListParams) (pagination.Page[action.RunListItem], error) {
+	return pagination.Page[action.RunListItem]{}, nil
 }
 
 func deps() Deps {
@@ -99,6 +99,8 @@ func TestToolErrorMapping(t *testing.T) {
 		{pg("BS005", "APPROVAL_EXPIRED"), guidance.CodeApprovalExpired, "", "BS005"},
 		{pg("BS005", "APPROVAL_INVALID: approval already used"), guidance.CodeApprovalInvalid, guidance.ReasonBadSignature, "BS005"},
 		{store.MapError(&pgconn.PgError{Code: "BS005", Message: "APPROVAL_INVALID", Detail: "approval already used"}), guidance.CodeApprovalInvalid, guidance.ReasonAlreadyUsed, "BS005"},
+		{store.MapError(&pgconn.PgError{Code: "BS005", Message: "APPROVAL_INVALID", Detail: "WITHDRAWN", Hint: "the agent withdrew this request: x; nothing changed"}), guidance.CodeApprovalInvalid, guidance.ReasonWithdrawn, "BS005"},
+		{store.MapError(&pgconn.PgError{Code: "BS005", Message: "REVERT_INVALID", Detail: "WITHDRAWN", Hint: "the agent withdrew this request: x; nothing changed"}), guidance.CodeRevertInvalid, guidance.ReasonWithdrawn, "BS005"},
 		{pg("BS006", "PREVIEW_CANNOT_COMMIT"), guidance.CodeInternal, "", "BS006"},
 		{pg("BS007", "NOT_ALLOWED: unknown basalt.mode"), guidance.CodeStatementRefused, guidance.ReasonNotAllowed, "BS007"},
 		{pg("BS008", "LEDGER_INPUT_INVALID"), guidance.CodeInternal, "", "BS008"},

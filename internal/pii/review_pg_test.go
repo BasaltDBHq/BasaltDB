@@ -13,7 +13,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgpii"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
@@ -34,9 +33,9 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 	dict, _ := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	obs := NewObserver(classes, dict)
-	store := postgres.NewStore(pool, sqlguard.DefaultLimits(), time.Now)
-	reader := postgres.NewReader(pool, sqlguard.DefaultLimits(), time.Now)
-	scan := NewScanner(dict, []ScanSource{{Agent: "bot", Map: classes, Classes: pgpii.Classes(pool), Fields: pgpii.Fields(pool, sqlguard.DefaultLimits(), DefaultLoadTimeout)}},
+	store := postgres.NewStore(pool, action.DefaultLimits(), time.Now)
+	reader := postgres.NewReader(pool, action.DefaultLimits(), time.Now)
+	scan := NewScanner(dict, []ScanSource{{Agent: "bot", Map: classes, Classes: pgpii.Classes(pool), Fields: pgpii.Fields(pool, action.DefaultLimits(), DefaultLoadTimeout)}},
 		ScanOptions{}, slog.New(slog.DiscardHandler))
 	in := action.Intent{RunID: uuidV7(t), TaskID: uuidV7(t), Text: "touch customers"}
 	require.NoError(t, store.StartRun(ctx, in))

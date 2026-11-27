@@ -42,6 +42,9 @@ const (
 	// RevertAlreadySigned is a signature on a revert already signed or
 	// applied.
 	RevertAlreadySigned RevertReason = "ALREADY_SIGNED"
+	// RevertWithdrawnReason is a signature on a revert the agent withdrew
+	// (RevertWithdrawn is the status the ledger keeps).
+	RevertWithdrawnReason RevertReason = "WITHDRAWN"
 	// RevertSignature is any other signature the store did not accept.
 	RevertSignature RevertReason = "SIGNATURE_REFUSED"
 	// RevertNotPending is a revert signed, applied or rejected meanwhile,

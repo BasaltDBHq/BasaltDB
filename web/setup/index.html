@@ -12,11 +12,11 @@
   <link rel="modulepreload" href="../lib/channel.js" integrity="sha384-HIi/NThakfHR3Ddf/e6EZtHZuYpBejq1vUT/wuj/S6ZZIqqwY2TRS7haLNcFjD59">
   <link rel="modulepreload" href="../lib/codec.js" integrity="sha384-21mlzu9QYDugDihOE8S/r3niurzmsaIzApXyxY8JevhfBn98/AGgBhuRaMM2vKr9">
   <link rel="modulepreload" href="../lib/compact.js" integrity="sha384-fuduyHELZPN04P63QueohM1bUIUVXRfvWGzR9uHrfZbGZbiB5EEmKmZRwailqr0p">
-  <link rel="modulepreload" href="../lib/confirm.js" integrity="sha384-7X+7BIAxAlSBTMikcjyLK2s8jPZNc0Qr+4D85wHnEgTwoI5sGeWidOIhXOJ6k7M5">
+  <link rel="modulepreload" href="../lib/confirm.js" integrity="sha384-JQ0i8CUu2SvFMur5sqfa5/R1g2OUQRN+U1b4YeyIBS+X8MiEn+r5dERYmiP7iQBd">
   <link rel="modulepreload" href="../lib/deflate.js" integrity="sha384-jYvkCzNHlr7rnXMbluHr7+f08Oo3djFPnbjD4hlC5cKer+nCf+uLf2CZYslw19rU">
-  <link rel="modulepreload" href="../lib/doctor.js" integrity="sha384-h4JvIvkVmpvWvWJh34kpS5sJQ++FP4S9OtJj6eC5Wtl7L4rRIIKOuF9EbJ59m78w">
+  <link rel="modulepreload" href="../lib/doctor.js" integrity="sha384-RG0KwnDmnqhb8/RtXltcdY8yOMU1ZsKS02W8ZeGBDPvwfyh1jZDMgnW3oyZt15Ge">
   <link rel="modulepreload" href="../lib/local.js" integrity="sha384-hdqElFsnaTlCN9HGy5Qnv7DsFnQ++ZQUS8JN2hK06TrvY0UXn9snJ6QiExIIAU4j">
-  <link rel="modulepreload" href="../lib/page.js" integrity="sha384-E/H4T4P2W+oxfTMlNHl3QIE2Ai4hDnUpqkAylUF5IdAc1D5/MVj6jQM76WPfTKzO">
+  <link rel="modulepreload" href="../lib/page.js" integrity="sha384-8CIa3WjJa9dFVC7HaY5bVYK/78g7e0lMrwpD0PJQ+maFjsSEh62DAcjyXMJB3kVh">
   <link rel="modulepreload" href="../lib/picks.js" integrity="sha384-Lr3kak9YvctWHYkskK/VnVjXzLrCqxE5t70AaJoCNULfOQnRfYwDLG86owrkBa+j">
   <link rel="modulepreload" href="../lib/pickviews.js" integrity="sha384-BytItDacs/UqEsTyea9Pdd56yhISnBMtmq29BahV7Ip57MbFIOlSsp1vHJpFGDcE">
   <link rel="modulepreload" href="../lib/relay.js" integrity="sha384-KDLPRvSacJM3ys+IpUXe8k7xs3z2VRnhKiIt5v696gbjepw8MFIqB0TuewUOYvnu">
@@ -24,7 +24,7 @@
   <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-p6vkHEc71VcwfVRBo8QA9PIZ0Vfi/kGJ/txhor5XxRvZ/WgGSJioTA2bDMRWOtDb">
   <link rel="modulepreload" href="../lib/transport.js" integrity="sha384-fmaF1B7m6aioKcEJxQqfEJUIzbf/1AkZfuiiV/jhdK47t9PoulK6uwbz6ho2AYws">
-  <script type="module" src="../lib/setup.js" integrity="sha384-bUAMEZ8PoWv1mk/b7LJOIb3uKYkN/MYT3p7qjhw/OGOzb9bfBYuR1pVOCL0CEeLM"></script>
+  <script type="module" src="../lib/setup.js" integrity="sha384-az+GZjBGLAM5vaJQQjfop6RGbqiL9iFKl7uW+CrNzPO0IRab2bBlZ9hN/CJzO9x2"></script>
   <!-- sri:end -->
 </head>
 <body>
@@ -40,6 +40,19 @@
     <h1>Cannot set up</h1>
     <p id="error-text"></p>
   </section>
+
+  <main id="removed" hidden>
+    <h1>BasaltDB was removed from your database</h1>
+    <p>The engine is still on this computer, serving no agent.</p>
+    <section class="panel">
+      <div class="acts">
+        <button id="removed-again" type="button">Set up BasaltDB again</button>
+        <button id="removed-remove" type="button" class="secondary">Remove it from this computer too</button>
+      </div>
+      <p class="muted">Removing asks for your computer's password once. It stops the engine and deletes its files.</p>
+      <p id="removed-status" role="status"></p>
+    </section>
+  </main>
 
   <main id="main" hidden>
     <h1 id="title">Set up BasaltDB for your agent</h1>
@@ -120,6 +133,10 @@
       <h1 id="confirm-title">Is this your database?</h1>
       <p id="confirm-sub" class="muted"></p>
       <div id="confirm-facts" class="box id-facts"></div>
+      <div id="confirm-warn" class="strip warn box-action" role="status" hidden>
+        <p id="confirm-warn-text"></p>
+        <button id="confirm-check" type="button" hidden>Check the certificate</button>
+      </div>
       <p id="confirm-ok" class="ok-line" hidden></p>
       <p id="confirm-before" class="muted" hidden></p>
       <p id="confirm-error" class="strip bad" role="alert" hidden></p>

@@ -92,9 +92,10 @@
           "APPLYING",
           "APPLIED",
           "EXPIRED",
-          "REJECTED"
+          "REJECTED",
+          "WITHDRAWN"
         ],
-        "description": "PENDING until the person signs; APPLIED once a revert of up to 1000 lines is signed (it is applied in the same transaction); APPLYING once a larger plan is signed and until you applied every line; EXPIRED when not signed within 1 hour, or a signed plan not finished within 24 hours. REJECTED when the person rejected it on the signing page; nothing was reverted, and you do not request it again unless the person asks."
+        "description": "PENDING until the person signs; APPLIED once a revert of up to 1000 lines is signed (it is applied in the same transaction); APPLYING once a larger plan is signed and until you applied every line; EXPIRED when not signed within 1 hour, or a signed plan not finished within 24 hours. REJECTED when the person rejected it on the signing page; nothing was reverted, and you do not request it again unless the person asks. WITHDRAWN when you withdrew it with withdraw before the person signed; nothing was reverted, and its link shows it withdrawn."
       },
       "scope": {
         "type": "string",

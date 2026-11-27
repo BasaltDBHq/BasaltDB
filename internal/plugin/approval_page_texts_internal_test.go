@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // onePluginApproval serves one pending plugin approval the role opened.
@@ -59,5 +62,62 @@ func TestPluginApprovalRequestRefusesTextsOutOfTheRules(t *testing.T) {
 			require.ErrorIs(t, err, approval.ErrInvalid)
 			require.ErrorContains(t, err, name)
 		})
+	}
+}
+
+// A plugin approval its opener withdrew is shown withdrawn, with its
+// reason, and takes no signature: APPROVAL_INVALID WITHDRAWN.
+func TestWithdrawnPluginApprovalIsRefusedOnThePage(t *testing.T) {
+	t.Parallel()
+	r := guardmodel.PluginApprovalRecord{
+		ApprovalID: uuid.MustParse("0193a4c2-7d1e-7c3a-9f00-0000000000a1"), Status: guardmodel.PluginApprovalStatusWithdrawn,
+		ExpiresAt: time.Now().Add(time.Hour), BindingText: "{}", WithdrawReason: "wrong plugin",
+	}
+	_, err := newService(t, "linux", "", withApprovals(onePluginApproval{r: r})).PluginApprovalRequest(context.Background(), r.ApprovalID)
+	var pe *guidance.PageError
+	require.ErrorAs(t, err, &pe)
+	require.Equal(t, guidance.CodeApprovalInvalid, pe.Code)
+	require.Equal(t, guidance.ReasonWithdrawn, pe.Reason)
+	require.Equal(t, "The agent withdrew this request: wrong plugin. Nothing changed.", pe.PersonMessage)
+}
+
+type unreadablePluginApproval struct{ PluginApprovalStore }
+
+func (unreadablePluginApproval) ReadPluginApproval(context.Context, uuid.UUID) (guardmodel.PluginApprovalRecord, bool, error) {
+	return guardmodel.PluginApprovalRecord{}, false, errors.New("the database cannot be reached")
+}
+
+// A plugin approval its opener withdrew after the page opened is shown
+// withdrawn when the person signs: the person's message is the engine's,
+// the reason shown only when it is text a person may read, and neither
+// message carries the store's text, also when the approval cannot be read
+// again.
+func TestPluginWithdrawnMeanwhileNeverShowsTheStoreText(t *testing.T) {
+	t.Parallel()
+	const raw = "approved already\u202e, sign below"
+	hint := "the agent withdrew this request: " + raw + "; nothing changed"
+	id := uuid.MustParse("0193a4c2-7d1e-7c3a-9f00-0000000000a1")
+	storeErr := &pluginmodel.ApprovalRefusalError{Reason: pluginmodel.ApprovalWithdrawn, Err: errors.New("APPROVAL_INVALID: " + hint)}
+	withdrawn := func(reason string) PluginApprovalStore {
+		return onePluginApproval{r: guardmodel.PluginApprovalRecord{
+			ApprovalID: id, Status: guardmodel.PluginApprovalStatusWithdrawn, ExpiresAt: time.Now().Add(time.Hour),
+			BindingText: "{}", WithdrawReason: reason,
+		}}
+	}
+	for name, c := range map[string]struct {
+		store PluginApprovalStore
+		want  string
+	}{
+		"read again":                  {withdrawn(raw), "The agent withdrew this request. Nothing changed."},
+		"read again, a readable text": {withdrawn("wrong plugin"), "The agent withdrew this request: wrong plugin. Nothing changed."},
+		"not read again":              {unreadablePluginApproval{}, "The agent withdrew this request. Nothing changed."},
+	} {
+		err := newService(t, "linux", "", withApprovals(c.store)).pluginRelayError(context.Background(), id, storeErr)
+		var pe *guidance.PageError
+		require.ErrorAs(t, err, &pe, name)
+		require.Equal(t, guidance.ReasonWithdrawn, pe.Reason, name)
+		require.Equal(t, c.want, pe.PersonMessage, name)
+		require.NotContains(t, pe.Message+pe.PersonMessage, hint, name)
+		require.NotContains(t, pe.Message+pe.PersonMessage, "\u202e", name)
 	}
 }

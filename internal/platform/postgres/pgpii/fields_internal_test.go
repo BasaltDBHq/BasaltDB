@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -16,7 +18,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 )
 
 // scanRows answers a catalog query (scanned) or a page (raw values in text
@@ -160,7 +161,7 @@ func TestReadPagesByKey(t *testing.T) {
 			page(oids),
 		},
 	}
-	limits := sqlguard.DefaultLimits()
+	limits := action.DefaultLimits()
 	var g got
 	require.NoError(t, Fields(pool, limits, time.Minute).Read(context.Background(), target("t", "j", "jb"), 2, g.value, g.page))
 	require.Equal(t, []int{0, 1, 2}, g.fields)
@@ -188,7 +189,7 @@ func TestReadWithoutAKey(t *testing.T) {
 	} {
 		pool := &scanPool{relkind: []string{c.relkind}, keys: c.keys, pages: []*scanRows{page(nil)}}
 		var g got
-		require.NoError(t, Fields(pool, sqlguard.DefaultLimits(), time.Minute).Read(context.Background(), target("email"), 5, g.value, g.page))
+		require.NoError(t, Fields(pool, action.DefaultLimits(), time.Minute).Read(context.Background(), target("email"), 5, g.value, g.page))
 		require.Equal(t, []string{c.want}, pool.queries, c.relkind)
 		require.Equal(t, []int{0}, g.pages)
 	}
@@ -202,7 +203,7 @@ func TestPageRunsAfterTheTransactionCloses(t *testing.T) {
 		pages: []*scanRows{page([]uint32{pgtype.Int8OID, pgtype.TextOID}, [][]byte{[]byte("1"), []byte("a@corp.ee")})},
 	}
 	calls := 0
-	err := Fields(pool, sqlguard.DefaultLimits(), time.Minute).Read(context.Background(), target("email"), 5,
+	err := Fields(pool, action.DefaultLimits(), time.Minute).Read(context.Background(), target("email"), 5,
 		func(int, any) error {
 			require.False(t, pool.txs[0].rolledBk, "values are read inside the transaction")
 			return nil
@@ -226,7 +227,7 @@ func TestReadErrors(t *testing.T) {
 		if value == nil {
 			value = g.value
 		}
-		return Fields(pool, sqlguard.DefaultLimits(), time.Minute).Read(ctx, target("email"), 5, value, g.page)
+		return Fields(pool, action.DefaultLimits(), time.Minute).Read(ctx, target("email"), 5, value, g.page)
 	}
 	keyed := func() *scanPool {
 		return &scanPool{
@@ -270,7 +271,7 @@ func TestReadRefusesARefItDidNotWrite(t *testing.T) {
 	for _, ref := range []string{"", "0", "users", "16384/3", "016384", "-1"} {
 		tg := target("email")
 		tg.Resource = agentstore.ResourceRef(ref)
-		err := Fields(&scanPool{}, sqlguard.DefaultLimits(), time.Minute).Read(context.Background(), tg, 5,
+		err := Fields(&scanPool{}, action.DefaultLimits(), time.Minute).Read(context.Background(), tg, 5,
 			func(int, any) error { return nil }, func(int) error { return nil })
 		require.Error(t, err, ref)
 		require.NotErrorIs(t, err, piistore.ErrUnreadable, ref)

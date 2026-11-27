@@ -19,7 +19,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
@@ -121,7 +120,7 @@ func TestRevertDoesNotDependOnTheSessionZone(t *testing.T) {
 			signer, err := passkeytest.New(passkey.Production)
 			require.NoError(t, err)
 			require.NoError(t, guard.RegisterPasskey(ctx, d.Admin, signer.Credential(), "app"))
-			limits := sqlguard.DefaultLimits()
+			limits := action.DefaultLimits()
 			writer := postgres.NewStore(zonedPool(t, a.URL, zones[0]), limits, time.Now)
 			run := write(t, writer, `UPDATE public.events SET note = 'tagged' WHERE id IN (1, 2)`)
 			scope := revertstore.Scope{Kind: revert.ScopeRun, ID: run}
@@ -165,7 +164,7 @@ func TestSignedLinesDoNotDependOnTheSessionZone(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, a := zoneDB(t)
-	limits := sqlguard.DefaultLimits()
+	limits := action.DefaultLimits()
 	const update = `UPDATE public.events SET note = 'moved', at = at + interval '1 day' WHERE id IN (3, 4)`
 	zones := []string{"UTC", "Asia/Jakarta", "America/St_Johns"}
 	held := make([][]string, 0, len(zones))
@@ -216,7 +215,7 @@ func requireUTC(t *testing.T, lines []string) {
 func TestQueryDoesNotDependOnTheSessionStyle(t *testing.T) {
 	t.Parallel()
 	_, a := zoneDB(t)
-	r := postgres.NewReader(zonedPool(t, a.URL, "Asia/Jakarta"), sqlguard.DefaultLimits(), time.Now)
+	r := postgres.NewReader(zonedPool(t, a.URL, "Asia/Jakarta"), action.DefaultLimits(), time.Now)
 	res, err := r.Read(context.Background(), `SELECT at, took FROM public.events WHERE id = 1`, nil, action.Statement{})
 	require.NoError(t, err)
 	require.Len(t, res.Rows, 1)
@@ -275,7 +274,7 @@ func TestAWriteThatSkipsTheEngineStoresTheEngineImages(t *testing.T) {
 		return nil
 	}))
 
-	engine := postgres.NewStore(zonedPool(t, a.URL, "UTC"), sqlguard.DefaultLimits(), time.Now)
+	engine := postgres.NewStore(zonedPool(t, a.URL, "UTC"), action.DefaultLimits(), time.Now)
 	viaEngine := write(t, engine, `UPDATE public.readings SET note = 'tagged' WHERE id IN (3, 4)`)
 
 	// The images, without the key, are the same either way.
@@ -369,7 +368,7 @@ func TestAWriteThatSkipsTheEngineStoresByteaAsTheEngine(t *testing.T) {
 	require.NoError(t, direct.QueryRow(ctx, `SELECT body::text FROM public.files WHERE id = 1`).Scan(&shown))
 	require.Equal(t, `\000\377A`, shown, "the agent's session keeps its bytea_output")
 
-	engine := postgres.NewStore(zonedPool(t, a.URL, "UTC"), sqlguard.DefaultLimits(), time.Now)
+	engine := postgres.NewStore(zonedPool(t, a.URL, "UTC"), action.DefaultLimits(), time.Now)
 	viaEngine := write(t, engine, `UPDATE public.files SET note = 'tagged' WHERE id IN (3, 4)`)
 	got := images(t, d, in.RunID)
 	require.Len(t, got, 2)
@@ -395,7 +394,7 @@ func TestRevertFunctionsCalledByHandDoNotDependOnTheSession(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	d, a, signer := blobDB(t)
-	engine := postgres.NewStore(zonedPool(t, a.URL, "UTC"), sqlguard.DefaultLimits(), time.Now)
+	engine := postgres.NewStore(zonedPool(t, a.URL, "UTC"), action.DefaultLimits(), time.Now)
 	run := write(t, engine, `UPDATE public.files SET note = 'tagged', ratio = ratio * 3, body = body || '\x01'::bytea,
 		at = at + interval '1 day', took = took * 2 WHERE id IN (1, 2)`)
 

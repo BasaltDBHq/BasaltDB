@@ -39,14 +39,7 @@ type agentLedger interface {
 	RecordRead(ctx context.Context, r action.Read) (uuid.UUID, error)
 	RecordRefusal(ctx context.Context, r action.Refusal) error
 	History(ctx context.Context, p action.ChangeListParams) (changeHistory, error)
-	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error)
-}
-
-// statementChecker checks a statement against the engine's SQL policy for
-// a tool, and returns it as the store will run it, or an
-// *action.RefusalError.
-type statementChecker interface {
-	Check(sql string, tool action.Tool) (action.Statement, error)
+	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunListItem], error)
 }
 
 // txRows is how a SQL store hands the rows a write returns to the wiring,
@@ -59,7 +52,7 @@ type SQLStore interface {
 	agentStore
 	approvalsvc.Store
 	revertsvc.Store
-	statementChecker
+	sqllang.Checker
 	// Read runs one read, with the versions of the rows of the statement's
 	// sources it can identify.
 	Read(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error)
@@ -136,6 +129,10 @@ type liveChecker struct{ d *agentDeps }
 
 func (l liveChecker) Check(sql string, tool action.Tool) (action.Statement, error) {
 	return l.d.Data.Check(sql, tool)
+}
+
+func (l liveChecker) HeldFrom(ctx context.Context, held, sent string) (bool, error) {
+	return l.d.Data.HeldFrom(ctx, held, sent)
 }
 
 // agentData is the SQL store as the agent's query and write use cases run

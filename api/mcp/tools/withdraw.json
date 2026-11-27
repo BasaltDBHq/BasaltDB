@@ -1,0 +1,120 @@
+{
+  "name": "withdraw",
+  "status": "IMPLEMENTED",
+  "milestone": "M4.1",
+  "description": "Withdraw your own request that still waits for the person: a held write, a revert or a plugin approval, for example when the person tells you to cancel it. Name exactly one of approvalId (a held write's, from write or list_pending, or a plugin approval's, from request_plugin) or revertId (from request_revert), with reason: why, as you heard it from the person, in 1 to 500 characters; the person reads it. The request's link then shows it withdrawn with your reason, and it can never be signed: nothing changes. Only your own request can be withdrawn; another agent's is NOT_FOUND. A request that no longer waits (signed, applied, rejected, expired or withdrawn already) answers its state and nothing changes. Show personMessage to the person.",
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "reason"
+    ],
+    "properties": {
+      "approvalId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "The held write or plugin approval to withdraw. Exactly one of approvalId and revertId."
+      },
+      "revertId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "The revert to withdraw. Exactly one of approvalId and revertId."
+      },
+      "reason": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "description": "Why the request is withdrawn, as you heard it from the person. Shown on its page."
+      }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "kind",
+      "status",
+      "personMessage",
+      "nextSteps"
+    ],
+    "properties": {
+      "kind": {
+        "type": "string",
+        "enum": [
+          "APPROVAL",
+          "REVERT",
+          "PLUGIN_APPROVAL"
+        ],
+        "description": "APPROVAL: a held write. REVERT: a revert. PLUGIN_APPROVAL: a plugin approval."
+      },
+      "approvalId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "APPROVAL and PLUGIN_APPROVAL: the id withdrawn."
+      },
+      "revertId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "REVERT: the id withdrawn."
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "WITHDRAWN",
+          "PENDING",
+          "APPROVED",
+          "APPLYING",
+          "APPLIED",
+          "REJECTED",
+          "EXPIRED",
+          "CANCELLED",
+          "ENDED"
+        ],
+        "description": "WITHDRAWN: the request is withdrawn (by this call or an earlier one) and can never be signed. Any other status: the request no longer waited for the person, so nothing changed; it is the request's state. CANCELLED (a newer approval replaced it) and ENDED (it was signed and has since ended) apply only to plugin approvals; APPLYING and REJECTED only to reverts."
+      },
+      "withdrawnAt": {
+        "type": "string",
+        "format": "date-time",
+        "description": "WITHDRAWN: when it was withdrawn."
+      },
+      "reason": {
+        "type": "string",
+        "description": "WITHDRAWN: the reason recorded with it."
+      },
+      "name": {
+        "type": "string",
+        "description": "PLUGIN_APPROVAL: the plugin's name."
+      },
+      "instance": {
+        "type": "string",
+        "description": "PLUGIN_APPROVAL: the plugin's instance."
+      },
+      "personMessage": {
+        "type": "string",
+        "description": "The message to show the person: the request is withdrawn and nothing changed, or its state when it no longer waited."
+      },
+      "links": {
+        "type": "array",
+        "minItems": 1,
+        "description": "The URLs of personMessage with labels, in order; present exactly when personMessage holds a URL (never, today).",
+        "items": {
+          "$ref": "../links/link.schema.json"
+        }
+      },
+      "nextSteps": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "$ref": "../errors/next-step.schema.json"
+        },
+        "description": "What to do next (CONTRACT.md, Next steps): tell the person; never ask them to sign a withdrawn request."
+      }
+    }
+  },
+  "errors": [
+    "INVALID_ARGUMENT",
+    "NOT_FOUND",
+    "UNAVAILABLE",
+    "INTERNAL"
+  ]
+}

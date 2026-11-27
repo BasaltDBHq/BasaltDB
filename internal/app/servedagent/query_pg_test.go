@@ -19,7 +19,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
@@ -56,13 +55,13 @@ type harness struct {
 	reader *store.Reader
 }
 
-func newHarness(t *testing.T, agentURL string, limits sqlguard.Limits) harness {
+func newHarness(t *testing.T, agentURL string, limits action.Limits) harness {
 	t.Helper()
 	return newHarnessConns(t, agentURL, limits, 2)
 }
 
 // newHarnessConns is newHarness with a pool of conns connections.
-func newHarnessConns(t *testing.T, agentURL string, limits sqlguard.Limits, conns int32) harness {
+func newHarnessConns(t *testing.T, agentURL string, limits action.Limits, conns int32) harness {
 	t.Helper()
 	env := agenttest.PgService(t, agentURL, agenttest.WithLimits(limits), agenttest.WithConns(conns))
 	return harness{
@@ -120,7 +119,7 @@ func requireToolError(t *testing.T, body map[string]any, isError bool, code, rea
 func TestQueryReturnsRowsAsJSON(t *testing.T) {
 	t.Parallel()
 	_, agentURL := testDB(t)
-	h := newHarness(t, agentURL, sqlguard.DefaultLimits())
+	h := newHarness(t, agentURL, action.DefaultLimits())
 
 	body, isError := h.query(t, map[string]any{
 		"sql":    "SELECT id, name, score, ratio, ok, meta, created, tags, lower(name) AS lname FROM leads WHERE id >= $1 ORDER BY id",
@@ -158,7 +157,7 @@ func TestQueryReturnsRowsAsJSON(t *testing.T) {
 func TestQueryKeepsRepeatedColumnNames(t *testing.T) {
 	t.Parallel()
 	_, agentURL := testDB(t)
-	h := newHarness(t, agentURL, sqlguard.DefaultLimits())
+	h := newHarness(t, agentURL, action.DefaultLimits())
 	body, isError := h.query(t, map[string]any{"sql": "SELECT a.id, b.id FROM leads a JOIN leads b ON b.id = a.id WHERE a.id = 1"})
 	require.False(t, isError, "%v", body)
 	rows, ok := body["rows"].([]any)
@@ -174,7 +173,7 @@ func TestQueryKeepsRepeatedColumnNames(t *testing.T) {
 func TestQuerySizeLimit(t *testing.T) {
 	t.Parallel()
 	adminURL, agentURL := testDB(t)
-	h := newHarness(t, agentURL, sqlguard.DefaultLimits())
+	h := newHarness(t, agentURL, action.DefaultLimits())
 	admin, err := pgdial.Connect(context.Background(), adminURL)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = admin.Close(context.Background()) })
@@ -211,7 +210,7 @@ func TestQuerySizeLimit(t *testing.T) {
 func TestRowTooLargeStepsSaySliceOrSize(t *testing.T) {
 	t.Parallel()
 	_, agentURL := testDB(t)
-	h := newHarness(t, agentURL, sqlguard.DefaultLimits())
+	h := newHarness(t, agentURL, action.DefaultLimits())
 	body, isError := h.query(t, map[string]any{"sql": "SELECT repeat('<', 2700000) AS lt"})
 	requireToolError(t, body, isError, guidance.CodeQueryTimeout, guidance.ReasonRowTooLarge, "")
 	steps, ok := body["nextSteps"].([]any)
@@ -248,7 +247,7 @@ func TestOneValueOverTheMessageCapIsNeverRead(t *testing.T) {
 func TestQueryLimits(t *testing.T) {
 	t.Parallel()
 	_, agentURL := testDB(t)
-	h := newHarness(t, agentURL, sqlguard.Limits{StatementTimeout: 200 * time.Millisecond, ReadRowLimit: 5})
+	h := newHarness(t, agentURL, action.Limits{StatementTimeout: 200 * time.Millisecond, ReadRowLimit: 5})
 
 	body, isError := h.query(t, map[string]any{"sql": "SELECT g FROM generate_series(1, 5) g"})
 	require.False(t, isError, "%v", body)
@@ -270,7 +269,7 @@ func TestQueryLimits(t *testing.T) {
 func TestQueryErrors(t *testing.T) {
 	t.Parallel()
 	_, agentURL := testDB(t)
-	h := newHarness(t, agentURL, sqlguard.DefaultLimits())
+	h := newHarness(t, agentURL, action.DefaultLimits())
 
 	cases := []struct {
 		name                    string
@@ -303,7 +302,7 @@ func TestQueryErrors(t *testing.T) {
 func TestReadsRunReadOnly(t *testing.T) {
 	t.Parallel()
 	adminURL, agentURL := testDB(t)
-	h := newHarness(t, agentURL, sqlguard.DefaultLimits())
+	h := newHarness(t, agentURL, action.DefaultLimits())
 
 	// Past the engine's policy, the database still refuses a write inside a
 	// read: the agent role may INSERT into audit, but not from a read.
@@ -322,7 +321,7 @@ func TestReadsRunReadOnly(t *testing.T) {
 
 func TestQueryWhenTheDatabaseIsDown(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t, "postgres://nobody:x@127.0.0.1:1/none?sslmode=disable&connect_timeout=2", sqlguard.DefaultLimits())
+	h := newHarness(t, "postgres://nobody:x@127.0.0.1:1/none?sslmode=disable&connect_timeout=2", action.DefaultLimits())
 	body, isError := h.query(t, map[string]any{"sql": "SELECT 1"})
 	requireToolError(t, body, isError, guidance.CodeUnavailable, "", "")
 	require.NotContains(t, body["message"], "nobody", "no connection details in the error")
@@ -340,7 +339,7 @@ func TestQueryReturnsTimestamptzAsUTC(t *testing.T) {
 	require.NoError(t, err)
 	_, err = admin.Exec(context.Background(), `UPDATE leads SET created = '2026-11-12 12:08:04.513958+00' WHERE id = 1`)
 	require.NoError(t, err)
-	h := newHarness(t, agentURL, sqlguard.DefaultLimits())
+	h := newHarness(t, agentURL, action.DefaultLimits())
 
 	body, isError := h.query(t, map[string]any{
 		"sql": "SELECT created, created::text AS shown FROM leads WHERE id = 1",

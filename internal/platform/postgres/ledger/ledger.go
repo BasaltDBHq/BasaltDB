@@ -33,6 +33,7 @@ var ChangeSortSpec = pagination.SortSpec{
 const (
 	colChangeID = "change_id"
 	colRunID    = "run_id"
+	colStatus   = "status"
 )
 
 // changeColumns are the change record's columns, named so a statement over
@@ -40,7 +41,7 @@ const (
 var changeColumns = []string{
 	colChangeID, "at", "agent", colRunID, "task_id", "coalesce(intent, '') AS intent", "coalesce(op, '') AS op",
 	"coalesce(table_name, '') AS table_name", "coalesce(statement, '') AS statement", "params", "rows", "cascaded_rows",
-	"duration_ms", "status", "coalesce(code, '') AS code", "coalesce(reason, '') AS reason", "actor_kind", "revert_id",
+	"duration_ms", colStatus, "coalesce(code, '') AS code", "coalesce(reason, '') AS reason", "actor_kind", "revert_id",
 	"reverted_by", changeVerb,
 }
 
@@ -75,6 +76,11 @@ func changePage(p action.ChangeListParams) (string, []any, bool, error) {
 		Limit(uint64(p.Limit) + 1)
 	if p.RunID != uuid.Nil {
 		b = b.Where(sq.Eq{colRunID: p.RunID.String()})
+	}
+	if p.From != nil && p.To != nil {
+		// The reads of one LOOSE_READS group of list_runs, the same predicate.
+		b = b.Where(sq.Eq{"op": "READ", colStatus: "APPLIED", colRunID: nil}).
+			Where(sq.GtOrEq{"at": *p.From}).Where(sq.Lt{"at": *p.To})
 	}
 	b, err = applyIDKeyset(b, colChangeID, sort.Desc, p.Cursor)
 	if err != nil {

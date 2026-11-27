@@ -1,9 +1,8 @@
-package sqlguard
+package pgstatement
 
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	pganalyze "github.com/pganalyze/pg_query_go/v6"
 	pgquery "github.com/wasilibs/go-pgquery"
@@ -52,29 +51,24 @@ type Versioned struct {
 // the primary key as a JSON object, and xmin.
 const VersionColumns = 2
 
-// ErrNoRowIdentity is a statement WithRowVersions cannot add columns to.
-var ErrNoRowIdentity = errors.New("the statement has no row identity")
-
 // WithRowVersions returns sql with, for each source in order, two output
 // columns appended: jsonb_build_object of its primary key, and its xmin.
 // The columns are added to the parse tree, which is deparsed; the agent's
-// text is never concatenated. Parameters ($n) are kept.
+// text is never concatenated. Parameters ($n) are kept. It fails when the
+// statement is not one SELECT whose rows carry identity (rowSources), or a
+// source has no primary key: the caller then reads without versions.
 func WithRowVersions(sql string, sources []Versioned) (string, error) {
-	tree, err := pgquery.Parse(sql)
+	tree, node, err := parseOne(sql)
 	if err != nil {
 		return "", err
 	}
-	stmts := tree.GetStmts()
-	if len(stmts) != 1 {
-		return "", ErrNoRowIdentity
-	}
-	sel := stmts[0].GetStmt().GetSelectStmt()
+	sel := node.GetSelectStmt()
 	if sel == nil || rowSources(sel) == nil {
-		return "", ErrNoRowIdentity
+		return "", errors.New("the statement has no row identity")
 	}
 	for i, v := range sources {
 		if len(v.PKCols) == 0 {
-			return "", fmt.Errorf("%w: %s has no primary key", ErrNoRowIdentity, v.Source.RegName())
+			return "", fmt.Errorf("the statement has no row identity: %s has no primary key", v.Source.RegName())
 		}
 		ref := v.Source.ref()
 		args := make([]*pganalyze.Node, 0, 2*len(v.PKCols))
@@ -160,6 +154,6 @@ func isAggregate(f *pganalyze.FuncCall) bool {
 	if f.GetOver() != nil {
 		return false
 	}
-	return aggregateFunctions[strings.TrimPrefix(nameOf(f.GetFuncname()), "pg_catalog.")] ||
+	return aggregateFunctions[funcName(f)] ||
 		f.GetAggStar() || f.GetAggDistinct() || f.GetAggWithinGroup() || f.GetAggFilter() != nil || len(f.GetAggOrder()) > 0
 }

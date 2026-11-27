@@ -46,6 +46,27 @@ export function personText(err) {
   return lines.join("\n");
 }
 
+// WITHDRAWN_TEXT is a withdrawn request's line when the engine gave no
+// message of its own.
+export const WITHDRAWN_TEXT = "The agent withdrew this request. Nothing changed.";
+
+// withdrawnText is what a page shows for err when the engine refused the
+// request because the agent withdrew it (reason WITHDRAWN, CONTRACT.md,
+// Withdrawn requests): the engine's line, "The agent withdrew this request:
+// <reason>. Nothing changed."; null for any other failure.
+export function withdrawnText(err) {
+  if (err?.name !== "RelayError" || err.reason !== "WITHDRAWN") return null;
+  return visibleText(err.personMessage || WITHDRAWN_TEXT);
+}
+
+// showWithdrawn shows a withdrawn request as an expired one is shown: the
+// pill (pill, its id) says Withdrawn, the line takes the page's place, and
+// nothing is left to sign.
+export function showWithdrawn(pill, text) {
+  setPill(pill, "Withdrawn", "bad");
+  fail(text);
+}
+
 // linkFailure is the sentence a page shows when its link cannot be used.
 // kind names the page ("approval", "revert"); reopen says how to get a
 // working link. A link that does not decode was most likely cut short when

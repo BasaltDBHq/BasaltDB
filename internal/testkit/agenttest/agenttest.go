@@ -15,7 +15,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
@@ -35,7 +34,7 @@ func ServiceManager() guidance.ServiceManager { return app.AgentServiceManager()
 
 // PgWiring is what PgService builds the service from; a PgOption changes it.
 type PgWiring struct {
-	limits   sqlguard.Limits
+	limits   action.Limits
 	conns    int32
 	poolCfg  func(*pgxpool.Config)
 	budgeted bool
@@ -45,7 +44,7 @@ type PgWiring struct {
 type PgOption func(*PgWiring)
 
 // WithLimits runs the service with the given limits instead of the defaults.
-func WithLimits(l sqlguard.Limits) PgOption { return func(w *PgWiring) { w.limits = l } }
+func WithLimits(l action.Limits) PgOption { return func(w *PgWiring) { w.limits = l } }
 
 // WithConns sets the pool's size (2 by default).
 func WithConns(n int32) PgOption { return func(w *PgWiring) { w.conns = n } }
@@ -78,7 +77,7 @@ type PgEnv struct {
 // a change to the wiring is made in one place.
 func PgService(t *testing.T, url string, opts ...PgOption) PgEnv {
 	t.Helper()
-	w := &PgWiring{limits: sqlguard.DefaultLimits(), conns: 2}
+	w := &PgWiring{limits: action.DefaultLimits(), conns: 2}
 	for _, o := range opts {
 		o(w)
 	}
@@ -105,7 +104,7 @@ func PgService(t *testing.T, url string, opts ...PgOption) PgEnv {
 	d := app.AgentHostDeps()
 	d.Core.Name, d.Core.Log, d.Core.Now = "bot", slog.New(slog.DiscardHandler), time.Now
 	UseStore(&d, store)
-	d.Agent.Limits = action.Limits(w.limits)
+	d.Agent.Limits = w.limits
 	for _, f := range w.deps {
 		f(&d, pool)
 	}

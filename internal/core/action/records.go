@@ -15,6 +15,10 @@ import (
 type ChangeListParams struct {
 	pagination.Params
 	RunID uuid.UUID
+	// From and To (both or neither; To exclusive) list the agent's reads
+	// outside any run in that period instead of a run's changes: one
+	// LOOSE_READS item of list_runs. RunID is then uuid.Nil.
+	From, To *time.Time
 }
 
 // Change is one change record (CONTRACT.md "The change record").
@@ -94,6 +98,10 @@ type Approval struct {
 	ApprovedAt  *time.Time
 	BindingText string
 	Lines       []string
+	// WithdrawnAt and WithdrawReason are set on a WITHDRAWN approval: when
+	// the agent withdrew it, and the reason it gave.
+	WithdrawnAt    *time.Time
+	WithdrawReason string
 	// LargeValues names the request's text or params left out of an
 	// agent's list (CONTRACT.md, Large values): Request.Text is then empty,
 	// Request.Params nil.
@@ -145,6 +153,10 @@ type Revert struct {
 	// none).
 	RejectedAt *time.Time
 	RejectNote string
+	// WithdrawnAt and WithdrawReason are set on a WITHDRAWN revert: when
+	// the agent withdrew it, and the reason it gave.
+	WithdrawnAt    *time.Time
+	WithdrawReason string
 	// CreatedAt is when the revert was prepared.
 	CreatedAt time.Time
 	// LinesLeftOut and LinesCost are as on Approval: an agent's read left

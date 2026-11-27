@@ -52,7 +52,7 @@ func (rc *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string
 	}
 	out, err := rc.store.Proofs.RevealRevertRows(ctx, id, in.Proof.Assertion(), key)
 	if err != nil {
-		return approval.RevealAnswer{}, rc.revealRevertError(r, err, rc.delivery.PageLink(links.Revert, id, secret))
+		return approval.RevealAnswer{}, rc.revealRevertError(ctx, r, err, rc.delivery.PageLink(links.Revert, id, secret))
 	}
 	if out.RowsChanged {
 		return approval.RevealAnswer{}, linksvc.RevealRowsChanged(guidance.CodeRevertInvalid, "revert", "Prepare it again")
@@ -62,8 +62,10 @@ func (rc *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string
 
 // revealRevertError is the page's answer to a revert reveal the store
 // refused.
-func (rc *Service) revealRevertError(r action.Revert, err error, link string) error {
+func (rc *Service) revealRevertError(ctx context.Context, r action.Revert, err error, link string) error {
 	switch refusalOf(err).Reason {
+	case revertstore.RevertWithdrawnReason:
+		return rc.withdrawnMeanwhile(ctx, r)
 	case revertstore.RevertRevealRefused:
 		return linksvc.RevealRefused(guidance.CodeRevertInvalid, link)
 	case revertstore.RevertNotFound:

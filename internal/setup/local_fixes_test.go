@@ -58,7 +58,7 @@ func TestDoctorReportsAnInstalledAgent(t *testing.T) {
 	require.Equal(t, db, got.Database)
 	require.Nil(t, got.Login)
 	require.Equal(t, setup.StateCurrent, got.Guard.State)
-	require.Equal(t, setup.StateOK, got.Certificate.State)
+	require.Equal(t, setup.StateOK, got.Certificate.State, "the test server is on localhost: no TLS there is no warning")
 	require.Equal(t, setup.StateUnlabeled, got.Labels.State, "the demo install labels nothing")
 	require.Positive(t, got.Labels.Count)
 	require.Contains(t, got.Labels.Columns, "basalt_demo.leads.email")

@@ -66,7 +66,7 @@ type Ledger interface {
 	// transaction, so it may write.
 	RecordRead(ctx context.Context, r action.Read) (uuid.UUID, error)
 	RecordRefusal(ctx context.Context, r action.Refusal) error
-	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error)
+	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunListItem], error)
 }
 
 // Language is what the agent use cases ask of the store's language: they
@@ -84,6 +84,11 @@ type Language interface {
 	// by the QUERY_TIMEOUT reason; any other reason is the statement
 	// timeout's.
 	LimitText(reason string) string
+	// HeldFrom reports whether held, a held write's request, is sent with
+	// only the values the store fixed when it held the write (Postgres:
+	// now() and the other time functions held as literals): the agent may
+	// send its own request again with the approval.
+	HeldFrom(ctx context.Context, held, sent agentstore.Request) (bool, error)
 	// Args is a request as the store family's query and write tools take
 	// it, for the call a next step repeats.
 	agentstore.RequestArgs
@@ -95,6 +100,10 @@ type Language interface {
 	// DeniedTarget is the resource a permission-denied message names, and
 	// false when it names none.
 	DeniedTarget(message string) (string, bool)
+	// RLSRefusal reports whether a permission-denied message is the store's
+	// row-level security refusing a write, and names the resource when it
+	// names one ("" otherwise).
+	RLSRefusal(message string) (resource string, ok bool)
 	// NoKeyTarget is the resource a refusal for a missing primary key
 	// names, and false when it names none.
 	NoKeyTarget(message string) (string, bool)

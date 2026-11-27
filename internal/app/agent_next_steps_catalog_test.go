@@ -195,6 +195,14 @@ func catalogCases() map[string]catalogCase {
 		stepcatalogtest.CaseKey("APPROVAL_INVALID", "NOT_SIGNED", ""):      {"write", withApproval(writeArgs0), approvalLink(guidance.ReasonNotSigned)},
 		stepcatalogtest.CaseKey("APPROVAL_INVALID", "BAD_SIGNATURE", ""):   {"write", withApproval(writeArgs0), approvalLink(guidance.ReasonBadSignature)},
 		stepcatalogtest.CaseKey("APPROVAL_INVALID", "PASSKEY_REVOKED", ""): {"write", withApproval(writeArgs0), approvalLink(guidance.ReasonPasskeyRevoked)},
+		stepcatalogtest.CaseKey("APPROVAL_INVALID", "WITHDRAWN", ""): {"write", withApproval(writeArgs0), asToolError(&toolresult.ToolError{
+			Code: guidance.CodeApprovalInvalid, Reason: guidance.ReasonWithdrawn, Message: "approval withdrawn",
+			PersonMessage: guidance.WithdrawnMessage("the person changed their mind"),
+		})},
+		stepcatalogtest.CaseKey("REVERT_INVALID", "WITHDRAWN", ""): {"revert_page", nil, asToolError(&toolresult.ToolError{
+			Code: guidance.CodeRevertInvalid, Reason: guidance.ReasonWithdrawn, Message: "revert withdrawn",
+			PersonMessage: guidance.WithdrawnMessage("the person changed their mind"),
+		})},
 
 		stepcatalogtest.CaseKey("PERMISSION_DENIED", "", ""): {"query", queryArgs0, pgFail("42501", "permission denied for table events", "")},
 
@@ -425,6 +433,26 @@ func TestPermissionDeniedHandsTheGrantToTheSetupPage(t *testing.T) {
 		require.Equal(t, toolresult.ActorAgent, last.Actor, message)
 		require.Equal(t, "basalt init --agent bot", last.Command, message)
 		require.Contains(t, te.PersonMessage, "read access to "+table, message)
+		require.NotContains(t, te.PersonMessage, "basalt ", "the person runs no command")
+		stepcatalogtest.RequirePersonMessage(t, te.PersonMessage, te.Links)
+	}
+}
+
+// A write that row-level security refuses is PERMISSION_DENIED with the
+// row-level security guidance: it names the table and the question, not a
+// missing grant, and hands the answer to the same setup page.
+func TestRowLevelSecurityRefusalGivesTheRLSGuidance(t *testing.T) {
+	t.Parallel()
+	s := serviceFor(t, "linux", "")
+	for _, message := range []string{
+		`new row violates row-level security policy for table "leads"`,
+		`new row violates row-level security policy (USING expression) for table "leads"`,
+	} {
+		te := s.Failure("write", writeArgs0, store.MapError(&pgconn.PgError{Code: "42501", Message: message}))
+		require.Equal(t, guidance.CodePermissionDenied, te.Code, message)
+		last := te.NextSteps[len(te.NextSteps)-1]
+		require.Equal(t, "basalt init --agent bot", last.Command, message)
+		require.Contains(t, te.PersonMessage, "Row-level security blocks the agent from writing to leads", message)
 		require.NotContains(t, te.PersonMessage, "basalt ", "the person runs no command")
 		stepcatalogtest.RequirePersonMessage(t, te.PersonMessage, te.Links)
 	}

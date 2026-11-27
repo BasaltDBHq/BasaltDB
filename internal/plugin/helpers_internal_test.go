@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/status"
 
@@ -22,7 +24,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
@@ -71,7 +72,7 @@ func newPGAgent(t *testing.T, url string, conns int32) pgAgent {
 	pool, _, err := postgres.NewSwitchablePool(context.Background(), url, conns)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	limits := sqlguard.DefaultLimits()
+	limits := action.DefaultLimits()
 	return pgAgent{
 		store:  postgres.NewStore(pool, limits, time.Now),
 		reader: postgres.NewReader(pool, limits, time.Now),

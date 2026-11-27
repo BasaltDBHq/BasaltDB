@@ -48,12 +48,14 @@ func RevertResultKeys() []string {
 		"request_revert|REQUESTED_NO_PAGES",
 		"request_revert|REQUEST_TOO_LARGE",
 		"request_revert|WAIT_ENDED",
+		"request_revert|WITHDRAWN",
 		"revert_plan|APPLIED",
 		"revert_plan|APPLYING",
 		"revert_plan|EXPIRED",
 		"revert_plan|PENDING",
 		"revert_plan|REJECTED",
 		"revert_plan|REQUEST_TOO_LARGE",
+		"revert_plan|WITHDRAWN",
 	)
 }
 

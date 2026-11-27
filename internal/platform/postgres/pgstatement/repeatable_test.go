@@ -1,13 +1,15 @@
-package sqlguard_test
+package pgstatement_test
 
 import (
 	"encoding/json"
 	"errors"
 	"testing"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgstatement"
 )
 
 func TestCheckRepeatable(t *testing.T) {
@@ -32,22 +34,26 @@ func TestCheckRepeatable(t *testing.T) {
 		{`UPDATE leads SET seen = 'epoch'`, "leads", []string{"seen"}},
 		{`UPDATE leads SET seen = 'infinity'`, "leads", []string{"seen"}},
 		{`UPDATE leads SET n = 7 WHERE note = ''`, "leads", []string{"n"}},
+		// The time functions PlanTimes fixes when the write is held.
+		{`UPDATE leads SET updated_at = now()`, "leads", []string{"updated_at"}},
+		{`UPDATE leads SET updated_at = pg_catalog.clock_timestamp()`, "leads", []string{"updated_at"}},
+		{`UPDATE leads SET seen = CURRENT_TIMESTAMP`, "leads", []string{"seen"}},
+		{`DELETE FROM leads WHERE created_at < CURRENT_DATE - 7`, "leads", []string{}},
+		{`UPDATE leads SET seen = LOCALTIMESTAMP(0)`, "leads", []string{"seen"}},
+		{`UPDATE leads SET x = 1 WHERE id IN (SELECT id FROM t WHERE ts > now())`, "leads", []string{"x"}},
 	}
 	for _, tc := range ok {
-		h, err := sqlguard.CheckRepeatable(tc.sql, nil)
+		h, err := pgstatement.CheckRepeatable(tc.sql, nil)
 		require.NoError(t, err, tc.sql)
 		require.Equal(t, tc.table, h.Table, tc.sql)
 		require.Equal(t, tc.assigned, h.Assigned, tc.sql)
 	}
 
 	refused := map[string]string{
-		`UPDATE leads SET updated_at = now()`:                                      "now()",
-		`UPDATE leads SET updated_at = pg_catalog.clock_timestamp()`:               "clock_timestamp()",
-		`UPDATE leads SET seen = CURRENT_TIMESTAMP`:                                "CURRENT_TIMESTAMP",
-		`DELETE FROM leads WHERE created_at < CURRENT_DATE - 7`:                    "CURRENT_DATE",
-		`UPDATE leads SET seen = LOCALTIMESTAMP(0)`:                                "LOCALTIMESTAMP",
 		`INSERT INTO leads (id, name) VALUES (gen_random_uuid(), 'a')`:             "gen_random_uuid()",
 		`UPDATE leads SET score = (random() * 10)::int`:                            "random()",
+		`UPDATE leads SET seen = LOCALTIME`:                                        "LOCALTIME",
+		`UPDATE leads SET note = timeofday()`:                                      "timeofday()",
 		`DELETE FROM leads WHERE age(created_at) > interval '1 day'`:               "age()",
 		`UPDATE leads SET seen = 'now'::timestamptz`:                               "'now'",
 		`UPDATE leads SET updated_at = 'now' WHERE id <= 15`:                       "'now'",
@@ -76,13 +82,12 @@ func TestCheckRepeatable(t *testing.T) {
 		`UPDATE leads SET x = 1 WHERE id IN (SELECT id FROM t WHERE ts > 'today')`: "'today'",
 		`INSERT INTO leads (id, name, status) VALUES ($1, $2, DEFAULT)`:            "DEFAULT",
 		`UPDATE leads SET status = DEFAULT`:                                        "DEFAULT",
-		`UPDATE leads SET x = 1 WHERE id IN (SELECT id FROM t WHERE ts > now())`:   "now()",
 	}
 	for sql, what := range refused {
-		_, err := sqlguard.CheckRepeatable(sql, nil)
-		var re *sqlguard.RefusalError
+		_, err := pgstatement.CheckRepeatable(sql, nil)
+		var re *action.RefusalError
 		require.True(t, errors.As(err, &re), sql)
-		require.Equal(t, sqlguard.ReasonNotRepeatable, re.Reason, sql)
+		require.Equal(t, action.ReasonNotRepeatable, re.Reason, sql)
 		require.Contains(t, re.Detail, what, sql)
 		require.Contains(t, re.Detail, "parameter", sql)
 	}
@@ -92,20 +97,20 @@ func TestCheckRepeatableParams(t *testing.T) {
 	t.Parallel()
 	const sql = `UPDATE leads SET updated_at = $1 WHERE id <= $2`
 	for _, p := range []any{"now", "Now", " TODAY ", "tomorrow", "yesterday", "tomorrow 10:00", "now,UTC", "yesterday\t23:59 PST", "now()", "NOW() ", "now ()", "(now)", "\"now\"", "now;", "[now]", "{now}", "today()", "today+02", "today T10:00", "today 10:00:00Z", "tomorrow 10:00 z", "{now,tomorrow}", "[today,tomorrow)", "tomorrow 10:00 +0530", "today 12:00 pm", "yesterday msk", "tomorrow 09:00 Europe/Berlin", "today 09:00 America/Argentina/Buenos_Aires", "now Etc/GMT+2", "tomorrow 10:00 nzt", "now on", "Sun today", "tomorrow 10:00 hkt", "today 10:00 ta" + "ht"} {
-		_, err := sqlguard.CheckRepeatable(sql, []any{p, 12})
-		var re *sqlguard.RefusalError
+		_, err := pgstatement.CheckRepeatable(sql, []any{p, 12})
+		var re *action.RefusalError
 		require.True(t, errors.As(err, &re), "%q", p)
-		require.Equal(t, sqlguard.ReasonNotRepeatable, re.Reason, "%q", p)
+		require.Equal(t, action.ReasonNotRepeatable, re.Reason, "%q", p)
 		require.Contains(t, re.Detail, "time word", "%q", p)
 		require.Contains(t, re.Detail, "parameter", "%q", p)
 		// The second parameter position is checked too.
-		_, err = sqlguard.CheckRepeatable(sql, []any{"2026-11-14T10:00:00Z", p})
+		_, err = pgstatement.CheckRepeatable(sql, []any{"2026-11-14T10:00:00Z", p})
 		require.True(t, errors.As(err, &re), "%q", p)
 	}
 	for _, p := range []any{"2026-11-14T10:00:00Z", "epoch", "infinity", "call back tomorrow", "nowhere", "Tomorrowland", "now or never", "know now", "see (you) tomorrow", "Japan today", "today and/or tomorrow", "meet in Europe/Berlin tomorrow", "", nil, 12, 1.5, true, json.Number("1")} {
-		_, err := sqlguard.CheckRepeatable(sql, []any{p, 12})
+		_, err := pgstatement.CheckRepeatable(sql, []any{p, 12})
 		require.NoError(t, err, "%v", p)
 	}
-	_, err := sqlguard.CheckRepeatable(sql, nil)
+	_, err := pgstatement.CheckRepeatable(sql, nil)
 	require.NoError(t, err)
 }

@@ -46,6 +46,10 @@ type Holds interface {
 	Preview(ctx context.Context, in action.Intent, req action.Request) (approvalstore.HeldPreview, error)
 	// Hold stores a held write for the person's approval.
 	Hold(ctx context.Context, in action.Intent, r approvalstore.HoldRequest) (approvalstore.Held, error)
+	// WithdrawApproval withdraws a held write of the agent's while it waits
+	// for the person, with the agent's reason: when it was withdrawn, nil
+	// when it was no longer waiting (left as it is).
+	WithdrawApproval(ctx context.Context, id uuid.UUID, reason string) (*time.Time, error)
 }
 
 // Proofs is the person's side: the page's calls, through the local pages or

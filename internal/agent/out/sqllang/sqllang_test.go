@@ -1,6 +1,7 @@
 package sqllang_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -21,6 +22,10 @@ type checker struct {
 	sql   string
 	tool  action.Tool
 	calls int
+}
+
+func (c *checker) HeldFrom(_ context.Context, held, sent string) (bool, error) {
+	return held == sent, nil
 }
 
 func (c *checker) Check(sql string, tool action.Tool) (action.Statement, error) {
@@ -58,6 +63,16 @@ func TestCheckCountsPlaceholders(t *testing.T) {
 	require.ErrorAs(t, err, &ae)
 	require.Equal(t, "the statement uses 2 parameters ($1..$2) but 1 were given", ae.Message)
 	require.Equal(t, action.OpUpdate, stmt.Op)
+}
+
+// A statement with no placeholders says so, not "($1..$0)".
+func TestCheckCountsNoPlaceholders(t *testing.T) {
+	t.Parallel()
+	c := &checker{stmt: action.Statement{Op: action.OpRead}}
+	_, err := sqllang.New(c).Check(agentstore.Request{Text: "SELECT 1", Params: []any{1, 2}}, action.ToolQuery)
+	var ae *guidance.ArgumentError
+	require.ErrorAs(t, err, &ae)
+	require.Equal(t, "the statement uses no parameters but 2 were given", ae.Message)
 }
 
 func TestCheckLimitsParamsTo64KiB(t *testing.T) {

@@ -104,6 +104,7 @@ func TestRevertRefusalsPerCall(t *testing.T) {
 		{"apply: already words, untyped", applyRevertRefusal, revertInvalid(applied), revertstore.RevertSignature, applied, ""},
 		{"apply: no such revert", applyRevertRefusal, revertRefused("NO_SUCH_REVERT", noSuchRevert), revertstore.RevertSignature, noSuchRevert, ""},
 		{"apply: no such revert, any hint", applyRevertRefusal, revertRefused("NO_SUCH_REVERT", "x"), revertstore.RevertSignature, "x", ""},
+		{"apply: withdrawn", applyRevertRefusal, revertRefused("WITHDRAWN", "the agent withdrew this request: x; nothing changed"), revertstore.RevertWithdrawnReason, "the agent withdrew this request: x; nothing changed", ""},
 		{"apply: rejected", applyRevertRefusal, revertInvalid(rejected), revertstore.RevertSignature, rejected, ""},
 		{"apply: bad signature", applyRevertRefusal, revertInvalid("signature does not verify"), revertstore.RevertSignature, "signature does not verify", ""},
 		{"apply: time limit", applyRevertRefusal, statementTimeout(), "", "", ""},
@@ -118,6 +119,7 @@ func TestRevertRefusalsPerCall(t *testing.T) {
 		{"rescope: time limit", rescopeRevertRefusal, statementTimeout(), revertstore.RevertTimedOut, "", "57014"},
 		{"rescope: no such revert", rescopeRevertRefusal, revertRefused("NO_SUCH_REVERT", noSuchRevert), "", "", ""},
 		{"rescope: already signed", rescopeRevertRefusal, revertInvalid(signedScope), "", "", ""},
+		{"rescope: withdrawn", rescopeRevertRefusal, revertRefused("WITHDRAWN", "the agent withdrew this request: x; nothing changed"), revertstore.RevertWithdrawnReason, "the agent withdrew this request: x; nothing changed", ""},
 		{"rescope: every row skipped", rescopeRevertRefusal, guardErr("BS009", "NOTHING_TO_REVERT", allSkipped, ""), "", "", ""},
 
 		{"reject: widen refused", rejectRevertRefusal, revertInvalid("WIDEN_REFUSED"), revertstore.RevertWidenRefused, "WIDEN_REFUSED", ""},
@@ -126,6 +128,7 @@ func TestRevertRefusalsPerCall(t *testing.T) {
 		// Told apart by the detail, never the words: the sentence as the
 		// detail, as a guard before version 13 gave it, is not pending.
 		{"reject: no such revert words, untyped", rejectRevertRefusal, revertInvalid(noSuchRevert), revertstore.RevertNotPending, noSuchRevert, ""},
+		{"reject: withdrawn", rejectRevertRefusal, revertRefused("WITHDRAWN", "the agent withdrew this request: x; nothing changed"), revertstore.RevertWithdrawnReason, "the agent withdrew this request: x; nothing changed", ""},
 		{"reject: expired", rejectRevertRefusal, revertExpired(), revertstore.RevertExpiredReason, "", ""},
 		{"reject: applied", rejectRevertRefusal, revertInvalid(applied), revertstore.RevertNotPending, applied, ""},
 		{"reject: rejected", rejectRevertRefusal, revertInvalid(rejected), revertstore.RevertNotPending, rejected, ""},
@@ -136,6 +139,7 @@ func TestRevertRefusalsPerCall(t *testing.T) {
 		{"reveal: refused", revealRevertRowsRefusal, revertInvalid("REVEAL_REFUSED"), revertstore.RevertRevealRefused, "REVEAL_REFUSED", ""},
 		{"reveal: no such revert", revealRevertRowsRefusal, revertRefused("NO_SUCH_REVERT", noSuchRevert), revertstore.RevertNotFound, noSuchRevert, ""},
 		{"reveal: no such revert words, untyped", revealRevertRowsRefusal, revertInvalid(noSuchRevert), revertstore.RevertNotPending, noSuchRevert, ""},
+		{"reveal: withdrawn", revealRevertRowsRefusal, revertRefused("WITHDRAWN", "the agent withdrew this request: x; nothing changed"), revertstore.RevertWithdrawnReason, "the agent withdrew this request: x; nothing changed", ""},
 		{"reveal: expired", revealRevertRowsRefusal, revertExpired(), revertstore.RevertExpiredReason, "", ""},
 		{"reveal: signed", revealRevertRowsRefusal, revertInvalid("revert already signed"), revertstore.RevertNotPending, "revert already signed", ""},
 		{"reveal: widen refused", revealRevertRowsRefusal, revertInvalid("WIDEN_REFUSED"), revertstore.RevertNotPending, "WIDEN_REFUSED", ""},

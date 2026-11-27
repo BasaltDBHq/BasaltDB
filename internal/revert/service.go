@@ -165,7 +165,9 @@ func (rc *Service) RevertPlan(ctx context.Context, p revertstore.RevertLineParam
 	if out.PersonMessage, out.NextSteps, err = rc.planGuidance(out); err != nil {
 		return RevertPlan{}, err
 	}
-	if r.Widened {
+	// A withdrawn revert is told as the page tells it, the agent's reason
+	// in full (its length is capped for that message).
+	if r.Widened && r.Status != action.RevertWithdrawn {
 		out.PersonMessage = strings.TrimSpace(widenedMessage + " " + out.PersonMessage)
 	}
 	return out, nil
@@ -364,6 +366,8 @@ func (rc *Service) applyRevertError(ctx context.Context, r action.Revert, err er
 		return rc.passkeyRevoked(ctx, r)
 	case revertstore.RevertAlreadySigned:
 		return alreadySigned(r)
+	case revertstore.RevertWithdrawnReason:
+		return rc.withdrawnMeanwhile(ctx, r)
 	case revertstore.RevertSignature:
 		return rc.badSignature(ctx, r, "the database refused the signature, nothing was reverted: "+refused.Detail)
 	default:
@@ -373,6 +377,18 @@ func (rc *Service) applyRevertError(ctx context.Context, r action.Revert, err er
 
 // refusalOf is the store's refusal in err, the zero refusal (no reason)
 // when err carries none.
+// withdrawnMeanwhile is the page's answer when the store refused a call on
+// revert r because the agent withdrew it after the page opened: shown
+// withdrawn with the reason the store records now, which is not in r. When
+// it cannot be read again, r has no reason, so none is shown; never the
+// store's own text, which carries the reason unchecked.
+func (rc *Service) withdrawnMeanwhile(ctx context.Context, r action.Revert) error {
+	if now, err := rc.store.Records.FindRevert(ctx, r.ID); err == nil {
+		r = now
+	}
+	return withdrawn(r)
+}
+
 func refusalOf(err error) revertstore.RevertRefusalError {
 	if rr := revertstore.RevertRefusalOf(err); rr != nil {
 		return *rr
@@ -388,7 +404,9 @@ func (rc *Service) revertState(ctx context.Context, r action.Revert) (RequestedR
 	if err != nil {
 		return out, err
 	}
-	if r.Widened {
+	// A withdrawn revert is told as the page tells it, as RevertPlan does:
+	// the agent's reason in full, its length capped for that message.
+	if r.Widened && r.Status != action.RevertWithdrawn {
 		out.PersonMessage = strings.TrimSpace(widenedMessage + " " + out.PersonMessage)
 	}
 	if r.Status != action.RevertApplied && r.Status != action.RevertApplying {
@@ -421,6 +439,9 @@ func (rc *Service) revertStateOf(ctx context.Context, r action.Revert) (Requeste
 	case action.RevertRejected:
 		out.PersonMessage = rejectedMessage(r)
 		out.NextSteps = rejectedSteps()
+	case action.RevertWithdrawn:
+		out.PersonMessage = guidance.WithdrawnMessage(r.WithdrawReason)
+		out.NextSteps = withdrawnSteps()
 	default:
 		return rc.waitEnded(ctx, out, guidance.Sentence(revertTitle(r)))
 	}

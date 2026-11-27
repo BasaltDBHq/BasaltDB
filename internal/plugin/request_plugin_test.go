@@ -271,6 +271,10 @@ func (endedApprovals) SubmitPluginApproval(context.Context, guardmodel.PluginApp
 	return time.Time{}, errors.New("never")
 }
 
+func (endedApprovals) WithdrawPluginApproval(context.Context, uuid.UUID, string) (*time.Time, error) {
+	return nil, errors.New("never")
+}
+
 // The engine's refusals reach the agent as PLUGIN_REFUSED with their
 // reason; a narrowing needs no approval.
 func TestRequestPluginEngineAnswers(t *testing.T) {

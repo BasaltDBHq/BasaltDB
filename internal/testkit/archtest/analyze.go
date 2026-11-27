@@ -135,16 +135,6 @@ func parsePkgImports(text string) (allow map[string][]string, problems []string)
 	return allow, problems
 }
 
-// storeSQLGuard is the one named exception to "only services call decisions":
-// the Postgres store runs the SQL policy right before it runs SQL.
-const (
-	sqlguardPkg    = "sqlguard"
-	storeCallsOnly = "Check CheckRepeatable WithRowVersions"
-)
-
-// storePkgs is the Postgres store.
-var storePkgs = []string{"internal/platform/postgres/store"}
-
 // domains are the domain folders under internal/.
 var domains = []string{"agent", "approval", "engine", "handoff", "ledger", "links", "pii", "plugin", "revert", "setup", "status"}
 
@@ -605,9 +595,6 @@ func checkDecisionCalls(v violations, rel string, f *goFile, decisions map[strin
 		if !isDecision || !in(funcs, sel.Sel.Name) {
 			return true
 		}
-		if in(storePkgs, rel) && dec == sqlguardPkg && in(strings.Fields(storeCallsOnly), sel.Sel.Name) {
-			return true
-		}
 		if in(pkgDecisionForwards[rel][dec], sel.Sel.Name) {
 			return true
 		}
@@ -628,10 +615,21 @@ func bannedImport(p string) bool {
 		return true
 	case strings.HasPrefix(p, "github.com/jackc/"), strings.HasPrefix(p, "github.com/lib/pq"), strings.HasPrefix(p, "math/rand/"):
 		return true
+	case pgParser(p):
+		return true
 	case p == "crypto/rand":
 		return true
 	}
 	return false
+}
+
+// pgParserImports are the Postgres parser's modules (libpg_query and its
+// pure-Go wasm build). Only the Postgres adapter parses Postgres SQL.
+var pgParserImports = []string{"github.com/pganalyze/pg_query_go", "github.com/wasilibs/go-pgquery"}
+
+// pgParser reports whether p is one of pgParserImports or below one.
+func pgParser(p string) bool {
+	return slices.ContainsFunc(pgParserImports, func(b string) bool { return p == b || strings.HasPrefix(p, b+"/") })
 }
 
 // serviceBanned reports whether a service may not import p: a service reaches

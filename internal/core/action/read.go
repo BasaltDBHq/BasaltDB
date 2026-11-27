@@ -60,11 +60,3 @@ type Read struct {
 	// aggregates and other statements without row identity.
 	Versions []RowVersion
 }
-
-// Limits are the read limits the agent's statements run within.
-type Limits struct {
-	// StatementTimeout is the time limit of every agent transaction.
-	StatementTimeout time.Duration
-	// ReadRowLimit is the most rows a query may return.
-	ReadRowLimit int
-}

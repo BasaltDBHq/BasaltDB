@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
@@ -19,7 +21,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
 
@@ -70,7 +71,7 @@ func deliveryHarnessWith(t *testing.T, pages bool, edit func(*app.Deps)) (agentE
 	keys, err := channel.GenerateEngineKeys(time.Now)
 	require.NoError(t, err)
 	rec := &delivered{}
-	env := agentHarnessWith(t, d, d.NewAgent(t, "bot", leads, leads), keys, sqlguard.DefaultLimits(), func(dp *app.Deps) {
+	env := agentHarnessWith(t, d, d.NewAgent(t, "bot", leads, leads), keys, action.DefaultLimits(), func(dp *app.Deps) {
 		dp.Delivery.Deliverer = rec
 		if edit != nil {
 			edit(dp)

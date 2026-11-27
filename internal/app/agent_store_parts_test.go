@@ -29,7 +29,7 @@ type runStore interface {
 	Write(ctx context.Context, in action.Intent, op action.Op, sql string, params []any, returned store.Returned) (action.WriteResult, error)
 	RecordRefusal(ctx context.Context, r action.Refusal) error
 	History(ctx context.Context, p action.ChangeListParams) (changeHistory, error)
-	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error)
+	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunListItem], error)
 }
 
 type readRecorder interface {
@@ -68,7 +68,12 @@ func (p parts) RevealNonce(ctx context.Context, kind string, id uuid.UUID) ([]by
 
 // Check is the Postgres store's policy check, which needs no connection.
 func (parts) Check(sql string, tool action.Tool) (action.Statement, error) {
-	return store.Check(sql, tool)
+	return (*store.Store)(nil).Check(sql, tool)
+}
+
+// HeldFrom is the exact compare: these tests hold no write with fixed times.
+func (parts) HeldFrom(_ context.Context, held, sent string) (bool, error) {
+	return held == sent, nil
 }
 
 // setApprovals and setReverts replace one part of d's store.

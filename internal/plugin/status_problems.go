@@ -14,9 +14,10 @@ const (
 	// An entry that requires a plugin approval is withheld from the agent
 	// for an approval reason (CONTRACT.md, Plugin approvals at engine
 	// start).
-	problemPluginAwaitingApproval = "PLUGIN_AWAITING_APPROVAL"
-	problemPluginApprovalExpired  = "PLUGIN_APPROVAL_EXPIRED"
-	problemPluginApprovalMismatch = "PLUGIN_APPROVAL_MISMATCH"
+	problemPluginAwaitingApproval  = "PLUGIN_AWAITING_APPROVAL"
+	problemPluginApprovalExpired   = "PLUGIN_APPROVAL_EXPIRED"
+	problemPluginApprovalWithdrawn = "PLUGIN_APPROVAL_WITHDRAWN"
+	problemPluginApprovalMismatch  = "PLUGIN_APPROVAL_MISMATCH"
 	// engine.json changed while the engine runs and its plugins cannot be
 	// read, so the engine applies no plugin change (CONTRACT.md, Plugin
 	// changes while the engine runs). It names no entry.
@@ -80,7 +81,7 @@ func addPluginProblems(ps *guidance.Problems, problems []pluginProblem) {
 	for _, p := range problems {
 		ps.Add(p.Code, p.Message, func(b *guidance.Steps) string {
 			switch p.Code {
-			case problemPluginAwaitingApproval, problemPluginApprovalExpired, problemPluginApprovalMismatch:
+			case problemPluginAwaitingApproval, problemPluginApprovalExpired, problemPluginApprovalWithdrawn, problemPluginApprovalMismatch:
 				return pluginApprovalSteps(b, p)
 			case problemPluginUnavailable:
 				if p.File != "" {
@@ -137,6 +138,12 @@ func pluginApprovalSteps(b *guidance.Steps, p pluginProblem) string {
 			b.CallTool(guidance.ToolRequestPlugin, pluginArgs(p, false), "When they want it, call this: it opens a new approval for the installed plugin.")
 		}
 		lead = "The approval of the plugin " + entry + " expired before anyone signed it, so it does nothing for this agent. Ask the agent to ask again, or to remove it."
+	case problemPluginApprovalWithdrawn:
+		b.AskPerson("Ask the person whether to ask for the plugin " + entry + " again, or remove it.")
+		if p.EngineKept {
+			b.CallTool(guidance.ToolRequestPlugin, pluginArgs(p, false), "When they want it, call this: it opens a new approval for the installed plugin.")
+		}
+		lead = "The agent withdrew its request to approve the plugin " + entry + " before anyone signed it, so it does nothing for this agent. Ask the agent to ask again, or to remove it."
 	default: // problemPluginApprovalMismatch
 		b.AskPerson("Ask the person whether they changed the plugin " + entry + " (the status message names what differs from what they approved).")
 		if p.EngineKept {

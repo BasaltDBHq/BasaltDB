@@ -42,17 +42,20 @@ func (s *holdStore) Hold(_ context.Context, _ action.Intent, r approvalstore.Hol
 }
 
 // The service previews through the store, checks the lines and holds with
-// the request as the agent sent it, Basalt's op and the preview's fields.
+// the request the preview returns (the agent's, with the values the store
+// fixed), Basalt's op and the preview's fields.
 func TestHoldPassesTheRequestOnUnread(t *testing.T) {
 	t.Parallel()
-	st := &holdStore{preview: approvalstore.HeldPreview{Assigned: []string{"status"}, Lines: []string{`{"op":"UPDATE"}`}}}
+	fixed := action.Request{Text: `{"filter": {"status": "open"}, "at": "2026-11-27T10:00:00Z"}`, Params: []any{1}}
+	st := &holdStore{preview: approvalstore.HeldPreview{Request: fixed, Assigned: []string{"status"}, Lines: []string{`{"op":"UPDATE"}`}}}
 	ac := newService(t, "linux", "", func(s *settings) { s.store = st })
-	req := action.Request{Text: `{"filter": {"status": "open"}}`, Params: []any{1}}
+	req := action.Request{Text: `{"filter": {"status": "open"}, "at": "now"}`, Params: []any{1}}
 
 	held, err := ac.Hold(context.Background(), action.Intent{Text: "close"}, req, action.OpUpdate)
 	require.NoError(t, err)
 	require.Equal(t, []action.Request{req}, st.previewed)
-	require.Equal(t, []approvalstore.HoldRequest{{Op: action.OpUpdate, Request: req, Assigned: []string{"status"}, Lines: st.preview.Lines}}, st.held)
+	require.Equal(t, []approvalstore.HoldRequest{{Op: action.OpUpdate, Request: fixed, Assigned: []string{"status"}, Lines: st.preview.Lines}}, st.held)
+	require.Equal(t, fixed, held.Request)
 	require.Equal(t, st.preview.Lines, held.Lines)
 	require.Equal(t, "binding", held.BindingText)
 }

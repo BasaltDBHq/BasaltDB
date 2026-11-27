@@ -8,13 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
@@ -94,7 +95,20 @@ func TestListRunsCountsWhatEachRunDid(t *testing.T) {
 
 	list, next := h.listRuns(t, map[string]any{})
 	require.Empty(t, next)
+	require.Len(t, list, 3, "the signed revert is listed with the runs")
+	revertItem := list[0]
+	require.Equal(t, "REVERT", revertItem["kind"], "newest first: the revert was signed after both runs started")
+	require.Equal(t, prep.RevertID.String(), revertItem["revertId"])
+	require.Equal(t, "CHANGE", revertItem["scope"])
+	require.Equal(t, undo["changeId"], revertItem["scopeId"])
+	require.Equal(t, "Undo lead 66", revertItem["intent"])
+	_, err = time.Parse(time.RFC3339, str(t, revertItem["signedAt"]))
+	require.NoError(t, err)
+	require.Equal(t, json.Number("1"), revertItem["restored"])
+	require.Equal(t, json.Number("0"), revertItem["skipped"])
+	list = list[1:]
 	require.Equal(t, []string{runID, empty}, runIDs(t, list), "newest first")
+	require.Equal(t, "RUN", list[0]["kind"])
 	run := list[0]
 	require.Equal(t, "Tidy the leads", run["intent"])
 	require.NotEmpty(t, str(t, run["taskId"]))
@@ -214,6 +228,7 @@ func TestListRunsArgumentErrors(t *testing.T) {
 		"unknown sort":       {"sort": "startedAt"},
 		"cursor not base64":  {"cursor": "%%%"},
 		"cursor not a run":   {"cursor": pagination.EncodeIDCursor("not-a-uuid")},
+		"cursor has no time": {"cursor": pagination.EncodeIDCursor(uuid.Must(uuid.NewV7()).String())},
 		"limit not a number": {"limit": "ten"},
 	} {
 		body, isError := h.call(t, "list_runs", args)
@@ -233,7 +248,7 @@ func TestListRunsTablesTruncated(t *testing.T) {
 		d.Exec(t, fmt.Sprintf(`CREATE TABLE %s (id int PRIMARY KEY)`, name))
 		tables = append(tables, name)
 	}
-	h := newHarness(t, d.NewAgent(t, "bot", tables, tables).URL, sqlguard.DefaultLimits())
+	h := newHarness(t, d.NewAgent(t, "bot", tables, tables).URL, action.DefaultLimits())
 
 	wide := h.startRun(t, "Write to every table")
 	for _, table := range tables {
@@ -272,8 +287,8 @@ func TestListRunsOwnRunsOnly(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	botAgent := d.NewAgent(t, "bot", leads, leads)
 	otherAgent := d.NewAgent(t, "other", leads, leads)
-	bot := newHarness(t, botAgent.URL, sqlguard.DefaultLimits())
-	other := newHarness(t, otherAgent.URL, sqlguard.DefaultLimits())
+	bot := newHarness(t, botAgent.URL, action.DefaultLimits())
+	other := newHarness(t, otherAgent.URL, action.DefaultLimits())
 
 	botRuns := startRuns(t, bot, 3)
 	otherRuns := startRuns(t, other, 2)
@@ -289,8 +304,13 @@ func TestListRunsOwnRunsOnly(t *testing.T) {
 	require.Equal(t, json.Number("1"), list[1]["applied"])
 
 	// Another agent's cursor only continues within the caller's own runs.
-	list, _ = bot.listRuns(t, map[string]any{"cursor": pagination.EncodeIDCursor(otherRuns[0]), "sort": "id"})
+	_, otherNext := other.listRuns(t, map[string]any{"limit": 1, "sort": "id"})
+	require.NotEmpty(t, otherNext)
+	list, _ = bot.listRuns(t, map[string]any{"cursor": otherNext, "sort": "id"})
 	require.NotContains(t, runIDs(t, list), otherRuns[1])
+	for _, id := range runIDs(t, list) {
+		require.Contains(t, botRuns, id)
+	}
 
 	// As the agent role itself: the view shows its own runs only, and the
 	// table under it is closed.
@@ -305,4 +325,110 @@ func TestListRunsOwnRunsOnly(t *testing.T) {
 	var indexed bool
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT to_regclass('basalt_meta.runs_agent') IS NOT NULL`).Scan(&indexed))
 	require.True(t, indexed, "version 14 indexes runs by agent and id")
+}
+
+// kinds are the kind of each list_runs item, in order.
+func kinds(list []map[string]any) []string {
+	out := make([]string, 0, len(list))
+	for _, it := range list {
+		out = append(out, fmt.Sprint(it["kind"]))
+	}
+	return out
+}
+
+// TestListRunsListsRevertsAndReadsOutsideARun: a read made outside a run and
+// a revert the person signed are listed with the runs, in time order, and
+// only for the agent that made them; run_history lists the reads of the
+// group, and the pages of any size give the same list.
+func TestListRunsListsRevertsAndReadsOutsideARun(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	botAgent := d.NewAgent(t, "bot", leads, leads)
+	e := agentHarnessFor(t, d, botAgent)
+	h := e.h
+	other := newHarness(t, d.NewAgent(t, "other", leads, leads).URL, action.DefaultLimits())
+	ctx := context.Background()
+
+	runID := h.startRun(t, "Tidy the leads")
+	h.mustQuery(t, map[string]any{"sql": "SELECT count(id) FROM leads"})
+	h.mustQuery(t, map[string]any{"sql": "SELECT id FROM leads WHERE id = 1"})
+	h.mustQuery(t, map[string]any{"sql": "SELECT id FROM leads WHERE id = 2", "runId": runID})
+	other.mustQuery(t, map[string]any{"sql": "SELECT id FROM leads WHERE id = 3"})
+	undo, isError := h.call(t, "write", map[string]any{
+		"sql": "UPDATE leads SET status = 'lost' WHERE id = 66", "intent": "tidy", "runId": runID,
+	})
+	require.False(t, isError, "%v", undo)
+	prep, err := guard.PrepareRevert(ctx, e.a.Conn,
+		revertstore.Scope{Kind: revert.ScopeChange, ID: uuid.MustParse(str(t, undo["changeId"]))}, "Undo lead 66")
+	require.NoError(t, err)
+	as, err := e.person.Sign(passkeytest.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	require.NoError(t, err)
+	_, err = guard.ApplyRevert(ctx, e.a.Conn, prep.RevertID, as)
+	require.NoError(t, err)
+
+	list, next := h.listRuns(t, map[string]any{})
+	require.Empty(t, next)
+	require.Len(t, list, 3)
+	require.Equal(t, "REVERT", list[0]["kind"], "signed after the run started and the reads were made")
+	require.ElementsMatch(t, []string{"RUN", "LOOSE_READS"}, kinds(list[1:]))
+	var loose map[string]any
+	for _, it := range list {
+		if it["kind"] == "LOOSE_READS" {
+			loose = it
+		}
+	}
+	require.Equal(t, json.Number("2"), loose["reads"], "the read in the run is the run's, the other agent's is not listed")
+	require.Equal(t, []any{"public.leads"}, loose["resources"])
+	from, err := time.Parse(time.RFC3339, str(t, loose["from"]))
+	require.NoError(t, err)
+	to, err := time.Parse(time.RFC3339, str(t, loose["to"]))
+	require.NoError(t, err)
+	require.Equal(t, time.Hour, to.Sub(from))
+	require.Zero(t, from.Minute()+from.Second(), "an UTC hour")
+
+	// run_history lists the reads of the group.
+	body, isError := h.call(t, "run_history", map[string]any{"from": str(t, loose["from"]), "to": str(t, loose["to"])})
+	require.False(t, isError, "%v", body)
+	reads := items(t, body)
+	require.Len(t, reads, 2)
+	for _, r := range reads {
+		require.Equal(t, "READ", r["op"])
+	}
+	body, isError = h.call(t, "run_history", map[string]any{"from": from.Add(-2 * time.Hour).Format(time.RFC3339), "to": from.Add(-time.Hour).Format(time.RFC3339)})
+	require.False(t, isError, "%v", body)
+	require.Empty(t, items(t, body), "another hour")
+	for name, args := range map[string]map[string]any{
+		"a run and a period": {"runId": runID, "from": str(t, loose["from"]), "to": str(t, loose["to"])},
+		"from alone":         {"from": str(t, loose["from"])},
+		"to alone":           {"to": str(t, loose["to"])},
+		"to before from":     {"from": str(t, loose["to"]), "to": str(t, loose["from"])},
+	} {
+		body, isError := h.call(t, "run_history", args)
+		requireToolError(t, body, isError, "INVALID_ARGUMENT", "", "")
+		require.NotContains(t, body, "items", name)
+	}
+
+	// The other agent sees its own read, and no revert or run of the first.
+	theirs, _ := other.listRuns(t, map[string]any{})
+	require.Equal(t, []string{"LOOSE_READS"}, kinds(theirs))
+	require.Equal(t, json.Number("1"), theirs[0]["reads"])
+
+	// Pages of one item give the list of one page, both ways, and the time
+	// range keeps each kind by its own time.
+	for _, sort := range []string{"-id", "id"} {
+		all, _ := h.listRuns(t, map[string]any{"sort": sort})
+		var got []map[string]any
+		args := map[string]any{"limit": 1, "sort": sort}
+		for range 4 {
+			page, next := h.listRuns(t, args)
+			got = append(got, page...)
+			if next == "" {
+				break
+			}
+			args["cursor"] = next
+		}
+		require.Equal(t, all, got, sort)
+	}
+	future, _ := h.listRuns(t, map[string]any{"startTime": time.Now().Add(time.Hour).Format(time.RFC3339)})
+	require.Empty(t, future)
 }

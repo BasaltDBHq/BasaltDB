@@ -20,7 +20,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
-import { $, APPROVE_REOPEN, NO_CARRIER, el, fail, linkFailure, endSession, loadOrPaste, openSession, personText, relayFailure, setPill, showDone, showEngine, showReceipt, showRelayFailed, webauthnError, whenText } from "./page.js";
+import { $, APPROVE_REOPEN, NO_CARRIER, el, fail, linkFailure, endSession, loadOrPaste, openSession, personText, relayFailure, setPill, showDone, showEngine, showReceipt, showRelayFailed, showWithdrawn, webauthnError, whenText, withdrawnText } from "./page.js";
 import { applyReveal, canReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { agentName } from "./scope.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
@@ -167,6 +167,17 @@ async function loadRequest(hash) {
   return { req, relay: { path: paths.relay, secret, session } };
 }
 
+// withdrawnNow shows the held write withdrawn when err is the engine's
+// refusal of a request the agent withdrew (a page opened before it did),
+// and ends the session: nothing is left to sign or reveal.
+function withdrawnNow(relay, err) {
+  const text = withdrawnText(err);
+  if (text === null) return false;
+  if (relay) endSession(relay.session, ENGINE_BUTTONS);
+  showWithdrawn("state", text);
+  return true;
+}
+
 // finish relays the signed response to the engine that served the short
 // link. Nothing is ever shown to paste: when the relay fails, the person
 // opens the link again or asks the agent for a new one.
@@ -179,6 +190,7 @@ async function finish(response, relay, binding) {
     endSession(relay.session, ENGINE_BUTTONS);
     setPill("state", "Approved", "ok");
   } catch (err) {
+    if (withdrawnNow(relay, err)) return;
     showRelayFailed(relayFailure(err, "approval"));
     setPill("state", "Not approved", "bad");
   }
@@ -259,6 +271,7 @@ function wireReveal(rp, state) {
       $("reveal-text").textContent = SHOWN_TO_YOU;
       $("hide-values").hidden = false;
     } catch (err) {
+      if (withdrawnNow(relay, err)) return;
       const failure = revealFailure(err, KIND_APPROVE);
       $("reveal-status").textContent = failure?.text ?? (err?.name === "NotAllowedError" ? webauthnError(err, req.credentialIds.length) : personText(err) || err.message);
       $("reveal").disabled = failure?.final === true;
@@ -282,6 +295,7 @@ async function main() {
     rp = relyingParty(window.location);
     ({ req, relay } = await loadOrPaste(loadRequest, describe));
   } catch (err) {
+    if (withdrawnNow(null, err)) return;
     fail(describe(err));
     return;
   }

@@ -13,7 +13,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 )
 
 // failingDB fails every query and every transaction with its own error.
@@ -32,20 +31,27 @@ func (db failingDB) QueryRow(context.Context, string, ...any) pgx.Row { return n
 func (db failingDB) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error) { return nil, db.begin }
 
 // Preview tells its failures apart the way the hold records them: a write
-// that cannot be run again is a refusal, the catalog read's error comes
-// unmarked, and an error of the preview run is marked PreviewFailedError.
+// that cannot be run again is a refusal, the catalog read's and the time
+// evaluation's errors come unmarked, and an error of the preview run is
+// marked PreviewFailedError.
 func TestPreviewMarksOnlyThePreviewRun(t *testing.T) {
 	t.Parallel()
 	catalog, begin := errors.New("catalog read failed"), errors.New("preview failed")
-	s := NewStore(failingDB{query: catalog, begin: begin}, sqlguard.DefaultLimits(), time.Now)
+	s := NewStore(failingDB{query: catalog, begin: begin}, action.DefaultLimits(), time.Now)
 	ctx := context.Background()
 
-	_, err := s.Preview(ctx, action.Intent{}, agentstore.Request{Text: "UPDATE public.leads SET at = now()"})
+	_, err := s.Preview(ctx, action.Intent{}, agentstore.Request{Text: "UPDATE public.leads SET n = random()"})
 	var re *action.RefusalError
 	require.ErrorAs(t, err, &re)
 	require.Equal(t, action.ReasonNotRepeatable, re.Reason)
+	require.Contains(t, re.Detail, "random()")
 	var pf *approvalstore.PreviewFailedError
 	require.False(t, errors.As(err, &pf))
+
+	_, err = s.Preview(ctx, action.Intent{}, agentstore.Request{Text: "UPDATE public.leads SET at = now()"})
+	require.Error(t, err)
+	require.False(t, errors.As(err, &pf), "fixing the time is not the preview run")
+	require.False(t, errors.As(err, &re))
 
 	_, err = s.Preview(ctx, action.Intent{}, agentstore.Request{Text: "INSERT INTO public.leads VALUES (1)"})
 	require.Error(t, err)

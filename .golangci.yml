@@ -149,7 +149,7 @@ linters:
         # The agent service, its MCP tools and the agent service's code in
         # internal/app (agent_*.go) talk to the store only through the store
         # ports (internal/agent: the StoreSet; app: Store, SQLStore): no
-        # database driver, SQL policy or adapter in them. The rest of
+        # database driver, statement check or adapter in them. The rest of
         # internal/app, which wires the adapters, is outside it.
         agent-through-store-ports:
           files:
@@ -159,7 +159,7 @@ linters:
           deny:
             - pkg: github.com/jackc/pgx
               desc: the agent service reaches Postgres only through the store ports
-            - pkg: github.com/basaltdbhq/basaltdb/internal/core/sqlguard
+            - pkg: github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgstatement
               desc: statements are checked by the store (SQLStore.Check)
             - pkg: github.com/basaltdbhq/basaltdb/internal/platform/postgres/store
               desc: the run.go wiring picks the adapter; the service sees ports only

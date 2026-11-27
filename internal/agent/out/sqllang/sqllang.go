@@ -8,6 +8,7 @@
 package sqllang
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -25,8 +26,11 @@ const maxParamsBytes = 64 << 10
 
 // Checker checks a statement against the engine's SQL policy for a tool,
 // and returns it as the store will run it, or an *action.RefusalError.
+// HeldFrom reports whether the held statement is sent with only the times
+// the store fixed when it held the write.
 type Checker interface {
 	Check(sql string, tool action.Tool) (action.Statement, error)
+	HeldFrom(ctx context.Context, held, sent string) (bool, error)
 }
 
 // Language is the SQL language over a store's statement check.
@@ -50,10 +54,19 @@ func (l Language) Check(req agentstore.Request, tool action.Tool) (action.Statem
 	return stmt, err
 }
 
+// HeldFrom is the store's HeldFrom on the statements; the parameters are
+// compared by the caller.
+func (l Language) HeldFrom(ctx context.Context, held, sent agentstore.Request) (bool, error) {
+	return l.checker.HeldFrom(ctx, held.Text, sent.Text)
+}
+
 // checkArgs checks the parameters match the statement's placeholders and
 // fit the guard's ledger limit.
 func checkArgs(stmt action.Statement, params []any) error {
 	if stmt.ParamCount != len(params) {
+		if stmt.ParamCount == 0 {
+			return &guidance.ArgumentError{Message: fmt.Sprintf("the statement uses no parameters but %d were given", len(params))}
+		}
 		return &guidance.ArgumentError{Message: fmt.Sprintf("the statement uses %d parameters ($1..$%d) but %d were given",
 			stmt.ParamCount, stmt.ParamCount, len(params))}
 	}

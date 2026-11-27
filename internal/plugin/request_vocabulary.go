@@ -15,6 +15,9 @@ const (
 	PluginStateNarrowed = "NARROWED"
 	PluginStateRemoved  = "REMOVED"
 	PluginStateEnded    = "ENDED"
+	// PluginStateWithdrawn is an approval the agent withdrew before the
+	// person signed it (the wait form only; PLUGIN_LIST reads it ENDED).
+	PluginStateWithdrawn = "WITHDRAWN"
 )
 
 // The PLUGIN_REFUSED reasons the tool gives itself, and the one the engine
@@ -58,6 +61,8 @@ type PluginApprovalState struct {
 	Agents         []string
 	State          string
 	ExpiresAt      time.Time
+	// WithdrawReason is the agent's reason on a WITHDRAWN approval.
+	WithdrawReason string
 }
 
 // PluginRefusedError is PLUGIN_REFUSED with its reason, from the engine.

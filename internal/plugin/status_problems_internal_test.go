@@ -94,6 +94,7 @@ func TestStatusShowsApprovalSteps(t *testing.T) {
 	}{
 		{problemPluginAwaitingApproval, []string{"OPEN_LINK", "CALL_TOOL"}},
 		{problemPluginApprovalExpired, []string{"ASK_PERSON", "CALL_TOOL"}},
+		{problemPluginApprovalWithdrawn, []string{"ASK_PERSON", "CALL_TOOL"}},
 		{problemPluginApprovalMismatch, []string{"ASK_PERSON", "CALL_TOOL"}},
 	} {
 		for _, operatedBy := range []string{"", "AGENT"} {
@@ -137,7 +138,7 @@ func TestNoPluginProblemWithoutOne(t *testing.T) {
 
 func TestConfigEntryStepsOnlyAskThePerson(t *testing.T) {
 	t.Parallel()
-	for _, code := range []string{problemPluginUnavailable, problemPluginNotTrusted, problemPluginAwaitingApproval, problemPluginApprovalExpired, problemPluginApprovalMismatch} {
+	for _, code := range []string{problemPluginUnavailable, problemPluginNotTrusted, problemPluginAwaitingApproval, problemPluginApprovalExpired, problemPluginApprovalWithdrawn, problemPluginApprovalMismatch} {
 		for _, operatedBy := range []string{"", "AGENT"} {
 			conf := []pluginProblem{{Code: code, Name: "acme-ner", Instance: "client_x", Message: "m"}}
 			list, _ := statusProblems(t, operatedBy, "", false, conf)
@@ -215,11 +216,12 @@ func TestEveryPluginProblemObeysTheCatalog(t *testing.T) {
 		problemPluginUnavailable: {false, sampleProblem(problemPluginUnavailable)},
 		problemPluginNotTrusted:  {false, sampleProblem(problemPluginNotTrusted)},
 		// Plugin approvals are same-user mode: a foreground engine.
-		problemPluginAwaitingApproval: {true, sampleProblem(problemPluginAwaitingApproval)},
-		problemPluginApprovalExpired:  {true, sampleProblem(problemPluginApprovalExpired)},
-		problemPluginApprovalMismatch: {true, sampleProblem(problemPluginApprovalMismatch)},
-		problemPluginConfigInvalid:    {true, []pluginProblem{{Code: problemPluginConfigInvalid, Message: "engine.json changed and the engine cannot read its plugins"}}},
-		problemPluginNoticesDropped:   {true, sampleProblem(problemPluginNoticesDropped)},
+		problemPluginAwaitingApproval:  {true, sampleProblem(problemPluginAwaitingApproval)},
+		problemPluginApprovalExpired:   {true, sampleProblem(problemPluginApprovalExpired)},
+		problemPluginApprovalWithdrawn: {true, sampleProblem(problemPluginApprovalWithdrawn)},
+		problemPluginApprovalMismatch:  {true, sampleProblem(problemPluginApprovalMismatch)},
+		problemPluginConfigInvalid:     {true, []pluginProblem{{Code: problemPluginConfigInvalid, Message: "engine.json changed and the engine cannot read its plugins"}}},
+		problemPluginNoticesDropped:    {true, sampleProblem(problemPluginNoticesDropped)},
 	}
 	keys := make([]string, 0, len(cases))
 	for code := range cases {

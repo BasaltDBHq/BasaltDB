@@ -107,6 +107,8 @@ func (rc *Service) openRevert(ctx context.Context, id uuid.UUID) (action.Revert,
 		return action.Revert{}, err
 	}
 	switch {
+	case r.Status == action.RevertWithdrawn:
+		return r, withdrawn(r)
 	case r.Status == action.RevertExpired || (r.Status == action.RevertPending && !rc.core.Now().Before(r.ExpiresAt)):
 		return r, rc.revertExpired(r)
 	case r.Status != action.RevertPending:

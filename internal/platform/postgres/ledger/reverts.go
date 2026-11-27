@@ -30,13 +30,16 @@ const (
 	// RevertRejected is a revert the person rejected on the revert page
 	// (basalt_meta version 23): nothing was reverted.
 	RevertRejected = "REJECTED"
+	// RevertWithdrawn is a revert the agent withdrew (basalt_meta version
+	// 15): nothing was reverted.
+	RevertWithdrawn = "WITHDRAWN"
 )
 
 func revertSelect(ctx context.Context) sq.SelectBuilder {
 	return withRequest(ctx, sqlport.Builder.Select(colRevertID, "status", "scope", "scope_id", "intent", "rows", "skipped", "expires_at",
 		"coalesce(binding_text, '')", "batched", "signed_at", "apply_by", "batches",
 		"coalesce(restored, 0)", "coalesce(skipped_now, 0)", "coalesce(pending, 0)", "change_id", "widened",
-		"rejected_at", "coalesce(reject_note, '')", "created_at").
+		"rejected_at", "coalesce(reject_note, '')", "withdrawn_at", "coalesce(withdraw_reason, '')", "created_at").
 		From("basalt_meta.agent_reverts"))
 }
 
@@ -45,7 +48,7 @@ func scanRevert(row pgx.CollectableRow) (action.Revert, error) {
 	err := row.Scan(&r.ID, &r.Status, &r.Scope, &r.ScopeID, &r.Intent, &r.Rows, &r.Skipped, &r.ExpiresAt, &r.BindingText,
 		&r.Batched, &r.SignedAt, &r.ApplyBy, &r.Batches,
 		&r.Progress.Restored, &r.Progress.Skipped, &r.Progress.Pending, &r.ChangeID, &r.Widened,
-		&r.RejectedAt, &r.RejectNote, &r.CreatedAt, &r.Lines, &r.LinesLeftOut, &r.LinesCost)
+		&r.RejectedAt, &r.RejectNote, &r.WithdrawnAt, &r.WithdrawReason, &r.CreatedAt, &r.Lines, &r.LinesLeftOut, &r.LinesCost)
 	return r, err
 }
 

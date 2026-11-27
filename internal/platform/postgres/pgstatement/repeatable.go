@@ -1,4 +1,4 @@
-package sqlguard
+package pgstatement
 
 import (
 	"fmt"
@@ -6,21 +6,18 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	pganalyze "github.com/pganalyze/pg_query_go/v6"
-	pgquery "github.com/wasilibs/go-pgquery"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-// ReasonNotRepeatable refuses a write that would be held but whose values
-// change between transactions (decision M2-1): the preview the person
-// approves could never match the write that applies.
-const ReasonNotRepeatable Reason = "NOT_REPEATABLE"
-
-// nonRepeatableFunctions return another value in another transaction. All
-// are on the allowlist (decision #11); nextval and friends are not.
+// nonRepeatableFunctions return another value in another transaction and
+// the engine cannot fix them (fixableFunctions it can): a held write that
+// uses one is refused. nextval appears in a column default; a statement
+// that calls it is refused by the allowlist (decision #11) first.
 var nonRepeatableFunctions = toSet(`
-	now statement_timestamp transaction_timestamp clock_timestamp timeofday
-	random random_normal gen_random_uuid uuid_generate_v4
+	timeofday random random_normal gen_random_uuid uuid_generate_v4 uuidv4 uuidv7 nextval
 `)
 
 // Holdable is what preview and approval need from a write: the columns
@@ -36,33 +33,29 @@ type Holdable struct {
 
 // CheckRepeatable parses a write the guard held and refuses it with
 // NOT_REPEATABLE when it contains a value that changes between
-// transactions: the time functions, CURRENT_DATE and the other time SQL
-// value functions, random() and UUID generators, age() with one argument,
+// transactions that the engine does not fix (PlanTimes fixes now(),
+// CURRENT_TIMESTAMP and the other time functions it lists): timeofday(),
+// LOCALTIME, random() and UUID generators, age() with one argument,
 // a string literal or parameter that is a time word ('now', 'today',
 // 'tomorrow', 'yesterday', alone or with a time of day or zone), or the
 // DEFAULT keyword. It returns the
 // target table and assigned columns otherwise. Anything it misses fails
 // closed at commit (the guard recomputes the preview lines).
 func CheckRepeatable(sql string, params []any) (Holdable, error) {
-	tree, err := pgquery.Parse(sql)
+	_, node, err := parseOne(sql)
 	if err != nil {
-		return Holdable{}, &RefusalError{Reason: ReasonParseError, Detail: err.Error()}
+		return Holdable{}, err
 	}
-	stmts := tree.GetStmts()
-	if len(stmts) != 1 {
-		return Holdable{}, refuse(ReasonMultipleStatements, "%d statements; send exactly one", len(stmts))
-	}
-	node := stmts[0].GetStmt()
 	if what := nonRepeatable(node.ProtoReflect()); what != "" {
 		fix := "pass the value as a parameter ($n)"
 		if strings.HasPrefix(what, "'") {
 			fix = "pass a fixed timestamp as a parameter ($n), not a time word"
 		}
-		return Holdable{}, refuse(ReasonNotRepeatable,
+		return Holdable{}, refuse(action.ReasonNotRepeatable,
 			"%s gives another value when the approved write runs; %s, so the person approves exactly what is written", what, fix)
 	}
 	if word := timeWordParam(params); word != "" {
-		return Holdable{}, refuse(ReasonNotRepeatable,
+		return Holdable{}, refuse(action.ReasonNotRepeatable,
 			"a parameter is the time word '%s', which Postgres reads as the time the statement runs, so it gives another value when the approved write runs; pass a fixed timestamp as the parameter ($n) so the person approves exactly what is written", word)
 	}
 	return holdable(node), nil
@@ -187,6 +180,9 @@ func nonRepeatable(root protoreflect.Message) string {
 		if found != "" {
 			return false
 		}
+		if n, ok := m.Interface().(*pganalyze.Node); ok && fixableType(n) != "" {
+			return false // fixed when the write is held (PlanTimes)
+		}
 		found = nonRepeatableNode(m)
 		return found == ""
 	})
@@ -196,8 +192,10 @@ func nonRepeatable(root protoreflect.Message) string {
 func nonRepeatableNode(m protoreflect.Message) string {
 	switch v := m.Interface().(type) {
 	case *pganalyze.FuncCall:
-		name := strings.TrimPrefix(nameOf(v.GetFuncname()), "pg_catalog.")
-		if nonRepeatableFunctions[name] || (name == "age" && len(v.GetArgs()) == 1) {
+		name := funcName(v)
+		// A time function the engine does not fix (with arguments or OVER)
+		// is refused like the others; fixable ones never reach here.
+		if nonRepeatableFunctions[name] || fixableFunctions[name] || (name == "age" && len(v.GetArgs()) == 1) {
 			return name + "()"
 		}
 	case *pganalyze.SQLValueFunction:
@@ -222,22 +220,18 @@ func holdable(node *pganalyze.Node) Holdable {
 	switch {
 	case node.GetUpdateStmt() != nil:
 		u := node.GetUpdateStmt()
-		return Holdable{Table: rangeVarName(u.GetRelation()), Assigned: targetNames(u.GetTargetList())}
+		return Holdable{Table: writtenRelation(node), Assigned: targetNames(u.GetTargetList())}
 	case node.GetInsertStmt() != nil:
 		ins := node.GetInsertStmt()
-		h := Holdable{Table: rangeVarName(ins.GetRelation())}
+		h := Holdable{Table: writtenRelation(node)}
 		if len(ins.GetCols()) > 0 {
 			h.Assigned = union(targetNames(ins.GetCols()), targetNames(ins.GetOnConflictClause().GetTargetList()))
 		}
 		return h
 	case node.GetDeleteStmt() != nil:
-		return Holdable{Table: rangeVarName(node.GetDeleteStmt().GetRelation()), Assigned: []string{}}
+		return Holdable{Table: writtenRelation(node), Assigned: []string{}}
 	}
 	return Holdable{Assigned: []string{}}
-}
-
-func rangeVarName(r *pganalyze.RangeVar) string {
-	return qualifiedName(r.GetSchemaname(), r.GetRelname())
 }
 
 func targetNames(list []*pganalyze.Node) []string {

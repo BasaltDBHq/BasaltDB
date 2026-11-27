@@ -1,4 +1,4 @@
-package sqlguard
+package action
 
 import (
 	"errors"
@@ -22,7 +22,8 @@ const (
 	maxReadRowLimit     = 100_000
 )
 
-// Limits bound one agent statement.
+// Limits bound one agent statement: the read limits the agent's statements
+// run within.
 type Limits struct {
 	// StatementTimeout is set transaction-locally on every agent transaction.
 	StatementTimeout time.Duration

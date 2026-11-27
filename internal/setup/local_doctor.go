@@ -65,7 +65,8 @@ type DoctorGuard struct {
 
 // DoctorCertificate is the database certificate as status reads it.
 // CHANGED carries the host, the pinned SHA-256 and what the host presents;
-// MISMATCH the host, the engine's pin and the ledger's.
+// MISMATCH the host, the engine's pin and the ledger's; NOT_CHECKED (a
+// warning) the host, the agent's sslmode and the provider.
 type DoctorCertificate struct {
 	State     string     `json:"state"`
 	Host      string     `json:"host,omitempty"`
@@ -82,6 +83,11 @@ type DoctorCertificate struct {
 	// SameIssuer is CHANGED's: the presented top has the public key of the
 	// pinned certificate, or the pinned certificate signed it (sameIssuer).
 	SameIssuer bool `json:"sameIssuer"`
+	// SSLMode and Provider are NOT_CHECKED's: the sslmode the agent's
+	// connection string names (prefer for none), and the provider whose
+	// built-in roots cover the host, "" for none.
+	SSLMode  string `json:"sslMode,omitempty"`
+	Provider string `json:"provider,omitempty"`
 }
 
 // DoctorLogin is why the agent could not log in: status's problem code and
@@ -143,6 +149,7 @@ func (s *LocalService) Doctor(ctx context.Context, req DoctorRequest) (DoctorAns
 		return DoctorAnswer{}, err
 	}
 	defer conn.Close(context.WithoutCancel(ctx))
+	s.certificateNotChecked(a, &out)
 	if err := s.readDoctor(ctx, conn, a, &out); err != nil {
 		return DoctorAnswer{}, timeLimit(ctx, s.setupFailed("read the doctor checks", err))
 	}

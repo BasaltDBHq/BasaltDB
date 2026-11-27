@@ -19,6 +19,8 @@ import (
 // certificate the person trusted (CHANGED), or records the engine's pin in
 // the ledger when the ledger names another (MISMATCH). Nothing is sent to
 // a server before the engine has read its chain with the handshake alone.
+// A host with no pin whose agent connection does not check the certificate
+// (NOT_CHECKED) turns the check on instead (certcheck.go).
 
 // agentHost is the agent's database host and port as status reads them:
 // the first host of its credential, normalized as the trust profiles match
@@ -114,6 +116,9 @@ type trustCase struct {
 	changed bool
 	// next is the pin for the new certificate the person trusted (changed).
 	next *trustprofile.Profile
+	// unchecked is set for NOT_CHECKED: no pin, and the agent's
+	// credential does not check the certificate.
+	unchecked *unchecked
 }
 
 // readTrust reads the chain the agent's host presents, with the handshake
@@ -124,7 +129,14 @@ func (s *LocalService) readTrust(ctx context.Context, j agentJob) (trustCase, er
 		return trustCase{}, err
 	}
 	if h.pin == nil {
-		return trustCase{}, nothingToFix()
+		uc, ok := s.uncheckedCredential(j.agent)
+		switch {
+		case !ok:
+			return trustCase{}, nothingToFix()
+		case j.req.TrustRoot != "" || j.req.Pinned != "":
+			return trustCase{}, refuse(CodeAnswersInvalid, "Turning the certificate check on trusts no certificate of its own. Reload the page; nothing changed.")
+		}
+		return trustCase{agentHost: h, unchecked: &uc}, nil
 	}
 	if host, port, ok := hostPort(j.req.DatabaseURL); !ok || host != h.host || port != h.port {
 		return trustCase{}, refuse(CodeTargetMismatch, "The admin connection string names another host than the agent's credential, so its certificate cannot be checked here. Use the host the agent connects to; nothing changed.")
@@ -218,6 +230,9 @@ func (s *LocalService) checkTrust(ctx context.Context, j agentJob) (CheckAnswer,
 	if err != nil {
 		return CheckAnswer{}, err
 	}
+	if tc.unchecked != nil {
+		return s.checkUnchecked(ctx, j, *tc.unchecked)
+	}
 	conn, err := s.openTrust(ctx, j, tc)
 	if err != nil {
 		return CheckAnswer{}, err
@@ -243,6 +258,9 @@ func (s *LocalService) runTrust(ctx context.Context, j agentJob) (RunAnswer, err
 	tc, err := s.readTrust(ctx, j)
 	if err != nil {
 		return RunAnswer{}, err
+	}
+	if tc.unchecked != nil {
+		return s.runUnchecked(ctx, j, *tc.unchecked)
 	}
 	conn, err := s.openTrust(ctx, j, tc)
 	if err != nil {

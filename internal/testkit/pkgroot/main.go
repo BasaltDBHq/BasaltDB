@@ -125,4 +125,5 @@ func useTrustprofile() {
 	_ = trustprofile.DERSHA256(c)
 	_ = trustprofile.ProviderName("")
 	_ = trustprofile.VerifyFullByDefault("", set)
+	_ = trustprofile.BuiltInProvider("", set)
 }

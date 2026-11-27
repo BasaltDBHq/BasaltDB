@@ -30,6 +30,9 @@ const (
 	// problemTrustPinMismatch: the ledger records another pin for the
 	// agent's database than the engine's.
 	problemTrustPinMismatch = "TRUST_PIN_MISMATCH"
+	// problemCertificateNotChecked: the agent's connection uses TLS with an
+	// sslmode below verify-full, so the certificate is not checked.
+	problemCertificateNotChecked = "CERTIFICATE_NOT_CHECKED"
 )
 
 // trustExpiringWithin is how long before a root in use expires status
@@ -53,6 +56,15 @@ type TrustReport struct {
 	// Recorded is the pin's fingerprint the ledger records for the host
 	// and port (TRUST_PIN_MISMATCH): false for none; nil reads nothing.
 	Recorded func(ctx context.Context) (string, bool, error)
+	// TLS: the agent's connection uses TLS (any sslmode but disable and
+	// allow), so one below verify-full is CERTIFICATE_NOT_CHECKED.
+	TLS bool
+	// SSLMode is the sslmode the agent's connection string names, "" for
+	// none (the driver's prefer).
+	SSLMode string
+	// Provider is the provider whose built-in profile covers the host
+	// ("Supabase"), "" for none.
+	Provider string
 }
 
 // TrustReporter reads the TrustReport now.
@@ -71,6 +83,7 @@ func (s statusDeps) trustStatus(ctx context.Context, ps *guidance.Problems) (*gu
 	}
 	a := rep.Applied
 	out := &guidance.TrustStatus{Host: a.Host, Applies: string(a.Applies)}
+	s.addNotChecked(ps, rep)
 	if a.Profile == nil {
 		return out, &rep
 	}
@@ -86,6 +99,28 @@ func (s statusDeps) trustStatus(ctx context.Context, ps *guidance.Problems) (*gu
 	s.addTrustExpiring(ps, a, certs)
 	s.addPinMismatch(ctx, ps, rep)
 	return out, &rep
+}
+
+// sslModeDefault is the driver's sslmode when the string names none.
+const sslModeDefault = "prefer"
+
+// addNotChecked is CERTIFICATE_NOT_CHECKED when the agent's connection is
+// encrypted but its sslmode is below verify-full, so nothing checks the
+// certificate is its database's. The setup page's check-up turns the check
+// on. A connection without TLS (sslmode=disable) is not this warning.
+func (s statusDeps) addNotChecked(ps *guidance.Problems, rep TrustReport) {
+	if rep.Applied.Applies != trustprofile.AppliesNotVerified || !rep.TLS || s.cmds.AgentOperated() {
+		return
+	}
+	host := cmp.Or(rep.Applied.Host, "the database")
+	mode := cmp.Or(rep.SSLMode, sslModeDefault)
+	who := cmp.Or(rep.Provider, host)
+	ps.Add(problemCertificateNotChecked, fmt.Sprintf("the agent's connection to %s uses sslmode=%s: encrypted, but the certificate is not checked", host, mode),
+		func(b *guidance.Steps) string {
+			b.AgentRunCommand(s.cmds.Init(), "Run this and show the person the link it prints: its check-up turns the certificate check on.")
+			b.OpenGivenLink("Open the link the agent gives you and choose Check it on the certificate row.")
+			return "Your agent's connection to " + who + " is encrypted but doesn't check the certificate. Open the link to turn the check on."
+		})
 }
 
 // verifyCAStatus is status.trust.verify for a pin with verify: ca.

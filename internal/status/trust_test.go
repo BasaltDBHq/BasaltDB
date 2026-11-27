@@ -153,3 +153,36 @@ func TestStatusCertificateNotVerifiedOwnRoots(t *testing.T) {
 		require.NotContains(t, p.PersonMessage, "basalt ", applies)
 	}
 }
+
+// An encrypted connection whose sslmode is below verify-full is
+// CERTIFICATE_NOT_CHECKED, a warning that names the provider and leads to
+// the check-up; verify-full and a connection without TLS are not.
+func TestStatusCertificateNotChecked(t *testing.T) {
+	t.Parallel()
+	ok := &fakeProbe{st: currentGuard()}
+	host := "db.abcdefghijklmnopqrst.supabase.co"
+	notVerified := trustprofile.Applied{Host: host, Applies: trustprofile.AppliesNotVerified}
+	with := func(rep TrustReport) TrustReporter { return func() TrustReport { return rep } }
+
+	r := trustLocal(t, ok, with(TrustReport{Applied: notVerified, TLS: true, SSLMode: "require", Provider: "Supabase"}))
+	p := findProblem(t, r, "CERTIFICATE_NOT_CHECKED")
+	require.Equal(t, "WARNING", p.Severity)
+	require.Contains(t, p.Message, host)
+	require.Contains(t, p.Message, "sslmode=require")
+	require.Equal(t, "Your agent's connection to Supabase is encrypted but doesn't check the certificate. Open the link to turn the check on.", p.PersonMessage)
+	require.Len(t, p.NextSteps, 2)
+	require.Equal(t, toolresult.ActionRunCommand, p.NextSteps[0].Action)
+	require.Equal(t, "basalt init --agent bot", p.NextSteps[0].Command)
+	require.Equal(t, toolresult.NextStep{Actor: toolresult.ActorPerson, Action: toolresult.ActionOpenLink, Text: p.NextSteps[1].Text}, p.NextSteps[1])
+	require.True(t, r.Ready, "a warning: the agent keeps working")
+
+	r = trustLocal(t, ok, with(TrustReport{Applied: notVerified, TLS: true}))
+	p = findProblem(t, r, "CERTIFICATE_NOT_CHECKED")
+	require.Contains(t, p.Message, "sslmode=prefer", "no sslmode is the driver's prefer")
+	require.Contains(t, p.PersonMessage, host, "no provider: the host")
+
+	r = trustLocal(t, ok, with(TrustReport{Applied: notVerified, SSLMode: "disable"}))
+	require.Empty(t, r.Problems, "no TLS: not this warning")
+	r = trustLocal(t, ok, with(TrustReport{Applied: trustprofile.Applied{Host: host, Applies: trustprofile.AppliesSystem}, TLS: true, SSLMode: "verify-full"}))
+	require.Empty(t, r.Problems)
+}

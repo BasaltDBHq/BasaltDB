@@ -205,6 +205,9 @@ type LocalOptions struct {
 	// CredentialChanged tells the running engine an agent's new password,
 	// after a REPAIR wrote it (a no-op when nothing listens).
 	CredentialChanged func(agent, password string)
+	// Reload has the running engine serve its config again, after a fix
+	// rewrote an agent's connection string (a no-op when nothing listens).
+	Reload func()
 }
 
 // LocalService runs the setup jobs. One runs at a time.
@@ -262,6 +265,9 @@ func NewLocal(o LocalOptions) (*LocalService, error) {
 	}
 	if o.CredentialChanged == nil {
 		o.CredentialChanged = func(string, string) {}
+	}
+	if o.Reload == nil {
+		o.Reload = func() {}
 	}
 	key, err := newKey()
 	if err != nil {

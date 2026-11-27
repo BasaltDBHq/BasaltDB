@@ -15,10 +15,13 @@ import (
 // ConfirmCertificate is the database's certificate as the confirm step
 // shows it: kind PUBLIC, PROVIDER, OWN, NOT_VERIFIED or NONE, and the
 // issuer's short name (the provider's for PROVIDER; none for NOT_VERIFIED
-// and NONE).
+// and NONE). Provider is NOT_VERIFIED's only: the provider whose built-in
+// roots would check the certificate with sslmode=verify-full, so the page
+// offers to check it; "" when no built-in profile is the one for the host.
 type ConfirmCertificate struct {
-	Kind   string `json:"kind"`
-	Issuer string `json:"issuer,omitempty"`
+	Kind     string `json:"kind"`
+	Issuer   string `json:"issuer,omitempty"`
+	Provider string `json:"provider,omitempty"`
 }
 
 // The kinds of ConfirmCertificate.
@@ -60,7 +63,13 @@ func (s *LocalService) readConfirm(ctx context.Context, tx Tx, conn Conn, dsn st
 		h, p := s.be.ConnHost(conn)
 		host, port = trustprofile.NormalizeHost(h), p
 	}
-	return confirmFacts{host: host, port: port, sessionUser: user, certificate: ConfirmCertificate{Kind: shown, Issuer: issuer}}, nil
+	cert := ConfirmCertificate{Kind: shown, Issuer: issuer}
+	if shown == certNotVerified {
+		// Encrypted, not checked: the page offers verify-full when a
+		// built-in profile has the provider's roots for this host.
+		cert.Provider = trustprofile.BuiltInProvider(host, s.opts.Profiles())
+	}
+	return confirmFacts{host: host, port: port, sessionUser: user, certificate: cert}, nil
 }
 
 // certificateKind is what verifies dsn's certificate as the engine dials it

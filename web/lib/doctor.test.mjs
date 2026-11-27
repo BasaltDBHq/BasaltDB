@@ -146,3 +146,20 @@ test("the browser is told of a removed passkey only when it can be", async () =>
   assert.equal(await signalRemoved({}, "localhost", "aWQ"), false);
   assert.equal(await signalRemoved({ signalUnknownCredential: async () => { throw new Error("no"); } }, "localhost", "aWQ"), false, "a failed call is a no-op");
 });
+
+test("a certificate not checked is a warning with its own fix: the page still says Ready", () => {
+  const d = { ...good, certificate: { state: "NOT_CHECKED", host: "db.abc.supabase.co", port: 5432, sslMode: "require", provider: "Supabase" } };
+  const v = checkView(d, ORIGIN, [], "demo_bot");
+  assert.equal(v.title, "Ready");
+  assert.deepEqual(v.done, { enabled: true, why: "" });
+  assert.deepEqual(v.rows.map((r) => `${r.mark} ${r.title} | ${r.text} | ${r.action}`), [
+    "! Certificate not checked | demo_bot connects with sslmode=require. Encrypted, but not proven to be Supabase. | Check it",
+    "✓ Every column has a label |  | ",
+    "✓ Passkeys | 2 devices can approve | Manage",
+  ]);
+  assert.equal(v.rows[0].job, "TRUST");
+  assert.deepEqual(v.allSet.later, ["Certificate not checked"]);
+  assert.deepEqual(fixQueue(d, ORIGIN), [], "a warning is no critical fix");
+  const own = checkView({ ...d, certificate: { state: "NOT_CHECKED", sslMode: "verify-ca" } }, ORIGIN, [], "demo_bot");
+  assert.equal(own.rows[0].text, "demo_bot connects with sslmode=verify-ca. Encrypted, but nothing checks the certificate is your database's.");
+});

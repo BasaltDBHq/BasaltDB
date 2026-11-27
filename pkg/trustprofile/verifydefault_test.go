@@ -50,3 +50,18 @@ func TestVerifyFullByDefault(t *testing.T) {
 		require.Equal(t, tc.want, trustprofile.VerifyFullByDefault(tc.in, tc.set), tc.name)
 	}
 }
+
+// BuiltInProvider names the provider whose built-in profile is the one for
+// a host, and nothing when a pin or an operator decides for it.
+func TestBuiltInProvider(t *testing.T) {
+	t.Parallel()
+	builtin := trustprofile.BuiltInSet()
+	pin := &trustprofile.Profile{Spec: trustprofile.Spec{Name: trustprofile.PinName("db.abc.supabase.co"), Match: []string{"=db.abc.supabase.co"}}, Origin: trustprofile.Operator}
+	withPin := trustprofile.NewSet(trustprofile.BuiltIns(), []*trustprofile.Profile{pin}, nil)
+	require.Equal(t, "Supabase", trustprofile.BuiltInProvider("db.abc.supabase.co", builtin))
+	require.Equal(t, "Supabase", trustprofile.BuiltInProvider("DB.ABC.SUPABASE.CO.", builtin))
+	require.Equal(t, "Amazon RDS", trustprofile.BuiltInProvider("x.abc.eu-west-1.rds.amazonaws.com", builtin))
+	require.Empty(t, trustprofile.BuiltInProvider("db.example.com", builtin))
+	require.Empty(t, trustprofile.BuiltInProvider("db.abc.supabase.co", withPin), "a pin decides for the host")
+	require.Empty(t, trustprofile.BuiltInProvider("db.abc.supabase.co", nil))
+}

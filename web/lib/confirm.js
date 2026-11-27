@@ -91,6 +91,61 @@ export function certificateLine(c) {
   return { text: "Not known", tone: "diff" };
 }
 
+// sslModeOf is the sslmode a connection string names: a postgres:// URL's
+// query parameter or a key=value string's, "prefer" (the driver's default)
+// when it names none.
+export function sslModeOf(databaseUrl) {
+  const s = String(databaseUrl ?? "");
+  const m = /^postgres(ql)?:\/\//i.test(s) ? /[?&]sslmode=([^&#]*)/.exec(s.slice(queryStart(s))) : /(?:^|\s)sslmode=('[^']*'|\S*)/.exec(s);
+  const mode = m ? m[1].replace(/^'|'$/g, "") : "";
+  try {
+    return decodeURIComponent(mode) || "prefer";
+  } catch {
+    return mode || "prefer";
+  }
+}
+
+// queryStart is where a URL's query starts: the first ? after its user
+// and password, so a ? in an encoded password is never taken for it.
+function queryStart(s) {
+  const q = s.indexOf("?", s.lastIndexOf("@") + 1);
+  return q < 0 ? s.length : q;
+}
+
+// withVerifyFull is the string the page holds with only its sslmode
+// replaced by verify-full, or added when it names none: every other byte
+// stays, the password's encoding too (a URL round trip would change it).
+export function withVerifyFull(databaseUrl) {
+  const s = String(databaseUrl ?? "");
+  if (/^postgres(ql)?:\/\//i.test(s)) {
+    const at = queryStart(s);
+    const head = s.slice(0, at);
+    const query = s.slice(at);
+    if (/[?&]sslmode=/.test(query)) return head + query.replace(/([?&])sslmode=[^&#]*/, "$1sslmode=verify-full");
+    const hash = query.indexOf("#");
+    const [q, frag] = hash < 0 ? [query, ""] : [query.slice(0, hash), query.slice(hash)];
+    if (q === "" || q === "?") return `${head}?sslmode=verify-full${frag}`;
+    return `${head}${q}&sslmode=verify-full${frag}`;
+  }
+  if (/(^|\s)sslmode=/.test(s)) return s.replace(/(^|\s)sslmode=('[^']*'|\S*)/, "$1sslmode=verify-full");
+  return `${s} sslmode=verify-full`;
+}
+
+// notCheckedBox is the warning under the facts for a connection that is
+// encrypted but does not check the certificate (kind NOT_VERIFIED): with
+// the provider whose roots BasaltDB has built in, the one-click check;
+// without one, what to change in the string.
+function notCheckedBox(provider, sslMode) {
+  const mode = `sslmode=${sslMode || "prefer"}`;
+  if (provider) {
+    return {
+      text: `Your connection string has ${mode}: it's encrypted, but nothing checks the certificate is ${provider}'s. BasaltDB has ${provider}'s certificates built in, so it can check.`,
+      check: "Check the certificate",
+    };
+  }
+  return { text: `Your connection string has ${mode}: it's encrypted, but nothing checks the certificate is your database's. To check it, use sslmode=verify-full in the connection string.`, check: "" };
+}
+
 const hostLine = (host, port) => `${host}:${Number.isInteger(port) && port > 0 ? port : DEFAULT_PORT}`;
 
 const SUB = "Check these, then continue.";
@@ -107,11 +162,17 @@ const OWN_SUB = "Your provider signs its own security certificate, so confirming
 //     shown as Before, and the engine's answer whether the new one has its
 //     key or was signed by it (names are never compared: anyone can give a
 //     certificate any name);
-//   trustPin, bot: the connect page's code's pin and the bot's name.
+//   trustPin, bot: the connect page's code's pin and the bot's name;
+//   sslMode: the sslmode of the string the page holds, named by the
+//     warning of a certificate not checked (NOT_VERIFIED);
+//   mismatch: the provider's name, after Check the certificate found a
+//     certificate that is not the provider's.
 // It returns { variant, facts, title, sub, rows, ok, before, go, weak,
-// back, fingerprint, trusts }. trusts says that Yes sends asking's SHA-256 as
-// trustRoot: only a click on Yes does.
-export function confirmView({ facts, certificate = null, asking = null, renewal = null, trustPin = "", bot = "your bot" }) {
+// back, fingerprint, trusts, warn, warnTone, check }. trusts says that Yes
+// sends asking's SHA-256 as trustRoot: only a click on Yes does. warn is
+// the box under the facts ("" for none) and check its button's words ("" for
+// none).
+export function confirmView({ facts, certificate = null, asking = null, renewal = null, trustPin = "", bot = "your bot", sslMode = "", mismatch = "" }) {
   const f = facts ?? { database: "", host: "", port: DEFAULT_PORT, user: "" };
   const rows = (cert) => [
     { label: "Database", value: String(f.database ?? ""), tone: "" },
@@ -119,7 +180,35 @@ export function confirmView({ facts, certificate = null, asking = null, renewal 
     { label: "Signed in as", value: String(f.user ?? ""), tone: "" },
     { label: "Certificate", ...cert },
   ];
-  const base = { facts: f, title: "Is this your database?", sub: SUB, ok: "", before: "", go: "Yes, this is it", weak: false, back: "No, go back", fingerprint: "", trusts: false };
+  const base = { facts: f, title: "Is this your database?", sub: SUB, ok: "", before: "", go: "Yes, this is it", weak: false, back: "No, go back", fingerprint: "", trusts: false, warn: "", warnTone: "", check: "" };
+  if (mismatch) {
+    return {
+      ...base,
+      variant: "MISMATCH",
+      rows: [
+        { label: "Host", value: hostLine(String(f.host ?? ""), f.port), tone: "" },
+        { label: "Certificate", value: "Didn't match", tone: "diff" },
+      ],
+      warn: `This database's certificate didn't match ${mismatch}'s, so nothing was sent. Something between you and ${mismatch} may be reading your traffic, such as a work network that inspects encrypted connections.`,
+      warnTone: "bad",
+      go: "Go back",
+      weak: true,
+      back: "Continue without checking",
+    };
+  }
+  if (!asking && certificate?.kind === "NOT_VERIFIED") {
+    const box = notCheckedBox(typeof certificate.provider === "string" ? certificate.provider : "", sslMode);
+    return {
+      ...base,
+      variant: "NOT_CHECKED",
+      rows: rows({ value: "Not checked", tone: "diff" }),
+      warn: box.text,
+      warnTone: "warn",
+      check: box.check,
+      go: "Yes, this is it, without checking",
+      weak: true,
+    };
+  }
   if (!asking) {
     const line = certificateLine(certificate);
     return { ...base, variant: "VERIFIED", rows: rows({ value: line.text, tone: line.tone }) };
@@ -163,9 +252,11 @@ export function factsDiffer(before, after) {
 
 // paintConfirm shows view on the page's confirm screen: the elements
 // confirm-title, confirm-sub, confirm-facts, confirm-ok, confirm-before,
-// confirm-go, confirm-back, confirm-details and confirm-fp. Every value is
-// set as text: the issuer is the server's.
-export function paintConfirm(doc, view) {
+// confirm-go, confirm-back, confirm-details and confirm-fp, and with box
+// (the local setup page's install, the one page that has them) the warning
+// box: confirm-warn, confirm-warn-text and confirm-check. Every value is set
+// as text: the issuer is the server's.
+export function paintConfirm(doc, view, { box = false } = {}) {
   const $ = (id) => doc.getElementById(id);
   const text = (id, value) => {
     $(id).textContent = value;
@@ -193,4 +284,10 @@ export function paintConfirm(doc, view) {
   $("confirm-back").textContent = view.back;
   $("confirm-fp").textContent = view.fingerprint;
   $("confirm-details").hidden = view.fingerprint === "";
+  if (!box) return;
+  $("confirm-warn").hidden = !view.warn;
+  $("confirm-warn").className = `strip ${view.warnTone || "warn"} box-action`;
+  $("confirm-warn-text").textContent = view.warn ?? "";
+  $("confirm-check").textContent = view.check ?? "";
+  $("confirm-check").hidden = !view.check;
 }

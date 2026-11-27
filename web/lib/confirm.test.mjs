@@ -149,3 +149,59 @@ test("the painter sets every value as text and shows only what the step has", ()
   assert.equal(d.nodes["confirm-facts"].children.length, 4, "painted again, not added to");
   assert.equal(d.nodes["confirm-details"].hidden, true);
 });
+
+test("sslmode is read and replaced in the string as typed, nothing else changed", async () => {
+  const { sslModeOf, withVerifyFull } = await import("./confirm.js");
+  const supa = pw("postgresql", "postgres", "p%3Fss@db.abc.supabase.co:5432/postgres");
+  assert.equal(sslModeOf(`${supa}?sslmode=require`), "require");
+  assert.equal(sslModeOf(supa), "prefer", "none is the driver's prefer");
+  assert.equal(sslModeOf("host=h sslmode='verify-ca'"), "verify-ca");
+  assert.equal(withVerifyFull(`${supa}?sslmode=require`), `${supa}?sslmode=verify-full`);
+  assert.equal(withVerifyFull(`${supa}?a=1&sslmode=require&b=2`), `${supa}?a=1&sslmode=verify-full&b=2`);
+  assert.equal(withVerifyFull(supa), `${supa}?sslmode=verify-full`);
+  assert.equal(withVerifyFull(`${supa}?a=1`), `${supa}?a=1&sslmode=verify-full`);
+  assert.equal(withVerifyFull("host=h sslmode=require dbname=d"), "host=h sslmode=verify-full dbname=d");
+});
+
+test("a certificate not checked: a warning, the one-click check for a provider's host, and Yes says without checking", () => {
+  const v = confirmView({ facts: FACTS, certificate: { kind: "NOT_VERIFIED", provider: "Supabase" }, sslMode: "require" });
+  assert.equal(v.variant, "NOT_CHECKED");
+  assert.deepEqual(facts(v).at(-1), "Certificate: Not checked");
+  assert.equal(v.warn, "Your connection string has sslmode=require: it's encrypted, but nothing checks the certificate is Supabase's. BasaltDB has Supabase's certificates built in, so it can check.");
+  assert.equal(v.check, "Check the certificate");
+  assert.equal(v.go, "Yes, this is it, without checking");
+  assert.equal(v.weak, true);
+  assert.equal(v.trusts, false);
+
+  const own = confirmView({ facts: FACTS, certificate: { kind: "NOT_VERIFIED" }, sslMode: "require" });
+  assert.equal(own.check, "", "no built-in roots: no button");
+  assert.match(own.warn, /use sslmode=verify-full/);
+  assert.equal(own.go, "Yes, this is it, without checking");
+
+  const failed = confirmView({ facts: FACTS, certificate: { kind: "NOT_VERIFIED", provider: "Supabase" }, sslMode: "require", mismatch: "Supabase" });
+  assert.equal(failed.variant, "MISMATCH");
+  assert.deepEqual(facts(failed), ["Host: db.acme.internal:5432", "Certificate: Didn't match"]);
+  assert.match(failed.warn, /^This database's certificate didn't match Supabase's, so nothing was sent\./);
+  assert.equal(failed.warnTone, "bad");
+  assert.equal(failed.go, "Go back");
+  assert.equal(failed.back, "Continue without checking");
+
+  const verified = confirmView({ facts: FACTS, certificate: { kind: "PROVIDER", issuer: "Supabase" }, sslMode: "verify-full" });
+  assert.equal(verified.warn, "");
+  assert.equal(verified.go, "Yes, this is it");
+});
+
+test("the painter shows the warning box on the page that has one, and leaves a page without it alone", () => {
+  const d = doc();
+  paintConfirm(d, confirmView({ facts: FACTS, certificate: { kind: "NOT_VERIFIED", provider: "Supabase" }, sslMode: "require" }));
+  assert.equal(d.nodes["confirm-go"].textContent, "Yes, this is it, without checking", "the connect page's painter needs no box");
+  for (const id of ["confirm-warn", "confirm-warn-text", "confirm-check"]) d.nodes[id] = { hidden: true, className: "", textContent: "" };
+  paintConfirm(d, confirmView({ facts: FACTS, certificate: { kind: "NOT_VERIFIED", provider: "Supabase" }, sslMode: "require" }), { box: true });
+  assert.equal(d.nodes["confirm-warn"].hidden, false);
+  assert.equal(d.nodes["confirm-warn"].className, "strip warn box-action");
+  assert.match(d.nodes["confirm-warn-text"].textContent, /sslmode=require/);
+  assert.equal(d.nodes["confirm-check"].hidden, false);
+  paintConfirm(d, confirmView({ facts: FACTS, certificate: { kind: "PUBLIC", issuer: "R" } }), { box: true });
+  assert.equal(d.nodes["confirm-warn"].hidden, true);
+  assert.equal(d.nodes["confirm-check"].hidden, true);
+});

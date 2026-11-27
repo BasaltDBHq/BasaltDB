@@ -2,17 +2,25 @@
   "name": "run_history",
   "status": "IMPLEMENTED",
   "milestone": "M1",
-  "description": "The change records of one run of this agent, applied and refused, with the rows each change wrote (cascades included; values of resources the agent cannot read are redacted, values older than 30 days pruned). Newest first, cursor-paginated.",
+  "description": "The change records of one run of this agent, applied and refused, with the rows each change wrote (cascades included; values of resources the agent cannot read are redacted, values older than 30 days pruned). With from and to instead of runId, the reads this agent made outside any run in that period (the from and to of a LOOSE_READS item of list_runs). Newest first, cursor-paginated.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,
-    "required": [
-      "runId"
-    ],
     "properties": {
       "runId": {
         "type": "string",
-        "format": "uuid"
+        "format": "uuid",
+        "description": "The run to list. Give runId, or from and to, not both."
+      },
+      "from": {
+        "type": "string",
+        "format": "date-time",
+        "description": "With to: list the reads outside any run at or after this time (RFC 3339), instead of a run."
+      },
+      "to": {
+        "type": "string",
+        "format": "date-time",
+        "description": "With from: only reads before this time. Must be after from."
       },
       "limit": {
         "type": "integer",
@@ -28,7 +36,20 @@
         "pattern": "^-?id$",
         "description": "id or -id. Default -id (newest first)."
       }
-    }
+    },
+    "oneOf": [
+      {
+        "required": [
+          "runId"
+        ]
+      },
+      {
+        "required": [
+          "from",
+          "to"
+        ]
+      }
+    ]
   },
   "outputSchema": {
     "type": "object",

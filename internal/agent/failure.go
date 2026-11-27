@@ -243,6 +243,9 @@ func sizeLimitText(tool, otherwise string) string {
 // page where the person grants it (RI-16). The message names the table
 // the store named, as its language reads it, never a command.
 func (s *Service) permissionDeniedSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failure) string {
+	if table, ok := s.store.Language.RLSRefusal(te.Message); ok {
+		return s.rlsRefusedSteps(b, table)
+	}
 	b.Stop("The agent role may not do this: do not retry or look for another route.")
 	access := "write"
 	if f.Tool == guidance.ToolQuery {

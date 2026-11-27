@@ -117,12 +117,30 @@
       "name": "write"
     },
     {
-      "description": "The change records of one run of this agent, applied and refused, with the rows each change wrote (cascades included; values of resources the agent cannot read are redacted, values older than 30 days pruned). Newest first, cursor-paginated.",
+      "description": "The change records of one run of this agent, applied and refused, with the rows each change wrote (cascades included; values of resources the agent cannot read are redacted, values older than 30 days pruned). With from and to instead of runId, the reads this agent made outside any run in that period (the from and to of a LOOSE_READS item of list_runs). Newest first, cursor-paginated.",
       "inputSchema": {
         "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "runId"
+            ]
+          },
+          {
+            "required": [
+              "from",
+              "to"
+            ]
+          }
+        ],
         "properties": {
           "cursor": {
             "description": "nextCursor from the previous page.",
+            "type": "string"
+          },
+          "from": {
+            "description": "With to: list the reads outside any run at or after this time (RFC 3339), instead of a run.",
+            "format": "date-time",
             "type": "string"
           },
           "limit": {
@@ -131,6 +149,7 @@
             "type": "integer"
           },
           "runId": {
+            "description": "The run to list. Give runId, or from and to, not both.",
             "format": "uuid",
             "type": "string"
           },
@@ -138,17 +157,19 @@
             "description": "id or -id. Default -id (newest first).",
             "pattern": "^-?id$",
             "type": "string"
+          },
+          "to": {
+            "description": "With from: only reads before this time. Must be after from.",
+            "format": "date-time",
+            "type": "string"
           }
         },
-        "required": [
-          "runId"
-        ],
         "type": "object"
       },
       "name": "run_history"
     },
     {
-      "description": "This agent's own runs, newest first, with what each did: its intent, when it started, how many changes it applied, held, had refused or saw reverted, the rows it wrote and the resources it wrote to. Use it to find the run the person means (\"what you did yesterday on leads\") before run_history, preview_revert and request_revert. Without startTime or endTime you get the newest runs; you do not have to ask the person for a period. startTime and endTime filter on the run's start. Only runs of this agent are listed. Cursor-paginated.",
+      "description": "This agent's own history, newest first, in three kinds of item. A RUN is one of its runs with what it did: its intent, when it started, how many changes it applied, held, had refused or saw reverted, the rows it wrote and the resources it wrote to. A REVERT is a revert the person signed for this agent: its scope, how many rows it restored and skipped, and its intent. LOOSE_READS is the reads this agent made outside any run in one UTC hour: how many, and which resources; run_history with from and to lists them. Use it to find the run the person means (\"what you did yesterday on leads\") before run_history, preview_revert and request_revert, and to answer \"what happened\" without missing a revert or a read made outside a run. Without startTime or endTime you get the newest items; you do not have to ask the person for a period. startTime and endTime filter on each item's time: a run's start, a revert's signature, the start of the hour. Only this agent's records are listed. Cursor-paginated.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -157,7 +178,7 @@
             "type": "string"
           },
           "endTime": {
-            "description": "Only runs that started before this time (RFC 3339). Must be after startTime when both are given.",
+            "description": "Only items before this time (RFC 3339), by the same time. Must be after startTime when both are given.",
             "format": "date-time",
             "type": "string"
           },
@@ -167,12 +188,12 @@
             "type": "integer"
           },
           "sort": {
-            "description": "id or -id. Default -id (newest first; run ids are time-ordered).",
+            "description": "id or -id. Default -id (newest first). Items are ordered by their time, then kind, then id.",
             "pattern": "^-?id$",
             "type": "string"
           },
           "startTime": {
-            "description": "Only runs that started at or after this time (RFC 3339).",
+            "description": "Only items at or after this time (RFC 3339): a run's start, a revert's signature, the start of a LOOSE_READS hour.",
             "format": "date-time",
             "type": "string"
           }

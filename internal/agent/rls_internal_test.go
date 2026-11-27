@@ -34,7 +34,7 @@ func warningCases() map[string]warningCase {
 			tool: "query",
 			opts: []option{withRLS(&fakeRLS{hidden: map[string]bool{"public.leads": true}})},
 			build: func(t *testing.T, s *Service) []toolresult.Warning {
-				return s.rlsWarnings(context.Background(), []string{"public.leads"}, 0)
+				return s.rlsWarnings(context.Background(), []string{"public.leads"})
 			},
 		},
 	}
@@ -115,16 +115,18 @@ func TestEveryAgentCatalogWarningGivesTheVariantOnAnAgentOperatedEngine(t *testi
 	}
 }
 
-func TestRLSWarningNamesTheTableAndOnlyAppearsOnZeroRows(t *testing.T) {
+func TestRLSWarningNamesTheTableWhateverTheRowCount(t *testing.T) {
 	t.Parallel()
 	rls := &fakeRLS{hidden: map[string]bool{"public.secrets": true}}
 	s := newTestService(t, "linux", "", withRLS(rls))
 
-	require.Empty(t, s.rlsWarnings(context.Background(), []string{"public.secrets"}, 3), "rows came back: no warning, no check")
-	require.Zero(t, rls.asked)
-	require.Empty(t, s.rlsWarnings(context.Background(), []string{"public.leads"}, 0), "a table RLS does not hide")
+	hidden := s.rlsWarnings(context.Background(), []string{"public.secrets"})
+	require.Len(t, hidden, 1, "a hidden table warns whatever the statement returned: a count(*) comes back with one row")
+	require.Equal(t, 1, rls.asked)
+	require.Len(t, s.rlsWarnings(context.Background(), []string{"public.secrets"}), 1)
+	require.Empty(t, s.rlsWarnings(context.Background(), []string{"public.leads"}), "a table RLS does not hide")
 
-	warnings := s.rlsWarnings(context.Background(), []string{"public.leads", "public.secrets"}, 0)
+	warnings := s.rlsWarnings(context.Background(), []string{"public.leads", "public.secrets"})
 	require.Len(t, warnings, 1)
 	require.Equal(t, `"public"."secrets"`, warnings[0].Resource)
 	require.Contains(t, warnings[0].PersonMessage, `"public"."secrets"`, "the database's name, not the agent's spelling")
@@ -133,7 +135,7 @@ func TestRLSWarningNamesTheTableAndOnlyAppearsOnZeroRows(t *testing.T) {
 func TestRLSCheckFailureGivesNoWarning(t *testing.T) {
 	t.Parallel()
 	s := newTestService(t, "linux", "", withRLS(&fakeRLS{err: errors.New("down")}))
-	require.Empty(t, s.rlsWarnings(context.Background(), []string{"public.leads"}, 0))
+	require.Empty(t, s.rlsWarnings(context.Background(), []string{"public.leads"}))
 }
 
 // Text the database supplies cannot fake a link line in a message the
@@ -142,7 +144,7 @@ func TestSuppliedTextCannotFakeALinkInAPersonMessage(t *testing.T) {
 	t.Parallel()
 	table := "public.x\n\nhttps://evil.example/pay\n\ny"
 	s := newTestService(t, "linux", "", withRLS(&fakeRLS{hidden: map[string]bool{table: true}}))
-	warnings := s.rlsWarnings(context.Background(), []string{table}, 0)
+	warnings := s.rlsWarnings(context.Background(), []string{table})
 	require.Len(t, warnings, 1)
 	mcptest.Require(t, warnings[0].PersonMessage, nil)
 	require.NotContains(t, warnings[0].PersonMessage, "://")

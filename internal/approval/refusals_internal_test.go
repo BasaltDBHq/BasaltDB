@@ -55,28 +55,28 @@ func TestRevealApprovalErrorByReason(t *testing.T) {
 
 	t.Run("reveal refused", func(t *testing.T) {
 		t.Parallel()
-		pe := pageError(t, ac.revealApprovalError(refused(approvalstore.ApprovalRevealRefused), link))
+		pe := pageError(t, ac.revealApprovalError(context.Background(), uuid.Nil, refused(approvalstore.ApprovalRevealRefused), link))
 		require.Equal(t, guidance.CodeApprovalInvalid, pe.Code)
 		require.Equal(t, guidance.ReasonRevealRefused, pe.Reason)
 	})
 	t.Run("rows changed", func(t *testing.T) {
 		t.Parallel()
-		pe := pageError(t, ac.revealApprovalError(refused(approvalstore.ApprovalRevealRowsChanged), link))
+		pe := pageError(t, ac.revealApprovalError(context.Background(), uuid.Nil, refused(approvalstore.ApprovalRevealRowsChanged), link))
 		require.Equal(t, guidance.CodeApprovalInvalid, pe.Code)
 		require.Equal(t, guidance.ReasonRowsChanged, pe.Reason)
 	})
 	t.Run("not found", func(t *testing.T) {
 		t.Parallel()
-		require.ErrorIs(t, ac.revealApprovalError(refused(approvalstore.ApprovalNotFound), link), linksvc.ErrNotThisAgent)
+		require.ErrorIs(t, ac.revealApprovalError(context.Background(), uuid.Nil, refused(approvalstore.ApprovalNotFound), link), linksvc.ErrNotThisAgent)
 	})
 	t.Run("not open", func(t *testing.T) {
 		t.Parallel()
-		pe := pageError(t, ac.revealApprovalError(refused(approvalstore.ApprovalNotOpen), link))
+		pe := pageError(t, ac.revealApprovalError(context.Background(), uuid.Nil, refused(approvalstore.ApprovalNotOpen), link))
 		require.Equal(t, guidance.CodeApprovalInvalid, pe.Code)
 		require.Equal(t, "the hidden rows cannot be shown: the approval was signed or used meanwhile", pe.Message)
 	})
 	t.Run("other error", func(t *testing.T) {
 		t.Parallel()
-		require.Same(t, errStore, ac.revealApprovalError(errStore, link))
+		require.Same(t, errStore, ac.revealApprovalError(context.Background(), uuid.Nil, errStore, link))
 	})
 }

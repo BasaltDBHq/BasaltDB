@@ -365,12 +365,7 @@ func (rc *Service) applyRevertError(ctx context.Context, r action.Revert, err er
 	case revertstore.RevertAlreadySigned:
 		return alreadySigned(r)
 	case revertstore.RevertWithdrawnReason:
-		// Withdrawn after the page opened: the reason is in the store's
-		// record now, not in r.
-		if now, err := rc.store.Records.FindRevert(ctx, r.ID); err == nil {
-			r = now
-		}
-		return withdrawn(r)
+		return rc.withdrawnMeanwhile(ctx, r)
 	case revertstore.RevertSignature:
 		return rc.badSignature(ctx, r, "the database refused the signature, nothing was reverted: "+refused.Detail)
 	default:
@@ -380,6 +375,18 @@ func (rc *Service) applyRevertError(ctx context.Context, r action.Revert, err er
 
 // refusalOf is the store's refusal in err, the zero refusal (no reason)
 // when err carries none.
+// withdrawnMeanwhile is the page's answer when the store refused a call on
+// revert r because the agent withdrew it after the page opened: shown
+// withdrawn with the reason the store records now, which is not in r. When
+// it cannot be read again, r has no reason, so none is shown; never the
+// store's own text, which carries the reason unchecked.
+func (rc *Service) withdrawnMeanwhile(ctx context.Context, r action.Revert) error {
+	if now, err := rc.store.Records.FindRevert(ctx, r.ID); err == nil {
+		r = now
+	}
+	return withdrawn(r)
+}
+
 func refusalOf(err error) revertstore.RevertRefusalError {
 	if rr := revertstore.RevertRefusalOf(err); rr != nil {
 		return *rr

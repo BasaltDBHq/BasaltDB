@@ -52,6 +52,12 @@ func PluginApprovalsSQL(n guardmodel.Names) string {
 // test of an update from before it.
 const ReleaseVersion = versionRelease
 
+const WithdrawVersion = versionWithdraw
+
+func WithdrawSQL(n guardmodel.Names) string {
+	return renderSQL(n, migrations[versionWithdraw-1].sql)
+}
+
 // StoreNeutralSQL is schema version 10's SQL as the install runs it.
 func StoreNeutralSQL(n guardmodel.Names) string {
 	return renderSQL(n, migrations[versionStoreNeutral-1].sql)

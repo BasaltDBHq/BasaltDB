@@ -83,17 +83,19 @@ func (ac *Service) openApproval(ctx context.Context, id uuid.UUID) (action.Appro
 	return a, nil
 }
 
-// withdrawnMeanwhile is the answer when the store refused a signature
+// withdrawnMeanwhile is the answer when the store refused a page's call
 // because the agent withdrew the held write after the page opened: the
-// page shows it withdrawn, with the agent's reason. Any other refusal is
-// err as it is.
+// page shows it withdrawn, with the agent's reason as the store records it
+// now, or with no reason when it cannot be read again. Never the store's
+// own text, which carries the reason unchecked. Any other refusal is err
+// as it is.
 func (ac *Service) withdrawnMeanwhile(ctx context.Context, id uuid.UUID, err error) error {
 	if ac.core.Errors.ToolError(err).Reason != guidance.ReasonWithdrawn {
 		return err
 	}
 	a, findErr := ac.store.Records.FindApproval(ctx, id)
 	if findErr != nil {
-		return err
+		a = action.Approval{ID: id}
 	}
 	return Withdrawn(a)
 }

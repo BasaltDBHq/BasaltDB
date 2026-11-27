@@ -51,7 +51,7 @@ type withheldWhy struct {
 // other withhold writes nothing.
 func approvalReason(code string) bool {
 	switch code {
-	case problemPluginAwaitingApproval, problemPluginApprovalExpired, problemPluginApprovalMismatch:
+	case problemPluginAwaitingApproval, problemPluginApprovalExpired, problemPluginApprovalWithdrawn, problemPluginApprovalMismatch:
 		return true
 	}
 	return false
@@ -122,7 +122,7 @@ func (a *agentApprovals) check(ctx context.Context, k pluginmodel.EntryKey, d gu
 	case guardmodel.PluginApprovalStatusCancelled:
 		return withheldWhy{code: problemPluginAwaitingApproval, why: whyApprovalReplaced}, false
 	case guardmodel.PluginApprovalStatusWithdrawn:
-		return withheldWhy{code: problemPluginAwaitingApproval, why: whyApprovalWithdrawn}, false
+		return withheldWhy{code: problemPluginApprovalWithdrawn, why: whyApprovalWithdrawn}, false
 	case guardmodel.PluginApprovalStatusExpired:
 		return withheldWhy{code: problemPluginApprovalExpired, why: "its plugin approval expired unsigned at " +
 			r.ExpiresAt.UTC().Format("2006-01-02 15:04") + " UTC; the agent opens a new one with request_plugin, or removes the plugin"}, false

@@ -34,7 +34,9 @@ type fakeJobs struct {
 	doctors []setup.DoctorRequest
 	engines int
 	notMine int
-	refusal error
+	// removeEngine counts the "Remove it from this computer too" presses.
+	removeEngine int
+	refusal      error
 }
 
 func (f *fakeJobs) Engine(context.Context) (setup.EngineAnswer, error) {
@@ -44,6 +46,11 @@ func (f *fakeJobs) Engine(context.Context) (setup.EngineAnswer, error) {
 
 func (f *fakeJobs) NotMine(context.Context) error {
 	f.notMine++
+	return f.refusal
+}
+
+func (f *fakeJobs) RemoveEngine(context.Context) error {
+	f.removeEngine++
 	return f.refusal
 }
 

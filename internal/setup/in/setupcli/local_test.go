@@ -597,18 +597,23 @@ func TestInitSaysWhenTheEngineServiceKeepsStopping(t *testing.T) {
 	require.Contains(t, r.stderr, "did not answer on", "crashes from before this wait are not this wait's")
 }
 
-// After the page's Remove deleted engine.json, basalt init (which the agent
-// runs once more, as the page and its next steps say) goes straight to the
-// administrator dialog with the fixed removal script: no link.
-func TestInitOnARemovedEngineRemovesTheService(t *testing.T) {
+// After the page's Remove deleted engine.json, plain basalt init (which the
+// agent runs once more, as the page and its next steps say) removes
+// nothing by itself: it opens the REMOVED link, whose page asks the
+// person, and only the page's "Remove it from this computer too" has it
+// run the fixed removal script through the administrator dialog.
+func TestInitOnARemovedEngineAsksOnThePageBeforeRemoving(t *testing.T) {
 	t.Parallel()
 	h := newFakeHost()
 	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
-	h.setupCodes = []string{setup.CodeEngineRemoved}
+	h.setupCodes = []string{setup.CodeEngineRemoved, setup.CodeEngineRemoved, setup.CodeEngineRemoved, setup.CodeRemoveAsked}
 	r, read := localInit(t, h)
 	require.Equal(t, cli.ExitOK, r.code, r.stderr)
-	require.Empty(t, h.opened)
-	require.Empty(t, r.stdout)
+	require.Len(t, h.opened, 1)
+	require.Equal(t, localsetup.Job{Job: setup.JobRemoved, Agent: "demo_bot", OSUser: me752(t)}, linkJob(t, h.opened[0]))
+	require.Equal(t, h.opened[0]+"\nbasalt mcp --agent demo_bot\n", r.stdout)
+	require.Contains(t, r.stderr, "basalt: BasaltDB was removed from your database. Open this link to choose: finish removing it from this computer, or set it up again.\n")
+	require.Equal(t, 4, h.setupCalls, "init waited for the press")
 	script, err := osservice.RemoveScript("linux")
 	require.NoError(t, err)
 	require.Equal(t, []string{script}, h.dialogs, "one password, in the administrator dialog")
@@ -618,6 +623,63 @@ func TestInitOnARemovedEngineRemovesTheService(t *testing.T) {
 	require.NotContains(t, read, envAdminURL)
 }
 
+// "Set up BasaltDB again" on that page: the install runs on the page, the
+// engine serves its new config (JOB_UNAVAILABLE to the probe, after it
+// starts again) and init ends with no dialog.
+func TestInitOnARemovedEngineEndsWhenThePageSetsUpAgain(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost()
+	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+	h.setupCodes = []string{setup.CodeEngineRemoved, setup.CodeEngineRemoved, setup.CodeJobUnavailable}
+	r, _ := localInit(t, h, "--agent", "sales_bot")
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
+	require.Empty(t, h.dialogs, "setting up again needs no password")
+	require.Contains(t, r.stderr, "BasaltDB is set up again on this computer. The agent sales_bot can go on.")
+}
+
+// Nothing picked within the wait: init exits 0 and nothing is removed; the
+// next basalt init opens the same page.
+func TestInitOnARemovedEngineRemovesNothingWhenNothingIsPicked(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost()
+	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+	h.setupCodes = []string{setup.CodeEngineRemoved}
+	r, _ := localInitWithin(t, 2*time.Second, h)
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
+	require.Empty(t, h.dialogs)
+	require.Len(t, h.opened, 1)
+	require.Contains(t, r.stderr, "nothing was picked on that page yet")
+}
+
+// basalt init --demo on a removed engine sets the demo up again on the
+// same engine: the install link, no removal, no dialog. A press left from
+// an earlier page, found at the start, removes nothing either.
+func TestInitDemoOnARemovedEngineSetsUpAgain(t *testing.T) {
+	t.Parallel()
+	for _, first := range []string{setup.CodeEngineRemoved, setup.CodeRemoveAsked} {
+		h := newFakeHost()
+		h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+		h.setupCodes = []string{first, setup.CodeEngineRemoved}
+		r, read := localInit(t, h, "--demo")
+		require.Equal(t, cli.ExitOK, r.code, r.stderr)
+		require.Empty(t, h.dialogs, "%s: never the removal", first)
+		require.Equal(t, 1, h.setupCalls, "%s: no wait", first)
+		require.Len(t, h.opened, 1)
+		require.Equal(t, localsetup.Job{Job: setup.JobInstall, Agent: "demo_bot", OSUser: me752(t), Demo: true}, linkJob(t, h.opened[0]))
+		require.Contains(t, r.stderr, "basalt: BasaltDB was removed from your database earlier. Setting up again on this computer's engine.\n")
+		require.Contains(t, r.stdout, "basalt mcp --agent demo_bot")
+		require.NotContains(t, read, envAdminURL)
+	}
+
+	h := newFakeHost()
+	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+	h.setupCodes = []string{setup.CodeRemoveAsked, setup.CodeEngineRemoved}
+	r, _ := localInitWithin(t, 2*time.Second, h)
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
+	require.Empty(t, h.dialogs, "a press found at the start removes nothing: the page asks again")
+	require.Equal(t, setup.JobRemoved, linkJob(t, h.opened[0]).Job)
+}
+
 func TestInitRemovalStops(t *testing.T) {
 	t.Parallel()
 	for _, v := range []struct {
@@ -625,13 +687,13 @@ func TestInitRemovalStops(t *testing.T) {
 		edit func(*fakeHost)
 		want string
 	}{
-		{"dialog closed", func(h *fakeHost) { h.dialogErr = servicespec.ErrDialogCancelled }, "the administrator dialog was closed, so the engine service stays. Run basalt init again"},
+		{"dialog closed", func(h *fakeHost) { h.dialogErr = servicespec.ErrDialogCancelled }, "the administrator dialog was closed, so the engine service stays. Run basalt init again: its page lets the person remove it"},
 		{"no dialog", func(h *fakeHost) { h.noDialog = fmt.Errorf("%w (an SSH session)", servicespec.ErrNoDialog) }, "cannot be shown here"},
 		{"script stopped", func(h *fakeHost) { h.dialogErr = fmt.Errorf("%w: engine.json still exists", osservice.ErrDialogScript) }, "the engine service was not removed"},
 	} {
 		h := newFakeHost()
 		h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
-		h.setupCodes = []string{setup.CodeEngineRemoved}
+		h.setupCodes = []string{setup.CodeEngineRemoved, setup.CodeRemoveAsked, setup.CodeEngineRemoved}
 		v.edit(h)
 		r, _ := localInit(t, h)
 		require.Equal(t, cli.ExitError, r.code, v.name)

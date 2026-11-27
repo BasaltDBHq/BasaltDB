@@ -362,7 +362,7 @@ func applyRevertRefusal(err error) error {
 
 // rescopeRevertRefusal maps RescopeRevert's errors: any scope the guard
 // refused (the hint says why), a failed proof or token check, an expired
-// revert, and the time limit.
+// or withdrawn revert, and the time limit.
 func rescopeRevertRefusal(err error) error {
 	se := guardAnswer(err)
 	if se == nil {
@@ -370,6 +370,8 @@ func rescopeRevertRefusal(err error) error {
 	}
 	code := guard.Code(se.LedgerCode)
 	switch {
+	case code == guard.CodeRevertInvalid && se.Detail == guard.Withdrawn:
+		return refusal(err, revertstore.RevertWithdrawnReason, se.Hint)
 	case code == guard.CodeScopeRefused:
 		return refusal(err, revertstore.RevertInvalid, se.Hint)
 	case code == guard.CodeRevertInvalid && se.Detail == guard.RevertWidenRefused:
@@ -399,7 +401,7 @@ func revealRevertRowsRefusal(err error) error {
 
 // pendingRefusal maps the errors of a page call on a revert that must
 // still wait for the person: REVERT_INVALID with detail proofDetail is
-// proofReason.
+// proofReason, and with detail WITHDRAWN a revert the agent withdrew.
 func pendingRefusal(err error, proofDetail string, proofReason revertstore.RevertReason) error {
 	se := guardAnswer(err)
 	if se == nil {
@@ -407,6 +409,8 @@ func pendingRefusal(err error, proofDetail string, proofReason revertstore.Rever
 	}
 	code := guard.Code(se.LedgerCode)
 	switch {
+	case code == guard.CodeRevertInvalid && se.Detail == guard.Withdrawn:
+		return refusal(err, revertstore.RevertWithdrawnReason, se.Hint)
 	case code == guard.CodeRevertInvalid && se.Detail == proofDetail:
 		return refusal(err, proofReason, se.Detail)
 	case code == guard.CodeRevertInvalid && se.Detail == guard.RevertNotFound:

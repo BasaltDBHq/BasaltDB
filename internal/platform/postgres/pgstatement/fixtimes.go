@@ -3,7 +3,6 @@ package pgstatement
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 
@@ -42,7 +41,7 @@ func fixableValueType(op pganalyze.SQLValueFunctionOp) string {
 // not a time function the engine fixes.
 func fixableType(n *pganalyze.Node) string {
 	if f := n.GetFuncCall(); f != nil {
-		name := strings.TrimPrefix(nameOf(f.GetFuncname()), "pg_catalog.")
+		name := funcName(f)
 		if fixableFunctions[name] && len(f.GetArgs()) == 0 && !f.GetAggStar() && f.GetOver() == nil {
 			return typeTimestamptz
 		}
@@ -100,19 +99,15 @@ type timeSlot struct {
 // (nextval(), random(), ...) is refused with NOT_REPEATABLE, naming it:
 // the write could never apply as approved.
 func PlanTimes(sql string, columns []Column) (*TimeFix, error) {
-	tree, err := pgquery.Parse(sql)
+	tree, node, err := parseOne(sql)
 	if err != nil {
-		return nil, &action.RefusalError{Reason: action.ReasonParseError, Detail: err.Error()}
-	}
-	stmts := tree.GetStmts()
-	if len(stmts) != 1 {
-		return nil, refuse(action.ReasonMultipleStatements, "%d statements; send exactly one", len(stmts))
+		return nil, err
 	}
 	fix := &TimeFix{tree: tree}
-	for _, n := range timeNodes(stmts[0].GetStmt()) {
+	for _, n := range timeNodes(node) {
 		fix.slots = append(fix.slots, timeSlot{typ: fixableType(n), nodes: []*pganalyze.Node{n}})
 	}
-	if ins := stmts[0].GetStmt().GetInsertStmt(); ins != nil && len(ins.GetCols()) == 0 && columns != nil {
+	if ins := node.GetInsertStmt(); ins != nil && len(ins.GetCols()) == 0 && columns != nil {
 		if err := fix.addDefaults(ins, columns); err != nil {
 			return nil, err
 		}
@@ -325,17 +320,20 @@ func insertRows(ins *pganalyze.InsertStmt) []insertRow {
 	return rows
 }
 
-// defaultExpr parses a column default as Postgres prints it.
+// defaultExpr parses a column default as Postgres prints it. The catalog's
+// text failing to parse is the engine's error, never the agent's refusal,
+// so parseOne's refusal is not wrapped.
 func defaultExpr(def string) (*pganalyze.Node, error) {
-	tree, err := pgquery.Parse("SELECT " + def)
-	if err != nil {
-		return nil, fmt.Errorf("a column default: %w", err)
+	_, node, err := parseOne("SELECT " + def)
+	var r *action.RefusalError
+	if errors.As(err, &r) && r.Reason == action.ReasonParseError {
+		return nil, fmt.Errorf("a column default: %s", r.Detail)
 	}
-	stmts := tree.GetStmts()
-	if len(stmts) != 1 || len(stmts[0].GetStmt().GetSelectStmt().GetTargetList()) != 1 {
+	targets := node.GetSelectStmt().GetTargetList()
+	if err != nil || len(targets) != 1 {
 		return nil, fmt.Errorf("a column default is not one expression: %q", def)
 	}
-	return stmts[0].GetStmt().GetSelectStmt().GetTargetList()[0].GetResTarget().GetVal(), nil
+	return targets[0].GetResTarget().GetVal(), nil
 }
 
 // cloneNode is a deep copy of n.
@@ -375,15 +373,15 @@ func FixedFrom(held, sent string, columns []Column) bool {
 	if err != nil {
 		return false
 	}
-	tmpl, err := pgquery.Parse(text)
-	if err != nil || len(tmpl.GetStmts()) != 1 {
+	_, tmpl, err := parseOne(text)
+	if err != nil {
 		return false
 	}
-	tree, err := pgquery.Parse(held)
-	if err != nil || len(tree.GetStmts()) != 1 {
+	_, got, err := parseOne(held)
+	if err != nil {
 		return false
 	}
-	return sameTree(tmpl.GetStmts()[0].GetStmt().ProtoReflect(), tree.GetStmts()[0].GetStmt().ProtoReflect())
+	return sameTree(tmpl.ProtoReflect(), got.ProtoReflect())
 }
 
 // sameTree compares two parse trees field by field, ignoring where in the
@@ -442,11 +440,11 @@ func parsedLiteral(value, typ string) *pganalyze.Node {
 	if err != nil {
 		return nil
 	}
-	tree, err := pgquery.Parse(text)
-	if err != nil || len(tree.GetStmts()) != 1 {
+	_, node, err := parseOne(text)
+	if err != nil {
 		return nil
 	}
-	targets := tree.GetStmts()[0].GetStmt().GetSelectStmt().GetTargetList()
+	targets := node.GetSelectStmt().GetTargetList()
 	if len(targets) != 1 {
 		return nil
 	}

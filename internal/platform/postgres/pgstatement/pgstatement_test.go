@@ -25,57 +25,55 @@ func TestClassify(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		sql     string
-		kind    pgstatement.Kind
 		op      action.Op
 		refused action.RefusalReason
 		tables  []string
-		funcs   []string
 		params  int
 	}{
 		{
-			sql:  "SELECT id, lower(name) FROM public.leads l JOIN deals d ON d.lead_id = l.id WHERE l.created_at > now() - interval '1 day'",
-			kind: pgstatement.KindRead, op: action.OpRead, tables: []string{"deals", "public.leads"}, funcs: []string{"lower", "now"},
+			sql: "SELECT id, lower(name) FROM public.leads l JOIN deals d ON d.lead_id = l.id WHERE l.created_at > now() - interval '1 day'",
+			op:  action.OpRead, tables: []string{"deals", "public.leads"},
 		},
-		{sql: "SELECT count(id), coalesce(max(score), 0) FROM leads", kind: pgstatement.KindRead, op: action.OpRead, tables: []string{"leads"}, funcs: []string{"count", "max"}},
-		{sql: "WITH recent AS (SELECT * FROM leads) SELECT * FROM recent", kind: pgstatement.KindRead, op: action.OpRead, tables: []string{"leads"}, funcs: []string{}},
-		{sql: "SELECT * FROM leads WHERE id = $1 AND status = $3", kind: pgstatement.KindRead, op: action.OpRead, tables: []string{"leads"}, funcs: []string{}, params: 3},
-		{sql: "SELECT pg_catalog.lower('A')", kind: pgstatement.KindRead, op: action.OpRead, tables: []string{}, funcs: []string{"pg_catalog.lower"}},
-		{sql: "UPDATE cases SET status = $1 WHERE id = $2", kind: pgstatement.KindWrite, op: action.OpUpdate, tables: []string{"cases"}, funcs: []string{}, params: 2},
-		{sql: "INSERT INTO leads(name) VALUES ('a') ON CONFLICT (name) DO UPDATE SET name = excluded.name", kind: pgstatement.KindWrite, op: action.OpInsert, tables: []string{"leads"}, funcs: []string{}},
-		{sql: "DELETE FROM leads WHERE id IN (SELECT lead_id FROM spam) RETURNING id", kind: pgstatement.KindWrite, op: action.OpDelete, tables: []string{"leads", "spam"}, funcs: []string{}},
-		{sql: "WITH s AS (SELECT id FROM spam) DELETE FROM leads WHERE id IN (SELECT id FROM s)", kind: pgstatement.KindWrite, op: action.OpDelete, tables: []string{"leads", "spam"}, funcs: []string{}},
+		{sql: "SELECT count(id), coalesce(max(score), 0) FROM leads", op: action.OpRead, tables: []string{"leads"}},
+		{sql: "WITH recent AS (SELECT * FROM leads) SELECT * FROM recent", op: action.OpRead, tables: []string{"leads"}},
+		{sql: "SELECT * FROM leads WHERE id = $1 AND status = $3", op: action.OpRead, tables: []string{"leads"}, params: 3},
+		{sql: "SELECT pg_catalog.lower('A')", op: action.OpRead, tables: []string{}},
+		{sql: "UPDATE cases SET status = $1 WHERE id = $2", op: action.OpUpdate, tables: []string{"cases"}, params: 2},
+		{sql: "INSERT INTO leads(name) VALUES ('a') ON CONFLICT (name) DO UPDATE SET name = excluded.name", op: action.OpInsert, tables: []string{"leads"}},
+		{sql: "DELETE FROM leads WHERE id IN (SELECT lead_id FROM spam) RETURNING id", op: action.OpDelete, tables: []string{"leads", "spam"}},
+		{sql: "WITH s AS (SELECT id FROM spam) DELETE FROM leads WHERE id IN (SELECT id FROM s)", op: action.OpDelete, tables: []string{"leads", "spam"}},
 
 		{sql: "SELECT 1; DELETE FROM leads", refused: action.ReasonMultipleStatements},
 		{sql: "SELEC 1", refused: action.ReasonParseError},
 		{sql: "", refused: action.ReasonMultipleStatements},
-		{sql: "WITH d AS (DELETE FROM leads RETURNING id) SELECT count(*) FROM d", kind: pgstatement.KindRead, op: action.OpRead, refused: action.ReasonDataModifyingWith, tables: []string{"leads"}, funcs: []string{"count"}},
-		{sql: "WITH d AS (DELETE FROM a RETURNING id) INSERT INTO b SELECT id FROM d", kind: pgstatement.KindWrite, op: action.OpInsert, refused: action.ReasonDataModifyingWith, tables: []string{"a", "b"}, funcs: []string{}},
-		{sql: "COPY leads TO '/tmp/x'", kind: pgstatement.KindUtility, op: "CopyStmt", refused: action.ReasonUtility, tables: []string{"leads"}, funcs: []string{}},
-		{sql: "COPY leads FROM PROGRAM 'curl evil'", kind: pgstatement.KindUtility, op: "CopyStmt", refused: action.ReasonUtility, tables: []string{"leads"}, funcs: []string{}},
-		{sql: "DROP TABLE leads", kind: pgstatement.KindDDL, op: "DropStmt", refused: action.ReasonDDL, tables: []string{}, funcs: []string{}},
-		{sql: "ALTER TABLE leads DISABLE TRIGGER ALL", kind: pgstatement.KindDDL, op: "AlterTableStmt", refused: action.ReasonDDL, tables: []string{"leads"}, funcs: []string{}},
-		{sql: "TRUNCATE leads", kind: pgstatement.KindDDL, op: "TruncateStmt", refused: action.ReasonDDL, tables: []string{"leads"}, funcs: []string{}},
-		{sql: "CREATE TABLE x (id int)", kind: pgstatement.KindDDL, op: "CreateStmt", refused: action.ReasonDDL, tables: []string{"x"}, funcs: []string{}},
-		{sql: "GRANT SELECT ON leads TO public", kind: pgstatement.KindDDL, op: "GrantStmt", refused: action.ReasonDDL, tables: []string{"leads"}, funcs: []string{}},
-		{sql: "SELECT * INTO copy_of_leads FROM leads", kind: pgstatement.KindDDL, op: action.OpRead, refused: action.ReasonSelectInto, tables: []string{"copy_of_leads", "leads"}, funcs: []string{}},
-		{sql: "SELECT * FROM leads FOR UPDATE", kind: pgstatement.KindRead, op: action.OpRead, refused: action.ReasonLockingRead, tables: []string{"leads"}, funcs: []string{}},
-		{sql: "SELECT pg_sleep(100)", kind: pgstatement.KindRead, op: action.OpRead, refused: action.ReasonFunction, tables: []string{}, funcs: []string{"pg_sleep"}},
-		{sql: "SELECT pg_read_file('/etc/passwd')", kind: pgstatement.KindRead, op: action.OpRead, refused: action.ReasonFunction, tables: []string{}, funcs: []string{"pg_read_file"}},
-		{sql: "SELECT * FROM dblink('host=x', 'select 1') AS t(a int)", kind: pgstatement.KindRead, op: action.OpRead, refused: action.ReasonFunction, tables: []string{}, funcs: []string{"dblink"}},
-		{sql: "SELECT lo_import('/etc/passwd')", kind: pgstatement.KindRead, op: action.OpRead, refused: action.ReasonFunction, tables: []string{}, funcs: []string{"lo_import"}},
-		{sql: "SELECT set_config('basalt.intent', 'x', false)", kind: pgstatement.KindRead, op: action.OpRead, refused: action.ReasonFunction, tables: []string{}, funcs: []string{"set_config"}},
-		{sql: "SELECT nextval('leads_id_seq')", kind: pgstatement.KindRead, op: action.OpRead, refused: action.ReasonFunction, tables: []string{}, funcs: []string{"nextval"}},
-		{sql: "UPDATE leads SET name = pg_catalog.pg_advisory_lock(1)::text", kind: pgstatement.KindWrite, op: action.OpUpdate, refused: action.ReasonFunction, tables: []string{"leads"}, funcs: []string{"pg_catalog.pg_advisory_lock"}},
-		{sql: "SELECT net.http_post('https://x', '{}')", kind: pgstatement.KindRead, op: action.OpRead, refused: action.ReasonFunction, tables: []string{}, funcs: []string{"net.http_post"}},
-		{sql: "SELECT public.lower('x')", kind: pgstatement.KindRead, op: action.OpRead, refused: action.ReasonFunction, tables: []string{}, funcs: []string{"public.lower"}},
-		{sql: "SELECT * FROM leads WHERE id = (SELECT max(id) FROM leads WHERE pg_sleep(1) IS NOT NULL)", kind: pgstatement.KindRead, op: action.OpRead, refused: action.ReasonFunction, tables: []string{"leads"}, funcs: []string{"max", "pg_sleep"}},
-		{sql: "SET basalt.intent = 'x'", kind: pgstatement.KindUtility, op: "VariableSetStmt", refused: action.ReasonUtility, tables: []string{}, funcs: []string{}},
-		{sql: "SET session_replication_role = replica", kind: pgstatement.KindUtility, op: "VariableSetStmt", refused: action.ReasonUtility, tables: []string{}, funcs: []string{}},
-		{sql: "DO $$ BEGIN DELETE FROM leads; END $$", kind: pgstatement.KindUtility, op: "DoStmt", refused: action.ReasonUtility, tables: []string{}, funcs: []string{}},
-		{sql: "EXPLAIN ANALYZE DELETE FROM leads", kind: pgstatement.KindUtility, op: "ExplainStmt", refused: action.ReasonUtility, tables: []string{"leads"}, funcs: []string{}},
-		{sql: "MERGE INTO leads l USING src s ON l.id = s.id WHEN MATCHED THEN DELETE", kind: pgstatement.KindWrite, op: action.OpMerge, refused: action.ReasonMerge, tables: []string{"leads", "src"}, funcs: []string{}},
-		{sql: "BEGIN", kind: pgstatement.KindUtility, op: "TransactionStmt", refused: action.ReasonUtility, tables: []string{}, funcs: []string{}},
-		{sql: "CALL do_things()", kind: pgstatement.KindUtility, op: "CallStmt", refused: action.ReasonUtility, tables: []string{}, funcs: []string{"do_things"}},
+		{sql: "WITH d AS (DELETE FROM leads RETURNING id) SELECT count(*) FROM d", op: action.OpRead, refused: action.ReasonDataModifyingWith, tables: []string{"leads"}},
+		{sql: "WITH d AS (DELETE FROM a RETURNING id) INSERT INTO b SELECT id FROM d", op: action.OpInsert, refused: action.ReasonDataModifyingWith, tables: []string{"a", "b"}},
+		{sql: "COPY leads TO '/tmp/x'", op: action.OpOther, refused: action.ReasonUtility, tables: []string{"leads"}},
+		{sql: "COPY leads FROM PROGRAM 'curl evil'", op: action.OpOther, refused: action.ReasonUtility, tables: []string{"leads"}},
+		{sql: "DROP TABLE leads", op: action.OpOther, refused: action.ReasonDDL, tables: []string{}},
+		{sql: "ALTER TABLE leads DISABLE TRIGGER ALL", op: action.OpOther, refused: action.ReasonDDL, tables: []string{"leads"}},
+		{sql: "TRUNCATE leads", op: action.OpOther, refused: action.ReasonDDL, tables: []string{"leads"}},
+		{sql: "CREATE TABLE x (id int)", op: action.OpOther, refused: action.ReasonDDL, tables: []string{"x"}},
+		{sql: "GRANT SELECT ON leads TO public", op: action.OpOther, refused: action.ReasonDDL, tables: []string{"leads"}},
+		{sql: "SELECT * INTO copy_of_leads FROM leads", op: action.OpRead, refused: action.ReasonSelectInto, tables: []string{"copy_of_leads", "leads"}},
+		{sql: "SELECT * FROM leads FOR UPDATE", op: action.OpRead, refused: action.ReasonLockingRead, tables: []string{"leads"}},
+		{sql: "SELECT pg_sleep(100)", op: action.OpRead, refused: action.ReasonFunction, tables: []string{}},
+		{sql: "SELECT pg_read_file('/etc/passwd')", op: action.OpRead, refused: action.ReasonFunction, tables: []string{}},
+		{sql: "SELECT * FROM dblink('host=x', 'select 1') AS t(a int)", op: action.OpRead, refused: action.ReasonFunction, tables: []string{}},
+		{sql: "SELECT lo_import('/etc/passwd')", op: action.OpRead, refused: action.ReasonFunction, tables: []string{}},
+		{sql: "SELECT set_config('basalt.intent', 'x', false)", op: action.OpRead, refused: action.ReasonFunction, tables: []string{}},
+		{sql: "SELECT nextval('leads_id_seq')", op: action.OpRead, refused: action.ReasonFunction, tables: []string{}},
+		{sql: "UPDATE leads SET name = pg_catalog.pg_advisory_lock(1)::text", op: action.OpUpdate, refused: action.ReasonFunction, tables: []string{"leads"}},
+		{sql: "SELECT net.http_post('https://x', '{}')", op: action.OpRead, refused: action.ReasonFunction, tables: []string{}},
+		{sql: "SELECT public.lower('x')", op: action.OpRead, refused: action.ReasonFunction, tables: []string{}},
+		{sql: "SELECT * FROM leads WHERE id = (SELECT max(id) FROM leads WHERE pg_sleep(1) IS NOT NULL)", op: action.OpRead, refused: action.ReasonFunction, tables: []string{"leads"}},
+		{sql: "SET basalt.intent = 'x'", op: action.OpOther, refused: action.ReasonUtility, tables: []string{}},
+		{sql: "SET session_replication_role = replica", op: action.OpOther, refused: action.ReasonUtility, tables: []string{}},
+		{sql: "DO $$ BEGIN DELETE FROM leads; END $$", op: action.OpOther, refused: action.ReasonUtility, tables: []string{}},
+		{sql: "EXPLAIN ANALYZE DELETE FROM leads", op: action.OpOther, refused: action.ReasonUtility, tables: []string{"leads"}},
+		{sql: "MERGE INTO leads l USING src s ON l.id = s.id WHEN MATCHED THEN DELETE", op: action.OpMerge, refused: action.ReasonMerge, tables: []string{"leads", "src"}},
+		{sql: "BEGIN", op: action.OpOther, refused: action.ReasonUtility, tables: []string{}},
+		{sql: "CALL do_things()", op: action.OpOther, refused: action.ReasonUtility, tables: []string{}},
 	}
 	for _, c := range cases {
 		t.Run(c.sql, func(t *testing.T) {
@@ -85,10 +83,8 @@ func TestClassify(t *testing.T) {
 			if c.refused == action.ReasonParseError || c.refused == action.ReasonMultipleStatements {
 				return
 			}
-			require.Equal(t, c.kind, stmt.Kind)
 			require.Equal(t, c.op, stmt.Op)
 			require.Equal(t, c.tables, stmt.Tables)
-			require.Equal(t, c.funcs, stmt.Functions)
 			require.Equal(t, c.params, stmt.ParamCount)
 		})
 	}
@@ -166,6 +162,37 @@ func TestRefusalDetailUsesTheSQLWord(t *testing.T) {
 			require.Equal(t, c.detail, re.Detail)
 		})
 	}
+}
+
+// A DDL or utility statement's op is OTHER, never its parse node name; the
+// node name is the refusal's detail.
+func TestOtherStatementsNameTheirNodeInTheDetail(t *testing.T) {
+	t.Parallel()
+	for sql, node := range map[string]string{
+		"DROP TABLE leads":        "DropStmt",
+		"SET basalt.intent = 'x'": "VariableSetStmt",
+		"COPY leads TO '/tmp/x'":  "CopyStmt",
+		"BEGIN":                   "TransactionStmt",
+		"MERGE INTO leads l USING src s ON l.id = s.id WHEN MATCHED THEN DELETE": "MERGE",
+	} {
+		stmt, err := pgstatement.Check(sql, action.ToolWrite)
+		var re *action.RefusalError
+		require.ErrorAs(t, err, &re, sql)
+		require.Equal(t, node, re.Detail, sql)
+		if node != "MERGE" {
+			require.Equal(t, action.OpOther, stmt.Op, sql)
+		}
+	}
+}
+
+// The first function off the allowlist, in name order, is the one a
+// refusal names, as written.
+func TestFunctionRefusalNamesTheFirstByName(t *testing.T) {
+	t.Parallel()
+	_, err := pgstatement.Check("SELECT pg_sleep(1), pg_catalog.pg_advisory_lock(1), dblink('x', 'y')", action.ToolQuery)
+	require.EqualError(t, err, "FUNCTION_NOT_ALLOWED: dblink is not on the function allowlist")
+	_, err = pgstatement.Check("SELECT pg_sleep(1), pg_catalog.pg_advisory_lock(1)", action.ToolQuery)
+	require.EqualError(t, err, "FUNCTION_NOT_ALLOWED: pg_catalog.pg_advisory_lock is not on the function allowlist")
 }
 
 // The guard's own functions are never callable through the SQL tools: the

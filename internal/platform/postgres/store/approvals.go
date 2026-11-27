@@ -105,7 +105,7 @@ func heldStatement(req approval.HeldRequest) (revealRun, error) {
 	if req.Kind != approval.RequestSQL {
 		return revealRun{}, fmt.Errorf("the held request is of family %q, not SQL", req.Kind)
 	}
-	stmt, err := Check(req.Statement, action.ToolWrite)
+	stmt, err := pgstatement.Check(req.Statement, action.ToolWrite)
 	if err != nil {
 		return revealRun{}, fmt.Errorf("the held statement no longer parses: %w", err)
 	}

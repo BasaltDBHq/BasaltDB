@@ -65,6 +65,16 @@ func TestCheckCountsPlaceholders(t *testing.T) {
 	require.Equal(t, action.OpUpdate, stmt.Op)
 }
 
+// A statement with no placeholders says so, not "($1..$0)".
+func TestCheckCountsNoPlaceholders(t *testing.T) {
+	t.Parallel()
+	c := &checker{stmt: action.Statement{Op: action.OpRead}}
+	_, err := sqllang.New(c).Check(agentstore.Request{Text: "SELECT 1", Params: []any{1, 2}}, action.ToolQuery)
+	var ae *guidance.ArgumentError
+	require.ErrorAs(t, err, &ae)
+	require.Equal(t, "the statement uses no parameters but 2 were given", ae.Message)
+}
+
 func TestCheckLimitsParamsTo64KiB(t *testing.T) {
 	t.Parallel()
 	c := &checker{stmt: action.Statement{Op: action.OpRead, ParamCount: 1}}

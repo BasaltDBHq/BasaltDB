@@ -150,13 +150,12 @@ func actionTool(op action.Op) string {
 	return guidance.ToolWrite
 }
 
-// refusalOp is the op the guard's record_refusal accepts.
+// refusalOp is the op the guard's record_refusal accepts: one of the four
+// the ledger records by name, or OTHER (MERGE, a statement the check
+// classifies as OTHER, and one that did not parse).
 func refusalOp(op action.Op) action.Op {
-	switch op {
-	case action.OpRead, action.OpInsert, action.OpUpdate, action.OpDelete:
+	if op == action.OpRead || op == action.OpInsert || op == action.OpUpdate || op == action.OpDelete {
 		return op
-	case action.OpMerge, action.OpOther:
-		return action.OpOther
 	}
 	return action.OpOther
 }

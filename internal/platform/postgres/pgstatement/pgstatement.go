@@ -21,42 +21,8 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-// Kind is the statement class the policy decides on.
-type Kind string
-
-// Statement kinds.
-const (
-	KindRead    Kind = "READ"
-	KindWrite   Kind = "WRITE"
-	KindDDL     Kind = "DDL"
-	KindUtility Kind = "UTILITY"
-)
-
-// Statement is what the engine needs from one agent statement.
-type Statement struct {
-	Kind Kind
-	Op   action.Op
-	// Tables are the relations the statement names, as written
-	// (schema-qualified when the agent qualified them), sorted. CTE names are
-	// left out.
-	Tables []string
-	// Target is the relation an INSERT, UPDATE or DELETE writes, as
-	// written like Tables; "" for any other statement.
-	Target string
-	// Functions are the functions the statement calls, as written, sorted.
-	Functions []string
-	// ParamCount is the highest $n placeholder used, 0 when none.
-	ParamCount int
-	// RowSources are the relations of a SELECT whose rows the engine can
-	// identify (recorded reads); nil when the statement's shape cannot
-	// carry row identity, such as an aggregate.
-	RowSources []RowSource
-}
-
 // sqlWord is the SQL command for op, as a refusal's detail names it: READ
-// is Basalt's op, the SQL word for it is SELECT. A statement outside the
-// four ops READ, INSERT, UPDATE and DELETE (MERGE included) carries its
-// parse node name as its op and is recorded as OTHER (action.OpOther).
+// is Basalt's op, the SQL word for it is SELECT.
 func sqlWord(op action.Op) string {
 	if op == action.OpRead {
 		return "SELECT"
@@ -71,7 +37,7 @@ func refuse(reason action.RefusalReason, format string, args ...any) *action.Ref
 // Check parses sql and applies the policy for tool. It returns the
 // classified statement, or a *action.RefusalError with as much of the statement as
 // was classified (the op of a refused statement is still recorded).
-func Check(sql string, tool action.Tool) (Statement, error) {
+func Check(sql string, tool action.Tool) (action.Statement, error) {
 	stmt, err := Classify(sql)
 	if err != nil {
 		return stmt, err
@@ -82,7 +48,7 @@ func Check(sql string, tool action.Tool) (Statement, error) {
 	return stmt, nil
 }
 
-func checkTool(stmt Statement, tool action.Tool) *action.RefusalError {
+func checkTool(stmt action.Statement, tool action.Tool) *action.RefusalError {
 	switch tool {
 	case action.ToolQuery:
 		if stmt.Op != action.OpRead {
@@ -101,37 +67,34 @@ func checkTool(stmt Statement, tool action.Tool) *action.RefusalError {
 // Classify parses one SQL string and applies the checks that do not depend
 // on the tool: one statement, no DDL or utility statements, no SELECT INTO,
 // no locking reads, no MERGE, no data-modifying WITH, functions on the
-// allowlist only.
-func Classify(sql string) (Statement, error) {
-	tree, err := pgquery.Parse(sql)
+// allowlist only. The statement's Handle is its []RowSource (rowSources),
+// nil for anything but a SELECT whose rows carry identity. A DDL or utility
+// statement's op is OTHER; the refusal's detail names its parse node.
+func Classify(sql string) (action.Statement, error) {
+	_, node, err := parseOne(sql)
 	if err != nil {
-		return Statement{}, &action.RefusalError{Reason: action.ReasonParseError, Detail: err.Error()}
+		return action.Statement{}, err
 	}
-	stmts := tree.GetStmts()
-	if len(stmts) != 1 {
-		return Statement{}, refuse(action.ReasonMultipleStatements, "%d statements; send exactly one", len(stmts))
-	}
-	node := stmts[0].GetStmt()
-
 	w := &walker{tables: map[string]bool{}, funcs: map[string]bool{}, ctes: map[string]bool{}}
 	w.visit(node.ProtoReflect())
-	stmt := Statement{Tables: w.sortedTables(), Functions: slices.AppendSeq([]string{}, maps.Keys(w.funcs)), ParamCount: w.maxParam}
+	stmt := action.Statement{Tables: w.sortedTables(), Target: targetOf(node), ParamCount: w.maxParam}
+	var sources []RowSource // typed even when nil: the store reads it back as []RowSource
+	stmt.Handle = sources
 
-	slices.Sort(stmt.Functions) // non-nil, so an empty list is [] and not null
-
-	stmt.Target = targetOf(node)
-	var reason action.RefusalReason
-	stmt.Kind, stmt.Op, reason = classifyNode(node)
+	op, word, reason := classifyNode(node)
+	stmt.Op = op
 	if reason != "" {
-		return stmt, refuse(reason, "%s", sqlWord(stmt.Op))
+		return stmt, refuse(reason, "%s", word)
 	}
 	if sel := node.GetSelectStmt(); sel != nil {
-		stmt.RowSources = rowSources(sel)
+		stmt.Handle = rowSources(sel)
 	}
 	if w.dataModifyingCTE != "" {
 		return stmt, refuse(action.ReasonDataModifyingWith, "WITH %s changes data", w.dataModifyingCTE)
 	}
-	for _, f := range stmt.Functions {
+	// Sorted, so the refusal names the same function every time; the name
+	// is the one written, schema and all.
+	for _, f := range slices.Sorted(maps.Keys(w.funcs)) {
 		if !functionAllowed(f) {
 			return stmt, refuse(action.ReasonFunction, "%s is not on the function allowlist", f)
 		}
@@ -139,33 +102,59 @@ func Classify(sql string) (Statement, error) {
 	return stmt, nil
 }
 
-// targetOf is the relation the statement writes, as written; "" for a
-// statement that writes none. It is the first relation written in
-// statement order: the WITH clause's data-modifying queries as written
-// (each by this same rule, so a nested WITH comes first), then the
-// statement's own INSERT, UPDATE, DELETE or MERGE target. So a refused
-// "WITH d AS (DELETE FROM payroll ...) INSERT INTO audit_log ..." names
-// payroll, the first thing it changes as a person reads it, and a
-// SELECT or a table it only reads never becomes the target.
+// parseOne parses sql, which must be exactly one statement, and returns the
+// parse tree and that statement, or a *action.RefusalError: PARSE_ERROR,
+// or MULTIPLE_STATEMENTS for none or more than one.
+func parseOne(sql string) (*pganalyze.ParseResult, *pganalyze.Node, error) {
+	tree, err := pgquery.Parse(sql)
+	if err != nil {
+		return nil, nil, &action.RefusalError{Reason: action.ReasonParseError, Detail: err.Error()}
+	}
+	stmts := tree.GetStmts()
+	if len(stmts) != 1 {
+		return nil, nil, refuse(action.ReasonMultipleStatements, "%d statements; send exactly one", len(stmts))
+	}
+	return tree, stmts[0].GetStmt(), nil
+}
+
+// targetOf is the relation a write writes, as written: a data-modifying
+// WITH's first, then the statement's own (writtenRelation); "" for any
+// other statement.
 func targetOf(stmt *pganalyze.Node) string {
 	var with *pganalyze.WithClause
-	var rel *pganalyze.RangeVar
 	switch n := stmt.GetNode().(type) {
 	case *pganalyze.Node_SelectStmt:
 		with = n.SelectStmt.GetWithClause()
 	case *pganalyze.Node_InsertStmt:
-		with, rel = n.InsertStmt.GetWithClause(), n.InsertStmt.GetRelation()
+		with = n.InsertStmt.GetWithClause()
 	case *pganalyze.Node_UpdateStmt:
-		with, rel = n.UpdateStmt.GetWithClause(), n.UpdateStmt.GetRelation()
+		with = n.UpdateStmt.GetWithClause()
 	case *pganalyze.Node_DeleteStmt:
-		with, rel = n.DeleteStmt.GetWithClause(), n.DeleteStmt.GetRelation()
+		with = n.DeleteStmt.GetWithClause()
 	case *pganalyze.Node_MergeStmt:
-		with, rel = n.MergeStmt.GetWithClause(), n.MergeStmt.GetRelation()
+		with = n.MergeStmt.GetWithClause()
 	}
 	for _, c := range with.GetCtes() {
 		if t := targetOf(c.GetCommonTableExpr().GetCtequery()); t != "" {
 			return t
 		}
+	}
+	return writtenRelation(stmt)
+}
+
+// writtenRelation is the relation an INSERT, UPDATE, DELETE or MERGE
+// itself writes, as written, or "" for any other statement.
+func writtenRelation(stmt *pganalyze.Node) string {
+	var rel *pganalyze.RangeVar
+	switch n := stmt.GetNode().(type) {
+	case *pganalyze.Node_InsertStmt:
+		rel = n.InsertStmt.GetRelation()
+	case *pganalyze.Node_UpdateStmt:
+		rel = n.UpdateStmt.GetRelation()
+	case *pganalyze.Node_DeleteStmt:
+		rel = n.DeleteStmt.GetRelation()
+	case *pganalyze.Node_MergeStmt:
+		rel = n.MergeStmt.GetRelation()
 	}
 	if rel == nil {
 		return ""
@@ -173,30 +162,35 @@ func targetOf(stmt *pganalyze.Node) string {
 	return qualifiedName(rel.GetSchemaname(), rel.GetRelname())
 }
 
-func classifyNode(stmt *pganalyze.Node) (Kind, action.Op, action.RefusalReason) {
+// classifyNode returns the statement's op, the word a refusal's detail
+// names it by, and the reason it is refused, "" when it is not. A statement
+// outside READ, INSERT, UPDATE, DELETE and MERGE is OTHER, named by its
+// parse node (DropStmt, VariableSetStmt, ...): no parse node name reaches
+// an op.
+func classifyNode(stmt *pganalyze.Node) (action.Op, string, action.RefusalReason) {
 	switch n := stmt.GetNode().(type) {
 	case *pganalyze.Node_SelectStmt:
 		if n.SelectStmt.GetIntoClause() != nil {
-			return KindDDL, action.OpRead, action.ReasonSelectInto
+			return action.OpRead, sqlWord(action.OpRead), action.ReasonSelectInto
 		}
 		if len(n.SelectStmt.GetLockingClause()) > 0 {
-			return KindRead, action.OpRead, action.ReasonLockingRead
+			return action.OpRead, sqlWord(action.OpRead), action.ReasonLockingRead
 		}
-		return KindRead, action.OpRead, ""
+		return action.OpRead, sqlWord(action.OpRead), ""
 	case *pganalyze.Node_InsertStmt:
-		return KindWrite, action.OpInsert, ""
+		return action.OpInsert, sqlWord(action.OpInsert), ""
 	case *pganalyze.Node_UpdateStmt:
-		return KindWrite, action.OpUpdate, ""
+		return action.OpUpdate, sqlWord(action.OpUpdate), ""
 	case *pganalyze.Node_DeleteStmt:
-		return KindWrite, action.OpDelete, ""
+		return action.OpDelete, sqlWord(action.OpDelete), ""
 	case *pganalyze.Node_MergeStmt:
-		return KindWrite, action.OpMerge, action.ReasonMerge
+		return action.OpMerge, sqlWord(action.OpMerge), action.ReasonMerge
 	}
 	name := nodeName(stmt)
 	if isDDL(name) {
-		return KindDDL, action.Op(name), action.ReasonDDL
+		return action.OpOther, name, action.ReasonDDL
 	}
-	return KindUtility, action.Op(name), action.ReasonUtility
+	return action.OpOther, name, action.ReasonUtility
 }
 
 func nodeName(stmt *pganalyze.Node) string {
@@ -289,6 +283,12 @@ func (w *walker) sortedTables() []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// funcName is the name a call names, without a pg_catalog qualifier: the
+// name the engine's function lists know it by.
+func funcName(f *pganalyze.FuncCall) string {
+	return strings.TrimPrefix(nameOf(f.GetFuncname()), "pg_catalog.")
 }
 
 func nameOf(parts []*pganalyze.Node) string {

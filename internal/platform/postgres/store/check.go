@@ -13,14 +13,9 @@ import (
 // the row sources Read versions, or an *action.RefusalError with as
 // much of the statement as was classified (a refused statement's op is
 // still recorded).
+// It needs no connection.
 func (s *Store) Check(sql string, tool action.Tool) (action.Statement, error) {
-	return Check(sql, tool)
-}
-
-// Check is Store.Check, which needs no connection.
-func Check(sql string, tool action.Tool) (action.Statement, error) {
-	stmt, err := pgstatement.Check(sql, tool)
-	return statementOf(stmt), err
+	return pgstatement.Check(sql, tool)
 }
 
 // HeldFrom reports whether held is exactly what holdPlan made of sent: sent
@@ -91,10 +86,4 @@ func (s *Store) holdPlan(ctx context.Context, req agentstore.Request) (agentstor
 		return req, nil, err
 	}
 	return agentstore.Request{Text: text, Params: req.Params}, assigned, nil
-}
-
-// statementOf is the checked statement as the service takes it: the row
-// sources a recorded read versions travel as its opaque handle.
-func statementOf(stmt pgstatement.Statement) action.Statement {
-	return action.Statement{Op: stmt.Op, Tables: stmt.Tables, Target: stmt.Target, ParamCount: stmt.ParamCount, Handle: stmt.RowSources}
 }

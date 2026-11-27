@@ -86,12 +86,16 @@ func newFixture(t *testing.T) *fixture {
 	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: d.Names.Prefix,
-		Now: func() time.Time { return f.now },
+		Now: func() time.Time { return f.now }, StateDir: stateDir(f.config),
 	})
 	require.NoError(t, err)
 	f.svc = svc
 	return f
 }
+
+// stateDir is the engine's state directory a fixture's service records the
+// key from: next to its config, never the computer's own.
+func stateDir(configPath string) string { return filepath.Join(filepath.Dir(configPath), "state") }
 
 func (f *fixture) request() setup.Request {
 	return setup.Request{Job: setup.JobInstall, Agent: "demo_bot", OSUser: "alice", Demo: true, DatabaseURL: f.db.URL}
@@ -512,6 +516,7 @@ CREATE TABLE public."Mixed" (id bigint PRIMARY KEY)`)
 	require.NoError(t, err, "a READ table can be read")
 	_, err = conn.Exec(ctx, `SELECT 1 FROM public.secrets`)
 	require.Error(t, err, "an unpicked table is never granted")
+	requireEngineRecorded(t, f, conn)
 }
 
 func TestRealInstallAsksTheRowLevelSecurityQuestionAndRunNeedsItsAnswer(t *testing.T) {
@@ -839,7 +844,7 @@ func TestRealInstallColumnsWithoutASampleStillAnswer(t *testing.T) {
 	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix,
-		Now: func() time.Time { return f.now },
+		Now: func() time.Time { return f.now }, StateDir: stateDir(f.config),
 		SampleColumn: func(_ context.Context, _ setup.Conn, col pii.Column) (pii.Sample, error) {
 			if col.Name == "email" {
 				return pii.Sample{}, errors.New("the connection failed")
@@ -899,7 +904,7 @@ func newPinFixture(t *testing.T) *pinFixture {
 	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix,
-		Now: func() time.Time { return f.now },
+		Now: func() time.Time { return f.now }, StateDir: stateDir(f.config),
 		Dial: func(context.Context, string) (setup.Conn, error) {
 			return nil, x509.UnknownAuthorityError{}
 		},

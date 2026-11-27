@@ -135,8 +135,8 @@ func (s statusDeps) addNotChecked(ctx context.Context, ps *guidance.Problems, re
 	ps.Add(problemCertificateNotChecked, fmt.Sprintf("the agent's connection to %s uses sslmode=%s: encrypted, but the certificate is not checked", host, mode),
 		func(b *guidance.Steps) string {
 			b.AgentRunCommand(s.cmds.Init(), "Run this and show the person the link it prints: its check-up turns the certificate check on.")
-			b.OpenGivenLink("Open the link the agent gives you and choose Check it on the certificate row.")
-			return "Your agent's connection to " + who + " is encrypted but doesn't check the certificate. Open the link to turn the check on."
+			b.TellAgent("Tell the agent when it is done.")
+			return "Your agent's connection to " + who + " is encrypted but doesn't check the certificate. Open the link the agent gives you and choose Check it to turn the check on, then tell the agent."
 		})
 }
 
@@ -147,12 +147,11 @@ func (s statusDeps) addNotEncrypted(ps *guidance.Problems, host, mode, provider 
 	ps.Add(problemConnectionNotEncrypted, fmt.Sprintf("the agent's connection to %s uses no TLS (sslmode=%s): its data and queries travel unencrypted", host, mode),
 		func(b *guidance.Steps) string {
 			b.AgentRunCommand(s.cmds.Init(), "Run this and show the person the link it prints: its check-up shows the connection that is not encrypted.")
+			b.TellAgent("Tell the agent when it is done.")
 			if provider != "" {
-				b.OpenGivenLink("Open the link the agent gives you and choose Check it on the certificate row.")
-				return "Your agent's connection to " + host + " isn't encrypted: its data and queries travel unencrypted. Open the link to turn encryption and the " + provider + " certificate check on."
+				return "Your agent's connection to " + host + " isn't encrypted: its data and queries travel unencrypted. Open the link the agent gives you and choose Check it to turn encryption and the " + provider + " certificate check on, then tell the agent."
 			}
-			b.OpenGivenLink("Open the link the agent gives you: the certificate row says what to change.")
-			return "Your agent's connection to " + host + " isn't encrypted: its data and queries travel unencrypted. Open the link to see how to turn encryption on."
+			return "Your agent's connection to " + host + " isn't encrypted: its data and queries travel unencrypted. Open the link the agent gives you to see how to turn encryption on, then tell the agent."
 		})
 }
 

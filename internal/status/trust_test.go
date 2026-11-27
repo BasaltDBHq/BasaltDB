@@ -172,11 +172,11 @@ func TestStatusCertificateNotChecked(t *testing.T) {
 	require.Equal(t, "WARNING", p.Severity)
 	require.Contains(t, p.Message, host)
 	require.Contains(t, p.Message, "sslmode=require")
-	require.Equal(t, "Your agent's connection to Supabase is encrypted but doesn't check the certificate. Open the link to turn the check on.", p.PersonMessage)
+	require.Equal(t, "Your agent's connection to Supabase is encrypted but doesn't check the certificate. Open the link the agent gives you and choose Check it to turn the check on, then tell the agent.", p.PersonMessage)
 	require.Len(t, p.NextSteps, 2)
 	require.Equal(t, toolresult.ActionRunCommand, p.NextSteps[0].Action)
 	require.Equal(t, "basalt init --agent bot", p.NextSteps[0].Command)
-	require.Equal(t, toolresult.NextStep{Actor: toolresult.ActorPerson, Action: toolresult.ActionOpenLink, Text: p.NextSteps[1].Text}, p.NextSteps[1])
+	require.Equal(t, toolresult.NextStep{Actor: toolresult.ActorPerson, Action: toolresult.ActionTellAgent, Text: p.NextSteps[1].Text}, p.NextSteps[1])
 	require.True(t, r.Ready, "a warning: the agent keeps working")
 
 	r = trustLocal(t, ok, with(TrustReport{Applied: notVerified, Encrypted: tlsOn(true)}))
@@ -215,7 +215,7 @@ func TestStatusConnectionNotEncrypted(t *testing.T) {
 	require.Contains(t, p.PersonMessage, "Supabase certificate check")
 	require.Len(t, p.NextSteps, 2)
 	require.Equal(t, "basalt init --agent bot", p.NextSteps[0].Command)
-	require.Equal(t, toolresult.ActionOpenLink, p.NextSteps[1].Action)
+	require.Equal(t, toolresult.ActionTellAgent, p.NextSteps[1].Action)
 	require.True(t, r.Ready)
 
 	r = trustLocal(t, ok, rep("db.example.com", "", ""))

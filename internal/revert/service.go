@@ -165,7 +165,9 @@ func (rc *Service) RevertPlan(ctx context.Context, p revertstore.RevertLineParam
 	if out.PersonMessage, out.NextSteps, err = rc.planGuidance(out); err != nil {
 		return RevertPlan{}, err
 	}
-	if r.Widened {
+	// A withdrawn revert is told as the page tells it, the agent's reason
+	// in full (its length is capped for that message).
+	if r.Widened && r.Status != action.RevertWithdrawn {
 		out.PersonMessage = strings.TrimSpace(widenedMessage + " " + out.PersonMessage)
 	}
 	return out, nil
@@ -402,7 +404,9 @@ func (rc *Service) revertState(ctx context.Context, r action.Revert) (RequestedR
 	if err != nil {
 		return out, err
 	}
-	if r.Widened {
+	// A withdrawn revert is told as the page tells it, as RevertPlan does:
+	// the agent's reason in full, its length capped for that message.
+	if r.Widened && r.Status != action.RevertWithdrawn {
 		out.PersonMessage = strings.TrimSpace(widenedMessage + " " + out.PersonMessage)
 	}
 	if r.Status != action.RevertApplied && r.Status != action.RevertApplying {
@@ -435,6 +439,9 @@ func (rc *Service) revertStateOf(ctx context.Context, r action.Revert) (Requeste
 	case action.RevertRejected:
 		out.PersonMessage = rejectedMessage(r)
 		out.NextSteps = rejectedSteps()
+	case action.RevertWithdrawn:
+		out.PersonMessage = guidance.WithdrawnMessage(r.WithdrawReason)
+		out.NextSteps = withdrawnSteps()
 	default:
 		return rc.waitEnded(ctx, out, guidance.Sentence(revertTitle(r)))
 	}

@@ -111,6 +111,13 @@ func rejectedSteps() []toolresult.NextStep {
 		"The person rejected the revert and nothing was reverted. Do not request it again on your own.")}
 }
 
+// withdrawnText is the step of a revert the agent withdrew.
+const withdrawnText = "You withdrew this revert and nothing was reverted. Do not ask the person to sign it; request a new one only when they ask."
+
+func withdrawnSteps() []toolresult.NextStep {
+	return []toolresult.NextStep{guidance.AgentStep(toolresult.ActionStop, withdrawnText)}
+}
+
 // rejectedMessage is the line for the person about a rejected revert, with
 // the note they wrote, if any.
 func rejectedMessage(r action.Revert) string {

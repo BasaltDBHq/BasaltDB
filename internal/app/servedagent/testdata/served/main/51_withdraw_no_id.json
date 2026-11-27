@@ -1,0 +1,17 @@
+{
+  "body": {
+    "code": "INVALID_ARGUMENT",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "invalid arguments: name exactly one of approvalId (a held write or a plugin approval) or revertId, with reason; nothing was withdrawn",
+    "nextSteps": [
+      {
+        "action": "REVISE_CALL",
+        "actor": "AGENT",
+        "text": "Fix the arguments as the message says; the tool's input schema lists them.",
+        "tool": "withdraw"
+      }
+    ]
+  },
+  "isError": true,
+  "tool": "withdraw"
+}

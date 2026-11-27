@@ -514,6 +514,10 @@ func (s *objectStore) ResetRevert(context.Context, uuid.UUID, time.Duration) (re
 	return revertstore.RescopedRevert{}, errObjUnsupported
 }
 
+func (s *objectStore) WithdrawRevert(context.Context, uuid.UUID, string) (*time.Time, error) {
+	return nil, errObjUnsupported
+}
+
 // applyLine applies one line: the object goes back to its earlier version,
 // unless someone changed it since the line was prepared (people win).
 func (s *objectStore) applyLine(l *objLine, batch int) {

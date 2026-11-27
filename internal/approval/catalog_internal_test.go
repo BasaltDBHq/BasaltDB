@@ -222,6 +222,16 @@ func pendingItem(status string, expires time.Time) PendingItem {
 	}
 }
 
+// withdrawCase is withdraw's answer for w.
+func withdrawCase(w action.Withdrawal) func(*testing.T, *testService) (string, []toolresult.Link, []toolresult.NextStep) {
+	return func(t *testing.T, _ *testService) (string, []toolresult.Link, []toolresult.NextStep) {
+		w.ID = uuid.MustParse(caseApproval)
+		out, err := WithdrawAnswer(w)
+		require.NoError(t, err)
+		return out.PersonMessage, nil, out.NextSteps
+	}
+}
+
 // resultCases are the approval's results: one case per result entry of the
 // catalog the use case builds.
 func resultCases() map[string]resultCase {
@@ -246,6 +256,14 @@ func resultCases() map[string]resultCase {
 				require.NoError(t, err)
 				return person, links, steps
 			},
+		},
+		resultKey("withdraw", "WITHDRAWN"): {
+			tool: "withdraw", args: map[string]any{"approvalId": caseApproval, "reason": "the person changed their mind"},
+			build: withdrawCase(action.Withdrawal{Kind: action.WithdrawHeldWrite, Status: action.ApprovalWithdrawn, Reason: "the person changed their mind"}),
+		},
+		resultKey("withdraw", "NOT_WAITING"): {
+			tool: "withdraw", args: map[string]any{"revertId": caseApproval, "reason": "not needed"},
+			build: withdrawCase(action.Withdrawal{Kind: action.WithdrawRevert, Status: action.RevertApplied}),
 		},
 		resultKey("list_pending", "EXPIRED"): {
 			tool: "list_pending", args: map[string]any{},

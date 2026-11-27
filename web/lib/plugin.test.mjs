@@ -391,6 +391,37 @@ test("a relay the engine refuses shows its error, and nothing to give by hand", 
   assert.ok(!page.$("code"));
 });
 
+const WITHDRAWN_ANSWER = {
+  status: 409,
+  body: JSON.stringify({
+    code: "APPROVAL_INVALID", reason: "WITHDRAWN", message: "plugin approval withdrawn by the agent",
+    personMessage: "The agent withdrew this request: wrong plugin. Nothing changed.",
+  }),
+};
+
+test("a plugin approval the agent withdrew shows Withdrawn and its line, with no approve button", async () => {
+  const v = vector("level-1-known-local");
+  const id = JSON.parse(v.binding).approvalId;
+  const fetch = async () => ({ status: WITHDRAWN_ANSWER.status, headers: [], text: async () => WITHDRAWN_ANSWER.body });
+  const page = await open(`${ORIGIN}/plugins/${id}#s=q3Jv8sLk2mT0xYp1aBcD9w`, { fetch });
+  assert.equal(page.$("state").textContent, "Withdrawn");
+  assert.equal(page.$("state").className, "pill bad");
+  assert.equal(page.$("error-text").textContent, "The agent withdrew this request: wrong plugin. Nothing changed.");
+  assert.equal(page.$("main").hidden, true, "nothing to approve");
+  assert.equal(page.$("paste-box").hidden, true);
+});
+
+test("a page opened before the agent withdrew refuses the signature with the same line", async () => {
+  const v = vector("level-1-known-local");
+  const id = JSON.parse(v.binding).approvalId;
+  const e = engine({ approvalId: id, binding: v.binding, settings: v.settings }, WITHDRAWN_ANSWER);
+  const page = await open(`${ORIGIN}/plugins/${id}#s=q3Jv8sLk2mT0xYp1aBcD9w`, { fetch: e.fetch });
+  await page.$("approve").listeners.click();
+  assert.equal(page.$("state").textContent, "Withdrawn");
+  assert.equal(page.$("error-text").textContent, "The agent withdrew this request: wrong plugin. Nothing changed.");
+  assert.equal(page.$("main").hidden, true, "the approve button is gone");
+});
+
 test("the engine's request is checked as a link's: settings that do not match are refused", async () => {
   const v = vector("settings-mismatch");
   const id = JSON.parse(v.binding).approvalId;

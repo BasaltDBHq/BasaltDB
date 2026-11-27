@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 
 import { checkApprovalRequest, parseApprovalRequest } from "./codec.js";
 import { fetchRequest, postResponse, relayPaths } from "./local.js";
-import { APPROVE_REOPEN, linkFailure, personText, REVERT_REOPEN } from "./page.js";
+import { APPROVE_REOPEN, linkFailure, personText, REVERT_REOPEN, withdrawnText } from "./page.js";
 import { relayTransport } from "./relay.js";
 import { sameOriginSession } from "./transport.js";
 
@@ -63,6 +63,7 @@ const answers = [
   [415, { code: "INVALID_ARGUMENT", message: "content-type must be application/json" }],
   [403, { code: "INVALID_ARGUMENT", message: "a request from another origin" }],
   [504, { code: "QUERY_TIMEOUT", reason: "TIME_LIMIT", message: "the rescope ran over 100 seconds", personMessage: "Narrow the scope and try again." }],
+  [409, { code: "APPROVAL_INVALID", reason: "WITHDRAWN", message: "approval withdrawn by the agent", personMessage: "The agent withdrew this request: wrong rows. Nothing changed." }],
 ];
 
 test("every engine answer reads the same over the relay as on the engine's own pages", async () => {
@@ -76,6 +77,7 @@ test("every engine answer reads the same over the relay as on the engine's own p
       assert.equal(relay.name, "RelayError", String(status));
       assert.equal(linkFailure(relay.err, kind, reopen), linkFailure(loop.err, kind, reopen), String(status));
       assert.equal(personText(relay.err), personText(loop.err), String(status));
+      assert.equal(withdrawnText(relay.err), withdrawnText(loop.err), String(status));
     }
   }
 });
@@ -103,7 +105,8 @@ test("no approval or revert page falls back to a code to paste", async () => {
     const src = readFileSync(new URL(`./${f}`, import.meta.url), "utf8");
     // A failed relay, on the engine's own pages or through the Vault, says
     // so and stops: no code to finish by hand.
-    assert.match(src, /\} catch \(err\) \{\n\s+showRelayFailed\(relayFailure\(err, "(approval|revert)"\)\);/, f);
+    // A request the agent withdrew meanwhile is shown withdrawn first.
+    assert.match(src, /\} catch \(err\) \{\n(\s+if \(withdrawnNow\(relay, err\)\) return;\n)?\s+showRelayFailed\(relayFailure\(err, "(approval|revert)"\)\);/, f);
     assert.doesNotMatch(src, /showCode|encode(Approval|Revert)Response|basalt approve|basalt revert/, f);
     // A long link has no engine to send a signature to: no passkey prompt,
     // the page says why.

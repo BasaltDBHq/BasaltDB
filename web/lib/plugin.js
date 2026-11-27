@@ -28,7 +28,7 @@ import {
   visibleText,
 } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, RelayError, relayPaths } from "./local.js";
-import { $, NO_CARRIER, el, fail, loadOrPaste, openSession, personText, relayFailure, setPill, showDone, showEngine, showRelayFailed, webauthnError, whenText } from "./page.js";
+import { $, NO_CARRIER, el, fail, loadOrPaste, openSession, personText, relayFailure, setPill, showDone, showEngine, showRelayFailed, showWithdrawn, webauthnError, whenText, withdrawnText } from "./page.js";
 import { BUSY, ENGINE_NOT_CONNECTED, VAULT_UNREACHABLE } from "./relay.js";
 import { agentName } from "./scope.js";
 import { pageTransport } from "./transport.js";
@@ -336,6 +336,12 @@ async function finish(response, relay) {
     showDone(SENTENCES.approved);
     setPill("state", "Approved", "ok");
   } catch (err) {
+    // Withdrawn after the page opened: nothing is left to approve.
+    const text = withdrawnText(err);
+    if (text !== null) {
+      showWithdrawn("state", text);
+      return;
+    }
     showRelayFailed(relayFailure(err, "approval"));
     setPill("state", "Not approved", "bad");
   }
@@ -380,7 +386,9 @@ export async function main({ now = () => new Date() } = {}) {
     rp = relyingParty(window.location);
     loaded = await loadOrPaste(loadRequest, describe);
   } catch (err) {
-    fail(describe(err));
+    const text = withdrawnText(err);
+    if (text !== null) showWithdrawn("state", text);
+    else fail(describe(err));
     return;
   }
   if (loaded.refused) {

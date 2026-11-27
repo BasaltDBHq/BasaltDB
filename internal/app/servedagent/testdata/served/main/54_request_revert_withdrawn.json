@@ -1,0 +1,23 @@
+{
+  "body": {
+    "batched": false,
+    "expiresAt": "<time>",
+    "intent": "Undo the tidy-up",
+    "nextSteps": [
+      {
+        "action": "STOP",
+        "actor": "AGENT",
+        "text": "You withdrew this revert and nothing was reverted. Do not ask the person to sign it; request a new one only when they ask."
+      }
+    ],
+    "personMessage": "The agent withdrew this request: the person changed their mind. Nothing changed.",
+    "revertId": "<id-27>",
+    "rows": 12,
+    "scope": "RUN",
+    "scopeId": "<id-1>",
+    "skipped": 0,
+    "status": "WITHDRAWN"
+  },
+  "isError": false,
+  "tool": "request_revert"
+}

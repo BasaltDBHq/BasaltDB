@@ -284,6 +284,46 @@ async function approve() {
   ok("approve");
 }
 
+// withdraw holds a write, opens its approval page, then withdraws it as the
+// agent: the open page refuses the signature, the link shows Withdrawn with
+// nothing to sign, and a write with its approvalId writes nothing.
+const WITHDRAW_SQL = "update public.items set name = name || '-withdrawn' where id between 2 and 13";
+const WITHDRAW_INTENT = "release e2e: a write the person cancels";
+const WITHDRAW_REASON = "the person cancelled it";
+const WITHDRAWN_LINE = `The agent withdrew this request: ${WITHDRAW_REASON}. Nothing changed.`;
+
+async function withdraw() {
+  const held = await mcp.call("write", { sql: WITHDRAW_SQL, intent: WITHDRAW_INTENT, runId });
+  assert.ok(held.isError, `a 12-row write must be held: ${held.text}`);
+  const url = find(held.data, "approvalUrl") ?? (held.text.match(/http:\/\/localhost:\d+\/approvals\/[^\s"\\]+/) ?? [])[0];
+  const approvalId = find(held.data, "approvalId");
+  assert.ok(url && approvalId, `the hold carries its link and approvalId: ${held.text}`);
+  // The page is open before the agent withdraws.
+  await open(url);
+  await page.locator("#approve").waitFor({ state: "visible" });
+  const out = await mcp.call("withdraw", { approvalId, reason: WITHDRAW_REASON });
+  assert.ok(!out.isError, `withdraw failed: ${out.text}`);
+  assert.equal(out.data.status, "WITHDRAWN", `the held write is withdrawn: ${out.text}`);
+  assert.equal(out.data.personMessage, WITHDRAWN_LINE);
+  // Signing on the page opened earlier is refused.
+  await page.locator("#approve").click();
+  await until("the open page to show Withdrawn", async () => (await page.locator("#state").textContent()) === "Withdrawn");
+  assert.equal((await page.locator("#error-text").textContent()).trim(), WITHDRAWN_LINE);
+  // The link opened again shows Withdrawn and nothing to sign.
+  await open(url);
+  await until("the link to show Withdrawn", async () => (await page.locator("#state").textContent()) === "Withdrawn");
+  assert.equal((await page.locator("#error-text").textContent()).trim(), WITHDRAWN_LINE);
+  assert.ok(!(await visible("#approve")), "a withdrawn approval has no sign button");
+  const write = await mcp.call("write", { sql: WITHDRAW_SQL, intent: WITHDRAW_INTENT, runId, approvalId });
+  assert.ok(write.isError, `a write with a withdrawn approvalId must be refused: ${write.text}`);
+  assert.equal(find(write.data, "reason"), "WITHDRAWN", `refused as withdrawn: ${write.text}`);
+  const pending = await mcp.call("list_pending", { runId });
+  assert.ok(!pending.text.includes(approvalId), `list_pending no longer lists it: ${pending.text}`);
+  const changed = await mcp.call("query", { sql: "select count(*) as n from public.items where name like '%-withdrawn'", runId });
+  assert.equal(Number(changed.data.rows[0].n), 0, "nothing was written");
+  ok("withdraw");
+}
+
 async function revert() {
   const asked = await mcp.call("request_revert", { runId, intent: "release e2e: undo the run" });
   assert.ok(!asked.isError, `request_revert failed: ${asked.text}`);
@@ -427,6 +467,7 @@ const steps = [
   ["home-page", homePage],
   ["mcp", mcpSession],
   ["approve", approve],
+  ["withdraw", withdraw],
   ["revert", revert],
   ["remove", remove],
   ["removed-page", removedPage],

@@ -285,6 +285,8 @@ func (rc *Service) rescopeError(ctx context.Context, r action.Revert, err error)
 		return widenRefused()
 	case refused.Reason == revertstore.RevertExpiredReason:
 		return rc.revertExpired(r)
+	case refused.Reason == revertstore.RevertWithdrawnReason:
+		return rc.withdrawnMeanwhile(ctx, r)
 	case refused.Reason == revertstore.RevertTimedOut && ctx.Err() == nil:
 		return rescopeTimeout(rc.store.Limits.Prepare)
 	}

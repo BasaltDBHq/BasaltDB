@@ -223,6 +223,10 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
    nothing paints over a neighboring cell. */
 .values td, .summary dd, .table-name, .headline, #cascade-text { unicode-bidi: isolate; }
 .values td { white-space: pre; }
+/* A short value never clips: the cell grows to its text and the table scrolls
+   in .scroll. Only a long value (over 32 code points) is capped and wraps, so
+   no approval value is ever clipped or hidden. */
+.values td:not(.long) { max-width: none; }
 .values td.long { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 32ch; }
 .values td, .summary dd { overflow: hidden; }
 /* Values, params, the statement and the intent show in the order they are

@@ -78,7 +78,10 @@ func Classify(sql string) (action.Statement, error) {
 	w := &walker{tables: map[string]bool{}, funcs: map[string]bool{}, ctes: map[string]bool{}}
 	w.visit(node.ProtoReflect())
 	stmt := action.Statement{Tables: w.sortedTables(), Target: targetOf(node), ParamCount: w.maxParam}
-	var sources []RowSource // typed even when nil: the store reads it back as []RowSource
+	// Handle is a []RowSource, nil or not, on every statement that parsed;
+	// a statement that did not parse is the zero Statement (nil Handle).
+	// The store reads it back with a type assertion, so either is safe.
+	var sources []RowSource
 	stmt.Handle = sources
 
 	op, word, reason := classifyNode(node)

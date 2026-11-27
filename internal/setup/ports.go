@@ -67,6 +67,10 @@ type SetuprunBackend interface {
 	// UnusableInstall reports whether err is CheckUsable's refusal of an
 	// older install.
 	UnusableInstall(err error) bool
+	// ReadOldInstall reads whether the guard is below the update floor,
+	// which an install replaces: ok false for no guard and for one at or
+	// above the floor. It reads schema_version only.
+	ReadOldInstall(ctx context.Context, q Querier) (old guardmodel.OldInstall, ok bool, err error)
 	RemoveOldInstallDoc() string
 
 	SetupsFor(ctx context.Context, q Querier, id uuid.UUID, role string) ([]setupcode.RecordedSetup, error)

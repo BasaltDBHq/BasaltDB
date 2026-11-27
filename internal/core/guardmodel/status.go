@@ -42,6 +42,18 @@ type Status struct {
 	BelowFloor bool
 }
 
+// OldInstall is a guard below the update floor (Status.BelowFloor): no
+// update reaches it, so the setup page's install replaces it, removing it
+// and installing again in one transaction.
+type OldInstall struct {
+	// Version is the installed guard version; Floor is the lowest version
+	// this build updates in place.
+	Version, Floor int
+	// Release is the BasaltDB release recorded with Version, "" when none
+	// is (a guard from before the release column).
+	Release string
+}
+
 // RemoveOldInstallDoc is the page that says how to remove an older
 // BasaltDB install from a database.
 const RemoveOldInstallDoc = "https://github.com/BasaltDBHq/BasaltDB/blob/master/docs/remove-old-install.md"

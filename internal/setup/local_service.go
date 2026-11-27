@@ -64,7 +64,8 @@ type Request struct {
 	// trusted for the database's host.
 	TrustRoot string `json:"trustRoot,omitempty"`
 	// ConfirmName is the database name the person typed to confirm a
-	// REMOVE; only a REMOVE run carries it.
+	// REMOVE, or an INSTALL that replaces a guard below the update floor;
+	// only their runs carry it.
 	ConfirmName string `json:"confirmName,omitempty"`
 	// Pinned is the engine's pin a TRUST check showed for a ledger that
 	// names another, which its run records: a pin that changed since is
@@ -132,6 +133,10 @@ type CheckAnswer struct {
 	Port        int                 `json:"port,omitempty"`
 	SessionUser string              `json:"sessionUser,omitempty"`
 	Certificate *ConfirmCertificate `json:"certificate,omitempty"`
+	// Replace is an INSTALL's on a database whose guard is below the
+	// update floor: the run removes it and installs, with the typed
+	// database name (CONTRACT.md, The local setup page, An older install).
+	Replace *Replace `json:"replace,omitempty"`
 }
 
 // RegisteredPasskey is one passkey the run registered.
@@ -298,8 +303,8 @@ func (s *LocalService) validate(req Request) (job, error) {
 		return job{}, err
 	}
 	j := job{req: req, role: role, uid: uid}
-	if req.ConfirmName != "" {
-		return job{}, refuse(CodeAnswersInvalid, "Only a removal is confirmed with the database name.")
+	if len(req.ConfirmName) > maxDatabaseName {
+		return job{}, refuse(CodeAnswersInvalid, ReplaceWrongName)
 	}
 	if req.CredentialID != "" {
 		return job{}, refuse(CodeAnswersInvalid, "An install removes no passkey.")
@@ -424,16 +429,22 @@ type planned struct {
 	list    listing
 	// labeled is how many columns the run's labels write.
 	labeled int
+	// replaced is the guard below the update floor the plan removed first
+	// (replaceOld), with the statements it ran; nil when there was none.
+	replaced *guardmodel.OldInstall
+	removed  []string
 }
 
-// plan reads the database for j in tx: refusals, then the sample data or
-// the tables, and the install script. keep is a role that exists and is
+// plan reads the database for j in tx: refusals, then the removal of a
+// guard below the update floor (replaceOld), then the sample data or
+// the tables, and the install script. run is the run's plan, which checks
+// the typed database name. keep is a role that exists and is
 // this engine's own (finishing an install whose engine.json was never
 // written): its password stays. answers nil (a check) shows the SQL as if
 // every row-level security question were answered ALL_ROWS, the page's
 // answer; a run passes the person's. The caller rolls tx back (check) or
 // commits (run).
-func (s *LocalService) plan(ctx context.Context, tx Tx, j job, password, database string, answers []Answer) (planned, error) {
+func (s *LocalService) plan(ctx context.Context, tx Tx, j job, password, database string, answers []Answer, run bool) (planned, error) {
 	prefix := s.opts.Prefix
 	names := guardmodel.Names{Prefix: prefix}
 	installed, err := s.be.InstalledPrefix(ctx, tx.Port())
@@ -443,6 +454,13 @@ func (s *LocalService) plan(ctx context.Context, tx Tx, j job, password, databas
 	if installed != "" && installed != prefix {
 		return planned{}, refuse(CodePrefixMismatch, "This database's Basalt uses the prefix "+installed+", not "+prefix+".")
 	}
+	var p planned
+	if p.replaced, p.removed, err = s.replaceOld(ctx, tx, j, database, installed == prefix, run); err != nil {
+		return planned{}, err
+	}
+	if p.replaced != nil {
+		installed = "" // removed: the install below starts from no guard
+	}
 	if err := s.usable(ctx, tx); err != nil {
 		return planned{}, err
 	}
@@ -450,7 +468,6 @@ func (s *LocalService) plan(ctx context.Context, tx Tx, j job, password, databas
 	if err != nil {
 		return planned{}, s.setupFailed("read the agent role", err)
 	}
-	var p planned
 	if exists {
 		switch {
 		case s.ownRole(ctx, j, database):
@@ -548,6 +565,52 @@ func (s *LocalService) ownRole(ctx context.Context, j job, database string) bool
 	return user == j.role && db == database
 }
 
+// replaceOld removes, in tx, a guard of this engine's prefix (ours) below
+// the update floor, before anything else is planned, and returns it with
+// the statements it ran; nil when there is none. A run must carry the
+// database's name as the person typed it (ANSWERS_INVALID otherwise,
+// before anything is dropped), and carries none when nothing is replaced.
+// A check removes it too, in its transaction that it rolls back.
+func (s *LocalService) replaceOld(ctx context.Context, tx Tx, j job, database string, ours, run bool) (*guardmodel.OldInstall, []string, error) {
+	var old *guardmodel.OldInstall
+	if ours {
+		var err error
+		if old, err = ReadReplace(ctx, s.be, tx.Port()); err != nil {
+			return nil, nil, s.setupFailed("read the installed guard", err)
+		}
+	}
+	switch {
+	case old == nil && run && j.req.ConfirmName != "":
+		return nil, nil, refuse(CodeAnswersInvalid, ReplaceNotNeeded)
+	case old == nil:
+		return nil, nil, nil
+	case run && j.req.ConfirmName != database:
+		return nil, nil, refuse(CodeAnswersInvalid, ReplaceWrongName)
+	}
+	drops, err := RemoveOld(ctx, s.be, tx.Port(), guardmodel.Names{Prefix: s.opts.Prefix})
+	if err != nil {
+		return nil, nil, s.setupFailed("remove the old install", err)
+	}
+	return old, drops, nil
+}
+
+// replacing reports, in tx, whether the install replaces a guard below the
+// update floor: the challenge is bound to it.
+func (s *LocalService) replacing(ctx context.Context, tx Tx) (bool, error) {
+	installed, err := s.be.InstalledPrefix(ctx, tx.Port())
+	if err != nil {
+		return false, s.setupFailed("read the guard prefix", err)
+	}
+	if installed != s.opts.Prefix {
+		return false, nil
+	}
+	old, err := ReadReplace(ctx, s.be, tx.Port())
+	if err != nil {
+		return false, s.setupFailed("read the installed guard", err)
+	}
+	return old != nil, nil
+}
+
 // usable refuses GUARD_UNUSABLE for a basalt_meta this build cannot
 // install over or update, before anything is planned or changed.
 func (s *LocalService) usable(ctx context.Context, tx Tx) error {
@@ -614,6 +677,9 @@ func (s *LocalService) check(ctx context.Context, req Request) (CheckAnswer, err
 	if err != nil {
 		return CheckAnswer{}, err
 	}
+	if req.ConfirmName != "" {
+		return CheckAnswer{}, refuse(CodeAnswersInvalid, "Only a run is confirmed with the database name.")
+	}
 	conn, pinned, err := s.open(ctx, req)
 	if err != nil {
 		return CheckAnswer{}, err
@@ -633,9 +699,13 @@ func (s *LocalService) check(ctx context.Context, req Request) (CheckAnswer, err
 		return CheckAnswer{}, timeLimit(ctx, err)
 	}
 	// A throwaway password: the shown SQL redacts it, and nothing commits.
-	p, err := s.plan(ctx, tx, j, s.be.NewPassword(), database, req.Answers)
+	p, err := s.plan(ctx, tx, j, s.be.NewPassword(), database, req.Answers, false)
 	if err != nil {
 		return CheckAnswer{}, timeLimit(ctx, err)
+	}
+	var replace *Replace
+	if p.replaced != nil {
+		replace = ReplaceOf(*p.replaced)
 	}
 	needed, err := passkeyNeeded(ctx, s.be, tx, s.opts.Origin)
 	if err != nil {
@@ -647,16 +717,18 @@ func (s *LocalService) check(ctx context.Context, req Request) (CheckAnswer, err
 			return CheckAnswer{}, err
 		}
 		facts.apply(&out)
+		out.Replace = replace
 		return out, nil
 	}
-	ch, err := s.challenge(req, bound{database: database, host: j.host, picks: picksKey(j.picks), answers: answersKey(p.answers), classes: classesKey(req), trustRoot: req.TrustRoot})
+	ch, err := s.challenge(req, bound{database: database, host: j.host, picks: picksKey(j.picks), answers: answersKey(p.answers), classes: classesKey(req), trustRoot: req.TrustRoot, replace: replace != nil})
 	if err != nil {
 		return CheckAnswer{}, s.setupFailed("make the passkey challenge", err)
 	}
 	if !req.Demo {
 		out := CheckAnswer{
-			Database: database, Lines: realSummary(j, database, p.write, p.read, needed, p.keep), SQL: p.script.SQL() + labelsSQL(req),
-			Questions: p.questions, Notes: append([]string{}, p.script.Warnings...), PasskeyNeeded: needed, Challenge: &ch,
+			Database: database, Lines: append(replacedLines(database, p), realSummary(j, database, p.write, p.read, needed, p.keep)...),
+			SQL:       RemovedSQL(p.removed) + p.script.SQL() + labelsSQL(req),
+			Questions: p.questions, Notes: append([]string{}, p.script.Warnings...), PasskeyNeeded: needed, Challenge: &ch, Replace: replace,
 		}
 		facts.apply(&out)
 		out.Lines = append(out.Lines, rekeyLines(j, p)...)
@@ -666,18 +738,30 @@ func (s *LocalService) check(ctx context.Context, req Request) (CheckAnswer, err
 		// The tables are read; the transaction ends before the columns are
 		// read and sampled on the connection.
 		_ = tx.Rollback(context.WithoutCancel(ctx))
-		if out.Columns, out.ColumnsMore, err = s.columns(ctx, conn, j); err != nil {
+		// A replaced install's labels go with it: every column starts
+		// unclassified, as the run finds it.
+		if out.Columns, out.ColumnsMore, err = s.columns(ctx, conn, j, replace == nil); err != nil {
 			return CheckAnswer{}, timeLimit(ctx, s.setupFailed("read the columns", err))
 		}
 		return out, nil
 	}
 	out := CheckAnswer{
-		Database: database, Lines: s.summary(j, database, p.seeded, needed, p.keep), SQL: p.seeded.Shown() + p.script.SQL(),
-		Questions: []Question{}, Notes: s.notes(p.seeded, p.script), PasskeyNeeded: needed, Challenge: &ch,
+		Database: database, Lines: append(replacedLines(database, p), s.summary(j, database, p.seeded, needed, p.keep)...),
+		SQL:       RemovedSQL(p.removed) + p.seeded.Shown() + p.script.SQL(),
+		Questions: []Question{}, Notes: s.notes(p.seeded, p.script), PasskeyNeeded: needed, Challenge: &ch, Replace: replace,
 	}
 	facts.apply(&out)
 	out.Lines = append(out.Lines, rekeyLines(j, p)...)
 	return out, nil
+}
+
+// replacedLines say that the install first removes the guard below the
+// update floor it replaces; none when it replaces nothing.
+func replacedLines(database string, p planned) []string {
+	if p.replaced == nil {
+		return nil
+	}
+	return []string{fmt.Sprintf("It first removes the old BasaltDB install from the database %s (guard version %d): the guard's row-level security policies, the schema basalt_meta with its ledger, held approvals and passkeys, and its roles. Your tables and rows stay.", database, p.replaced.Version)}
 }
 
 // rekeyLines say that the install sets a new password for a role an

@@ -12,6 +12,8 @@ type TestMigration struct {
 	Version     int
 	SQL         string
 	NonBreaking bool
+	// Reinstall raises the update floor to Version (migration.reinstall).
+	Reinstall bool
 }
 
 // AppendTestMigrations appends ms to the versions this build installs until
@@ -26,7 +28,7 @@ func AppendTestMigrations(ms ...TestMigration) (restore func()) {
 		if want := next[len(next)-1].version + 1; m.Version != want {
 			panic(fmt.Sprintf("test migration %d: want version %d", m.Version, want))
 		}
-		next = append(next, migration{version: m.Version, sql: m.SQL, nonBreaking: m.NonBreaking})
+		next = append(next, migration{version: m.Version, sql: m.SQL, nonBreaking: m.NonBreaking, reinstall: m.Reinstall})
 	}
 	migrations = next
 	return func() { migrations = saved }

@@ -31,6 +31,9 @@ type ContractRequest struct {
 	Code     string
 	Now      time.Time
 	Included *ContractIncluded
+	// Replace: the caller offers to replace a guard below the update floor
+	// (pkg/setup's Request.Replace).
+	Replace bool
 }
 
 // ContractIncluded are the tables ticked on the connect page.
@@ -117,6 +120,9 @@ type ContractChecked struct {
 	// Passkeys are the database's active passkeys: nil in a database with
 	// no guard yet, and not nil, though it may be empty, in one with.
 	Passkeys []guardmodel.RegisteredPasskey
+	// Replace is set when the setup replaces a guard below the update
+	// floor: the rest is checked as after its removal.
+	Replace *Replace
 }
 
 // ContractPlan is the SQL Run is about to run.
@@ -204,6 +210,9 @@ type ContractRunInput struct {
 	ColumnClasses []ContractColumnClass
 	RestPublic    bool
 	TrustPin      *ContractTrustPin
+	// ConfirmName is the database's name as the person typed it, for a
+	// setup that replaces a guard below the update floor.
+	ConfirmName string
 }
 
 // ContractResult is what a run did (pkg/setup's Result).
@@ -260,6 +269,51 @@ func (c Contract) Check(ctx context.Context, conn Querier, at ConnConfig, req Co
 	s, err := c.newSetup(req)
 	if err != nil {
 		return ContractChecked{}, err
+	}
+	old, err := c.oldInstall(ctx, conn, s, req)
+	if err != nil || old == nil {
+		return c.check(ctx, conn, at, s, err)
+	}
+	// The replace is checked on the database as its run finds it: the old
+	// install removed, in a transaction that rolls back.
+	tx, err := c.be.BeginTx(ctx, conn)
+	if err != nil {
+		return ContractChecked{}, err
+	}
+	defer rollbackWithin(ctx, c.be, tx)
+	if _, err := RemoveOld(ctx, c.be, tx, s.Names); err != nil {
+		return ContractChecked{}, err
+	}
+	out, err := c.check(ctx, tx, at, s, nil)
+	if err != nil {
+		return ContractChecked{}, err
+	}
+	out.Replace = ReplaceOf(*old)
+	return out, nil
+}
+
+// oldInstall is the guard below the update floor an INSTALL code replaces
+// when the caller offers it (req.Replace): one of the code's prefix. nil
+// otherwise, and Prepare then refuses such a guard GUARD_UNUSABLE.
+func (c Contract) oldInstall(ctx context.Context, q Querier, s *Setup, req ContractRequest) (*guardmodel.OldInstall, error) {
+	prefix := ""
+	if req.Replace && s.P.Kind == setupcode.KindInstall {
+		var err error
+		if prefix, err = c.be.InstalledPrefix(ctx, q); err != nil {
+			return nil, err
+		}
+	}
+	if prefix == "" || prefix != s.Names.Prefix {
+		return nil, nil //nolint:nilnil // no guard to replace is no error
+	}
+	return ReadReplace(ctx, c.be, q)
+}
+
+// check is Check's checks on q, the admin connection or the transaction
+// a replace runs in; failed is an error before them.
+func (c Contract) check(ctx context.Context, conn Querier, at ConnConfig, s *Setup, failed error) (ContractChecked, error) {
+	if failed != nil {
+		return ContractChecked{}, failed
 	}
 	p, err := s.Prepare(ctx, conn, at)
 	if err != nil {
@@ -483,6 +537,13 @@ func (c Contract) Run(ctx context.Context, conn Querier, at ConnConfig, req Cont
 		refused error
 	)
 	err = AdminTx(c.be, conn)(ctx, func(tx Querier) error {
+		// A guard below the update floor goes first, with the typed name:
+		// the rest is checked and planned as after its removal.
+		removed, err := c.replaceIn(ctx, tx, s, req, in.ConfirmName)
+		if err != nil {
+			refused = err
+			return refused
+		}
 		// The setup is checked and planned in its own transaction: nothing
 		// changes between the reads the plan rests on and its statements.
 		p, err := s.Prepare(ctx, tx, at)
@@ -516,7 +577,7 @@ func (c Contract) Run(ctx context.Context, conn Querier, at ConnConfig, req Cont
 			return refused
 		}
 		if in.Approve != nil {
-			if err := in.Approve(ContractPlan{SQL: script.SQL(), Warnings: slices.Clone(script.Warnings)}); err != nil {
+			if err := in.Approve(ContractPlan{SQL: RemovedSQL(removed) + script.SQL(), Warnings: slices.Clone(script.Warnings)}); err != nil {
 				refused = err
 				return refused
 			}
@@ -573,6 +634,31 @@ func (c Contract) Run(ctx context.Context, conn Querier, at ConnConfig, req Cont
 		in.Committed(res)
 	}
 	return res, nil
+}
+
+// replaceIn removes, in tx, the guard below the update floor a setup
+// replaces (oldInstall), once confirmName is the database's name, and
+// returns the statements it ran. A confirmName on a setup that replaces
+// nothing, and a missing or other name on one that does, are
+// ANSWERS_INVALID, nothing changed.
+func (c Contract) replaceIn(ctx context.Context, tx Querier, s *Setup, req ContractRequest, confirmName string) ([]string, error) {
+	old, err := c.oldInstall(ctx, tx, s, req)
+	switch {
+	case err != nil:
+		return nil, err
+	case old == nil && confirmName != "":
+		return nil, setuprunRefuse(SetuprunCodeAnswersInvalid, ReplaceNotNeeded)
+	case old == nil:
+		return nil, nil
+	}
+	database, err := c.be.CurrentDatabase(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if confirmName == "" || len(confirmName) > maxDatabaseName || confirmName != database {
+		return nil, setuprunRefuse(SetuprunCodeAnswersInvalid, ReplaceWrongName)
+	}
+	return RemoveOld(ctx, c.be, tx, s.Names)
 }
 
 // recordTrustPin records t, when set, in the setup's transaction tx.

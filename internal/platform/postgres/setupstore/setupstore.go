@@ -42,6 +42,10 @@ func (Store) InstalledVersion(ctx context.Context, q sqlport.Port) (int, error) 
 func (Store) CheckUsable(ctx context.Context, q sqlport.Port) error {
 	return guard.CheckUsable(ctx, pgquerier.Unwrap(q))
 }
+
+func (Store) ReadOldInstall(ctx context.Context, q sqlport.Port) (guardmodel.OldInstall, bool, error) {
+	return guard.ReadOldInstall(ctx, pgquerier.Unwrap(q))
+}
 func (Store) UnusableInstall(err error) bool { return errors.Is(err, guard.ErrUnusableInstall) }
 func (Store) RemoveOldInstallDoc() string    { return guard.RemoveOldInstallDoc }
 

@@ -68,8 +68,8 @@ func TestAnInstallRefusesAnOlderInstallItCannotUse(t *testing.T) {
 			CREATE TABLE basalt_meta.installs (install oid PRIMARY KEY, installed_at timestamptz NOT NULL, installed_by name NOT NULL, vault_user text);
 			INSERT INTO basalt_meta.schema_version (version) VALUES (37)`,
 		"no version table": `DROP TABLE basalt_meta.schema_version CASCADE`,
-		// Every 0.0.1 release shipped only version 1: below the update floor.
-		"0.0.1, version 1": `DELETE FROM basalt_meta.schema_version WHERE version > 1`,
+		// A guard below the update floor (0.0.1's version 1) is replaced
+		// instead: local_replace_test.go.
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

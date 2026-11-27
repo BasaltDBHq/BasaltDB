@@ -106,6 +106,9 @@ function withdrawnNow(relay, err) {
   if (text === null) return false;
   if (relay) endSession(relay.session, ENGINE_BUTTONS);
   settled = true;
+  // The note and scope sheets close with the page they sit over.
+  $("sheet-dim").hidden = true;
+  $("scope-panel").classList.toggle("open", false);
   showWithdrawn("expires-in", text);
   return true;
 }

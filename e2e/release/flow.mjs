@@ -307,12 +307,12 @@ async function withdraw() {
   assert.equal(out.data.personMessage, WITHDRAWN_LINE);
   // Signing on the page opened earlier is refused.
   await page.locator("#approve").click();
-  await until("the open page to show Withdrawn", async () => (await page.locator("#state").innerText()) === "Withdrawn");
-  assert.equal((await page.locator("#error-text").innerText()).trim(), WITHDRAWN_LINE);
+  await until("the open page to show Withdrawn", async () => (await page.locator("#state").textContent()) === "Withdrawn");
+  assert.equal((await page.locator("#error-text").textContent()).trim(), WITHDRAWN_LINE);
   // The link opened again shows Withdrawn and nothing to sign.
   await open(url);
-  await until("the link to show Withdrawn", async () => (await page.locator("#state").innerText()) === "Withdrawn");
-  assert.equal((await page.locator("#error-text").innerText()).trim(), WITHDRAWN_LINE);
+  await until("the link to show Withdrawn", async () => (await page.locator("#state").textContent()) === "Withdrawn");
+  assert.equal((await page.locator("#error-text").textContent()).trim(), WITHDRAWN_LINE);
   assert.ok(!(await visible("#approve")), "a withdrawn approval has no sign button");
   const write = await mcp.call("write", { sql: WITHDRAW_SQL, intent: WITHDRAW_INTENT, runId, approvalId });
   assert.ok(write.isError, `a write with a withdrawn approvalId must be refused: ${write.text}`);

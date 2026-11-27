@@ -126,7 +126,7 @@ GET /approvals/x origin="" type="" body="" -> 404 type="text/plain; charset=utf-
 GET /approvals/{id} origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 7853 bytes sha256:5b1d8f9aee11b6c89d9dc1b52ef9db6699a7ea54a3f5796fab094de2d0ba70a2
 POST /approvals/{id} origin="http://localhost:8787" type="application/json" body="{}" -> 405 type="text/plain; charset=utf-8" cache="" allow="GET, HEAD" Method Not Allowed
 GET /reverts/x origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
-GET /reverts/{id} origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 10815 bytes sha256:bfeb06f277dcd0dde9a56d8acaec91833b799ba06a7711c56644e7e5009db4c6
+GET /reverts/{id} origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 10815 bytes sha256:0ba58b598a36ccdcf561cbc3e1ded4379ab5e6b86e9d94271274dddf95963576
 POST /reverts/{id} origin="http://localhost:8787" type="application/json" body="{}" -> 405 type="text/plain; charset=utf-8" cache="" allow="GET, HEAD" Method Not Allowed
 GET /plugins/x origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
 GET /plugins/{id} origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 6501 bytes sha256:91a13c3e421d4c94cf49ef2ed5f18ffda26c9a1d9d8264ae7c34a440de968c67
@@ -261,7 +261,7 @@ GET /approvals/x origin="" type="" body="" -> 404 type="text/plain; charset=utf-
 GET /approvals/{id} origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 7853 bytes sha256:5b1d8f9aee11b6c89d9dc1b52ef9db6699a7ea54a3f5796fab094de2d0ba70a2
 POST /approvals/{id} origin="http://localhost:8787" type="application/json" body="{}" -> 405 type="text/plain; charset=utf-8" cache="" allow="GET, HEAD" Method Not Allowed
 GET /reverts/x origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
-GET /reverts/{id} origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 10815 bytes sha256:bfeb06f277dcd0dde9a56d8acaec91833b799ba06a7711c56644e7e5009db4c6
+GET /reverts/{id} origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 10815 bytes sha256:0ba58b598a36ccdcf561cbc3e1ded4379ab5e6b86e9d94271274dddf95963576
 POST /reverts/{id} origin="http://localhost:8787" type="application/json" body="{}" -> 405 type="text/plain; charset=utf-8" cache="" allow="GET, HEAD" Method Not Allowed
 GET /plugins/x origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
 GET /plugins/{id} origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 6501 bytes sha256:91a13c3e421d4c94cf49ef2ed5f18ffda26c9a1d9d8264ae7c34a440de968c67

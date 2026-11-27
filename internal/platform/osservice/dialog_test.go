@@ -206,12 +206,17 @@ func TestDialogCommand(t *testing.T) {
 	require.Error(t, err)
 }
 
-// Each action's prompt names it in capitals and says when to cancel, so an
-// unexpected dialog reads as one to cancel.
+// Each action's prompt names it in its first sentence and says when to
+// cancel, so an unexpected dialog reads as one to cancel.
 func TestDialogPromptsNameTheirAction(t *testing.T) {
 	t.Parallel()
-	for prompt, action := range map[string]string{servicespec.InstallPrompt: "INSTALL", servicespec.RemovePrompt: "REMOVE", servicespec.ResetPrompt: "RESET", servicespec.RestartPrompt: "RESTART"} {
-		require.Contains(t, prompt, "BasaltDB wants to "+action+" ")
+	for prompt, first := range map[string]string{
+		servicespec.InstallPrompt: "BasaltDB wants to install its engine on this Mac. ",
+		servicespec.RemovePrompt:  "BasaltDB wants to remove its engine from this Mac. ",
+		servicespec.ResetPrompt:   "BasaltDB wants to reset its engine on this Mac. ",
+		servicespec.RestartPrompt: "BasaltDB wants to restart its engine on this Mac. ",
+	} {
+		require.True(t, strings.HasPrefix(prompt, first), prompt)
 		require.Contains(t, prompt, "Cancel unless you just ")
 		require.NotContainsf(t, prompt, `"`, "the prompt is an AppleScript argument; keep it plain: %s", prompt)
 	}

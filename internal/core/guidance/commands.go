@@ -77,7 +77,8 @@ func (c Commands) UpdateLink(link string) Commands {
 
 // Removed returns c with removed, which reports whether the setup page's
 // REMOVE deleted this engine's engine.json: the agent's fix steps then
-// finish the removal with basalt init, which removes the engine service.
+// run basalt init, whose page asks the person to set BasaltDB up again or
+// finish the removal.
 func (c Commands) Removed(removed func() bool) Commands {
 	c.removed = removed
 	return c

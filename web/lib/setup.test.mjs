@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { b64urlEncode, utf8 } from "./codec.js";
 import { Labels, restNote } from "./picks.js";
 // Imported before any document exists, so the page's main() does not run.
-import { agentProbe, answerFits, CHECK_PATH, CHOICES, DOCTOR_PATH, doneText, Install, labelFields, startUpdate, UpdateCheck, JOB_TEXT, JOBS, labelWords, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, removeConfirmed, REMOVE_LAST_STEP, REPLACE_RUN, REPLACE_TITLE, replaceLines, replaceOf, ENGINE_PATH, NOT_MINE_PATH, SetupError, setupRequest, startReal, suggestionOf } from "./setup.js";
+import { agentProbe, answerFits, CHECK_PATH, CHOICES, DOCTOR_PATH, doneText, Install, labelFields, startUpdate, UpdateCheck, JOB_TEXT, JOBS, labelWords, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, removeConfirmed, REMOVE_ENGINE_PATH, REMOVE_LAST_STEP, REMOVED_TEXT, REPLACE_RUN, REPLACE_TITLE, replaceLines, replaceOf, ENGINE_PATH, NOT_MINE_PATH, SetupError, setupRequest, startReal, startRemoved, suggestionOf } from "./setup.js";
 
 const link = (job) => "#1." + b64urlEncode(utf8(JSON.stringify(job)));
 const job = { job: "INSTALL", agent: "demo_bot", osUser: "alice", demo: true };
@@ -82,7 +82,7 @@ test("a refusal comes back with its code and the engine's fixed message", async 
 });
 
 test("the link may name an update or a removal of the agent, never with the sample database", () => {
-  for (const name of ["UPDATE", "REMOVE", "CHANGE"]) {
+  for (const name of ["UPDATE", "REMOVE", "CHANGE", "REMOVED"]) {
     const j = { ...job, job: name, demo: false };
     assert.deepEqual(parseSetupLink(link(j)), j);
     assert.deepEqual(setupRequest(j, "postgres://u@h/d"), { ...j, databaseUrl: "postgres://u@h/d" });
@@ -91,7 +91,7 @@ test("the link may name an update or a removal of the agent, never with the samp
 
 test("every job has its own fixed words, which name the agent", () => {
   assert.match(JOB_TEXT.CHANGE.intro("demo_bot"), /demo_bot/);
-  for (const name of JOBS.filter((j) => j !== "CHANGE")) {
+  for (const name of JOBS.filter((j) => j !== "CHANGE" && j !== "REMOVED")) {
     const t = JOB_TEXT[name];
     assert.ok(t.title && t.run, name);
     assert.match(t.intro("demo_bot"), /demo_bot/, name);
@@ -760,8 +760,50 @@ test("the restPublic note counts every unlabeled column when more than 500 label
 test("a removal that removed the engine's last agent ends with the last step", () => {
   const job = { job: "REMOVE", agent: "demo_bot" };
   assert.ok(doneText(job, { agent: "demo_bot", engineRemoved: true }).endsWith(REMOVE_LAST_STEP));
+  assert.match(REMOVE_LAST_STEP, /ask your agent to run basalt init\. The page that opens lets you finish removing BasaltDB from this computer/);
   assert.ok(!doneText(job, { agent: "demo_bot", engineRemoved: false }).includes("Last step"));
   assert.ok(!doneText({ job: "UPDATE", agent: "demo_bot" }, { engineRemoved: true }).includes("Last step"));
+});
+
+// ---- A REMOVED link: set BasaltDB up again, or remove it from this computer too ----
+
+const removedLink = { job: "REMOVED", agent: "demo_bot", osUser: "alice", demo: false };
+
+test("a REMOVED link asks: set BasaltDB up again opens the install, on the same engine, with nothing sent", () => {
+  const nodes = fakePage();
+  const e = fakeEngine();
+  let install = null;
+  startRemoved(removedLink, { fetchFn: e.fetchFn, onSetUp: (j) => { install = j; } });
+  assert.equal(nodes.removed.hidden, false);
+  assert.equal(nodes.main.hidden, true);
+  assert.equal(globalThis.document.title, REMOVED_TEXT.title);
+  assert.match(HTML, /<button id="removed-again" type="button">Set up BasaltDB again<\/button>/);
+  assert.match(HTML, /<button id="removed-remove" type="button" class="secondary">Remove it from this computer too<\/button>/);
+  assert.match(HTML, /The engine is still on this computer, serving no agent\./);
+  nodes["removed-again"].click();
+  assert.deepEqual(install, { job: "INSTALL", agent: "demo_bot", osUser: "alice", demo: false });
+  assert.equal(nodes.removed.hidden, true);
+  assert.equal(e.bodies.length, 0, "setting up again asks the engine nothing yet");
+});
+
+test("Remove it from this computer too only tells the engine, for basalt init, which asks for the password", async () => {
+  const nodes = fakePage();
+  const e = fakeEngine({ answer: (path) => (path === REMOVE_ENGINE_PATH ? new Response("{}", { status: 200 }) : null) });
+  let install = null;
+  startRemoved(removedLink, { fetchFn: e.fetchFn, onSetUp: (j) => { install = j; } });
+  await nodes["removed-remove"].click();
+  assert.deepEqual(e.bodies, [{ path: REMOVE_ENGINE_PATH, body: {} }], "an empty body, never the admin string");
+  assert.equal(nodes["removed-status"].textContent, REMOVED_TEXT.asked);
+  assert.equal(nodes["removed-remove"].disabled, true);
+  assert.equal(nodes["removed-again"].disabled, true);
+  assert.equal(install, null);
+
+  const refused = fakeEngine({ answer: () => new Response(JSON.stringify({ code: "JOB_UNAVAILABLE", message: "This engine is not removed." }), { status: 409 }) });
+  const again = fakePage();
+  startRemoved(removedLink, { fetchFn: refused.fetchFn, onSetUp: () => {} });
+  await again["removed-remove"].click();
+  assert.equal(again["removed-status"].textContent, "This engine is not removed.");
+  assert.equal(again["removed-remove"].disabled, false, "a refusal can be tried again");
 });
 
 // ---- The Update check: a CHANGE link opens on doctor ----

@@ -341,3 +341,27 @@ chown() { echo "chown $*"; }
 	_, err = os.Lstat(made)
 	require.ErrorIs(t, err, os.ErrNotExist, "no root-owned folder is left for the next try")
 }
+
+// A user or group the removal could not delete is named in the command
+// the line gives, so it can be copied as it is.
+func TestRemoveScriptNamesTheAccountsLeft(t *testing.T) {
+	t.Parallel()
+	for goos, want := range map[string][2]string{
+		"linux":  {"To delete it: userdel basalt; ", "delete it with groupdel basalt; "},
+		"darwin": {"sudo dscl . -delete /Users/_basalt, then sudo dscl . -delete /Groups/_basalt; ", "delete it with sudo dscl . -delete /Groups/_basalt; "},
+	} {
+		script, err := osservice.RemoveScript(goos)
+		require.NoError(t, err)
+		i := strings.Index(script, `[ -z "$kept" ] ||`)
+		require.GreaterOrEqual(t, i, 0, goos)
+		tail := script[i:]
+		user := osservice.DefaultUser(goos)
+		out, err := runShell(t, `fail() { echo "$*"; }
+kept=" `+user+`" orphaned=" `+user+`"
+`+tail)
+		require.NoError(t, err, "%s: %s", goos, out)
+		require.Contains(t, out, want[0], goos)
+		require.Contains(t, out, want[1], goos)
+		require.NotContains(t, out, "NAME", goos)
+	}
+}

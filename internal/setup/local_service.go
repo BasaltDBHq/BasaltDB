@@ -158,7 +158,7 @@ type RunAnswer struct {
 	Passkeys   []RegisteredPasskey `json:"passkeys"`
 	MCPCommand string              `json:"mcpCommand"`
 	// EngineRemoved: a REMOVE removed this engine's last agent and deleted
-	// engine.json; basalt init removes the engine service next.
+	// engine.json; basalt init then asks the person what is next.
 	EngineRemoved bool `json:"engineRemoved"`
 	// Remaining is a PASSKEY_REMOVE's: the active passkeys of this page's
 	// origin left.
@@ -210,6 +210,10 @@ type LocalOptions struct {
 	// Reload has the running engine serve its config again, after a fix
 	// rewrote an agent's connection string (a no-op when nothing listens).
 	Reload func()
+	// Reinstalled tells the running engine that an INSTALL on it, removed,
+	// wrote engine.json again, so it serves that config (a no-op when
+	// nothing listens).
+	Reinstalled func()
 	// StateDir holds the engine's key file, channel.json, whose signing key
 	// an install records: the state directory the engine will run with
 	// (config.DefaultStateDir, as the engine.json the install writes names
@@ -226,6 +230,9 @@ type LocalService struct {
 	busy sync.Mutex
 	// mark is the person's "No, this isn't mine" (Not your database).
 	mark resetMark
+	// removing is the person's "Remove it from this computer too" on a
+	// removed engine.
+	removing removeMark
 	// updated is when each agent's last UPDATE finished, for basalt init's
 	// probe.
 	updated updateMarks
@@ -275,6 +282,9 @@ func NewLocal(o LocalOptions) (*LocalService, error) {
 	}
 	if o.Reload == nil {
 		o.Reload = func() {}
+	}
+	if o.Reinstalled == nil {
+		o.Reinstalled = func() {}
 	}
 	if o.StateDir == "" {
 		o.StateDir = config.DefaultStateDir(runtime.GOOS)
@@ -711,7 +721,7 @@ func (s *LocalService) verifyByDefault(dsn string) string {
 func (s *LocalService) check(ctx context.Context, req Request) (CheckAnswer, error) {
 	ctx, cancel := context.WithTimeout(ctx, callLimit)
 	defer cancel()
-	if s.opts.Configured {
+	if s.opts.Configured && !s.installOnRemoved(req) {
 		return s.checkAgentJob(ctx, req)
 	}
 	j, err := s.validate(req)

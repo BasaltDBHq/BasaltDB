@@ -29,7 +29,8 @@ const (
 	CodeInvalidArgument = "INVALID_ARGUMENT"
 	CodeJobUnavailable  = "JOB_UNAVAILABLE"
 	// CodeEngineRemoved: a configured engine whose engine.json a REMOVE
-	// deleted; basalt init then removes the engine service.
+	// deleted; basalt init then asks the person, on the REMOVED link, to
+	// set BasaltDB up again or remove the engine from this computer too.
 	CodeEngineRemoved           = "ENGINE_REMOVED"
 	CodeBusy                    = "BUSY"
 	CodeConnectionStringRefused = "CONNECTION_STRING_REFUSED"
@@ -272,7 +273,11 @@ func (s *LocalService) checkBinding(req Request, b bound) error {
 func (s *LocalService) Run(ctx context.Context, req Request) (RunAnswer, error) {
 	given := req.DatabaseURL
 	req.DatabaseURL = s.verifyByDefault(given)
+	reinstall := s.installOnRemoved(req)
 	a, err := s.run(ctx, req)
+	if err == nil && reinstall {
+		s.opts.Reinstalled()
+	}
 	return a, scrub(scrub(s.refused(err), given), req.DatabaseURL)
 }
 
@@ -283,7 +288,7 @@ func (s *LocalService) run(ctx context.Context, req Request) (RunAnswer, error) 
 	defer s.busy.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, callLimit)
 	defer cancel()
-	if s.opts.Configured {
+	if s.opts.Configured && !s.installOnRemoved(req) {
 		a, err := s.runAgentJob(ctx, req)
 		if err == nil && req.Job == JobUpdate {
 			// Only an UPDATE that ran ends basalt init's wait: its done

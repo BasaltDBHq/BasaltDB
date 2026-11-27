@@ -81,7 +81,9 @@ func RunLocal(c *cli.IO, h LocalHost, args []string) int {
 			return c.Fail(errors.New("the engine was set up again before this init could open the install page; run basalt init again"))
 		}
 	case setup.EngineRemoved:
-		return removeEngineService(c, h)
+		if code, install := removedEngine(c, h, job); !install {
+			return code
+		}
 	case setup.EngineWaiting, setup.EngineResetAsked, setup.EngineUpdated:
 		// EngineResetAsked is never the answer here: waitForSetupPage
 		// takes a "No" it finds at the start as an engine set up.
@@ -263,7 +265,7 @@ func changeLink(c *cli.IO, h LocalHost, job localsetup.Job) (code int, reset boo
 		return cli.ExitOK, false
 	case setup.EngineWaiting, setup.EngineSetUp:
 	}
-	fmt.Fprintln(c.Stderr, "basalt: after a Remove on that page, run basalt init once more: it removes the engine service.")
+	fmt.Fprintln(c.Stderr, "basalt: after a Remove on that page, run basalt init once more: its page lets the person finish removing BasaltDB from this computer, or set it up again.")
 	return cli.ExitOK, false
 }
 
@@ -313,15 +315,17 @@ func resetEngineService(c *cli.IO, h LocalHost) int {
 }
 
 // removeEngineService removes the engine service after the setup page
-// removed BasaltDB, through the administrator dialog with its fixed
-// script (service.RemoveScript), which refuses while engine.json exists.
+// removed BasaltDB, within the wait of the init that opened the CHANGE
+// link or after the person's "Remove it from this computer too", through
+// the administrator dialog with its fixed script (service.RemoveScript),
+// which refuses while engine.json exists.
 func removeEngineService(c *cli.IO, h LocalHost) int {
 	return runServiceDialog(c, serviceDialog{
 		script:    h.OSRemoveScript,
 		prompt:    servicespec.RemovePrompt,
 		noDialog:  "BasaltDB is removed from the database, but the engine service is removed through the system's administrator dialog, which cannot be shown here (%w). Run basalt init again in a desktop session on this machine",
 		asking:    "basalt: BasaltDB is removed from the database. Asking for your password in the system's administrator dialog to remove the engine service: it stops the service and removes its files and OS users.",
-		cancelled: "the administrator dialog was closed, so the engine service stays. Run basalt init again to remove it",
+		cancelled: "the administrator dialog was closed, so the engine service stays. Run basalt init again: its page lets the person remove it or set BasaltDB up again",
 		failed:    "the engine service was not removed: %w",
 		done:      "basalt: the engine service is removed.",
 	})
@@ -416,6 +420,11 @@ func waitForSetupPage(c *cli.IO) (setup.BasaltEngineState, error) {
 		case err == nil && code == setup.CodeJobUnavailable:
 			return setup.EngineSetUp, nil
 		case err == nil && code == setup.CodeEngineRemoved:
+			return setup.EngineRemoved, nil
+		case err == nil && code == setup.CodeRemoveAsked:
+			// A press left from an earlier page: only the init that opened
+			// the page removes, so this one asks again (or sets up again
+			// on --demo).
 			return setup.EngineRemoved, nil
 		case err == nil && code == setup.CodeResetAsked:
 			// A "No" left from an earlier page: the engine is set up, and

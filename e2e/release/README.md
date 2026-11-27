@@ -2,7 +2,9 @@
 
 Walks the built `basalt` binary through the main path of a person-operated
 engine: install the engine service, set up on the setup page with a passkey,
-the agent's MCP session, a held write's approval, a revert, and removal.
+the agent's MCP session, a held write's approval, a revert, and removal:
+the page's Remove, then `basalt init --demo` and the page's Set up BasaltDB
+again on the removed engine, and its Remove it from this computer too.
 
 ```
 sh e2e/release/run.sh <bin-dir>     # <bin-dir> holds the basalt binary under test

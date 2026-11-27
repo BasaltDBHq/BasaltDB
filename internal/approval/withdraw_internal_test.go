@@ -30,7 +30,7 @@ func (s withdrawStore) FindApproval(_ context.Context, id uuid.UUID) (action.App
 func (s withdrawStore) WithdrawApproval(_ context.Context, _ uuid.UUID, reason string) (*time.Time, error) {
 	*s.calls++
 	if s.a.Status != action.ApprovalPending {
-		return nil, nil
+		return s.notWaiting(), nil
 	}
 	at := time.Now()
 	s.a.Status, s.a.WithdrawnAt, s.a.WithdrawReason = action.ApprovalWithdrawn, &at, reason
@@ -95,5 +95,8 @@ type expiredStore struct{ withdrawStore }
 
 func (s expiredStore) WithdrawApproval(context.Context, uuid.UUID, string) (*time.Time, error) {
 	*s.calls++
-	return nil, nil
+	return s.notWaiting(), nil
 }
+
+// notWaiting is the guard's answer for a request no longer waiting: no time.
+func (withdrawStore) notWaiting() *time.Time { return nil }

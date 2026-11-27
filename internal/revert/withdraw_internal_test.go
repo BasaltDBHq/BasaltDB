@@ -31,7 +31,7 @@ func (s withdrawStore) FindRevert(_ context.Context, id uuid.UUID) (action.Rever
 func (s withdrawStore) WithdrawRevert(_ context.Context, _ uuid.UUID, reason string) (*time.Time, error) {
 	*s.calls++
 	if s.r.Status != action.RevertPending {
-		return nil, nil
+		return s.notWaiting(), nil
 	}
 	at := time.Now()
 	s.r.Status, s.r.WithdrawnAt, s.r.WithdrawReason = action.RevertWithdrawn, &at, reason
@@ -81,3 +81,6 @@ func TestAwaitRevertReportsWithdrawn(t *testing.T) {
 	require.Len(t, out.NextSteps, 1)
 	require.Equal(t, toolresult.ActionStop, out.NextSteps[0].Action)
 }
+
+// notWaiting is the guard's answer for a request no longer waiting: no time.
+func (withdrawStore) notWaiting() *time.Time { return nil }

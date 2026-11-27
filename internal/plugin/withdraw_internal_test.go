@@ -30,7 +30,7 @@ func (s withdrawApprovals) ReadPluginApproval(_ context.Context, id uuid.UUID) (
 func (s withdrawApprovals) WithdrawPluginApproval(_ context.Context, _ uuid.UUID, reason string) (*time.Time, error) {
 	*s.calls++
 	if s.r.Status != guardmodel.PluginApprovalStatusPending {
-		return nil, nil
+		return s.notWaiting(), nil
 	}
 	at := time.Now()
 	s.r.Status, s.r.WithdrawnAt, s.r.WithdrawReason = guardmodel.PluginApprovalStatusWithdrawn, &at, reason
@@ -83,3 +83,6 @@ func TestRequestPluginWaitReportsWithdrawn(t *testing.T) {
 	require.Equal(t, PluginStateWithdrawn, out.State)
 	require.Equal(t, "The agent withdrew this request: wrong plugin. Nothing changed.", out.PersonMessage)
 }
+
+// notWaiting is the guard's answer for a request no longer waiting: no time.
+func (withdrawApprovals) notWaiting() *time.Time { return nil }

@@ -30,13 +30,6 @@ type WithdrawResult struct {
 	NextSteps     []toolresult.NextStep
 }
 
-// Withdraw cases of the next steps catalog: the item is withdrawn (now or
-// earlier), or it was no longer waiting and nothing changed.
-const (
-	WithdrawCaseWithdrawn  = "WITHDRAWN"
-	WithdrawCaseNotWaiting = "NOT_WAITING"
-)
-
 // WithdrawApproval withdraws one of the agent's held writes while it waits
 // for the person. found is false when the agent holds no held write with
 // that id (it may be a plugin approval). The answer is the held write as the

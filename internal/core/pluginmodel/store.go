@@ -72,6 +72,8 @@ const (
 	ApprovalAlreadyApproved ApprovalReason = "ALREADY_APPROVED"
 	// ApprovalCancelled: a newer approval for the same plugin replaced it.
 	ApprovalCancelled ApprovalReason = "CANCELLED"
+	// ApprovalWithdrawn: the agent that opened it withdrew it.
+	ApprovalWithdrawn ApprovalReason = "WITHDRAWN"
 	// ApprovalNotFound: the store holds no such approval for the agent.
 	ApprovalNotFound ApprovalReason = "NOT_FOUND"
 	// ApprovalPasskeyRevoked: the passkey that signed it is unknown or

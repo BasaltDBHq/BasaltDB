@@ -232,6 +232,8 @@ func pluginApprovalRefusal(err error) error {
 			reason = pluginmodel.ApprovalAlreadyApproved
 		case se.Detail == guard.DetailApprovalCancelled:
 			reason = pluginmodel.ApprovalCancelled
+		case se.Detail == guard.Withdrawn:
+			reason = pluginmodel.ApprovalWithdrawn
 		case se.Detail == guard.DetailApprovalNotFound:
 			reason = pluginmodel.ApprovalNotFound
 		case se.Reason == action.ReasonPasskeyRevoked:

@@ -94,6 +94,10 @@ type Approval struct {
 	ApprovedAt  *time.Time
 	BindingText string
 	Lines       []string
+	// WithdrawnAt and WithdrawReason are set on a WITHDRAWN approval: when
+	// the agent withdrew it, and the reason it gave.
+	WithdrawnAt    *time.Time
+	WithdrawReason string
 	// LargeValues names the request's text or params left out of an
 	// agent's list (CONTRACT.md, Large values): Request.Text is then empty,
 	// Request.Params nil.
@@ -145,6 +149,10 @@ type Revert struct {
 	// none).
 	RejectedAt *time.Time
 	RejectNote string
+	// WithdrawnAt and WithdrawReason are set on a WITHDRAWN revert: when
+	// the agent withdrew it, and the reason it gave.
+	WithdrawnAt    *time.Time
+	WithdrawReason string
 	// CreatedAt is when the revert was prepared.
 	CreatedAt time.Time
 	// LinesLeftOut and LinesCost are as on Approval: an agent's read left

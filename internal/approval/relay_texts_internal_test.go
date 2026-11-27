@@ -11,6 +11,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // heldStore serves one pending held write.
@@ -61,5 +63,28 @@ func TestApprovalRequestRefusesTextsOutOfTheRules(t *testing.T) {
 			require.ErrorIs(t, err, approval.ErrInvalid)
 			require.ErrorContains(t, err, name)
 		})
+	}
+}
+
+// A held write the agent withdrew is shown withdrawn, with its reason, and
+// its page takes no signature: APPROVAL_INVALID WITHDRAWN before anything
+// is relayed, also for a page that opened before the withdrawal.
+func TestWithdrawnApprovalIsRefusedOnThePage(t *testing.T) {
+	t.Parallel()
+	a := heldApproval(relayBinding, relayLine)
+	a.Status, a.WithdrawReason = action.ApprovalWithdrawn, "the person changed their mind"
+	ac := newService(t, "linux", "", func(s *settings) { s.store = heldStore{a: a} })
+	for name, call := range map[string]func() error{
+		"request": func() error { _, err := ac.ApprovalRequest(context.Background(), a.ID); return err },
+		"relay": func() error {
+			_, err := ac.RelayApproval(context.Background(), approval.Response{ApprovalID: a.ID})
+			return err
+		},
+	} {
+		var te *toolresult.ToolError
+		require.ErrorAs(t, call(), &te, name)
+		require.Equal(t, guidance.CodeApprovalInvalid, te.Code, name)
+		require.Equal(t, guidance.ReasonWithdrawn, te.Reason, name)
+		require.Equal(t, "The agent withdrew this request: the person changed their mind. Nothing changed.", te.PersonMessage, name)
 	}
 }

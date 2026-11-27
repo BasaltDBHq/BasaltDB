@@ -79,6 +79,13 @@ const RevertNotFound = "NO_SUCH_REVERT"
 // DetailApprovalNotFound.
 const NoSuchApproval = "NO_SUCH_APPROVAL"
 
+// Withdrawn is the detail of APPROVAL_INVALID and REVERT_INVALID for a
+// held write, revert or plugin approval the agent withdrew (version 15),
+// from every function that takes a signature of one, applies a held write
+// or reveals its rows; the hint is the sentence "the agent withdrew this
+// request: <reason>; nothing changed".
+const Withdrawn = "WITHDRAWN"
+
 // NothingReadsOnly is the detail of NOTHING_TO_REVERT for a scope that
 // changed no row a revert could restore (version 11); the hint names the
 // scope. Every other NOTHING_TO_REVERT keeps a sentence as its detail.

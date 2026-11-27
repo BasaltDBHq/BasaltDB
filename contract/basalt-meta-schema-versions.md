@@ -149,3 +149,18 @@ A refusal is always in the ledger, whatever the size of its texts and params, an
 | Object | Change |
 |---|---|
 | `schema_version.release text` | New, with the check `schema_version_release_shape`: 1 to 64 characters of letters, digits, `.`, `+` and `-`. Every install and update, after its migrations and as the guard role, writes the release of the binary that ran it (its version, without a leading `v`) on the rows it added; an install or update that stops below version 14 (a setup code's `guard.to`) writes none, and so does a binary whose version has another shape. Rows written before have none |
+
+### Schema version 15: withdraw
+
+The agent can withdraw its own held write, revert or plugin approval while it waits for the person, and a withdrawn one is never signed ([Withdrawn requests](approvals.md#withdrawn-requests)). File `028_withdraw.sql`. **Breaking** (AE-11): the engine reads the withdrawal from the agent views, so it needs this version; an install at version 14 upgrades in place (`basalt init`, then the page it opens). Idempotent.
+
+| Object | Change |
+|---|---|
+| `approvals`, `reverts`, `plugin_approvals` | Gain `withdrawn_at timestamptz` and `withdraw_reason text`, set together. Checks `approvals_withdrawn`, `reverts_withdrawn` and `plugin_approvals_withdrawn` refuse a row both withdrawn and signed (an approval approved or used; a revert signed, applied or rejected; a plugin approval whose status is not `WITHDRAWN`). `plugin_approvals.status` also takes `WITHDRAWN` (check `plugin_approvals_status`) |
+| `changes.status` | Also takes `APPROVAL_WITHDRAWN` (check `changes_status`) |
+| `withdraw_approval(approval_id uuid, reason text) returns timestamptz` | New, `SECURITY DEFINER`, `EXECUTE` for `<prefix>_agents` ([Approval objects](basalt-meta.md#approval-objects)) |
+| `withdraw_revert(revert_id uuid, reason text) returns timestamptz` | New, `SECURITY DEFINER`, `EXECUTE` for `<prefix>_agents` ([Revert objects](basalt-meta-revert.md)) |
+| `withdraw_plugin_approval(approval_id uuid, reason text) returns timestamptz` | New, `SECURITY DEFINER`, `EXECUTE` for `<prefix>_agents`: the opener withdraws a `PENDING`, unexpired plugin approval. Takes `submit_plugin_approval`'s table lock, then the row's. An approval the role did not open, or none, is `APPROVAL_INVALID` `NOT_FOUND`. Returns when it was withdrawn, or `NULL`, and appends `PLUGIN_APPROVAL_WITHDRAWN` to the opener's ledger ([In the ledger](plugins-approval.md#what-a-plugin-approval-binds)) |
+| `_withdrawn_hint(reason text) returns text` | New, internal (no grants), `IMMUTABLE`: "the agent withdrew this request: <reason>; nothing changed" |
+| `submit_approval`, `submit_plugin_approval`, `apply_revert`, `_revert_lock_pending`, `_check_approval`, `_commit_approval`, `_reveal_approval_lock`, `reveal_approval_rows`, `reveal_revert_rows` | Replaced (`SECURITY DEFINER` and `SET search_path = pg_catalog, pg_temp` kept). Each refuses a withdrawn request right after looking it up: `APPROVAL_INVALID` (a held write, a plugin approval) or `REVERT_INVALID` with detail `WITHDRAWN` and the `_withdrawn_hint` hint. Otherwise unchanged |
+| `agent_approvals`, `agent_reverts`, `agent_plugin_approvals` | Status `WITHDRAWN` for a withdrawn request (in `agent_reverts` after `APPLIED` and `REJECTED`; in `agent_approvals` after `APPLIED`, before `EXPIRED`); gain `withdrawn_at` and `withdraw_reason`, last. `agent_plugin_approvals` shows `withdraw_reason` to the opener only |

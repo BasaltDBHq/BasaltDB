@@ -72,6 +72,7 @@ Served (owner decisions AE-1 to AE-14), except the parts marked planned. Every e
 | `APPROVAL_INVALID` | `BAD_SIGNATURE` | — | P `OPEN_LINK` (as for `NOT_SIGNED`), A `END_TURN`; +pm |
 | `APPROVAL_INVALID` | `REVEAL_REFUSED` | — | HR-1, pages API only. P `OPEN_LINK` (the page's own short link, then Show values with passkey once more); +pm: Your passkey didn't confirm. Nothing was shown; try again. |
 | `APPROVAL_INVALID` | `PASSKEY_REVOKED` | — | A `RUN_COMMAND` (`basalt init`: its link registers the passkey the person uses), P `OPEN_LINK` (as for `NOT_SIGNED`), A `END_TURN`; +pm |
+| `APPROVAL_INVALID` | `WITHDRAWN` | — | The agent withdrew the held write or plugin approval ([Withdrawn requests](approvals.md#withdrawn-requests)): a `write` with its `approvalId`, and the approval and plugin pages. A `STOP`; +pm: The agent withdrew this request: <reason>. Nothing changed. |
 | `REVERT_INVALID` | `LINE_INVALID` | — | A `CALL_TOOL` (`revert_plan`, pending lines) |
 | `REVERT_INVALID` | `PLAN_NOT_SIGNED` | — | A `CALL_TOOL` (`revert_plan`), A `END_TURN` |
 | `REVERT_INVALID` | `PLAN_FINISHED` | — | A `CALL_TOOL` (`revert_plan`), A `STOP` |
@@ -80,6 +81,7 @@ Served (owner decisions AE-1 to AE-14), except the parts marked planned. Every e
 | `REVERT_INVALID` | `BAD_SIGNATURE` | — | P `OPEN_LINK` (the revert link: no `url` while the engine serves the pages, the person opens the short link the agent gave earlier; else the link the request handed over, the long link within the budget or the hash link, with no `revertUrl` and no `requestFile` again; no `url` for a widened revert, signed on the page the person widened on), A `END_TURN`; +pm |
 | `REVERT_INVALID` | `REVEAL_REFUSED` | — | HR-1, pages API only. P `OPEN_LINK` (the page's own short link, then Show values with passkey once more); +pm: as for `APPROVAL_INVALID` |
 | `REVERT_INVALID` | `PASSKEY_REVOKED` | — | A `RUN_COMMAND` (`basalt init`: its link registers the passkey the person uses), P `OPEN_LINK` (as for `BAD_SIGNATURE`), A `END_TURN`; +pm |
+| `REVERT_INVALID` | `WITHDRAWN` | — | The agent withdrew the revert ([Withdrawn requests](approvals.md#withdrawn-requests)), on the revert page. A `STOP`; +pm: as for `APPROVAL_INVALID` |
 | `REVERT_EXPIRED` | `NOT_SIGNED` | — | A `ASK_PERSON`, A `REVISE_CALL` (`request_revert` with the same scope); +pm |
 | `REVERT_EXPIRED` | `NOT_FINISHED` | — | A `ASK_PERSON`, A `REVISE_CALL` (`request_revert` with the same scope); +pm |
 | `NOTHING_TO_REVERT` | `READS_ONLY` | — | A `STOP`; +pm |

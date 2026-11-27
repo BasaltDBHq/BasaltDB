@@ -22,6 +22,8 @@ const (
 		"the agent opens one with request_plugin and a person signs it: the engine starts the plugin within seconds"
 	whyApprovalReplaced = "no plugin approval names this agent: the newest one for it was replaced by a newer approval that does not name this agent; " +
 		"the agent opens one with request_plugin: the engine starts the plugin once a person signed it"
+	whyApprovalWithdrawn = "its plugin approval was withdrawn by the agent before a person signed it; " +
+		"the agent opens a new one with request_plugin, or removes the plugin"
 	whyApprovalEnded = "its plugin approval ended when it was turned off or removed for this agent; " +
 		"turning it on again needs a new approval, which the agent opens with request_plugin"
 	whyApprovalsOldGuard = "this agent's guard is older than schema version 5, so it holds no plugin approvals; " +
@@ -119,6 +121,8 @@ func (a *agentApprovals) check(ctx context.Context, k pluginmodel.EntryKey, d gu
 			r.ExpiresAt.UTC().Format("2006-01-02 15:04") + " UTC); the engine starts the plugin within seconds of the signature"}, false
 	case guardmodel.PluginApprovalStatusCancelled:
 		return withheldWhy{code: problemPluginAwaitingApproval, why: whyApprovalReplaced}, false
+	case guardmodel.PluginApprovalStatusWithdrawn:
+		return withheldWhy{code: problemPluginAwaitingApproval, why: whyApprovalWithdrawn}, false
 	case guardmodel.PluginApprovalStatusExpired:
 		return withheldWhy{code: problemPluginApprovalExpired, why: "its plugin approval expired unsigned at " +
 			r.ExpiresAt.UTC().Format("2006-01-02 15:04") + " UTC; the agent opens a new one with request_plugin, or removes the plugin"}, false

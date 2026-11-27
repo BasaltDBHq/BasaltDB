@@ -91,6 +91,7 @@ The binding text is the text `open_plugin_approval` builds from the detail the c
 |---|---|---|
 | `PLUGIN_APPROVAL_PENDING` | `open_plugin_approval`, to the ledger of the agent that opened it | the binding's keys without `kind`, `store`, `requestedBy`, `agents` and `change` |
 | `PLUGIN_APPROVED` | `submit_plugin_approval`, to the ledger of every agent the approval lists | the same without `expiresAt`, plus `credentialId` (the passkey that signed, base64url) and `bindingSha256` (lowercase hex of the challenge) |
+| `PLUGIN_APPROVAL_WITHDRAWN` | `withdraw_plugin_approval` ([schema version 15](basalt-meta-schema-versions.md#schema-version-15-withdraw)), to the ledger of the agent that opened it | `approvalId`, `name`, `instance` and the `reason` the agent gave ([Withdrawn requests](approvals.md#withdrawn-requests)) |
 
 `record_plugin_event` refuses both kinds, so no agent role can write a `PLUGIN_APPROVED` row, and the engine's check reads the approval, never an event an agent role could have written.
 

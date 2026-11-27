@@ -24,6 +24,9 @@ const (
 	ApprovalApproved = "APPROVED"
 	ApprovalApplied  = "APPLIED"
 	ApprovalExpired  = "EXPIRED"
+	// ApprovalWithdrawn is a held write the agent withdrew (basalt_meta
+	// version 15): nothing was written.
+	ApprovalWithdrawn = "WITHDRAWN"
 )
 
 // ErrApprovalNotFound is an approval id that is not one of the calling
@@ -44,7 +47,7 @@ const requestKind = "coalesce(binding_text::jsonb #>> '{request,kind}', '') AS r
 func approvalSelect(ctx context.Context) sq.SelectBuilder {
 	return withRequest(ctx, sqlport.Builder.Select(colApprovalID, colRunID, "task_id", "intent", requestKind, "coalesce(statement, '') AS statement", "params",
 		"assigned_columns", "rows", "status", "created_at", "expires_at", "approved_at",
-		"coalesce(binding_text, '') AS binding_text").
+		"coalesce(binding_text, '') AS binding_text", "withdrawn_at", "coalesce(withdraw_reason, '') AS withdraw_reason").
 		From("basalt_meta.agent_approvals"))
 }
 
@@ -57,7 +60,7 @@ func scanApproval(row pgx.CollectableRow) (action.Approval, error) {
 func approvalDest(a *action.Approval) []any {
 	return []any{
 		&a.ID, &a.RunID, &a.TaskID, &a.Intent, &a.Request.Kind, &a.Request.Text, &a.Request.Params, &a.Assigned, &a.Rows, &a.Status,
-		&a.CreatedAt, &a.ExpiresAt, &a.ApprovedAt, &a.BindingText, &a.Lines, &a.LinesLeftOut, &a.LinesCost,
+		&a.CreatedAt, &a.ExpiresAt, &a.ApprovedAt, &a.BindingText, &a.WithdrawnAt, &a.WithdrawReason, &a.Lines, &a.LinesLeftOut, &a.LinesCost,
 	}
 }
 
@@ -82,7 +85,7 @@ func markedApprovals(page string, desc bool, limit int) string {
 	}
 	return markedPage(page, colApprovalID, order, limit, "p.approval_id", "p.run_id", "p.task_id", "p.intent", "p.request_kind", markedStatement,
 		markedParams, "p.assigned_columns", "p.rows", "p.status", "p.created_at", "p.expires_at", "p.approved_at",
-		pageOnly("p.binding_text", "''"), pageOnly("p.lines", "'{}'::text[]"), "p.lines_left_out", "p.lines_cost", markedLarge)
+		pageOnly("p.binding_text", "''"), "p.withdrawn_at", "p.withdraw_reason", pageOnly("p.lines", "'{}'::text[]"), "p.lines_left_out", "p.lines_cost", markedLarge)
 }
 
 // FindApproval returns one of the calling agent's approvals.

@@ -13,6 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 )
 
 // onePluginApproval serves one pending plugin approval the role opened.
@@ -60,4 +61,20 @@ func TestPluginApprovalRequestRefusesTextsOutOfTheRules(t *testing.T) {
 			require.ErrorContains(t, err, name)
 		})
 	}
+}
+
+// A plugin approval its opener withdrew is shown withdrawn, with its
+// reason, and takes no signature: APPROVAL_INVALID WITHDRAWN.
+func TestWithdrawnPluginApprovalIsRefusedOnThePage(t *testing.T) {
+	t.Parallel()
+	r := guardmodel.PluginApprovalRecord{
+		ApprovalID: uuid.MustParse("0193a4c2-7d1e-7c3a-9f00-0000000000a1"), Status: guardmodel.PluginApprovalStatusWithdrawn,
+		ExpiresAt: time.Now().Add(time.Hour), BindingText: "{}", WithdrawReason: "wrong plugin",
+	}
+	_, err := newService(t, "linux", "", withApprovals(onePluginApproval{r: r})).PluginApprovalRequest(context.Background(), r.ApprovalID)
+	var pe *guidance.PageError
+	require.ErrorAs(t, err, &pe)
+	require.Equal(t, guidance.CodeApprovalInvalid, pe.Code)
+	require.Equal(t, guidance.ReasonWithdrawn, pe.Reason)
+	require.Equal(t, "The agent withdrew this request: wrong plugin. Nothing changed.", pe.PersonMessage)
 }

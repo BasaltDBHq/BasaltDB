@@ -195,6 +195,14 @@ func catalogCases() map[string]catalogCase {
 		stepcatalogtest.CaseKey("APPROVAL_INVALID", "NOT_SIGNED", ""):      {"write", withApproval(writeArgs0), approvalLink(guidance.ReasonNotSigned)},
 		stepcatalogtest.CaseKey("APPROVAL_INVALID", "BAD_SIGNATURE", ""):   {"write", withApproval(writeArgs0), approvalLink(guidance.ReasonBadSignature)},
 		stepcatalogtest.CaseKey("APPROVAL_INVALID", "PASSKEY_REVOKED", ""): {"write", withApproval(writeArgs0), approvalLink(guidance.ReasonPasskeyRevoked)},
+		stepcatalogtest.CaseKey("APPROVAL_INVALID", "WITHDRAWN", ""): {"write", withApproval(writeArgs0), asToolError(&toolresult.ToolError{
+			Code: guidance.CodeApprovalInvalid, Reason: guidance.ReasonWithdrawn, Message: "approval withdrawn",
+			PersonMessage: guidance.WithdrawnMessage("the person changed their mind"),
+		})},
+		stepcatalogtest.CaseKey("REVERT_INVALID", "WITHDRAWN", ""): {"revert_page", nil, asToolError(&toolresult.ToolError{
+			Code: guidance.CodeRevertInvalid, Reason: guidance.ReasonWithdrawn, Message: "revert withdrawn",
+			PersonMessage: guidance.WithdrawnMessage("the person changed their mind"),
+		})},
 
 		stepcatalogtest.CaseKey("PERMISSION_DENIED", "", ""): {"query", queryArgs0, pgFail("42501", "permission denied for table events", "")},
 

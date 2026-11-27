@@ -364,6 +364,13 @@ func (rc *Service) applyRevertError(ctx context.Context, r action.Revert, err er
 		return rc.passkeyRevoked(ctx, r)
 	case revertstore.RevertAlreadySigned:
 		return alreadySigned(r)
+	case revertstore.RevertWithdrawnReason:
+		// Withdrawn after the page opened: the reason is in the store's
+		// record now, not in r.
+		if now, err := rc.store.Records.FindRevert(ctx, r.ID); err == nil {
+			r = now
+		}
+		return withdrawn(r)
 	case revertstore.RevertSignature:
 		return rc.badSignature(ctx, r, "the database refused the signature, nothing was reverted: "+refused.Detail)
 	default:

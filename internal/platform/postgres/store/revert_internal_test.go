@@ -104,6 +104,7 @@ func TestRevertRefusalsPerCall(t *testing.T) {
 		{"apply: already words, untyped", applyRevertRefusal, revertInvalid(applied), revertstore.RevertSignature, applied, ""},
 		{"apply: no such revert", applyRevertRefusal, revertRefused("NO_SUCH_REVERT", noSuchRevert), revertstore.RevertSignature, noSuchRevert, ""},
 		{"apply: no such revert, any hint", applyRevertRefusal, revertRefused("NO_SUCH_REVERT", "x"), revertstore.RevertSignature, "x", ""},
+		{"apply: withdrawn", applyRevertRefusal, revertRefused("WITHDRAWN", "the agent withdrew this request: x; nothing changed"), revertstore.RevertWithdrawnReason, "the agent withdrew this request: x; nothing changed", ""},
 		{"apply: rejected", applyRevertRefusal, revertInvalid(rejected), revertstore.RevertSignature, rejected, ""},
 		{"apply: bad signature", applyRevertRefusal, revertInvalid("signature does not verify"), revertstore.RevertSignature, "signature does not verify", ""},
 		{"apply: time limit", applyRevertRefusal, statementTimeout(), "", "", ""},

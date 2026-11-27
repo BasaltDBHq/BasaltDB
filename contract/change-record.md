@@ -26,7 +26,7 @@ One record per action an agent asks for, whether applied, held or refused. It ha
 
 | Field | Values |
 |---|---|
-| `status` | `APPLIED`, `APPROVAL_PENDING`, `REFUSED`, `APPROVAL_EXPIRED`, `REVERTED` |
+| `status` | `APPLIED`, `APPROVAL_PENDING`, `REFUSED`, `APPROVAL_EXPIRED`, `APPROVAL_WITHDRAWN` (a held write the agent withdrew, [Withdrawn requests](approvals.md#withdrawn-requests)), `REVERTED` |
 | `op` | Basalt's ([Operations](stores.md#operations)): `READ`, `INSERT`, `UPDATE`, `DELETE`, `OTHER` (a refused request that is none of these), `REVERT` (M3: a person's revert) |
 | `store` | `{kind, verb}`: the store's kind and its own word for the request's operation ([Operations](stores.md#operations): in Postgres the statement's command, `SELECT` for a read); `verb` is absent in exactly two cases: on `REVERT`, and on `OTHER` when the store did not give its command |
 | `request` | The request by family ([Request families](stores.md#request-families)): for `SQL`, `{kind, params, statement}` |

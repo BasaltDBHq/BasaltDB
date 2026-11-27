@@ -48,6 +48,10 @@ func PluginApprovalsSQL(n guardmodel.Names) string {
 	return renderSQL(n, migrations[versionPluginApprovals-1].sql)
 }
 
+// ReleaseVersion is the version that adds schema_version.release, for the
+// test of an update from before it.
+const ReleaseVersion = versionRelease
+
 // StoreNeutralSQL is schema version 10's SQL as the install runs it.
 func StoreNeutralSQL(n guardmodel.Names) string {
 	return renderSQL(n, migrations[versionStoreNeutral-1].sql)

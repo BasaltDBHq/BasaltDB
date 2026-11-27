@@ -110,6 +110,7 @@ func SubmitPluginApproval(ctx context.Context, q Querier, r guardmodel.PluginApp
 var pluginApprovalColumns = []string{
 	"approval_id", "name", "instance", "status", "opened_at", "expires_at", "approved_at",
 	"names_caller", "ended_at", "detail", "coalesce(binding_text, '')", "coalesce(settings_text, '')",
+	"withdrawn_at", "coalesce(withdraw_reason, '')",
 }
 
 // ReadPluginApprovals returns, for the calling agent role and each
@@ -159,7 +160,7 @@ func scanPluginApproval(row pgx.CollectableRow) (guardmodel.PluginApprovalRecord
 	var status string
 	var detail []byte
 	if err := row.Scan(&r.ApprovalID, &r.Name, &r.Instance, &status, &r.OpenedAt, &r.ExpiresAt, &r.ApprovedAt,
-		&r.NamesCaller, &r.EndedAt, &detail, &r.BindingText, &r.SettingsText); err != nil {
+		&r.NamesCaller, &r.EndedAt, &detail, &r.BindingText, &r.SettingsText, &r.WithdrawnAt, &r.WithdrawReason); err != nil {
 		return r, err
 	}
 	r.Status = guardmodel.PluginApprovalStatus(status)

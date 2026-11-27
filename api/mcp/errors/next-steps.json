@@ -44,6 +44,7 @@
     { "code": "APPROVAL_INVALID", "reason": "BAD_SIGNATURE", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "END_TURN" }] },
     { "code": "APPROVAL_INVALID", "reason": "REVEAL_REFUSED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }] },
     { "code": "APPROVAL_INVALID", "reason": "PASSKEY_REVOKED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "END_TURN" }] },
+    { "code": "APPROVAL_INVALID", "reason": "WITHDRAWN", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
 
     { "code": "REVERT_INVALID", "reason": "LINE_INVALID", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "code": "REVERT_INVALID", "reason": "PLAN_NOT_SIGNED", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }, { "actor": "AGENT", "action": "END_TURN" }] },
@@ -53,6 +54,7 @@
     { "code": "REVERT_INVALID", "reason": "BAD_SIGNATURE", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "END_TURN" }] },
     { "code": "REVERT_INVALID", "reason": "REVEAL_REFUSED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }] },
     { "code": "REVERT_INVALID", "reason": "PASSKEY_REVOKED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "END_TURN" }] },
+    { "code": "REVERT_INVALID", "reason": "WITHDRAWN", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
 
     { "code": "REVERT_EXPIRED", "reason": "NOT_SIGNED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "REVISE_CALL" }] },
     { "code": "REVERT_EXPIRED", "reason": "NOT_FINISHED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "REVISE_CALL" }] },

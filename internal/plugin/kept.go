@@ -877,6 +877,9 @@ func (r *keptApprovalReader) stateOf(agent string, k pluginmodel.EntryKey) Plugi
 			st.State, st.ExpiresAt = "PENDING", &at
 		case a.Status == guardmodel.PluginApprovalStatusExpired:
 			st.State = "EXPIRED"
+		case a.Status == guardmodel.PluginApprovalStatusWithdrawn:
+			// Withdrawn by its opener: it no longer applies, as an ended one.
+			st.State = PluginStateEnded
 		default:
 			return st
 		}

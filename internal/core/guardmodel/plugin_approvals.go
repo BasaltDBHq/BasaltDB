@@ -27,6 +27,9 @@ const (
 	PluginApprovalStatusCancelled PluginApprovalStatus = "CANCELLED"
 	// PluginApprovalStatusExpired is a pending approval past its expiry.
 	PluginApprovalStatusExpired PluginApprovalStatus = "EXPIRED"
+	// PluginApprovalStatusWithdrawn is an approval its opener withdrew
+	// before the person signed it.
+	PluginApprovalStatusWithdrawn PluginApprovalStatus = "WITHDRAWN"
 )
 
 // PluginApprovalDetail is what open_plugin_approval takes: the binding's
@@ -123,6 +126,10 @@ type PluginApprovalRecord struct {
 	// opened the approval: they list the other agents.
 	BindingText  string
 	SettingsText string
+	// WithdrawnAt is set on a WITHDRAWN approval; WithdrawReason, the
+	// reason its opener gave, only for the opener.
+	WithdrawnAt    *time.Time
+	WithdrawReason string
 }
 
 // Ended reports whether the approval ended for the calling agent.

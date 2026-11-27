@@ -7,10 +7,16 @@ const (
 	ApprovalApproved = "APPROVED"
 	ApprovalApplied  = "APPLIED"
 	ApprovalExpired  = "EXPIRED"
+	// ApprovalWithdrawn is a held write the agent withdrew before the
+	// person signed it.
+	ApprovalWithdrawn = "WITHDRAWN"
 
 	RevertPending  = "PENDING"
 	RevertApplying = "APPLYING"
 	RevertApplied  = "APPLIED"
 	RevertRejected = "REJECTED"
 	RevertExpired  = "EXPIRED"
+	// RevertWithdrawn is a revert the agent withdrew before the person
+	// signed it.
+	RevertWithdrawn = "WITHDRAWN"
 )

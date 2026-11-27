@@ -379,6 +379,17 @@ func alreadySigned(r action.Revert) error {
 	}
 }
 
+// withdrawn is the refusal of revert r, which the agent withdrew: the page
+// shows it as withdrawn and takes no signature (CONTRACT.md, Approvals,
+// Withdrawn requests).
+func withdrawn(r action.Revert) error {
+	return &toolresult.ToolError{
+		Code: guidance.CodeRevertInvalid, Reason: guidance.ReasonWithdrawn,
+		Message:       fmt.Sprintf("revert %s was withdrawn by the agent; nothing was reverted", r.ID),
+		PersonMessage: guidance.WithdrawnMessage(r.WithdrawReason),
+	}
+}
+
 func (rc *Service) revertExpired(r action.Revert) error {
 	reason, window := guidance.ReasonNotSigned, "was not signed within an hour"
 	if r.SignedAt != nil {
@@ -523,6 +534,8 @@ func InvalidSteps(b *guidance.Steps, te *toolresult.ToolError, id string) {
 		b.Stop("The revert is applied: do not send more lines.")
 	case guidance.ReasonNotThisAgent:
 		b.Stop("This revert is not one of yours: do not retry.")
+	case guidance.ReasonWithdrawn:
+		b.Stop("Do not ask the person to sign it: the revert was withdrawn and reverts nothing.")
 	default:
 		b.Fail(fmt.Errorf("REVERT_INVALID %s needs the revert page's link", te.Reason))
 	}

@@ -7,11 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/supabase"
+	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/lib/sqlident"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
@@ -133,6 +136,9 @@ func PlanInit(ctx context.Context, q Querier, opts guardmodel.InitOptions) (guar
 		}
 		add(migrationBegin + m.sql + fmt.Sprintf(migrationEnd, m.version))
 	}
+	if sql := planRelease(version, versionAfter(version, opts.UpTo), strings.TrimPrefix(buildinfo.Version, "v")); sql != "" {
+		add(sql)
+	}
 	add(recordInstall(versionAfter(version, opts.UpTo)))
 	if opts.Agent.Name != "" {
 		agent, err := planAgent(ctx, q, n, opts.Agent, versionAfter(version, opts.UpTo))
@@ -150,6 +156,26 @@ func PlanInit(ctx context.Context, q Querier, opts guardmodel.InitOptions) (guar
 	}
 	add(attachAll)
 	return s, nil
+}
+
+// releaseShape is a release name schema_version takes: a version string
+// of at most 64 characters, as the column's check says. Nothing else
+// reaches the SQL the person is shown.
+var releaseShape = regexp.MustCompile(`^[0-9A-Za-z.+-]{1,64}$`)
+
+// planRelease is the statement that records release, this build's version,
+// on the schema_version rows an install or update from installed to after
+// adds, or "" when the guard after it has no release column (an UpTo
+// below versionRelease), nothing is added, or release has another shape.
+// It runs as the owner, which alone may write schema_version.
+func planRelease(installed, after int, release string) string {
+	if after < versionRelease || after <= installed || !releaseShape.MatchString(release) {
+		return ""
+	}
+	return fmt.Sprintf(`
+SET LOCAL ROLE {{guard}};
+UPDATE basalt_meta.schema_version SET release = '%s' WHERE version > %d;
+RESET ROLE;`, release, installed)
 }
 
 // installRoles creates the owner and group roles once, and lets the admin
@@ -912,6 +938,42 @@ func CheckUsable(ctx context.Context, q Querier) error {
 		}
 	}
 	return usable(version, objects, installs, installID)
+}
+
+// ReadOldInstall reads, changing nothing, whether basalt_meta holds a
+// guard below the update floor (updatableFrom), which the setup page's
+// install replaces instead of refusing: its version, the floor and the
+// release recorded with that version. ok is false for no guard and for a
+// guard at or above the floor. It reads only schema_version, whose shape
+// every release kept, never another table of an older install.
+func ReadOldInstall(ctx context.Context, q Querier) (old guardmodel.OldInstall, ok bool, err error) {
+	version, err := InstalledVersion(ctx, q)
+	if err != nil || version == 0 || version >= updatableFrom() {
+		return guardmodel.OldInstall{}, false, err
+	}
+	old = guardmodel.OldInstall{Version: version, Floor: updatableFrom()}
+	var hasRelease bool
+	// Plain SQL: catalog lookup; the column exists from versionRelease on.
+	if err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_attribute
+		WHERE attrelid = 'basalt_meta.schema_version'::pg_catalog.regclass AND attname = 'release' AND NOT attisdropped)`).Scan(&hasRelease); err != nil {
+		return guardmodel.OldInstall{}, false, err
+	}
+	if !hasRelease {
+		return old, true, nil
+	}
+	var release string
+	sql, args, err := sqlport.Builder.Select("coalesce(release, '')").From("basalt_meta.schema_version").
+		Where(sq.Eq{"version": version}).ToSql()
+	if err != nil {
+		return guardmodel.OldInstall{}, false, err
+	}
+	if err := q.QueryRow(ctx, sql, args...).Scan(&release); err != nil {
+		return guardmodel.OldInstall{}, false, err
+	}
+	if releaseShape.MatchString(release) {
+		old.Release = release
+	}
+	return old, true, nil
 }
 
 // usable is CheckUsable's verdict on what it read: the recorded version (0

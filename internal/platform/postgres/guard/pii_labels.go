@@ -87,12 +87,21 @@ func labelOf(c guardmodel.PIIColumn) guardmodel.Label {
 	return guardmodel.Label{Class: c.Class, EntityType: c.EntityType, PhoneRegion: c.PhoneRegion}
 }
 
+// Beginner is a connection, or a transaction, that can begin a
+// transaction of its own (a savepoint in a transaction): *pgx.Conn and
+// pgx.Tx are both one.
+type Beginner interface {
+	Querier
+	Begin(ctx context.Context) (pgx.Tx, error)
+}
+
 // ReadLabels is every ordinary column of tables (schema.table), by table in
 // the order given and then column order, with its class in pii_columns:
 // UNCLASSIFIED for a column with no row, and for every column when the
-// database has no guard yet. It reads in a transaction of its own, as the
-// guard role, and changes nothing.
-func ReadLabels(ctx context.Context, conn *pgx.Conn, n guardmodel.Names, tables []string) ([]guardmodel.ColumnLabel, error) {
+// database has no guard yet. It reads in a transaction of its own (a
+// savepoint when conn is a transaction), as the guard role, and changes
+// nothing.
+func ReadLabels(ctx context.Context, conn Beginner, n guardmodel.Names, tables []string) ([]guardmodel.ColumnLabel, error) {
 	cols, err := tableColumns(ctx, conn, tables)
 	if err != nil {
 		return nil, err

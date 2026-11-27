@@ -9,6 +9,7 @@ import (
 	"os/user"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
@@ -53,6 +54,13 @@ func RunLocal(c *cli.IO, h LocalHost, args []string) int {
 			return c.Fail(err)
 		}
 	}
+	// A config in the person's own folder from before the last breaking
+	// release (0.0.1 kept its config there) would be a second config next
+	// to the one the page writes: it goes aside once the service is in
+	// place. The dialog's script did the same for the system path.
+	if err := moveBreakingUserConfig(c); err != nil {
+		return c.Fail(err)
+	}
 	state, err := waitForSetupPage(c)
 	if err != nil {
 		return c.Fail(err)
@@ -90,6 +98,28 @@ func RunLocal(c *cli.IO, h LocalHost, args []string) int {
 	}
 	fmt.Fprintln(c.Stderr, "basalt: finish the setup on the page that opened: type your database's admin connection string there, never here. The last line above is the MCP server the agent registers.")
 	return cli.ExitOK
+}
+
+// moveBreakingUserConfig moves the folder of an engine.json in the person's
+// own config folder from before the last breaking release aside
+// (moveBreakingConfigAside) and says so in one line.
+func moveBreakingUserConfig(c *cli.IO) error {
+	base, err := c.Host.UserConfigDir()
+	if err != nil {
+		return nil //nolint:nilerr // no config folder of the person's: nothing to move
+	}
+	return moveBreakingConfig(c, config.UserPath(base))
+}
+
+// moveBreakingConfig is moveBreakingConfigAside on path, with its
+// line.
+func moveBreakingConfig(c *cli.IO, path string) error {
+	old, err := moveBreakingConfigAside(path)
+	if err != nil || old == "" {
+		return err
+	}
+	fmt.Fprintln(c.Stderr, breakingMovedLine(path, old))
+	return nil
 }
 
 // restartOlderEngine restarts the engine service when it runs a different

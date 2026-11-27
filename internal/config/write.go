@@ -213,6 +213,7 @@ func UpsertedVault(path string, open func(string) (*os.File, error), s Settings,
 	if err := c.checkOrigins(); err != nil {
 		return nil, VaultWritten{}, fmt.Errorf("config %s: %w", path, err)
 	}
+	c.Breaking = BreakingEpoch
 	raw, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return nil, VaultWritten{}, err
@@ -254,6 +255,7 @@ func clearSetupWith(f configFile, agent, id string) (cleared bool, err error) {
 		return false, nil
 	}
 	c.Agents[i].Setup = nil
+	c.Breaking = BreakingEpoch
 	raw, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return false, err
@@ -297,6 +299,7 @@ func updateWith(f configFile, ch Change) error {
 	if err := c.check(); err != nil {
 		return fmt.Errorf("config %s: %w", f.path(), err)
 	}
+	c.Breaking = BreakingEpoch
 	raw, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
@@ -362,6 +365,7 @@ func RemoveAgents(path string, names []string) (removedFile bool, err error) {
 	if err := c.check(); err != nil {
 		return false, fmt.Errorf("config %s: %w", path, err)
 	}
+	c.Breaking = BreakingEpoch
 	raw, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return false, err

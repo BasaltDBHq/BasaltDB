@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { b64urlEncode, utf8 } from "./codec.js";
 import { Labels, restNote } from "./picks.js";
 // Imported before any document exists, so the page's main() does not run.
-import { agentProbe, answerFits, CHECK_PATH, CHOICES, DOCTOR_PATH, doneText, Install, labelFields, startUpdate, UpdateCheck, JOB_TEXT, JOBS, labelWords, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, removeConfirmed, REMOVE_LAST_STEP, ENGINE_PATH, NOT_MINE_PATH, SetupError, setupRequest, startReal, suggestionOf } from "./setup.js";
+import { agentProbe, answerFits, CHECK_PATH, CHOICES, DOCTOR_PATH, doneText, Install, labelFields, startUpdate, UpdateCheck, JOB_TEXT, JOBS, labelWords, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, removeConfirmed, REMOVE_LAST_STEP, REPLACE_RUN, REPLACE_TITLE, replaceLines, replaceOf, ENGINE_PATH, NOT_MINE_PATH, SetupError, setupRequest, startReal, suggestionOf } from "./setup.js";
 
 const link = (job) => "#1." + b64urlEncode(utf8(JSON.stringify(job)));
 const job = { job: "INSTALL", agent: "demo_bot", osUser: "alice", demo: true };
@@ -1038,4 +1038,81 @@ test("a refused engine check goes straight to the check", async () => {
   await settle();
   await settle();
   assert.deepEqual(shown(nodes), ["u-check"]);
+});
+
+// An install on a database whose BasaltDB install is too old to update:
+// the engine's check answers replace with its data, and the page's words
+// come from that data only (release known, or not).
+const replaceKnown = { guardVersion: 14, floor: 15, release: "0.1.0-alpha", this: "0.2.0-alpha", lines: ["ignored"] };
+const replaceUnknown = { guardVersion: 1, floor: 2, this: "0.1.0-alpha", lines: [] };
+
+test("the replace's first screen says what the engine found, from its data", () => {
+  assert.deepEqual(replaceLines(replaceOf(replaceKnown)), [
+    "It was set up by BasaltDB 0.1.0-alpha (guard version 14).",
+    "BasaltDB 0.2.0-alpha needs guard version 15 or later.",
+    "Setting up removes the old install first: its agents' history and undo, their held approvals and the passkeys go with it. Your tables and rows stay.",
+  ]);
+  assert.deepEqual(replaceLines(replaceOf(replaceUnknown)).slice(0, 2), ["It has guard version 1.", "BasaltDB 0.1.0-alpha needs guard version 2 or later."]);
+  for (const bad of [null, {}, { guardVersion: "1", floor: 2, this: "x" }, { guardVersion: 1, floor: 2 }]) assert.equal(replaceOf(bad), null, JSON.stringify(bad));
+});
+
+// replaceEngine is fakeEngine whose listing and full check say the install
+// replaces replace.
+const replaceEngine = (replace) =>
+  fakeEngine({
+    answer: (path, body) => {
+      if (path !== CHECK_PATH) return null;
+      if (!body.tables) return new Response(JSON.stringify({ ...listing, replace }), { status: 200 });
+      return new Response(JSON.stringify({ database: "app", lines: ["It first removes the old BasaltDB install"], sql: "DROP SCHEMA …", questions: [], notes: [], passkeyNeeded: true, challenge, replace, columns: [] }), { status: 200 });
+    },
+  });
+
+for (const [name, replace, said] of [
+  ["release known", replaceKnown, "It was set up by BasaltDB 0.1.0-alpha (guard version 14)."],
+  ["release unknown", replaceUnknown, "It has guard version 1."],
+]) {
+  test(`a replace, ${name}: its first screen, then the normal steps, then the typed name and one run`, async () => {
+    const nodes = fakePage();
+    const e = replaceEngine(replace);
+    await toTables(nodes, e);
+    assert.equal(screenOf(nodes), "s-replace");
+    assert.equal(nodes["replace-title"].textContent, REPLACE_TITLE);
+    assert.deepEqual(nodes["replace-lines"].children.map((n) => n.textContent).slice(0, 2), [said, replaceLines(replaceOf(replace))[1]]);
+    await nodes["replace-next"].click();
+    assert.equal(screenOf(nodes), "s-tables");
+    await nodes["tables-next"].click();
+    if (screenOf(nodes) === "s-labels") await nodes["labels-next"].click();
+    assert.equal(screenOf(nodes), "s-approve");
+    assert.equal(nodes.approve.textContent, REPLACE_RUN);
+    assert.equal(nodes["ap-replace"].hidden, false);
+    assert.equal(nodes["ap-confirm-name"].textContent, "app");
+    assert.equal(nodes.approve.disabled, true, "the database's name is typed first");
+    nodes["ap-confirm"].value = "ap";
+    nodes["ap-confirm"].fire("input");
+    assert.equal(nodes.approve.disabled, true);
+    nodes["ap-confirm"].value = "app";
+    nodes["ap-confirm"].fire("input");
+    assert.equal(nodes.approve.disabled, false);
+    const checkBody = e.bodies.at(-1).body;
+    await nodes.approve.click();
+    const run = e.bodies.at(-1);
+    assert.equal(run.path, RUN_PATH);
+    assert.deepEqual(run.body, { ...checkBody, challenge, passkey: { credentialId: "aWQ" }, confirmName: "app" });
+  });
+}
+
+test("a replace never runs without the database's name, and an install that replaces nothing sends none", async () => {
+  const e = replaceEngine(replaceUnknown);
+  const i = new Install(e.fetchFn, real);
+  await i.list(ADMIN);
+  await i.check();
+  await assert.rejects(i.run(async () => ({ credentialId: "aWQ" }), "other"), (err) => err.code === "ANSWERS_INVALID");
+  assert.equal(e.bodies.length, 2, "nothing was run");
+
+  const plain = fakeEngine();
+  const p = new Install(plain.fetchFn, real);
+  await p.list(ADMIN);
+  await p.check();
+  await p.run(async () => ({ credentialId: "aWQ" }), "app");
+  assert.equal(plain.bodies.at(-1).body.confirmName, undefined);
 });

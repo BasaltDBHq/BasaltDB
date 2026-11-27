@@ -73,6 +73,21 @@ func InitRemote(c *cli.IO, h Host, args []string) (setup.RemoteInitResult, error
 	if err := setup.CheckBuildVersion(setup.BuildVersion()); err != nil {
 		return setup.RemoteInitResult{}, err
 	}
+	// A config from before the last breaking release goes aside first: this
+	// init then sets the agent up as a first run does.
+	env := remoteEnv{c}
+	path := env.ConfigFlag()
+	if path == "" {
+		path = env.SystemConfig()
+		if c.Host.Euid() != 0 {
+			if base, err := c.Host.UserConfigDir(); err == nil {
+				path = config.UserPath(base)
+			}
+		}
+	}
+	if err := moveBreakingConfig(c, path); err != nil {
+		return setup.RemoteInitResult{}, err
+	}
 	res, err := setup.InitRemote(c.Ctx, remoteEnv{c}, h, f)
 	return res, cliUsage(err)
 }

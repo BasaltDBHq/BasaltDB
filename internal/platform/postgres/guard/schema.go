@@ -87,6 +87,9 @@ const (
 	// prepare and APPROVAL_INVALID for an approval it does not hold the
 	// codes NO_SUCH_REVERT and NO_SUCH_APPROVAL as their detail: schema/026.
 	versionRefusalCut
+	// versionRelease records, in schema_version, the BasaltDB release that
+	// wrote each version (planRelease): schema/027.
+	versionRelease
 )
 
 // StoreNeutralVersion is the basalt_meta version that writes store-neutral
@@ -109,7 +112,7 @@ const PluginApprovalsVersion = versionPluginApprovals
 // versionFiles is how many schema files each version runs, in version
 // order: a new version appends its own schema files after the last and its
 // count here, and every earlier version keeps the files it has.
-var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, versionPluginEvents: 1, versionPluginTrustRemoved: 1, versionPluginApprovals: 1, versionTrustPins: 1, versionSetupCodeLife: 1, versionEngineAddressRemoved: 1, versionRevertFilterName: 1, versionStoreNeutral: storeNeutralFiles, versionGuardTypedDetails: 1, versionRefusalResources: 1, versionRefusalCut: 1}
+var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, versionPluginEvents: 1, versionPluginTrustRemoved: 1, versionPluginApprovals: 1, versionTrustPins: 1, versionSetupCodeLife: 1, versionEngineAddressRemoved: 1, versionRevertFilterName: 1, versionStoreNeutral: storeNeutralFiles, versionGuardTypedDetails: 1, versionRefusalResources: 1, versionRefusalCut: 1, versionRelease: 1}
 
 // nonBreakingVersions are the versions an engine serves an agent without
 // (migration.nonBreaking). versionPluginEvents: without it the engine
@@ -129,16 +132,20 @@ var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, version
 // versionRevertFilterName: without it a badly formed name in a revert
 // filter is refused as SHAPE with a hint that names no entry, which the
 // engine answers as a refused scope (INVALID_ARGUMENT with that hint);
-// every tool is served as before.
+// every tool is served as before. versionRelease: only the setup reads
+// the release column, to name the release of a guard too old to update;
+// an engine never reads it.
 var nonBreakingVersions = map[int]bool{
 	versionPluginEvents: true, versionPluginTrustRemoved: true, versionPluginApprovals: true, versionTrustPins: true, versionSetupCodeLife: true,
-	versionEngineAddressRemoved: true, versionRevertFilterName: true,
+	versionEngineAddressRemoved: true, versionRevertFilterName: true, versionRelease: true,
 }
 
 // reinstallVersions are the versions an older install is never updated to
 // (migration.reinstall): it is removed and set up again. A guard change that
 // cannot be applied over an older install sets its version here and nothing
-// else, and CHANGELOG.md names it under "Breaking for alpha installs".
+// else, and CHANGELOG.md names it under "Breaking for alpha installs". The
+// same release bumps config.BreakingEpoch: the setup page replaces such a
+// guard only in an INSTALL, which only an engine with no config runs.
 // versionInstallIDs: every 0.0.1 release shipped only version 1, and its
 // SQL is different from today's version 1 (schema/001, 004, 005 and 006
 // changed after it), so versions 2 and later were not written for it.

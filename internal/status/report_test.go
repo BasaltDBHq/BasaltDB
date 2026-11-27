@@ -119,9 +119,9 @@ func TestEngineDownStatusHoldOffNamesTheNextTry(t *testing.T) {
 	require.Equal(t, "the engine stopped and was not restarted: the engine crashed 5 times within 10s; last: exit status 1", p.Message)
 }
 
-// A config refused for the older credentialFile key puts the edit in the
+// A config from before the last breaking release puts what fixes it in the
 // shim's status, since the engine cannot start on it.
-func TestEngineDownStatusNamesTheOldCredentialFileEdit(t *testing.T) {
+func TestEngineDownStatusNamesTheBreakingReset(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "engine.json")
 	require.NoError(t, os.WriteFile(path, []byte(`{"socketDir": "/s", "agents": [{"name": "bot", "osUser": "u", "credentialFile": "/c/bot.cred"}]}`), 0o600))
@@ -130,5 +130,5 @@ func TestEngineDownStatusNamesTheOldCredentialFileEdit(t *testing.T) {
 	r, err := EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, nil, cfgErr, "test", statusNow, "", "")
 	require.NoError(t, err)
 	require.Len(t, r.Problems, 1)
-	require.Contains(t, r.Problems[0].Message, `agent "bot": "credentialFile" now goes inside "store"; replace "credentialFile": "/c/bot.cred" with "store": {"kind": "POSTGRES", "credentialFile": "/c/bot.cred"}`)
+	require.Contains(t, r.Problems[0].Message, "written by a BasaltDB release before the last breaking one (breaking 0, this basalt needs 1): run basalt init")
 }

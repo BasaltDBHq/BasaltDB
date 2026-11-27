@@ -156,6 +156,8 @@ type bound struct {
 	classes string
 	// trustRoot is the certificate authority the person trusted.
 	trustRoot string
+	// replace: the install replaces a guard below the update floor.
+	replace bool
 }
 
 // challenge makes a fresh challenge for req's job on b.
@@ -181,13 +183,16 @@ func (s *LocalService) challenge(req Request, b bound) (Challenge, error) {
 func (s *LocalService) mac(req Request, b bound, c Challenge) []byte {
 	h := hmac.New(sha256.New, s.key)
 	h.Write([]byte(macDomain))
-	demoFlag := "0"
+	demoFlag, replaceFlag := "0", "0"
 	if req.Demo {
 		demoFlag = "1"
 	}
+	if b.replace {
+		replaceFlag = "1"
+	}
 	for _, part := range [][]byte{
 		c.Challenge, c.UserID, []byte(c.UserName), []byte(c.DisplayName), []byte(c.ExpiresAt.UTC().Format(time.RFC3339)),
-		[]byte(req.Job), []byte(req.Agent), []byte(req.OSUser), []byte(demoFlag), []byte(b.database), []byte(b.host), []byte(b.picks), []byte(b.answers), []byte(b.classes), []byte(b.trustRoot),
+		[]byte(req.Job), []byte(req.Agent), []byte(req.OSUser), []byte(demoFlag), []byte(b.database), []byte(b.host), []byte(b.picks), []byte(b.answers), []byte(b.classes), []byte(b.trustRoot), []byte(replaceFlag),
 	} {
 		var n [8]byte
 		binary.BigEndian.PutUint64(n[:], uint64(len(part)))
@@ -336,11 +341,15 @@ func (s *LocalService) run(ctx context.Context, req Request) (RunAnswer, error) 
 			return err
 		}
 		if cred != nil || !req.Demo {
-			if err := s.checkBinding(req, bound{database: database, host: j.host, picks: picksKey(j.picks), answers: answersKey(req.Answers), classes: classesKey(req), trustRoot: req.TrustRoot}); err != nil {
+			replace, err := s.replacing(ctx, tx)
+			if err != nil {
+				return err
+			}
+			if err := s.checkBinding(req, bound{database: database, host: j.host, picks: picksKey(j.picks), answers: answersKey(req.Answers), classes: classesKey(req), trustRoot: req.TrustRoot, replace: replace}); err != nil {
 				return err
 			}
 		}
-		p, err := s.plan(ctx, tx, j, password, database, answersOf(req))
+		p, err := s.plan(ctx, tx, j, password, database, answersOf(req), true)
 		if err != nil {
 			return err
 		}
@@ -382,6 +391,9 @@ func (s *LocalService) run(ctx context.Context, req Request) (RunAnswer, error) 
 			if p.labeled > 0 {
 				lines = append(lines, fmt.Sprintf("%d columns labeled", p.labeled))
 			}
+		}
+		if p.replaced != nil {
+			lines = append([]string{fmt.Sprintf("the old BasaltDB install (guard version %d) removed from the database %s", p.replaced.Version, database)}, lines...)
 		}
 		if pinned != nil {
 			// Before the commit, once the SQL succeeded: a pin that stays after

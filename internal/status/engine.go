@@ -35,8 +35,8 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Comm
 	}
 	ps := guidance.Problems{Cmds: cmds}
 	msg := "the engine does not answer, so no tool but status works"
-	if config.IsOldCredentialFile(cfgErr) {
-		// The engine cannot start on this config: say what to edit.
+	if config.IsBreaking(cfgErr) {
+		// The engine cannot start on this config: say what fixes it.
 		msg += "; engine.json: " + cfgErr.Error()
 	}
 	if startFailure != "" {

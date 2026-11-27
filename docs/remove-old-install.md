@@ -1,16 +1,20 @@
 # Remove an older install
 
-BasaltDB is in alpha, then beta. Those releases may break: a newer version can refuse an install an older one made. The setup page then says `This database has an older BasaltDB install that this version cannot use` (`GUARD_UNUSABLE`). The fix is a clean install: remove the old install, then set up again.
+BasaltDB is in alpha, then beta. Those releases may break: a newer version cannot update an install an older one made. There is no migration across such a release: BasaltDB removes the old install and sets up again from scratch.
 
 Removing BasaltDB deletes its ledger in that database: the record of what agents did, their held approvals and their passkeys. You cannot undo agent runs afterwards. Your own tables and rows stay as they are.
 
-## If the install still works
+## The setup page does it
 
-Use the setup page's Remove. Run `basalt init` on the computer that runs the engine, open the Update or Remove link it prints, pick **Remove BasaltDB**, paste the admin connection string, and type the database's name to confirm. Then ask your agent for a new setup link and install again.
+Upgrade `basalt` (`brew upgrade basaltdb`), then ask your agent to run `basalt init`. The setup page it opens finds the old install and says so first: `This BasaltDB install is too old to update`, the release that set it up when the database records one (or its guard version), and the guard version this release needs. Then it runs the normal install steps. The last button, **Remove the old install and set up**, asks you to type the database's name, then removes the old install and installs the new one in one transaction. If the setup fails, the old install stays as it was.
 
-## If it is broken, or too old for Remove
+The connect page does the same for an agent on a computer you cannot reach, once its service offers it.
 
-Run this SQL in the database, as the database admin (the user in your admin connection string; on Supabase, `postgres` in the SQL editor). It runs in one transaction: if a statement fails, nothing changes.
+To remove BasaltDB without setting it up again, while the install still works: open the link `basalt init` prints on an engine already set up, pick **Remove BasaltDB**, paste the admin connection string, and type the database's name.
+
+## If it is broken
+
+When the page cannot read the install at all (`This database has an older BasaltDB install that this version cannot use`, `GUARD_UNUSABLE`), run this SQL in the database, as the database admin (the user in your admin connection string; on Supabase, `postgres` in the SQL editor). It runs in one transaction: if a statement fails, nothing changes.
 
 First list the agent roles:
 
@@ -49,11 +53,18 @@ SELECT rolname FROM pg_roles WHERE rolname LIKE 'basalt%';
 
 The sample data from a demo install, the `basalt_demo` schema, is yours to keep or drop (`DROP SCHEMA basalt_demo CASCADE`).
 
-## Upgrading from 0.0.1: clean up the computer
+## Upgrading from 0.0.1: the computer
 
-An install from 0.0.1 also left an engine on the computer that ran it. 0.1 runs the engine as a system service with its config at `/Library/Application Support/Basalt/engine.json` (macOS) or `/etc/basalt/engine.json` (Linux). 0.0.1 kept its config in your own folder, `~/Library/Application Support/basalt/` (macOS) or `~/.config/basalt/` (Linux). When both hold the same agent, every `basalt` command stops with `agent "NAME" is in both engine configs`, and the agent cannot connect.
+An install from 0.0.1 also left an engine on the computer that ran it, with its config at `/Library/Application Support/Basalt/` or `/etc/basalt/` (with the service), or in your own folder, `~/Library/Application Support/basalt/` (macOS) or `~/.config/basalt/` (Linux). `basalt init` resets it: it reads the config's shape, and a config from before the last breaking release is moved aside to `<folder>.old` (never deleted; delete it once the new setup works). For the system folder it does this in the administrator dialog it already shows, where it also stops and removes the old engine service and installs it again. It says so in one line, and prints the `basalt mcp --agent NAME` line your agent registers again.
 
-Do this once, in a terminal, before you set up 0.1:
+Update the line your agent app runs to `basalt mcp --agent NAME`: 0.1 has no `--config` or `--socket-dir` on `basalt mcp`, and a line that still has them fails to connect. In Claude Code:
+
+```sh
+claude mcp remove NAME -s user
+claude mcp add NAME -s user -- basalt mcp --agent NAME
+```
+
+If `basalt init` cannot do it (no administrator dialog, such as in an SSH session, or a 0.0.1 engine that serves no local pages and so is never restarted), do it by hand, once, in a terminal:
 
 1. Stop and remove the old engine service, if 0.0.1 installed one. On macOS:
 
@@ -77,16 +88,16 @@ Do this once, in a terminal, before you set up 0.1:
    mv ~/.config/basalt ~/.config/basalt.old                                              # Linux
    ```
 
-3. Update the binary: `brew upgrade basaltdb`, or install the new archive or package.
-
-4. Update the line your agent app runs to `basalt mcp --agent NAME`. 0.1 has no `--config` or `--socket-dir` on `basalt mcp`; a line that still has them fails to connect. In Claude Code:
+   With the 0.0.1 service, its config is in the system folder instead:
 
    ```sh
-   claude mcp remove NAME -s user
-   claude mcp add NAME -s user -- basalt mcp --agent NAME
+   sudo mv "/Library/Application Support/Basalt" "/Library/Application Support/Basalt.old"   # macOS
+   sudo mv /etc/basalt /etc/basalt.old                                                       # Linux
    ```
 
-5. Remove the old install from the database as above, then ask your agent to run `basalt init`.
+3. Update the binary: `brew upgrade basaltdb`, or install the new archive or package.
+
+4. Ask your agent to run `basalt init`: the setup page replaces the old install in the database.
 
 ## The engine still holds the old setup
 

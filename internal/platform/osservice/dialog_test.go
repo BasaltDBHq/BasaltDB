@@ -381,33 +381,42 @@ func TestScriptPutFile(t *testing.T) {
 	require.Empty(t, b, "the link's target is untouched")
 }
 
-// The restart script is one fixed command per platform when basalt runs
-// from the service's copy; from anywhere else it copies that basalt over
-// the copy first, checked as the install does. No other platform has one.
+// The restart script restarts the service with one fixed command per
+// platform when basalt runs from the service's copy; from anywhere else it
+// copies that basalt over the copy first, checked as the install does.
+// Either way, a config from before the last breaking release is not
+// restarted onto: the script resets it and installs the service again
+// instead (breaking_script_test.go). No other platform has one.
 func TestRestartScript(t *testing.T) {
 	t.Parallel()
-	got, err := osservice.RestartScript("darwin", osservice.Source{Path: osservice.ServiceBinary("darwin"), SHA256: dialogSum, Size: dialogSize})
-	require.NoError(t, err)
-	require.Equal(t, "launchctl kickstart -k system/"+servicespec.LaunchdLabel+"\n", got)
-	got, err = osservice.RestartScript("linux", osservice.Source{Path: osservice.ServiceBinary("linux"), SHA256: dialogSum, Size: dialogSize})
-	require.NoError(t, err)
-	require.Equal(t, "systemctl restart "+servicespec.SystemdUnitName+"\n", got)
 	for goos, restart := range map[string]string{
 		"darwin": "launchctl kickstart -k system/" + servicespec.LaunchdLabel + "\n",
 		"linux":  "systemctl restart " + servicespec.SystemdUnitName + "\n",
 	} {
-		got, err = osservice.RestartScript(goos, dialogSource)
-		require.NoError(t, err)
-		checks, body, ok := strings.Cut(got, osservice.ScriptPreflightEnd)
-		require.True(t, ok)
-		require.Contains(t, checks, "src='/usr/local/bin/basalt'\n")
-		require.Contains(t, body, "copy_binary \"$src\" "+osservice.ServiceBinary(goos)+" "+dialogSum+" 4096\n")
-		require.True(t, strings.HasSuffix(body, restart), goos)
-		require.Less(t, strings.Index(body, "copy_binary"), strings.Index(body, restart), "copied before the restart")
-		out, err := exec.Command("/bin/sh", "-n", "-c", got).CombinedOutput()
-		require.NoError(t, err, "the script parses: %s", out)
+		for name, src := range map[string]osservice.Source{
+			"from the service's copy": {Path: osservice.ServiceBinary(goos), SHA256: dialogSum, Size: dialogSize},
+			"from elsewhere":          dialogSource,
+		} {
+			got, err := osservice.RestartScript(goos, src)
+			require.NoError(t, err)
+			checks, body, ok := strings.Cut(got, osservice.ScriptPreflightEnd)
+			require.True(t, ok)
+			require.True(t, strings.HasSuffix(body, "else\n"+restart+"fi\n"), "%s %s: the restart is the branch without a reset", goos, name)
+			require.Contains(t, checks, "breaking_reset=\n", "%s %s: the verdict is a check", goos, name)
+			reset := strings.Index(body, `if [ -n "$breaking_reset" ]; then`)
+			require.GreaterOrEqual(t, reset, 0, "%s %s: the reset step", goos, name)
+			if src.Path == dialogSource.Path {
+				require.Contains(t, checks, "src='/usr/local/bin/basalt'\n")
+				require.Contains(t, body, "copy_binary \"$src\" "+osservice.ServiceBinary(goos)+" "+dialogSum+" 4096\n")
+				require.Less(t, strings.Index(body, "copy_binary"), reset, "copied before the reset and the restart")
+			} else {
+				require.NotContains(t, body, "copy_binary")
+			}
+			out, err := exec.Command("/bin/sh", "-n", "-c", got).CombinedOutput()
+			require.NoError(t, err, "the script parses: %s", out)
+		}
 	}
-	_, err = osservice.RestartScript("linux", osservice.Source{Path: "relative", SHA256: dialogSum, Size: dialogSize})
+	_, err := osservice.RestartScript("linux", osservice.Source{Path: "relative", SHA256: dialogSum, Size: dialogSize})
 	require.Error(t, err)
 	_, err = osservice.RestartScript("windows", dialogSource)
 	require.Error(t, err)

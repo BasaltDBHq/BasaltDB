@@ -96,9 +96,9 @@ func (Store) PasskeysInstalled(ctx context.Context, q sqlport.Port) (bool, error
 }
 
 func (Store) ReadLabels(ctx context.Context, q sqlport.Port, n guardmodel.Names, tables []string) ([]guardmodel.ColumnLabel, error) {
-	conn, err := connOf(q)
-	if err != nil {
-		return nil, err
+	conn, ok := pgquerier.Unwrap(q).(guard.Beginner)
+	if !ok {
+		return nil, errors.New("setupstore: the call needs a connection or a transaction")
 	}
 	return guard.ReadLabels(ctx, conn, n, tables)
 }

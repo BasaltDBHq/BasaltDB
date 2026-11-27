@@ -54,6 +54,14 @@ type Request struct {
 	// (ANSWERS_INVALID). Run refuses such a code without Included,
 	// NO_TABLES.
 	Included *Included
+	// Replace offers to replace a guard below the update floor (an install
+	// no update reaches, such as one from 0.0.1) with an INSTALL code's
+	// setup (CONTRACT.md, Connect, An older install): Check then checks the
+	// setup as after the old install's removal and sets Checked.Replace,
+	// and Run removes it and installs in one transaction, once
+	// RunInput.ConfirmName is the database's name. Without it such a guard
+	// is refused GUARD_UNUSABLE, as before.
+	Replace bool
 }
 
 // Included are the tables ticked on the connect page.
@@ -163,7 +171,7 @@ func described(d setuprun.ContractDescription, err error) (Description, error) {
 
 // contractRequest is req as the setup service takes it.
 func contractRequest(req Request) setuprun.ContractRequest {
-	return setuprun.ContractRequest{Code: req.Code, Now: req.Now, Included: (*setuprun.ContractIncluded)(req.Included)}
+	return setuprun.ContractRequest{Code: req.Code, Now: req.Now, Included: (*setuprun.ContractIncluded)(req.Included), Replace: req.Replace}
 }
 
 // description is the service's description of a code.
@@ -224,6 +232,26 @@ type Checked struct {
 	// target (the connect page's passkey list, CONTRACT.md, Update on the
 	// connect page).
 	Passkeys []ActivePasskey
+	// Replace is set, with Request.Replace, when the database holds a
+	// guard below the update floor that Run removes before it installs.
+	// The rest of Checked is checked as after that removal.
+	Replace *Replace
+}
+
+// Replace is a guard below the update floor that a setup replaces: what
+// the page's first screen says, from data only.
+type Replace struct {
+	// GuardVersion is the old install's guard version; Floor is the lowest
+	// version this build updates in place.
+	GuardVersion int
+	Floor        int
+	// Release is the BasaltDB release recorded with GuardVersion, "" when
+	// the guard records none.
+	Release string
+	// This is this build's release.
+	This string
+	// Lines are the first screen's words, built from the fields above.
+	Lines []string
 }
 
 // ColumnLabel is a column and its class now (CONTRACT.md, Connect, Column
@@ -340,6 +368,9 @@ func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
 		out.Columns = append(out.Columns, ColumnLabel{Table: l.Table, Column: l.Column, Label: Label(l.Label)})
 	}
 	out.Passkeys = activePasskeys(c.Passkeys)
+	if r := c.Replace; r != nil {
+		out.Replace = &Replace{GuardVersion: r.GuardVersion, Floor: r.Floor, Release: r.Release, This: r.This, Lines: slices.Clone(r.Lines)}
+	}
 	return out, nil
 }
 
@@ -396,6 +427,13 @@ type RunInput struct {
 	// nothing to do). Only a certificate the login was really verified
 	// against: the package does not check it.
 	TrustPin *TrustPin
+	// ConfirmName is the database's name as the person typed it, for a
+	// setup that replaces a guard below the update floor (Request.Replace,
+	// Checked.Replace): Run compares it with current_database() in the
+	// setup's transaction before anything is dropped. A missing or other
+	// name there, and a name on a setup that replaces nothing, are
+	// ANSWERS_INVALID, nothing changed.
+	ConfirmName string
 }
 
 // TrustPin is a certificate an admin login was verified against: the host
@@ -438,7 +476,7 @@ type Result struct {
 func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result, error) {
 	// Approve's error is Run's as it is, never an *Error.
 	var approveErr error
-	cin := setuprun.ContractRunInput{AllRows: in.Answers.AllRows, RestPublic: in.RestPublic}
+	cin := setuprun.ContractRunInput{AllRows: in.Answers.AllRows, RestPublic: in.RestPublic, ConfirmName: in.ConfirmName}
 	if in.Passkey != nil {
 		cin.Passkey = &in.Passkey.p
 	}

@@ -92,3 +92,6 @@ func hasLog(sys System, n servicespec.PluginNames) bool {
 	}
 	return sys.Exists(n.Log) || sys.Exists(n.Log+rotatedSuffix) || sys.Exists(n.LogRule)
 }
+
+// BreakingHelpers is config_epoch, for the test that runs it.
+func BreakingHelpers() string { return breakingHelpers }

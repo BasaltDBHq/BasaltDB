@@ -172,8 +172,10 @@ func (s *LocalService) writeLabels(ctx context.Context, tx Tx, names guardmodel.
 // class each has now and, for a column whose sample could be read in time,
 // the classifier's suggestion. A failed listing fails the check (the person
 // must see the columns a label or restPublic covers); a failed sample or key
-// read only leaves a column without a suggestion.
-func (s *LocalService) columns(ctx context.Context, conn Conn, j job) ([]ColumnInfo, bool, error) {
+// read only leaves a column without a suggestion. stored false reads no
+// class (every column UNCLASSIFIED): an install that replaces an older one
+// drops that install's classes.
+func (s *LocalService) columns(ctx context.Context, conn Conn, j job, stored bool) ([]ColumnInfo, bool, error) {
 	tables := make([]string, len(j.picks))
 	for i, p := range j.picks {
 		tables[i] = p.Table
@@ -191,18 +193,20 @@ func (s *LocalService) columns(ctx context.Context, conn Conn, j job) ([]ColumnI
 	if more {
 		cols, listed = cols[:maxColumns], listed[:maxColumns]
 	}
-	labels, err := s.be.ReadLabels(ctx, conn.Port(), guardmodel.Names{Prefix: s.opts.Prefix}, tables)
-	if err != nil {
-		return nil, false, err
-	}
-	stored := map[[2]string]guardmodel.Label{}
-	for _, l := range labels {
-		stored[[2]string{l.Table, l.Column}] = l.Label
+	have := map[[2]string]guardmodel.Label{}
+	if stored {
+		labels, err := s.be.ReadLabels(ctx, conn.Port(), guardmodel.Names{Prefix: s.opts.Prefix}, tables)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, l := range labels {
+			have[[2]string{l.Table, l.Column}] = l.Label
+		}
 	}
 	out := make([]ColumnInfo, len(cols))
 	for i, c := range cols {
 		out[i] = c
-		l, ok := stored[[2]string{c.Table, c.Column}]
+		l, ok := have[[2]string{c.Table, c.Column}]
 		if !ok {
 			l = guardmodel.Label{Class: guardmodel.ClassUnclassified}
 		}

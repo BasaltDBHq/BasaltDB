@@ -84,6 +84,8 @@ func (pc *Service) openPluginApproval(ctx context.Context, id uuid.UUID) (guardm
 		return guardmodel.PluginApprovalRecord{}, linksvc.ErrNotThisAgent
 	}
 	switch {
+	case r.Status == guardmodel.PluginApprovalStatusWithdrawn:
+		return r, pluginWithdrawn(r)
 	case r.Status == guardmodel.PluginApprovalStatusExpired || (r.Status == guardmodel.PluginApprovalStatusPending && !pc.core.Now().Before(r.ExpiresAt)):
 		return r, pluginExpired(r.ApprovalID, r.ExpiresAt)
 	case r.Status == guardmodel.PluginApprovalStatusApproved:
@@ -127,6 +129,15 @@ func pluginAlreadyApproved(id uuid.UUID) error {
 		"This plugin approval is already signed. The plugin starts within a few seconds of the signature.", nil)
 }
 
+// pluginWithdrawn is the page's answer for a plugin approval its opener
+// withdrew (CONTRACT.md, Approvals, Withdrawn requests): nothing to sign,
+// and nothing for the person to do.
+func pluginWithdrawn(r guardmodel.PluginApprovalRecord) error {
+	return pluginPageError(guidance.CodeApprovalInvalid, guidance.ReasonWithdrawn,
+		fmt.Sprintf("plugin approval %s was withdrawn by the agent; nothing was approved", r.ApprovalID),
+		guidance.WithdrawnMessage(r.WithdrawReason), nil)
+}
+
 func pluginCancelled(id uuid.UUID) error {
 	return pluginPageError(guidance.CodeApprovalInvalid, "",
 		fmt.Sprintf("plugin approval %s was cancelled: a newer approval for the same plugin replaced it", id),
@@ -157,6 +168,12 @@ func (pc *Service) pluginRelayError(ctx context.Context, id uuid.UUID, err error
 		return pluginAlreadyApproved(id)
 	case pluginmodel.ApprovalCancelled:
 		return pluginCancelled(id)
+	case pluginmodel.ApprovalWithdrawn:
+		r, found, readErr := pc.deps.Approvals.ReadPluginApproval(ctx, id)
+		if readErr != nil || !found {
+			r = guardmodel.PluginApprovalRecord{ApprovalID: id}
+		}
+		return pluginWithdrawn(r)
 	case pluginmodel.ApprovalNotFound:
 		return linksvc.ErrNotThisAgent
 	case pluginmodel.ApprovalPasskeyRevoked:

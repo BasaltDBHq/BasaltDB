@@ -144,6 +144,9 @@ type statusCase struct {
 	report func(t *testing.T) guidance.StatusReport
 	// state is the guard state the report must give.
 	state string
+	// personOnly: the problem is raised on an engine the person operates
+	// only; on an agent-operated engine the same report must not carry it.
+	personOnly bool
 }
 
 func engineStatus(probe *fakeProbe, passkeys int, setup *config.Setup) func(t *testing.T) guidance.StatusReport {
@@ -308,6 +311,13 @@ func TestEveryStatusProblemObeysTheCatalog(t *testing.T) {
 		for code, kase := range statusCasesFor(operatedBy) {
 			t.Run(operatedBy+"/"+code, func(t *testing.T) {
 				t.Parallel()
+				if kase.personOnly && operatedBy == mcpcontract.OperatedByAgent {
+					r := kase.report(t)
+					for _, p := range r.Problems {
+						require.NotEqual(t, code, p.Code, "not raised on an agent-operated engine")
+					}
+					return
+				}
 				requireProblemObeysCatalog(t, statusTool, code, kase, operatedBy)
 			})
 		}

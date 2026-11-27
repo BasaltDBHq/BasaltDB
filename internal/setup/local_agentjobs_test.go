@@ -225,7 +225,7 @@ func TestRemoveDropsBasaltAndForgetsTheAgent(t *testing.T) {
 	done, err := svc.Run(ctx, f.removeRun(t))
 	require.NoError(t, err)
 	require.Contains(t, done.Lines, "removed from this engine: demo_bot")
-	require.True(t, done.EngineRemoved, "the engine's last agent went, so init removes the service next")
+	require.True(t, done.EngineRemoved, "the engine's last agent went: init asks the person what is next")
 	require.Empty(t, done.MCPCommand)
 	require.False(t, exists(t, f.db, "basalt_meta"))
 	require.False(t, exists(t, f.db, "basalt_demo"))
@@ -238,16 +238,35 @@ func TestRemoveDropsBasaltAndForgetsTheAgent(t *testing.T) {
 	_, err = os.Stat(cred)
 	require.ErrorIs(t, err, os.ErrNotExist, "the agent's credential is deleted")
 
-	// The engine that ran with that config never installs (it loads a
-	// config only at its start): it answers every request, the empty one
-	// basalt init sends included, that BasaltDB is removed from it, so init
-	// removes the engine service.
-	for _, req := range []setup.Request{f.request(), {}, f.agentJob(setup.JobUpdate), f.agentJob(setup.JobRemove)} {
+	// The engine that ran with that config answers every request but an
+	// INSTALL, the empty one basalt init sends included, that BasaltDB is
+	// removed from it: init then asks the person on the REMOVED link.
+	for _, req := range []setup.Request{{}, f.agentJob(setup.JobUpdate), f.agentJob(setup.JobRemove)} {
 		_, err = svc.Check(ctx, req)
 		refusal(t, err, setup.CodeEngineRemoved)
 		_, err = svc.Run(ctx, req)
 		refusal(t, err, setup.CodeEngineRemoved)
 	}
+	// "Set up BasaltDB again", and basalt init --demo: an INSTALL runs as
+	// a first install on the same engine, writes its config again and has
+	// the engine serve it.
+	reinstalled := 0
+	again, err := setup.NewLocal(setup.LocalOptions{
+		Backend:    setupbackend.Backend{},
+		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix, Configured: true,
+		Now: func() time.Time { return f.now }, Reinstalled: func() { reinstalled++ },
+	})
+	require.NoError(t, err)
+	checked, err = again.Check(ctx, f.request())
+	require.NoError(t, err)
+	req := f.request()
+	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
+	_, err = again.Run(ctx, req)
+	require.NoError(t, err)
+	require.FileExists(t, f.config)
+	require.Equal(t, 1, reinstalled, "the engine serves the new config")
+	_, err = again.Check(ctx, setup.Request{})
+	refusal(t, err, setup.CodeJobUnavailable)
 }
 
 func TestRemoveKeepsOtherAgentsOfTheEngine(t *testing.T) {

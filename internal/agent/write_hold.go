@@ -141,6 +141,8 @@ func (wc *Service) withApprovalLink(ctx context.Context, a action.Approval, err 
 // sameAsHeld checks the call repeats the held write.
 func (wc *Service) sameAsHeld(a action.Approval, p WriteParams) error {
 	switch {
+	case a.Status == action.ApprovalWithdrawn:
+		return approvalsvc.Withdrawn(a)
 	case a.Status == action.ApprovalApplied:
 		return approvalsvc.ApprovalInvalid(guidance.ReasonAlreadyUsed, "approval %s was already used", a.ID)
 	case a.Status == action.ApprovalExpired:

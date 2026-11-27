@@ -75,9 +75,11 @@ basalt version
 | Session pooler, port 5432 (`postgres.<ref>@aws-0-<region>.pooler.supabase.com`) | If unsure. Works on IPv4 and IPv6. |
 | Direct connection (`db.<ref>.supabase.co`) | Only if your network has IPv6. |
 
-Fill in `[PASSWORD]` with your database password, URL-encoding characters such as `@`, `/`, `:` and `#`. Add `?sslmode=require` at the end.
+Fill in `[PASSWORD]` with your database password, URL-encoding characters such as `@`, `/`, `:` and `#`. Leave `sslmode` off: BasaltDB has Supabase's certificates built in and checks them (`sslmode=verify-full`).
 
-**Plain Postgres.** `postgresql://postgres:PASSWORD@HOST:5432/DBNAME?sslmode=require`
+**Plain Postgres.** `postgresql://postgres:PASSWORD@HOST:5432/DBNAME?sslmode=verify-full`
+
+BasaltDB keeps the `sslmode` you give it. With `sslmode=require` (or `prefer`, or `verify-ca`) the connection is encrypted, but nothing checks that the certificate is your database's. The setup page then warns you: for Supabase and Amazon RDS it offers **Check the certificate**, which switches only `sslmode` to `verify-full` and checks again; for other hosts it says to use `sslmode=verify-full`. An agent already set up that way shows **Certificate not checked** on the check-up page, with **Check it**, and its `status` warns `CERTIFICATE_NOT_CHECKED`. A connection with no encryption at all (`sslmode=disable`, or a server without TLS) shows **Connection not encrypted** and `CONNECTION_NOT_ENCRYPTED`. On Supabase and Amazon RDS, **Check it** turns on `verify-full`.
 
 Paste it on the setup page only. If you paste it to your agent by mistake, change that database password now.
 
@@ -218,7 +220,7 @@ An install a newer alpha or beta cannot use, or one too broken for the page's Re
 
 Ask your agent to remove BasaltDB. On the page that opens, pick **Remove BasaltDB**, paste the admin connection string, read the SQL and type the database's name to confirm. In one transaction it drops the `basalt_meta` schema (the ledger goes for good), the guard's policies and the `basalt_*` roles, and removes the agent from the engine's config. It also drops the demo data (`basalt_demo`) when the schema carries the comment `BasaltDB demo data` and nothing of yours depends on it. It asks for no passkey.
 
-If you remove within 90 seconds of the page opening, your computer then asks for your password once, in its own administrator dialog. Otherwise the page says **Last step**: ask your agent to finish removing BasaltDB, and the dialog comes when it runs `basalt init` once more. That stops and removes the engine service, and everything it put on the computer:
+If you remove within 90 seconds of the page opening, your computer then asks for your password once, in its own administrator dialog. Otherwise the page says **Last step**: ask your agent to run `basalt init`. The page that opens asks what to do next: **Set up BasaltDB again** sets it up on the same engine, with no password; **Remove it from this computer too** brings the password dialog. Nothing is removed from the computer until you pick that and type your password, and `basalt init --demo` always sets the demo up again instead. The removal stops and removes the engine service, and everything it put on the computer:
 
 | Removed | Linux | macOS |
 |---|---|---|

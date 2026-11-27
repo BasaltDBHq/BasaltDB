@@ -90,6 +90,11 @@ const (
 	// versionRelease records, in schema_version, the BasaltDB release that
 	// wrote each version (planRelease): schema/027.
 	versionRelease
+	// versionWithdraw lets the agent withdraw its own held write, revert or
+	// plugin approval while it waits for the person, and refuses a
+	// signature of a withdrawn one: schema/028. Breaking: the engine reads
+	// the withdrawal from the agent views.
+	versionWithdraw
 )
 
 // StoreNeutralVersion is the basalt_meta version that writes store-neutral
@@ -112,7 +117,7 @@ const PluginApprovalsVersion = versionPluginApprovals
 // versionFiles is how many schema files each version runs, in version
 // order: a new version appends its own schema files after the last and its
 // count here, and every earlier version keeps the files it has.
-var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, versionPluginEvents: 1, versionPluginTrustRemoved: 1, versionPluginApprovals: 1, versionTrustPins: 1, versionSetupCodeLife: 1, versionEngineAddressRemoved: 1, versionRevertFilterName: 1, versionStoreNeutral: storeNeutralFiles, versionGuardTypedDetails: 1, versionRefusalResources: 1, versionRefusalCut: 1, versionRelease: 1}
+var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, versionPluginEvents: 1, versionPluginTrustRemoved: 1, versionPluginApprovals: 1, versionTrustPins: 1, versionSetupCodeLife: 1, versionEngineAddressRemoved: 1, versionRevertFilterName: 1, versionStoreNeutral: storeNeutralFiles, versionGuardTypedDetails: 1, versionRefusalResources: 1, versionRefusalCut: 1, versionRelease: 1, versionWithdraw: 1}
 
 // nonBreakingVersions are the versions an engine serves an agent without
 // (migration.nonBreaking). versionPluginEvents: without it the engine

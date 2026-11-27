@@ -226,6 +226,11 @@ func CheckOperatorMatch(m string) error { return core.CheckOperatorMatch(m) }
 // string or one that does not parse.
 func VerifyFullByDefault(dsn string, set *Set) string { return core.VerifyFullByDefault(dsn, set) }
 
+// BuiltInProvider is the provider whose built-in profile of set is the one
+// that applies to host ("Supabase", "Amazon RDS"), "" when none does (no
+// profile covers it, or an operator's profile decides for it).
+func BuiltInProvider(host string, set *Set) string { return core.BuiltInProvider(host, set) }
+
 // ErrPublic is a pin, or a verify: ca root, of a publicly trusted
 // certificate authority.
 var ErrPublic = core.ErrPublic

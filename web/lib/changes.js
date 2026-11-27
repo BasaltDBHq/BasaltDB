@@ -140,6 +140,9 @@ function columnsOf(views, mid, skipped, order = []) {
   return [...listed, ...rest];
 }
 
+// LONG_VALUE is the length, in characters, past which a value may wrap.
+const LONG_VALUE = 32;
+
 // cell is col's value in member, or in the key when member leaves the key
 // out; empty when the row has no such column.
 function cell(v, member, col, cls) {
@@ -148,7 +151,12 @@ function cell(v, member, col, cls) {
   if (from === null) return el("td", cls);
   const text = rawText(v.line, from, col);
   const info = largeInfo(text);
-  if (info === null) return el("td", v.secret.has(col) ? `${cls} secret`.trim() : cls, visibleText(text));
+  if (info === null) {
+    // A short value stays on one line; only a long one wraps (style.css).
+    const shown = visibleText(text);
+    const kinds = [v.secret.has(col) ? "secret" : "", [...shown].length > LONG_VALUE ? "long" : ""];
+    return el("td", [cls, ...kinds].filter(Boolean).join(" "), shown);
+  }
   // A value over 1 MiB of text shows by size and hash; the hash fills in
   // when the digest is done.
   const td = el("td", `${cls} large`.trim(), largeShown(text, info));

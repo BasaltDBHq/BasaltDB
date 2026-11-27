@@ -167,9 +167,9 @@ elif id -u %[9]s >/dev/null 2>&1; then
 	echo "basalt: the OS user %[9]s is not the system account the install made, so it was left in place" >&2
 fi
 [ -z "$kept" ] ||
-	echo "basalt: the engine service is removed, but the OS user${kept} could not be deleted, so it stays with its group: the next install uses it again. To delete it: userdel NAME" >&2
+	echo "basalt: the engine service is removed, but the OS user${kept} could not be deleted, so it stays with its group: the next install uses it again. To delete it: $(for k in $kept; do printf 'userdel %%s; ' "$k"; done)" >&2
 [ -z "$orphaned" ] ||
-	fail "the engine service is removed, but the group${orphaned} stays without its user, and an install refuses that group: delete it with groupdel NAME"
+	fail "the engine service is removed, but the group${orphaned} stays without its user, and an install refuses that group: delete it with $(for g in $orphaned; do printf 'groupdel %%s; ' "$g"; done)"
 `, servicespec.SystemdUnitName, systemdUnitDir, pluginUnitPrefix, SystemdUnitPath,
 		scriptWord(filepath.Dir(config.DefaultPath(goosLinux))), scriptWord(config.DefaultStateDir(goosLinux)),
 		scriptWord(config.DefaultSocketDir(goosLinux)), scriptWord(linuxPluginBase), u)
@@ -237,9 +237,9 @@ elif id -u %[11]s >/dev/null 2>&1; then
 	echo "basalt: the OS user %[11]s is not the system account the install made, so it was left in place" >&2
 fi
 [ -z "$kept" ] ||
-	echo "basalt: the engine service is removed, but macOS refused to delete the OS user${kept} (it does, for example, when the app that ran basalt init has no Full Disk Access), so it stays with its group: the next install uses it again. To delete it, in a terminal with Full Disk Access: sudo dscl . -delete /Users/NAME, then sudo dscl . -delete /Groups/NAME"
+	echo "basalt: the engine service is removed, but macOS refused to delete the OS user${kept} (it does, for example, when the app that ran basalt init has no Full Disk Access), so it stays with its group: the next install uses it again. To delete it, in a terminal with Full Disk Access: $(for k in $kept; do printf 'sudo dscl . -delete /Users/%%s, then sudo dscl . -delete /Groups/%%s; ' "$k" "$k"; done)"
 [ -z "$orphaned" ] ||
-	fail "the engine service is removed, but the group${orphaned} stays without its user, and an install refuses that group: delete it with sudo dscl . -delete /Groups/NAME"
+	fail "the engine service is removed, but the group${orphaned} stays without its user, and an install refuses that group: delete it with $(for g in $orphaned; do printf 'sudo dscl . -delete /Groups/%%s; ' "$g"; done)"
 `, servicespec.LaunchdLabel, launchDaemonsDir, pluginLabelPrefix, LaunchdPlist, newsyslogDir, pluginUnitPrefix,
 		scriptWord(filepath.Dir(config.DefaultPath(goosDarwin))), scriptWord(darwinLogDir), scriptWord(darwinPluginBase),
 		darwinPluginUserPrefix, u)

@@ -62,6 +62,9 @@ func ApprovalInvalidSteps(b *guidance.Steps, te *toolresult.ToolError, runID str
 		b.CallTool(guidance.ToolListPending, runArgs(runID), "List the held write, then send exactly the held request and intent with its approvalId.")
 	case guidance.ReasonNotThisAgent:
 		b.CallTool(guidance.ToolListPending, map[string]any{}, "List your pending approvals and use the approvalId of the one this write was held for.")
+	case guidance.ReasonWithdrawn:
+		b.Stop("Do not apply it: the held write was withdrawn and writes nothing.")
+		return guidance.WithdrawnMessage("")
 	case guidance.ReasonRowsChanged:
 		b.ReviseCall(guidance.ToolQuery, nil, "Read the rows again to see what changed since the person was asked.")
 		b.ReviseCall(guidance.ToolWrite, nil, "Send the write again with the new rows in mind: it is held anew for approval.")

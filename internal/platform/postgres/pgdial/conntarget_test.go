@@ -21,3 +21,18 @@ func TestConnTargetReadsTheHostAndTheRoots(t *testing.T) {
 	_, err = pgdial.ConnTarget("postgres://bot@db.example.com:notaport/app")
 	require.Error(t, err)
 }
+
+// SSLMode is the sslmode a URL or a key=value string names, "" for none.
+func TestSSLMode(t *testing.T) {
+	t.Parallel()
+	for in, want := range map[string]string{
+		"postgres://u@db.example.com/app?sslmode=require":         "require",
+		"postgresql://u@db.example.com/app?a=1&sslmode=verify-ca": "verify-ca",
+		"postgres://u@db.example.com/app":                         "",
+		"host=db.example.com sslmode=disable dbname=app":          "disable",
+		"host=db.example.com sslmode='verify-full'":               "verify-full",
+		"host=db.example.com":                                     "",
+	} {
+		require.Equal(t, want, pgdial.SSLMode(in), in)
+	}
+}

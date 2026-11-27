@@ -33,6 +33,7 @@ func NewSetupHandlers(origin string, jobs SetupJobs, log *slog.Logger) pageserve
 	st := setupRoutes{origin: origin, jobs: jobs, log: log}
 	return pageserver.SetupHandlers{
 		Page: serveSetupPage, Check: st.check, Run: st.run, Doctor: st.doctor, Engine: st.engine, NotMine: st.notMine,
+		RemoveEngine: st.removeEngine,
 	}
 }
 
@@ -43,6 +44,7 @@ func NewConfiguredSetupHandlers(origin string) pageserver.SetupHandlers {
 	c := configuredSetup{origin: origin}
 	return pageserver.SetupHandlers{
 		Page: serveSetupPage, Check: c.refuse, Run: c.refuse, Doctor: c.refuse, Engine: c.refuse, NotMine: c.refuse,
+		RemoveEngine: c.refuse,
 	}
 }
 
@@ -53,6 +55,7 @@ type SetupJobs interface {
 	Doctor(ctx context.Context, req setup.DoctorRequest) (setup.DoctorAnswer, error)
 	Engine(ctx context.Context) (setup.EngineAnswer, error)
 	NotMine(ctx context.Context) error
+	RemoveEngine(ctx context.Context) error
 }
 
 // SetupOnlyHandler is what an engine with no config serves: GET /healthz,
@@ -82,6 +85,7 @@ func SetupOnlyHandler(origin string, jobs SetupJobs, log *slog.Logger) http.Hand
 	mux.HandleFunc("POST "+pageserver.SetupDoctorPath, st.doctor)
 	mux.HandleFunc("POST "+pageserver.SetupEnginePath, st.engine)
 	mux.HandleFunc("POST "+pageserver.SetupNotMinePath, st.notMine)
+	mux.HandleFunc("POST "+pageserver.SetupRemoveEnginePath, st.removeEngine)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		pageserver.WriteError(w, http.StatusNotFound, "NOT_FOUND", "This engine has no config yet: it serves only its setup page.")
 	})
@@ -163,6 +167,20 @@ func (st setupRoutes) notMine(w http.ResponseWriter, r *http.Request) {
 		st.log.Info("setup page: the person said the database is not theirs; basalt init asks for the administrator password")
 	}
 	st.answer(w, struct{}{}, err, "not-mine")
+}
+
+// removeEngine marks a removed engine's "Remove it from this computer
+// too" for basalt init (CONTRACT.md, The local setup page, Removing the
+// engine service). It takes an empty object and changes no file.
+func (st setupRoutes) removeEngine(w http.ResponseWriter, r *http.Request) {
+	if !st.empty(w, r) {
+		return
+	}
+	err := st.jobs.RemoveEngine(r.Context())
+	if err == nil {
+		st.log.Info("setup page: the person asked to remove the engine from this computer; basalt init asks for the administrator password")
+	}
+	st.answer(w, struct{}{}, err, "remove-engine")
 }
 
 // empty reads a body that must be an empty JSON object.

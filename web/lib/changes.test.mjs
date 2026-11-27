@@ -137,3 +137,12 @@ test("a value over 1 MiB of text shows by size and sha256, the hash filled in on
   const [h] = lineGroups([{ ...lead, old: { id: 4, body: "a".repeat(1 << 20) } }]);
   assert.equal(table(h).children[1].children[2].textContent.length, 1 << 20);
 });
+
+test("a short value has no wrap class; only a value over 32 characters is marked long", () => {
+  globalThis.document = { createElement: fakeElement };
+  const long = "x".repeat(33);
+  const [g] = lineGroups([{ ...lead, op: "UPDATE", set: { name: long } }]);
+  const [, was, now] = table(g).children;
+  assert.deepEqual(was.children.map((c) => c.className), ["mk", "", "was"]);
+  assert.deepEqual(now.children.map((c) => c.className), ["mk", "", "set long"]);
+});

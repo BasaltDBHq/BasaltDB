@@ -149,8 +149,11 @@ func guardReason(code, detail string) string {
 		}
 		return action.ReasonNotAllowed
 	case action.CodeApprovalInvalid:
-		if detail == guard.NoSuchApproval {
+		switch detail {
+		case guard.NoSuchApproval:
 			return action.ReasonNotThisAgent
+		case guard.Withdrawn:
+			return action.ReasonWithdrawn
 		}
 		return detailReason(detail, approvalDetails, action.ReasonBadSignature)
 	case action.CodeRevertInvalid:
@@ -171,7 +174,7 @@ func typedSentence(gc guard.Code, detail string) bool {
 		return detail == guard.NothingReadsOnly
 	}
 	if gc == guard.CodeApprovalInvalid {
-		return detail == guard.NoSuchApproval
+		return detail == guard.NoSuchApproval || detail == guard.Withdrawn
 	}
 	_, typed := revertTypedReasons[detail]
 	return gc == guard.CodeRevertInvalid && typed
@@ -187,6 +190,7 @@ var revertTypedReasons = map[string]string{
 	guard.RevertAlreadySigned:  action.ReasonPlanFinished,
 	guard.RevertRowsChanged:    action.ReasonRowsChanged,
 	guard.RevertPasskeyRevoked: action.ReasonBadSignature,
+	guard.Withdrawn:            action.ReasonWithdrawn,
 }
 
 type detailRule struct{ contains, reason string }

@@ -47,7 +47,7 @@ func (ac *Service) RelayApproval(ctx context.Context, r approval.Response) (link
 		return linksvc.Receipt{}, err
 	}
 	if _, err := ac.store.Proofs.SubmitApproval(ctx, r.ApprovalID, r.Assertion()); err != nil {
-		return linksvc.Receipt{}, err
+		return linksvc.Receipt{}, ac.withdrawnMeanwhile(ctx, r.ApprovalID, err)
 	}
 	// The store accepted the signature: the receipt names the approval as
 	// the store records it, never as the page sent it.
@@ -71,6 +71,8 @@ func (ac *Service) openApproval(ctx context.Context, id uuid.UUID) (action.Appro
 		return action.Approval{}, err
 	}
 	switch {
+	case a.Status == action.ApprovalWithdrawn:
+		return a, Withdrawn(a)
 	case a.Status == action.ApprovalExpired || !ac.core.Now().Before(a.ExpiresAt):
 		return a, &toolresult.ToolError{Code: guidance.CodeApprovalExpired, Message: fmt.Sprintf("this approval expired at %s; the write stays blocked", a.ExpiresAt.UTC().Format(guidance.PersonTime))}
 	case a.Status == action.ApprovalApproved:
@@ -79,4 +81,19 @@ func (ac *Service) openApproval(ctx context.Context, id uuid.UUID) (action.Appro
 		return a, ApprovalInvalid(guidance.ReasonAlreadyUsed, "this approval was already used")
 	}
 	return a, nil
+}
+
+// withdrawnMeanwhile is the answer when the store refused a signature
+// because the agent withdrew the held write after the page opened: the
+// page shows it withdrawn, with the agent's reason. Any other refusal is
+// err as it is.
+func (ac *Service) withdrawnMeanwhile(ctx context.Context, id uuid.UUID, err error) error {
+	if ac.core.Errors.ToolError(err).Reason != guidance.ReasonWithdrawn {
+		return err
+	}
+	a, findErr := ac.store.Records.FindApproval(ctx, id)
+	if findErr != nil {
+		return err
+	}
+	return Withdrawn(a)
 }

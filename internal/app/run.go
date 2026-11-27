@@ -160,8 +160,20 @@ func runWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	rotated := setup.NewRotations()
 	pagesLn := httpserver.TakeHandedListener(handed, pagesCfg.Addr, setup.PageAddr)
 	handed = nil
+	// A connect-only agent's setup that changes (the person confirmed its
+	// database), a first install on an engine the setup page removed, or
+	// the setup page's TRUST fix rewriting an agent's connection string,
+	// has the engine stop between calls and serve its config again, as for
+	// an upgraded binary.
+	reload, reloading := make(chan struct{}, 1), make(chan struct{})
+	askReload := func() {
+		select {
+		case reload <- struct{}{}:
+		default:
+		}
+	}
 	if pagesCfg.Addr != "" {
-		jobs = setupJobs(cfg, configPath, pagesCfg.Origin, log, rotated.Changed)
+		jobs = setupJobs(cfg, configPath, pagesCfg.Origin, log, rotated.Changed, askReload)
 		site, err = listenPages(pagesCfg, pagesLn, jobs, log)
 		if err != nil {
 			return err
@@ -246,16 +258,7 @@ func runWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		env.keys = ev.Keys
 	}
 	env.handoff = wireHandoff(restart.Handoff)
-	// A connect-only agent's setup that changes (the person confirmed its
-	// database) has the engine stop between calls and serve its config
-	// again, as for an upgraded binary.
-	reload, reloading := make(chan struct{}, 1), make(chan struct{})
-	env.reload = func() {
-		select {
-		case reload <- struct{}{}:
-		default:
-		}
-	}
+	env.reload = askReload
 	restart.Upgrade = engine.UpgradeOrReload(restart.Upgrade, reload, reloading)
 	if ev.Client != nil {
 		env.relay, env.relayLinks = ev.Client, relay
@@ -469,14 +472,18 @@ func listenPages(p config.Pages, handed net.Listener, setup setuppage.SetupJobs,
 
 // setupJobs is the setup page's UPDATE and REMOVE for a person-operated
 // engine on its own OS user at the local setup origin (CONTRACT.md, The
-// local setup page), or nil: an agent-operated engine never takes the
+// local setup page), and the first install once a REMOVE deleted its
+// config, after which reinstalled has it serve the new one; or nil: an agent-operated engine never takes the
 // admin connection string, nor does an engine run as root, which reads
 // its agents' files by other rules.
-func setupJobs(cfg config.Config, configPath, origin string, log *slog.Logger, rotated func(agent, password string)) setuppage.SetupJobs {
+// reload has the running engine serve its config again: after a first
+// install on an engine the page removed, and after the TRUST fix rewrote an
+// agent's connection string.
+func setupJobs(cfg config.Config, configPath, origin string, log *slog.Logger, rotated func(agent, password string), reload func()) setuppage.SetupJobs {
 	if cfg.AgentOperated() || os.Geteuid() == 0 || origin != setup.PageOrigin {
 		return nil
 	}
-	jobs, err := newLocalSetup(setup.LocalOptions{ConfigPath: configPath, Origin: origin, Configured: true, CredentialChanged: rotated})
+	jobs, err := newLocalSetup(setup.LocalOptions{ConfigPath: configPath, Origin: origin, Configured: true, CredentialChanged: rotated, Reinstalled: reload, Reload: reload})
 	if err != nil {
 		log.Warn("the setup page cannot update or remove agents", "err", err)
 		return nil

@@ -229,6 +229,24 @@ func TestSameAsHeldAcceptsTheFixedTimes(t *testing.T) {
 	require.Equal(t, guidance.ReasonDifferentWrite, te.Reason)
 }
 
+// A write sent with the approval id of a held write the agent withdrew
+// applies nothing: APPROVAL_INVALID WITHDRAWN, with the agent's reason for
+// the person, even when the call repeats the held write exactly.
+func TestWriteWithWithdrawnApproval(t *testing.T) {
+	t.Parallel()
+	wc := newTestService(t, "linux", "")
+	held := action.Approval{
+		ID: uuid.Must(uuid.NewV7()), RunID: uuid.Must(uuid.NewV7()), Status: action.ApprovalWithdrawn,
+		Request:        action.HeldRequest{Kind: "SQL", Text: "DELETE FROM public.leads WHERE id = 1"},
+		WithdrawReason: "the person changed their mind",
+	}
+	var te *toolresult.ToolError
+	require.ErrorAs(t, wc.sameAsHeld(held, WriteParams{RunID: held.RunID, Request: agentstore.Request{Text: held.Request.Text}}), &te)
+	require.Equal(t, guidance.CodeApprovalInvalid, te.Code)
+	require.Equal(t, guidance.ReasonWithdrawn, te.Reason)
+	require.Equal(t, "The agent withdrew this request: the person changed their mind. Nothing changed.", te.PersonMessage)
+}
+
 // A refusal whose names make recording fail is recorded once more without
 // them: no name keeps a refusal out of the ledger.
 func TestRefusedIsRecordedWithoutNamesWhenTheyFail(t *testing.T) {

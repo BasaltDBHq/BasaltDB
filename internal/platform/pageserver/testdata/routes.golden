@@ -108,9 +108,9 @@ POST /api/v1/setup/remove-engine origin="http://localhost:8787" type="applicatio
 POST /api/v1/setup/remove-engine origin="https://other.example" type="application/json" body="{}" -> 403 type="application/json" cache="no-store" allow="" {"code":"INVALID_ARGUMENT","message":"The request does not come from the setup page."}
 POST /api/v1/setup/remove-engine origin="http://localhost:8787" type="application/json" body="{\"databaseUrl\":\"x\"}" -> 400 type="application/json" cache="no-store" allow="" {"code":"INVALID_ARGUMENT","message":"This route never takes the admin connection string."}
 GET /healthz origin="" type="" body="" -> 200 type="text/plain; charset=utf-8" cache="" allow="" ok
-GET /setup/ origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 17014 bytes sha256:704c9c48039bed925b9b22c2d0821f79108cb9a4a34305f942d415cd0efa5ded
+GET /setup/ origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 17234 bytes sha256:a8fd3ce80269acdfcb2cc86e6eebf72677136ac489a468b626f0b0fba72a0549
 GET /setup/x origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
-GET /style.css origin="" type="" body="" -> 200 type="text/css; charset=utf-8" cache="" allow="" 35101 bytes sha256:8bab907eb0d510b438c21f1e8d7da2e615e4e9526ff7934f748d290d6c42f478
+GET /style.css origin="" type="" body="" -> 200 type="text/css; charset=utf-8" cache="" allow="" 35276 bytes sha256:dacf3b046e0de8b737b4d5cde6ffcede6bef356c7f822096f074384f1dfaa9e6
 GET /lib/codec.js origin="" type="" body="" -> 200 type="text/javascript; charset=utf-8" cache="" allow="" 58213 bytes sha256:9c69892c02ef8d7722be457513eae3f1a5e46d94084ec38af7f3a41c6c62feaa
 GET /lib/x.css origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
 GET /fonts/OFL.txt origin="" type="" body="" -> 200 type="text/plain; charset=utf-8" cache="" allow="" 4384 bytes sha256:021caa749f89fecd7c2e40a50499de29e84d2bc19251659b47d499c2fbfffc17
@@ -243,9 +243,9 @@ POST /api/v1/setup/remove-engine origin="http://localhost:8787" type="applicatio
 POST /api/v1/setup/remove-engine origin="https://other.example" type="application/json" body="{}" -> 403 type="application/json" cache="no-store" allow="" {"code":"INVALID_ARGUMENT","message":"The request does not come from the setup page."}
 POST /api/v1/setup/remove-engine origin="http://localhost:8787" type="application/json" body="{\"databaseUrl\":\"x\"}" -> 400 type="application/json" cache="no-store" allow="" {"code":"INVALID_ARGUMENT","message":"This route never takes the admin connection string."}
 GET /healthz origin="" type="" body="" -> 200 type="text/plain; charset=utf-8" cache="" allow="" ok
-GET /setup/ origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 17014 bytes sha256:704c9c48039bed925b9b22c2d0821f79108cb9a4a34305f942d415cd0efa5ded
+GET /setup/ origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 17234 bytes sha256:a8fd3ce80269acdfcb2cc86e6eebf72677136ac489a468b626f0b0fba72a0549
 GET /setup/x origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
-GET /style.css origin="" type="" body="" -> 200 type="text/css; charset=utf-8" cache="" allow="" 35101 bytes sha256:8bab907eb0d510b438c21f1e8d7da2e615e4e9526ff7934f748d290d6c42f478
+GET /style.css origin="" type="" body="" -> 200 type="text/css; charset=utf-8" cache="" allow="" 35276 bytes sha256:dacf3b046e0de8b737b4d5cde6ffcede6bef356c7f822096f074384f1dfaa9e6
 GET /lib/codec.js origin="" type="" body="" -> 200 type="text/javascript; charset=utf-8" cache="" allow="" 58213 bytes sha256:9c69892c02ef8d7722be457513eae3f1a5e46d94084ec38af7f3a41c6c62feaa
 GET /lib/x.css origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
 GET /fonts/OFL.txt origin="" type="" body="" -> 200 type="text/plain; charset=utf-8" cache="" allow="" 4384 bytes sha256:021caa749f89fecd7c2e40a50499de29e84d2bc19251659b47d499c2fbfffc17
@@ -378,9 +378,9 @@ POST /api/v1/setup/remove-engine origin="http://localhost:8787" type="applicatio
 POST /api/v1/setup/remove-engine origin="https://other.example" type="application/json" body="{}" -> 403 type="application/json" cache="no-store" allow="" {"code":"INVALID_ARGUMENT","message":"The request does not come from the setup page."}
 POST /api/v1/setup/remove-engine origin="http://localhost:8787" type="application/json" body="{\"databaseUrl\":\"x\"}" -> 400 type="application/json" cache="no-store" allow="" {"code":"INVALID_ARGUMENT","message":"This route never takes the admin connection string."}
 GET /healthz origin="" type="" body="" -> 200 type="text/plain; charset=utf-8" cache="" allow="" ok
-GET /setup/ origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 17014 bytes sha256:704c9c48039bed925b9b22c2d0821f79108cb9a4a34305f942d415cd0efa5ded
+GET /setup/ origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 17234 bytes sha256:a8fd3ce80269acdfcb2cc86e6eebf72677136ac489a468b626f0b0fba72a0549
 GET /setup/x origin="" type="" body="" -> 404 type="application/json" cache="no-store" allow="" {"code":"NOT_FOUND","message":"This engine has no config yet: it serves only its setup page."}
-GET /style.css origin="" type="" body="" -> 200 type="text/css; charset=utf-8" cache="" allow="" 35101 bytes sha256:8bab907eb0d510b438c21f1e8d7da2e615e4e9526ff7934f748d290d6c42f478
+GET /style.css origin="" type="" body="" -> 200 type="text/css; charset=utf-8" cache="" allow="" 35276 bytes sha256:dacf3b046e0de8b737b4d5cde6ffcede6bef356c7f822096f074384f1dfaa9e6
 GET /lib/codec.js origin="" type="" body="" -> 200 type="text/javascript; charset=utf-8" cache="" allow="" 58213 bytes sha256:9c69892c02ef8d7722be457513eae3f1a5e46d94084ec38af7f3a41c6c62feaa
 GET /lib/x.css origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
 GET /fonts/OFL.txt origin="" type="" body="" -> 200 type="text/plain; charset=utf-8" cache="" allow="" 4384 bytes sha256:021caa749f89fecd7c2e40a50499de29e84d2bc19251659b47d499c2fbfffc17

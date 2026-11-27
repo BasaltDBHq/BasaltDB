@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"net"
 	"slices"
 	"strings"
 	"time"
@@ -30,6 +31,12 @@ const (
 	// problemTrustPinMismatch: the ledger records another pin for the
 	// agent's database than the engine's.
 	problemTrustPinMismatch = "TRUST_PIN_MISMATCH"
+	// problemCertificateNotChecked: the agent's connection uses TLS with an
+	// sslmode below verify-full, so the certificate is not checked.
+	problemCertificateNotChecked = "CERTIFICATE_NOT_CHECKED"
+	// problemConnectionNotEncrypted: the agent's connection uses no TLS
+	// (sslmode=disable, or prefer and allow on a server without it).
+	problemConnectionNotEncrypted = "CONNECTION_NOT_ENCRYPTED"
 )
 
 // trustExpiringWithin is how long before a root in use expires status
@@ -53,6 +60,16 @@ type TrustReport struct {
 	// Recorded is the pin's fingerprint the ledger records for the host
 	// and port (TRUST_PIN_MISMATCH): false for none; nil reads nothing.
 	Recorded func(ctx context.Context) (string, bool, error)
+	// Encrypted reports whether a connection of the agent's pool uses TLS
+	// now (prefer falls back to none on a server without it), so a mode
+	// below verify-full is CERTIFICATE_NOT_CHECKED; nil reads nothing.
+	Encrypted func(ctx context.Context) (bool, error)
+	// SSLMode is the sslmode the agent's connection string names, "" for
+	// none (the driver's prefer).
+	SSLMode string
+	// Provider is the provider whose built-in profile covers the host
+	// ("Supabase"), "" for none.
+	Provider string
 }
 
 // TrustReporter reads the TrustReport now.
@@ -71,6 +88,7 @@ func (s statusDeps) trustStatus(ctx context.Context, ps *guidance.Problems) (*gu
 	}
 	a := rep.Applied
 	out := &guidance.TrustStatus{Host: a.Host, Applies: string(a.Applies)}
+	s.addNotChecked(ctx, ps, rep)
 	if a.Profile == nil {
 		return out, &rep
 	}
@@ -86,6 +104,70 @@ func (s statusDeps) trustStatus(ctx context.Context, ps *guidance.Problems) (*gu
 	s.addTrustExpiring(ps, a, certs)
 	s.addPinMismatch(ctx, ps, rep)
 	return out, &rep
+}
+
+// sslModeDefault is the driver's sslmode when the string names none.
+const sslModeDefault = "prefer"
+
+// addNotChecked is CERTIFICATE_NOT_CHECKED when the agent's connection is
+// encrypted but its sslmode is below verify-full, so nothing checks the
+// certificate is its database's, and CONNECTION_NOT_ENCRYPTED when it uses
+// no TLS at all (sslmode=disable, or prefer and allow that fell back on a
+// server without TLS). Both are read from a live connection; the setup
+// page's check-up is where the person turns the check on. A Unix socket is
+// not a network connection and is neither; a loopback host gets no
+// CONNECTION_NOT_ENCRYPTED.
+func (s statusDeps) addNotChecked(ctx context.Context, ps *guidance.Problems, rep TrustReport) {
+	if rep.Applied.Applies != trustprofile.AppliesNotVerified || rep.Encrypted == nil || s.cmds.AgentOperated() ||
+		strings.HasPrefix(rep.Applied.Host, "/") {
+		return
+	}
+	on, err := rep.Encrypted(ctx)
+	if err != nil {
+		s.log.Debug("status: read whether the agent's connection is encrypted", "err", err)
+		return
+	}
+	host := cmp.Or(rep.Applied.Host, "the database")
+	mode := cmp.Or(rep.SSLMode, sslModeDefault)
+	if !on {
+		if !loopback(rep.Applied.Host) {
+			s.addNotEncrypted(ps, host, mode, rep.Provider)
+		}
+		return
+	}
+	who := cmp.Or(rep.Provider, host)
+	ps.Add(problemCertificateNotChecked, fmt.Sprintf("the agent's connection to %s uses sslmode=%s: encrypted, but the certificate is not checked", host, mode),
+		func(b *guidance.Steps) string {
+			b.AgentRunCommand(s.cmds.Init(), "Run this and show the person the link it prints: its check-up turns the certificate check on.")
+			b.TellAgent("Tell the agent when it is done.")
+			return "Your agent's connection to " + who + " is encrypted but doesn't check the certificate. Open the link the agent gives you and choose Check it to turn the check on, then tell the agent."
+		})
+}
+
+// loopback reports whether host is this machine (localhost, 127.0.0.0/8,
+// ::1): a connection that never leaves it, as a Unix socket, is not warned
+// for having no TLS.
+func loopback(host string) bool {
+	if strings.EqualFold(strings.TrimSuffix(host, "."), "localhost") {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
+}
+
+// addNotEncrypted is CONNECTION_NOT_ENCRYPTED for host: on a provider's
+// host the check-up's fix sets verify-full; elsewhere it says to give a
+// string with sslmode=verify-full.
+func (s statusDeps) addNotEncrypted(ps *guidance.Problems, host, mode, provider string) {
+	ps.Add(problemConnectionNotEncrypted, fmt.Sprintf("the agent's connection to %s uses no TLS (sslmode=%s): its data and queries travel unencrypted", host, mode),
+		func(b *guidance.Steps) string {
+			b.AgentRunCommand(s.cmds.Init(), "Run this and show the person the link it prints: its check-up shows the connection that is not encrypted.")
+			b.TellAgent("Tell the agent when it is done.")
+			if provider != "" {
+				return "Your agent's connection to " + host + " isn't encrypted: its data and queries travel unencrypted. Open the link the agent gives you and choose Check it to turn encryption and the " + provider + " certificate check on, then tell the agent."
+			}
+			return "Your agent's connection to " + host + " isn't encrypted: its data and queries travel unencrypted. Open the link the agent gives you to see how to turn encryption on, then tell the agent."
+		})
 }
 
 // verifyCAStatus is status.trust.verify for a pin with verify: ca.

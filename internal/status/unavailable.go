@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
@@ -23,6 +24,12 @@ func (sc *Service) UnavailableSteps(b *guidance.Steps, te *toolresult.ToolError,
 		b.AskPerson(guidance.TooManyConnectionsAsk)
 		return guidance.TooManyConnectionsMessage(sc.core.Commands)
 	case guidance.ReasonCredentialRejected, guidance.ReasonGuardMissing, guidance.ReasonGuardOutdated:
+		var bf *guidance.GuardBelowFloorError
+		if te.Reason == guidance.ReasonGuardOutdated && errors.As(f.Err, &bf) {
+			person, ls := guidance.GuardBelowFloorSteps(b, sc.core.Commands, guardmodel.RemoveOldInstallDoc)
+			te.Links = ls
+			return person
+		}
 		return guidance.FixSteps(b, sc.core.Commands, te.Reason)
 	case guidance.ReasonEngineUnreachable:
 		return guidance.EngineUnreachableSteps(b, sc.core.Commands, f.Tool)

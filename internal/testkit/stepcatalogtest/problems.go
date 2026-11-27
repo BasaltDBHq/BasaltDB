@@ -46,7 +46,7 @@ func RequireProblemObeysCatalog(t *testing.T, problems []guidance.Problem, ready
 	require.Equal(t, want, got, "(actor, action) sequence of %s", code)
 	require.Equal(t, pm, p.PersonMessage != "", "personMessage set exactly when the catalog says")
 	RequireOperatorRules(t, p.NextSteps, p.PersonMessage, variant, operatedBy, code)
-	RequirePersonMessage(t, p.PersonMessage, nil)
+	RequirePersonMessage(t, p.PersonMessage, p.Links)
 	for i, st := range p.NextSteps {
 		where := fmt.Sprintf("%s step %d", code, i+1)
 		if code == "PLUGIN_AWAITING_APPROVAL" && st.Action == toolresult.ActionOpenLink {

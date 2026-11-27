@@ -29,6 +29,13 @@ type migration struct {
 	// Breaking is the default; setting it needs the engine test that serves
 	// an agent on a guard without this version.
 	nonBreaking bool
+	// reinstall: an install below this version cannot be updated to it; it
+	// is removed and set up again. The update floor (updatableFrom) is the
+	// highest such version. It is not nonBreaking's opposite: nonBreaking
+	// says whether an engine serves an agent on a guard without the
+	// version, and an update to it keeps the data; reinstall says no update
+	// reaches it from below at all.
+	reinstall bool
 }
 
 // basalt_meta versions, in order.
@@ -128,6 +135,15 @@ var nonBreakingVersions = map[int]bool{
 	versionEngineAddressRemoved: true, versionRevertFilterName: true,
 }
 
+// reinstallVersions are the versions an older install is never updated to
+// (migration.reinstall): it is removed and set up again. A guard change that
+// cannot be applied over an older install sets its version here and nothing
+// else, and CHANGELOG.md names it under "Breaking for alpha installs".
+// versionInstallIDs: every 0.0.1 release shipped only version 1, and its
+// SQL is different from today's version 1 (schema/001, 004, 005 and 006
+// changed after it), so versions 2 and later were not written for it.
+var reinstallVersions = map[int]bool{versionInstallIDs: true}
+
 // guardFiles is how many schema files version 1 has: 001 to 011.
 const guardFiles = 11
 
@@ -150,13 +166,32 @@ func mustSplitMigrations(files []string, counts []int) []migration {
 		if end > len(files) {
 			panic(fmt.Sprintf("schema: version %d needs %d files, %d left", v, counts[v], len(files)-next))
 		}
-		out = append(out, migration{version: v, sql: strings.Join(files[next:end], ""), nonBreaking: nonBreakingVersions[v]})
+		out = append(out, migration{version: v, sql: strings.Join(files[next:end], ""), nonBreaking: nonBreakingVersions[v], reinstall: reinstallVersions[v]})
 		next = end
 	}
 	if next != len(files) {
 		panic(fmt.Sprintf("schema: %d files belong to no version", len(files)-next))
 	}
 	return out
+}
+
+// updatableFrom is the update floor: the lowest installed version this
+// build updates in place, the highest version marked reinstall (1 when
+// none is). A guard below it is unusable (CheckUsable), and the engine
+// tells the person to remove it and set up again instead of offering the
+// update (guardmodel.Status.BelowFloor).
+func updatableFrom() int { return floorOf(migrations) }
+
+// floorOf is the update floor of ms: the highest version marked reinstall,
+// else versionGuard.
+func floorOf(ms []migration) int {
+	floor := versionGuard
+	for _, m := range ms {
+		if m.reinstall {
+			floor = max(floor, m.version)
+		}
+	}
+	return floor
 }
 
 // LatestVersion is the basalt_meta version this build installs.

@@ -49,6 +49,13 @@ func addGuardProblem(ps *guidance.Problems, st guardmodel.Status) {
 		ps.Add(problemGuardMissing, "the guard is not installed in this database; no tool but status works",
 			func(b *guidance.Steps) string { return guidance.FixSteps(b, ps.Cmds, guidance.ReasonGuardMissing) })
 	case guardmodel.GuardOutdated:
+		if st.BelowFloor {
+			ps.AddLinked(problemGuardOutdated, fmt.Sprintf("the guard is version %d, from an older release this engine cannot update; no tool but status works until the person removes it and sets up again", st.Installed),
+				func(b *guidance.Steps) (string, []toolresult.Link) {
+					return guidance.GuardBelowFloorSteps(b, ps.Cmds, guardmodel.RemoveOldInstallDoc)
+				})
+			return
+		}
 		ps.Add(problemGuardOutdated, fmt.Sprintf("the guard misses breaking migrations %s; no tool but status works until it is upgraded", versions(st.MissingBreaking)),
 			func(b *guidance.Steps) string { return guidance.FixSteps(b, ps.Cmds, guidance.ReasonGuardOutdated) })
 	case guardmodel.GuardUpgradeAvailable:
@@ -80,12 +87,14 @@ func (sc *Service) Admit(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	switch st.State {
-	case guardmodel.GuardOutdated:
+	switch {
+	case st.State == guardmodel.GuardOutdated && st.BelowFloor:
+		return &guidance.GuardBelowFloorError{Installed: st.Installed}
+	case st.State == guardmodel.GuardOutdated:
 		return &toolresult.ToolError{Code: guidance.CodeUnavailable, Reason: guidance.ReasonGuardOutdated, Message: fmt.Sprintf(
 			"the guard in this database misses breaking migrations %s of this engine; only status works until the person upgrades it",
 			versions(st.MissingBreaking))}
-	case guardmodel.GuardMissing:
+	case st.State == guardmodel.GuardMissing:
 		return &toolresult.ToolError{
 			Code: guidance.CodeUnavailable, Reason: guidance.ReasonGuardMissing,
 			Message: "the guard is not installed in this database; only status works until the person installs it",

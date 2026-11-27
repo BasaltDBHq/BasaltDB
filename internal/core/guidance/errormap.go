@@ -3,6 +3,7 @@ package guidance
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
@@ -100,6 +101,24 @@ type DatabaseNotConfirmedError struct {
 
 func (e *DatabaseNotConfirmedError) Error() string {
 	return "the agent's database waits for the person's confirmation; no tool but status and confirm_database works until then"
+}
+
+// GuardBelowFloorError refuses a tool while the guard is below the build's
+// update floor: an install from 0.0.1, which is removed and set up again,
+// never updated. It unwraps to its UNAVAILABLE GUARD_OUTDATED tool error,
+// so every caller that matches a *toolresult.ToolError (the pages, the
+// plugin admission) answers it as any outdated guard; the fix steps tell
+// it apart (GuardBelowFloorSteps).
+type GuardBelowFloorError struct {
+	Installed int
+}
+
+func (e *GuardBelowFloorError) Error() string {
+	return fmt.Sprintf("the guard in this database is version %d, from an older release this engine cannot update; only status works until the person removes it and sets up again", e.Installed)
+}
+
+func (e *GuardBelowFloorError) Unwrap() error {
+	return &toolresult.ToolError{Code: CodeUnavailable, Reason: ReasonGuardOutdated, Message: e.Error()}
 }
 
 // sentinel reports whether err is target, false for a nil target. NewService

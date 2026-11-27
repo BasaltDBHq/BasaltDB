@@ -59,6 +59,11 @@ func (dc *Service) PageFailure(err error) *toolresult.ToolError {
 	if dc.pageSignatureFailure(te) {
 		return te
 	}
+	var bf *guidance.GuardBelowFloorError
+	if errors.As(err, &bf) {
+		// The steps tell a guard below the update floor apart by err.
+		return dc.failure("", nil, err)
+	}
 	return dc.failure("", nil, te)
 }
 

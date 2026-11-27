@@ -26,7 +26,7 @@ The agent calls the `status` tool at the start of a session, after you say you f
 | `TOO_MANY_CONNECTIONS` | ERROR | The agent has used all 8 database connections Basalt allows it. Another engine for the same agent may be running, or a stopped engine left sessions open. Stop any second engine; stale sessions close on their own within a few minutes. See [Connections](install.md#connections). |
 | `CREDENTIAL_REJECTED` | ERROR | Postgres refuses the agent's login. |
 | `GUARD_MISSING` | ERROR | The guard is not installed. Run `basalt init`. |
-| `GUARD_OUTDATED` | ERROR | The guard is missing a breaking migration. The agent runs `basalt init` and gives you the update link. |
+| `GUARD_OUTDATED` | ERROR | The guard is missing a breaking migration. The agent runs `basalt init` and gives you the update link. A guard from 0.0.1 is not updated: remove it as [Remove an older install](remove-old-install.md) says, then set up again. |
 | `GUARD_UPGRADE_AVAILABLE` | WARNING | Only non-breaking migrations are missing. Everything works. |
 | `NO_PASSKEY` | ERROR | No passkey is registered on the pages your agent's links open, so held writes cannot be approved yet. The agent gives you a link to add one. |
 | `SETUP_NOT_RUN` | ERROR | A setup code from `basalt init --remote` was never run. |
@@ -40,7 +40,7 @@ The schema is [`api/mcp/tools/status.json`](../api/mcp/tools/status.json).
 Two situations leave the agent with `status` and nothing else.
 
 - **The engine is not running.** `basalt mcp` still starts. It serves the tool list and `status`, and answers every other tool `UNAVAILABLE` with reason `ENGINE_UNREACHABLE`. It holds no credential and reaches no database. For an engine that runs as your own OS user (not a service), `basalt mcp` first starts it itself and waits up to 15 seconds, so you see this answer only when that fails: it then names the reason and the engine log, and `status` shows `ENGINE_START_FAILED`. `status` says to start the engine. Once the engine runs, the next call works. You do not need to restart the agent.
-- **The guard is behind by a breaking migration.** The engine serves `status`, and every other tool answers `UNAVAILABLE` with reason `GUARD_OUTDATED` and the steps to update it from the setup page. The engine checks the guard's version again on every call. After the upgrade it serves normally, with no restart.
+- **The guard is behind by a breaking migration.** The engine serves `status`, and every other tool answers `UNAVAILABLE` with reason `GUARD_OUTDATED` and the steps to update it from the setup page. A guard from 0.0.1 cannot be updated: the steps say to remove it, as [Remove an older install](remove-old-install.md) says, then set up again. The engine checks the guard's version again on every call. After the upgrade it serves normally, with no restart.
 
 If the guard is behind only by non-breaking migrations, nothing is degraded. `run_start` carries a `GUARD_UPGRADE_AVAILABLE` warning and `status` lists it as a warning. Upgrade when it suits you.
 

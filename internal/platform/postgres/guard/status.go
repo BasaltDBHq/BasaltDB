@@ -84,7 +84,7 @@ func judge(installed []int, migs []guardmodel.Migration) guardmodel.Status {
 		}
 		st.MissingNonBreaking = append(st.MissingNonBreaking, m.Version)
 	}
-	st.BelowFloor = st.Installed > 0 && st.Installed < updatableFrom
+	st.BelowFloor = st.Installed > 0 && st.Installed < updatableFrom()
 	st.State = stateOf(st)
 	return st
 }

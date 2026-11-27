@@ -5,13 +5,18 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
 
@@ -54,6 +59,9 @@ func TestAGuardBelowTheUpdateFloorIsRemovedNotUpdated(t *testing.T) {
 			require.NoError(t, err)
 			require.False(t, r.Ready)
 			require.Equal(t, guardmodel.GuardOutdated, r.Guard.State)
+			statusTool, ok := mcpcontract.Find(mcpcontract.MustLoad(), guidance.ToolStatus)
+			require.True(t, ok)
+			requireStatusSchema(t, statusTool, r)
 			stepcatalogtest.RequireProblemObeysCatalog(t, r.Problems, r.Ready, guidance.ReasonGuardOutdated, operatedBy)
 			p := findProblem(t, r, guidance.ReasonGuardOutdated)
 			requireRemoveNotUpdate(t, r, p.PersonMessage, p.Links)
@@ -74,6 +82,33 @@ func requireRemoveNotUpdate(t *testing.T, body any, person string, links []toolr
 	require.Contains(t, person, "Remove the old install first")
 	require.Contains(t, person, "set up again")
 	require.Equal(t, []toolresult.Link{{Label: "Remove an older install", URL: guardmodel.RemoveOldInstallDoc}}, links)
+}
+
+// The pages and the plugin admission refuse a guard below the floor as any
+// outdated guard (UNAVAILABLE GUARD_OUTDATED), relaying nothing, and the
+// page tells the person to remove the install, with no UPDATE link.
+func TestPagesRelayNothingOnAGuardBelowTheFloor(t *testing.T) {
+	t.Parallel()
+	d := deps()
+	d.Core.Commands = d.Core.Commands.UpdateLink(testUpdateLink)
+	d.Status.Probe = &fakeProbe{st: belowFloor(t)}
+	setApprovals(&d, struct{ approvalStore }{})
+	setReverts(&d, struct{ revertsvc.Store }{})
+	s, ctx, id := NewService(d), context.Background(), uuid.New()
+
+	_, err := s.RelayApproval(ctx, approval.Response{ApprovalID: id})
+	requireGuardOutdated(t, err, "pages approve")
+	_, err = s.ApprovalRequest(ctx, id)
+	requireGuardOutdated(t, err, "approval page")
+	_, _, err = s.RelayRevert(ctx, revert.Response{RevertID: id})
+	requireGuardOutdated(t, err, "pages revert")
+	_, err = s.RevertRequest(ctx, id, "secret")
+	requireGuardOutdated(t, err, "revert page")
+	require.ErrorIs(t, pluginAdmit(s)(ctx), plugin.ErrNotAdmitted, "no plugin record on it")
+
+	_, err = s.RelayApproval(ctx, approval.Response{ApprovalID: id})
+	pf := s.delivery.PageFailure(err)
+	requireRemoveNotUpdate(t, pf, pf.PersonMessage, pf.Links)
 }
 
 // A guard at the floor or above that misses a breaking version still gets

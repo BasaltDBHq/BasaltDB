@@ -67,8 +67,7 @@ func TestAGuardAtTheUpdateFloorStillUpdates(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, st.BelowFloor)
 
-	s, err := guard.PlanInit(ctx, d.Admin, guardmodel.InitOptions{Names: d.Names})
-	require.NoError(t, err)
-	require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) }))
+	// basalt init over it, as TestPluginApprovalsMigration upgrades.
+	d.NewAgent(t, "bot", leads, nil)
 	require.Equal(t, guard.LatestVersion(), count(t, d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
 }

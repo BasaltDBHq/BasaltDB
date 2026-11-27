@@ -239,9 +239,9 @@ async function mcpSession() {
   const args = mcpLine.split(/\s+/).slice(2);
   mcp = new McpClient(BIN, args, { ...process.env, BASALT_UPDATE_CHECK: "0" });
   await mcp.initialize();
-  await until("status ready", async () => {
+  await until("status ready, with engineRecord.state RECORDED", async () => {
     const s = await mcp.call("status");
-    return s.data.ready === true;
+    return s.data.ready === true && s.data.engineRecord?.state === "RECORDED";
   }, 90000);
   const started = await mcp.call("run_start", { intent: "release e2e: change and revert items" });
   assert.ok(!started.isError, `run_start failed: ${started.text}`);

@@ -268,6 +268,11 @@ type LocalBackend interface {
 	// SeedDemo runs on a transaction's port.
 	SeedDemo(ctx context.Context, tx Querier) (guardmodel.DemoPlan, error)
 	DemoCounts(ctx context.Context, q Querier) (leads, notes int, err error)
+
+	// LoadOrCreateStateKeys reads the engine's keys at
+	// <stateDir>/channel.json, making the directory and the file when
+	// missing, as the engine does at its start.
+	LoadOrCreateStateKeys(stateDir string, now func() time.Time) (*channel.EngineKeys, error)
 }
 
 // EngineFiles are the engine's own files a local setup reads and writes,

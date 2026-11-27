@@ -87,3 +87,8 @@ func (s *LocalService) removeAsked() bool {
 	s.removing.at = time.Time{}
 	return !at.IsZero() && s.opts.Now().Sub(at) < removeAskedFor
 }
+
+// StateDir is where an install records the engine's key: on a removed
+// engine too, whose INSTALL plans as a first install does (the key, and
+// the demo's policies on tables it reuses).
+func (s *LocalService) StateDir() string { return s.opts.StateDir }

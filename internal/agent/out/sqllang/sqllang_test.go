@@ -1,6 +1,7 @@
 package sqllang_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -21,6 +22,10 @@ type checker struct {
 	sql   string
 	tool  action.Tool
 	calls int
+}
+
+func (c *checker) HeldFrom(_ context.Context, held, sent string) (bool, error) {
+	return held == sent, nil
 }
 
 func (c *checker) Check(sql string, tool action.Tool) (action.Statement, error) {

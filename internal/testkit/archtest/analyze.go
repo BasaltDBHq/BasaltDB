@@ -139,7 +139,7 @@ func parsePkgImports(text string) (allow map[string][]string, problems []string)
 // the Postgres store runs the SQL policy right before it runs SQL.
 const (
 	sqlguardPkg    = "sqlguard"
-	storeCallsOnly = "Check CheckRepeatable WithRowVersions"
+	storeCallsOnly = "Check CheckRepeatable PlanTimes FixedFrom WithRowVersions"
 )
 
 // storePkgs is the Postgres store.

@@ -3,6 +3,7 @@ package app
 import (
 	"log/slog"
 	"os"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -32,10 +33,28 @@ func TestSetupJobsRunOnlyOnAPersonOperatedEngineAtTheSetupOrigin(t *testing.T) {
 	t.Parallel()
 	path := t.TempDir() + "/engine.json"
 	log := slog.New(slog.DiscardHandler)
-	require.Nil(t, setupJobs(config.Config{OperatedBy: "AGENT"}, path, setup.PageOrigin, log, nil))
-	require.Nil(t, setupJobs(config.Config{}, path, "http://localhost:9999", log, nil))
+	require.Nil(t, setupJobs(config.Config{OperatedBy: "AGENT"}, path, setup.PageOrigin, log, nil, nil))
+	require.Nil(t, setupJobs(config.Config{}, path, "http://localhost:9999", log, nil, nil))
 	if os.Geteuid() == 0 {
 		t.Skip("as root, setupJobs serves nothing")
 	}
-	require.NotNil(t, setupJobs(config.Config{}, path, setup.PageOrigin, log, nil))
+	require.NotNil(t, setupJobs(config.Config{}, path, setup.PageOrigin, log, nil, nil))
+}
+
+// Setting up again on an engine the page removed is a first install on the
+// running engine's setup: it records the engine's key in the same state
+// directory as the install of an engine with no config (WaitForConfig).
+func TestSetupJobsInstallWithTheOptionsOfAFirstInstall(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("as root, setupJobs serves nothing")
+	}
+	path := t.TempDir() + "/engine.json"
+	jobs := setupJobs(config.Config{}, path, setup.PageOrigin, slog.New(slog.DiscardHandler), nil, nil)
+	configured, ok := jobs.(*setup.LocalService)
+	require.True(t, ok)
+	first, err := newLocalSetup(setup.LocalOptions{ConfigPath: path, Origin: setup.PageOrigin, StateDir: WaitOptions{}.StateDir})
+	require.NoError(t, err)
+	require.Equal(t, first.StateDir(), configured.StateDir())
+	require.Equal(t, config.DefaultStateDir(runtime.GOOS), configured.StateDir())
 }

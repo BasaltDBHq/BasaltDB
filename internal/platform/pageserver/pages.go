@@ -123,19 +123,22 @@ const (
 	SetupDoctorPath  = "/api/v1/setup/doctor"
 	SetupEnginePath  = "/api/v1/setup/engine"
 	SetupNotMinePath = "/api/v1/setup/not-mine"
+	// SetupRemoveEnginePath is a removed engine's "Remove it from this
+	// computer too".
+	SetupRemoveEnginePath = "/api/v1/setup/remove-engine"
 )
 
 // SetupHandlers serve the setup page (GET SetupPagePath) and its routes.
 // Whatever is mounted, Handler refuses a databaseUrl body on every other
 // loopback route (refuseDatabaseURL).
 type SetupHandlers struct {
-	Page, Check, Run, Doctor, Engine, NotMine http.HandlerFunc
+	Page, Check, Run, Doctor, Engine, NotMine, RemoveEngine http.HandlerFunc
 }
 
 // MountSetup serves h on the setup routes; a later call replaces an
 // earlier one. Call it before Handler.
 func (s *Server) MountSetup(h SetupHandlers) {
-	if h.Page == nil || h.Check == nil || h.Run == nil || h.Doctor == nil || h.Engine == nil || h.NotMine == nil {
+	if h.Page == nil || h.Check == nil || h.Run == nil || h.Doctor == nil || h.Engine == nil || h.NotMine == nil || h.RemoveEngine == nil {
 		panic("pages: every setup handler required")
 	}
 	s.setup = h
@@ -252,6 +255,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+SetupDoctorPath, s.setup.Doctor)
 	mux.HandleFunc("POST "+SetupEnginePath, s.setup.Engine)
 	mux.HandleFunc("POST "+SetupNotMinePath, s.setup.NotMine)
+	mux.HandleFunc("POST "+SetupRemoveEnginePath, s.setup.RemoveEngine)
 	return refuseDatabaseURL(s.origin, mux)
 }
 

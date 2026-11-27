@@ -26,14 +26,15 @@ var (
 )
 
 // The fixed prompts the macOS administrator dialog shows for each action,
-// so a dialog the person did not expect names what it would do. They are
+// so a dialog the person did not expect names what it would do in its
+// first sentence. Only macOS shows them (pkexec shows polkit's own text). They are
 // constants: no value from the agent, the engine or the environment
 // reaches them.
 const (
-	InstallPrompt = "BasaltDB wants to INSTALL its engine service on this computer: it copies basalt into a system folder, creates the engine's own system account and folders and starts the engine. Cancel unless you just asked to set up BasaltDB."
-	RemovePrompt  = "BasaltDB wants to REMOVE its engine service from this computer: it stops the engine and deletes its folders and system accounts. Cancel unless you just removed BasaltDB on the setup page."
-	RestartPrompt = "BasaltDB wants to RESTART its engine service on this computer: the engine runs another build than the basalt you just ran, so it copies that basalt into a system folder and restarts the engine onto it. Cancel unless you just installed or upgraded BasaltDB."
-	ResetPrompt   = "BasaltDB wants to RESET this computer's setup: it deletes the engine's config and credentials. Cancel unless you just answered 'No, this isn't mine' on the setup page."
+	InstallPrompt = "BasaltDB wants to install its engine on this Mac. It copies basalt into a system folder, creates the engine's own system account and folders and starts the engine. Cancel unless you just asked to set up BasaltDB."
+	RemovePrompt  = "BasaltDB wants to remove its engine from this Mac. It stops the engine and deletes its folders and system accounts. Cancel unless you just chose to remove BasaltDB from this computer on the setup page."
+	RestartPrompt = "BasaltDB wants to restart its engine on this Mac. The engine runs another build than the basalt you just ran, so it copies that basalt into a system folder and restarts the engine onto it. Cancel unless you just installed or upgraded BasaltDB."
+	ResetPrompt   = "BasaltDB wants to reset its engine on this Mac. It deletes the engine's config and credentials. Cancel unless you just answered 'No, this isn't mine' on the setup page."
 )
 
 // Kinds of crash.

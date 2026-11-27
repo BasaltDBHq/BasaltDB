@@ -101,11 +101,11 @@ func (s *LocalService) configuredAgent(agent, osUser string) (config.Agent, stri
 }
 
 // engineRemoved: a REMOVE deleted engine.json with the engine's last
-// agent. The engine serves no agent any more, and basalt init removes its
-// service.
+// agent. The engine serves no agent any more; basalt init asks the person
+// to set it up again or remove it from this computer too (local_removed.go).
 func (s *LocalService) engineRemoved() error {
 	if err := s.be.Lstat(s.opts.ConfigPath); errors.Is(err, os.ErrNotExist) {
-		return refuse(CodeEngineRemoved, "BasaltDB is removed from this engine: it serves no agent any more. Your computer asks for your password next, to remove the engine service.")
+		return refuse(CodeEngineRemoved, "BasaltDB was removed from your database: this engine serves no agent any more. Ask the agent to run basalt init: its page lets you set BasaltDB up again or remove it from this computer too.")
 	}
 	return nil
 }
@@ -117,7 +117,7 @@ func (s *LocalService) engineRemoved() error {
 // before anything connects with it. run is a run's request, which may carry
 // what its check does not.
 func (s *LocalService) validateAgentJob(req Request, run bool) (agentJob, error) {
-	if err := s.engineRemoved(); err != nil {
+	if err := s.removedProbe(req, run); err != nil {
 		return agentJob{}, err
 	}
 	if req.Job == JobChange {
@@ -526,11 +526,11 @@ func (s *LocalService) runAgentJob(ctx context.Context, req Request) (RunAnswer,
 	}
 	gone, err := s.forget(p.removed)
 	if err != nil {
-		r := refuse(CodeSetupFailed, "Basalt is removed from the database, but this engine could not remove the agent from its config. Open this link again to finish.")
+		r := refuse(CodeSetupFailed, "BasaltDB is removed from the database, but this engine could not remove the agent from its config. Open this link again to finish.")
 		r.Internal = true
 		return RunAnswer{}, r
 	}
-	answer.Lines = []string{fmt.Sprintf("Basalt removed from the database %s", database), "removed from this engine: " + strings.Join(p.removed, ", ")}
+	answer.Lines = []string{fmt.Sprintf("BasaltDB removed from the database %s", database), "removed from this engine: " + strings.Join(p.removed, ", ")}
 	answer.EngineRemoved = gone
 	if demoKept {
 		answer.Warnings = append(answer.Warnings, "the sample schema "+s.be.DemoSchema()+" stays: another object depends on it")

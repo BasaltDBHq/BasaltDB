@@ -30,7 +30,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
@@ -169,18 +168,18 @@ func agentHarnessFor(t *testing.T, d *guardtest.DB, a *guardtest.Agent, pagesOri
 // engine whose key file is refused (KEY_ERROR), which signs no receipt.
 func agentHarnessKeys(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *channel.EngineKeys, pagesOrigin ...string) agentEnv {
 	t.Helper()
-	return agentHarnessLimits(t, d, a, keys, sqlguard.DefaultLimits(), pagesOrigin...)
+	return agentHarnessLimits(t, d, a, keys, action.DefaultLimits(), pagesOrigin...)
 }
 
 // agentHarnessLimits is agentHarnessKeys with the agent's limits.
-func agentHarnessLimits(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *channel.EngineKeys, limits sqlguard.Limits, pagesOrigin ...string) agentEnv {
+func agentHarnessLimits(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *channel.EngineKeys, limits action.Limits, pagesOrigin ...string) agentEnv {
 	t.Helper()
 	return agentHarnessWith(t, d, a, keys, limits, nil, pagesOrigin...)
 }
 
 // agentHarnessWith is agentHarnessLimits with an edit of the dependencies,
 // made before the service is built, so every use case reads it.
-func agentHarnessWith(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *channel.EngineKeys, limits sqlguard.Limits, edit func(*app.Deps), pagesOrigin ...string) agentEnv {
+func agentHarnessWith(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *channel.EngineKeys, limits action.Limits, edit func(*app.Deps), pagesOrigin ...string) agentEnv {
 	t.Helper()
 	var receipts linksvc.ReceiptSigner
 	if keys != nil {

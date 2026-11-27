@@ -1,7 +1,7 @@
 // Package postgres is the Postgres store adapter: it runs an agent's
 // statements on that agent's scoped Postgres credential. Agent SQL is run
 // as given, with bound parameters, never rewritten; the engine's policy
-// (internal/core/sqlguard) has already allowed it.
+// (internal/platform/postgres/pgstatement) has already allowed it.
 package store
 
 import (
@@ -21,9 +21,9 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/agentcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgstatement"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/wiretime"
 )
@@ -46,14 +46,14 @@ type Pool interface {
 // Reader runs reads for one agent.
 type Reader struct {
 	pool   Pool
-	limits sqlguard.Limits
+	limits action.Limits
 	now    func() time.Time
 }
 
 // NewReader returns a reader on pool with limits. Every read runs pinned
 // (guard.PinSession), so values print the same whatever the session's
 // TimeZone or styles. It panics on a nil pool.
-func NewReader(pool Pool, limits sqlguard.Limits, now func() time.Time) *Reader {
+func NewReader(pool Pool, limits action.Limits, now func() time.Time) *Reader {
 	if pool == nil || now == nil {
 		panic("postgres: pool and clock required")
 	}
@@ -62,7 +62,7 @@ func NewReader(pool Pool, limits sqlguard.Limits, now func() time.Time) *Reader 
 
 // setTimeout sets the time limit for the current transaction only:
 // transaction-local, so it cannot leak through a transaction pooler.
-func setTimeout(ctx context.Context, tx pgx.Tx, limits sqlguard.Limits) error {
+func setTimeout(ctx context.Context, tx pgx.Tx, limits action.Limits) error {
 	return setStatementTimeout(ctx, tx, limits.StatementTimeout)
 }
 
@@ -70,7 +70,7 @@ func setTimeout(ctx context.Context, tx pgx.Tx, limits sqlguard.Limits) error {
 func (r *Reader) readRaw(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error) {
 	// A statement without row sources (an aggregate, or one this store did
 	// not check) reads without versions.
-	sources, _ := stmt.Handle.([]sqlguard.RowSource)
+	sources, _ := stmt.Handle.([]pgstatement.RowSource)
 	start := r.now()
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 	if err != nil {
@@ -100,12 +100,12 @@ func (r *Reader) readRaw(ctx context.Context, sql string, params []any, stmt act
 // ok is false when no source is a guarded table, or the rewritten
 // statement failed to plan (a class 42 error) and was rolled back: the
 // caller then runs the original.
-func (r *Reader) readVersioned(ctx context.Context, tx pgx.Tx, sql string, params []any, sources []sqlguard.RowSource) (action.ReadResult, bool, error) {
+func (r *Reader) readVersioned(ctx context.Context, tx pgx.Tx, sql string, params []any, sources []pgstatement.RowSource) (action.ReadResult, bool, error) {
 	versioned, oids, err := guardedSources(ctx, tx, sources)
 	if err != nil || len(versioned) == 0 {
 		return action.ReadResult{}, false, err
 	}
-	rewritten, err := sqlguard.WithRowVersions(sql, versioned)
+	rewritten, err := pgstatement.WithRowVersions(sql, versioned)
 	if err != nil {
 		return action.ReadResult{}, false, nil //nolint:nilerr // no row identity: read without versions
 	}
@@ -113,7 +113,7 @@ func (r *Reader) readVersioned(ctx context.Context, tx pgx.Tx, sql string, param
 	if err != nil {
 		return action.ReadResult{}, false, err
 	}
-	cols, rows, extras, err := runText(ctx, sp, rewritten, params, r.limits.ReadRowLimit, len(versioned)*sqlguard.VersionColumns)
+	cols, rows, extras, err := runText(ctx, sp, rewritten, params, r.limits.ReadRowLimit, len(versioned)*pgstatement.VersionColumns)
 	var pe *pgconn.PgError
 	if errors.As(err, &pe) && strings.HasPrefix(pe.Code, sqlStateClassSyntaxOrAccess) {
 		return action.ReadResult{}, false, sp.Rollback(ctx)
@@ -133,7 +133,7 @@ const sqlStateClassSyntaxOrAccess = "42"
 
 // guardedSources keeps the sources that are guarded tables the agent can
 // read, with their primary keys and table oids, in order.
-func guardedSources(ctx context.Context, tx pgx.Tx, sources []sqlguard.RowSource) ([]sqlguard.Versioned, []uint32, error) {
+func guardedSources(ctx context.Context, tx pgx.Tx, sources []pgstatement.RowSource) ([]pgstatement.Versioned, []uint32, error) {
 	if len(sources) == 0 {
 		return nil, nil, nil
 	}
@@ -145,14 +145,14 @@ func guardedSources(ctx context.Context, tx pgx.Tx, sources []sqlguard.RowSource
 	if err != nil {
 		return nil, nil, err
 	}
-	var versioned []sqlguard.Versioned
+	var versioned []pgstatement.Versioned
 	var oids []uint32
 	for _, s := range sources {
 		g, ok := guarded[s.RegName()]
 		if !ok {
 			continue
 		}
-		versioned = append(versioned, sqlguard.Versioned{Source: s, PKCols: g.PKCols})
+		versioned = append(versioned, pgstatement.Versioned{Source: s, PKCols: g.PKCols})
 		oids = append(oids, g.OID)
 	}
 	return versioned, oids, nil
@@ -165,7 +165,7 @@ func rowVersions(extras [][][]byte, oids []uint32) []action.RowVersion {
 	var out []action.RowVersion
 	for _, row := range extras {
 		for i, oid := range oids {
-			key, version := row[i*sqlguard.VersionColumns], row[i*sqlguard.VersionColumns+1]
+			key, version := row[i*pgstatement.VersionColumns], row[i*pgstatement.VersionColumns+1]
 			if version == nil {
 				continue
 			}

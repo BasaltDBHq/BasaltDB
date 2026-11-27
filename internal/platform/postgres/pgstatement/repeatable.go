@@ -1,4 +1,4 @@
-package sqlguard
+package pgstatement
 
 import (
 	"fmt"

@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/sqlport"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
@@ -25,7 +24,7 @@ func TestWriteRefusesReturnedRowsWithNoReturned(t *testing.T) {
 	t.Parallel()
 	d, a := zoneDB(t)
 	ctx := context.Background()
-	store := postgres.NewStore(zonedPool(t, a.URL, "UTC"), sqlguard.DefaultLimits(), time.Now)
+	store := postgres.NewStore(zonedPool(t, a.URL, "UTC"), action.DefaultLimits(), time.Now)
 	in := action.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Tag events"}
 	require.NoError(t, store.StartRun(ctx, in))
 

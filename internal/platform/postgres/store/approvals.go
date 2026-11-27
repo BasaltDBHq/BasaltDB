@@ -17,10 +17,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgstatement"
 )
 
 // errPreviewRollback ends a preview transaction: a preview never commits.
@@ -133,7 +133,7 @@ func (s *Store) holdRaw(ctx context.Context, in action.Intent, r approvalstore.H
 }
 
 // tableColumnsRaw is TableColumns before MapError.
-func (s *Store) tableColumnsRaw(ctx context.Context, table string) ([]sqlguard.Column, error) {
+func (s *Store) tableColumnsRaw(ctx context.Context, table string) ([]pgstatement.Column, error) {
 	// Plain SQL: a catalog query on to_regclass.
 	// A default's dependencies on functions outside pg_catalog are in
 	// pg_depend; the first volatile one is named.
@@ -152,14 +152,14 @@ func (s *Store) tableColumnsRaw(ctx context.Context, table string) ([]sqlguard.C
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (sqlguard.Column, error) {
-		var c sqlguard.Column
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (pgstatement.Column, error) {
+		var c pgstatement.Column
 		err := row.Scan(&c.Name, &c.Default, &c.Identity, &c.Generated, &c.Volatile)
 		return c, err
 	})
 }
 
-// fixedTimes runs eval, the SELECT sqlguard.PlanTimes made of a held
+// fixedTimes runs eval, the SELECT pgstatement.PlanTimes made of a held
 // write's time functions, once, and returns each value as text in ISO form
 // with its zone offset where the type has one, which Postgres reads back
 // the same whatever the session's DateStyle. The read-only transaction

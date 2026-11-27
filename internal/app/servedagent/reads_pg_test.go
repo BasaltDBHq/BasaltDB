@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
 
@@ -129,7 +130,7 @@ func TestJoinsAndAggregatesAreRecorded(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", []string{"public.leads", "public.lead_notes"}, nil)
-	h := newHarness(t, a.URL, sqlguard.DefaultLimits())
+	h := newHarness(t, a.URL, action.DefaultLimits())
 	runID := h.startRun(t, "Review notes")
 
 	join := h.mustQuery(t, map[string]any{
@@ -185,7 +186,7 @@ func TestStaleChecksSurviveAPooledConnection(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", leads, leads)
-	h := newHarnessConns(t, a.URL, sqlguard.DefaultLimits(), 1)
+	h := newHarnessConns(t, a.URL, action.DefaultLimits(), 1)
 	first := h.startRun(t, "First run")
 	second := h.startRun(t, "Second run")
 	write := func(runID string, id int) (map[string]any, bool) {

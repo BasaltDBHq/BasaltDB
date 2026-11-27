@@ -13,7 +13,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 )
 
 // failingDB fails every query and every transaction with its own error.
@@ -38,7 +37,7 @@ func (db failingDB) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error) { re
 func TestPreviewMarksOnlyThePreviewRun(t *testing.T) {
 	t.Parallel()
 	catalog, begin := errors.New("catalog read failed"), errors.New("preview failed")
-	s := NewStore(failingDB{query: catalog, begin: begin}, sqlguard.DefaultLimits(), time.Now)
+	s := NewStore(failingDB{query: catalog, begin: begin}, action.DefaultLimits(), time.Now)
 	ctx := context.Background()
 
 	_, err := s.Preview(ctx, action.Intent{}, agentstore.Request{Text: "UPDATE public.leads SET n = random()"})

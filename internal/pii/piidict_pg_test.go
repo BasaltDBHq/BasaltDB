@@ -20,7 +20,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/agentcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
@@ -173,7 +172,7 @@ func TestValuesReadAreInTheDictionaryAndTokenizedConsistently(t *testing.T) {
 	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	obs := boundObserver{NewObserver(NewMap(slog.New(slog.DiscardHandler)), dict), pgpii.Classes(f.pool)}
 
-	reader := postgres.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
+	reader := postgres.NewReader(f.pool, action.DefaultLimits(), time.Now)
 	res, err := reader.Read(ctx, `SELECT c.id, c.email, c.phone, c.name, lower(c.email) AS computed, c.note FROM customers c ORDER BY c.id`, nil, action.Statement{})
 	require.NoError(t, err)
 	require.False(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "ada@corp.ee", "")))
@@ -231,7 +230,7 @@ func TestWriteReturningValuesAreAddedBeforeCommitAndFailClosed(t *testing.T) {
 	ctx := context.Background()
 	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	obs := NewObserver(NewMap(slog.New(slog.DiscardHandler)), dict)
-	store := postgres.NewStore(f.pool, sqlguard.DefaultLimits(), time.Now)
+	store := postgres.NewStore(f.pool, action.DefaultLimits(), time.Now)
 	in := action.Intent{RunID: uuidV7(t), TaskID: uuidV7(t), Text: "add a customer"}
 	require.NoError(t, store.StartRun(ctx, in))
 	res, err := store.Write(ctx, in, action.OpInsert,
@@ -259,8 +258,8 @@ func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	obs := boundObserver{NewObserver(classes, dict), pgpii.Classes(f.pool)}
-	reader := postgres.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
-	s := NewScanner(dict, []ScanSource{{Agent: "bot", Map: classes, Classes: pgpii.Classes(f.pool), Fields: pgpii.Fields(f.pool, sqlguard.DefaultLimits(), DefaultLoadTimeout)}},
+	reader := postgres.NewReader(f.pool, action.DefaultLimits(), time.Now)
+	s := NewScanner(dict, []ScanSource{{Agent: "bot", Map: classes, Classes: pgpii.Classes(f.pool), Fields: pgpii.Fields(f.pool, action.DefaultLimits(), DefaultLoadTimeout)}},
 		ScanOptions{}, slog.New(slog.DiscardHandler))
 	plain := agentcatalog.FieldRef(f.oid(t, "public.plain"), 2)
 

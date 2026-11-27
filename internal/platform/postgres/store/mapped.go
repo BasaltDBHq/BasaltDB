@@ -13,10 +13,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgcatalog"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgstatement"
 )
 
 // The exported store methods map their errors (MapError), so the service
@@ -101,10 +101,10 @@ func (p Probe) Reinstalls(ctx context.Context) (guard.Reinstalls, error) {
 
 // Read runs one SELECT in a read-only transaction within the time limit,
 // and cancels it once it returns more than the row limit. For the
-// statement's row sources (its Handle, the []sqlguard.RowSource of the
+// statement's row sources (its Handle, the []pgstatement.RowSource of the
 // check) that are guarded tables the agent can read, it also returns the version
 // of each row: the statement runs with version columns added through the
-// parse tree (sqlguard.WithRowVersions), which are stripped from the rows.
+// parse tree (pgstatement.WithRowVersions), which are stripped from the rows.
 // If that statement fails to plan, the original runs as given and the read
 // carries no versions.
 func (r *Reader) Read(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error) {
@@ -154,7 +154,7 @@ func (s *Store) Hold(ctx context.Context, in action.Intent, r approvalstore.Hold
 // TableColumns returns the columns of table an INSERT without a column
 // list fills by position, in order, with their defaults, resolved as the
 // agent's session would.
-func (s *Store) TableColumns(ctx context.Context, table string) ([]sqlguard.Column, error) {
+func (s *Store) TableColumns(ctx context.Context, table string) ([]pgstatement.Column, error) {
 	r0, err := s.tableColumnsRaw(ctx, table)
 	return r0, MapError(err)
 }

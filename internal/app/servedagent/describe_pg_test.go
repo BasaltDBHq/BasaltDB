@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/basaltdbhq/basaltdb/internal/status"
 
 	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
@@ -23,7 +25,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
@@ -92,7 +93,7 @@ func describeDBWithUpdate(t *testing.T, update func() *status.ReleaseNotice) des
 	classifyDescribe(t, d)
 
 	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
-		d.Agent.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
+		d.Agent.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, action.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
 		d.Agent.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pgpii.Classes(pool))
 		d.Status.Update = update
 	})).Svc
@@ -332,7 +333,7 @@ func TestDescribeSearchScale(t *testing.T) {
 		GRANT SELECT ON ALL TABLES IN SCHEMA big TO `+pgx.Identifier{a.Role}.Sanitize())
 
 	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
-		d.Agent.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
+		d.Agent.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, action.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
 		d.Agent.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pgpii.Classes(pool))
 	})).Svc
 	h := harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(svc)...)}
@@ -344,7 +345,7 @@ func TestDescribeSearchScale(t *testing.T) {
 		took := time.Since(start)
 		require.False(t, isError, "%s: %v", name, body)
 		t.Logf("%s: %s", name, took)
-		require.Less(t, took, sqlguard.DefaultLimits().StatementTimeout, name)
+		require.Less(t, took, action.DefaultLimits().StatementTimeout, name)
 	}
 	measure("overview", map[string]any{})
 	measure("search table prefix", map[string]any{"query": "t04"})
@@ -379,7 +380,7 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 	}
 
 	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
-		d.Agent.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
+		d.Agent.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, action.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
 		d.Agent.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pgpii.Classes(pool))
 	})).Svc
 	h := harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(svc)...)}
@@ -390,7 +391,7 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 	took := time.Since(start)
 	require.False(t, isError, "%v", body)
 	t.Logf("overview of %d schemas: %s", schemas, took)
-	require.Less(t, took, sqlguard.DefaultLimits().StatementTimeout)
+	require.Less(t, took, action.DefaultLimits().StatementTimeout)
 	require.Len(t, body["namespaces"], 50)
 	n, err := body["counts"].(map[string]any)["namespaces"].(json.Number).Int64()
 	require.NoError(t, err)

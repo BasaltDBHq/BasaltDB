@@ -8,13 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
@@ -247,7 +248,7 @@ func TestListRunsTablesTruncated(t *testing.T) {
 		d.Exec(t, fmt.Sprintf(`CREATE TABLE %s (id int PRIMARY KEY)`, name))
 		tables = append(tables, name)
 	}
-	h := newHarness(t, d.NewAgent(t, "bot", tables, tables).URL, sqlguard.DefaultLimits())
+	h := newHarness(t, d.NewAgent(t, "bot", tables, tables).URL, action.DefaultLimits())
 
 	wide := h.startRun(t, "Write to every table")
 	for _, table := range tables {
@@ -286,8 +287,8 @@ func TestListRunsOwnRunsOnly(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	botAgent := d.NewAgent(t, "bot", leads, leads)
 	otherAgent := d.NewAgent(t, "other", leads, leads)
-	bot := newHarness(t, botAgent.URL, sqlguard.DefaultLimits())
-	other := newHarness(t, otherAgent.URL, sqlguard.DefaultLimits())
+	bot := newHarness(t, botAgent.URL, action.DefaultLimits())
+	other := newHarness(t, otherAgent.URL, action.DefaultLimits())
 
 	botRuns := startRuns(t, bot, 3)
 	otherRuns := startRuns(t, other, 2)
@@ -345,7 +346,7 @@ func TestListRunsListsRevertsAndReadsOutsideARun(t *testing.T) {
 	botAgent := d.NewAgent(t, "bot", leads, leads)
 	e := agentHarnessFor(t, d, botAgent)
 	h := e.h
-	other := newHarness(t, d.NewAgent(t, "other", leads, leads).URL, sqlguard.DefaultLimits())
+	other := newHarness(t, d.NewAgent(t, "other", leads, leads).URL, action.DefaultLimits())
 	ctx := context.Background()
 
 	runID := h.startRun(t, "Tidy the leads")

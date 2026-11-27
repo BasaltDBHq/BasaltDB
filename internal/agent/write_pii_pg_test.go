@@ -18,7 +18,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
@@ -71,7 +70,7 @@ func piiWriteService(t *testing.T, obs agent.PIIObserver) (*agent.Service, *guar
 	pool, _, err := postgres.NewSwitchablePool(context.Background(), a.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	store := postgres.NewStore(resultsize.Pool(pool), sqlguard.DefaultLimits(), time.Now)
+	store := postgres.NewStore(resultsize.Pool(pool), action.DefaultLimits(), time.Now)
 	core := agent.Core{Name: "bot", Log: slog.New(slog.DiscardHandler), Now: time.Now, Errors: pgerrors.Map()}
 	set := agent.StoreSet{
 		Kind: store.Kind(), Family: agentstore.FamilySQL, Capabilities: store.Capabilities(),
@@ -103,7 +102,7 @@ func txReturned(returned agent.Returned) postgres.Returned {
 	}
 }
 
-func (pgData) Limits() action.Limits { return action.Limits(sqlguard.DefaultLimits()) }
+func (pgData) Limits() action.Limits { return action.DefaultLimits() }
 
 func TestWriteRollsBackWhenItsReturnedValuesCannotBeAdded(t *testing.T) {
 	t.Parallel()

@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
 
 	"github.com/basaltdbhq/basaltdb/internal/links/out/secretfile"
@@ -30,7 +32,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/engineos"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
@@ -778,8 +779,8 @@ func statePins(dir string, log *slog.Logger) ledger.Pins {
 }
 
 // sqlLimits applies the configured limits over the defaults.
-func sqlLimits(l config.Limits) (sqlguard.Limits, error) {
-	out := sqlguard.DefaultLimits()
+func sqlLimits(l config.Limits) (action.Limits, error) {
+	out := action.DefaultLimits()
 	if l.StatementTimeoutMs > 0 {
 		out.StatementTimeout = l.StatementTimeout()
 	}
@@ -787,7 +788,7 @@ func sqlLimits(l config.Limits) (sqlguard.Limits, error) {
 		out.ReadRowLimit = l.ReadRowLimit
 	}
 	if err := out.Validate(); err != nil {
-		return sqlguard.Limits{}, fmt.Errorf("limits: %w", err)
+		return action.Limits{}, fmt.Errorf("limits: %w", err)
 	}
 	return out, nil
 }

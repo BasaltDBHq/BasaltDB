@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -18,7 +20,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
@@ -46,7 +47,7 @@ func largeHarness(t *testing.T, d *guardtest.DB, a *guardtest.Agent) agentEnv {
 	t.Helper()
 	keys, err := channel.GenerateEngineKeys(time.Now)
 	require.NoError(t, err)
-	limits := sqlguard.DefaultLimits()
+	limits := action.DefaultLimits()
 	limits.StatementTimeout = largeValuesStatementTimeout
 	return agentHarnessLimits(t, d, a, keys, limits)
 }

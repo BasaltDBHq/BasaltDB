@@ -388,6 +388,7 @@ async function removedPage() {
   await realInstall();
   // init ends once the engine serves the new config, or when its wait is up.
   assert.equal(await Promise.race([again.exited, sleep(120000).then(() => "timeout")]), 0, `init after Set up again: ${again.err()}`);
+  assert.match(again.err(), /set up again on this computer/, "init saw Set up again finish, not its wait run out");
 
   // The engine serves the agent again: init opens the Update or Remove link.
   const change = basaltInit(["--agent", AGENT]);
@@ -400,7 +401,7 @@ async function removedPage() {
   await open(await initLink(last));
   await page.locator("#removed").waitFor({ state: "visible" });
   await page.locator("#removed-remove").click();
-  await page.getByText("Your computer asks for your password now").waitFor({ state: "visible" });
+  await page.getByText("Your computer asks for your password").waitFor({ state: "visible" });
   await until("init to go on to the dialog", () => toDialog.test(last.err()), 120000);
   await Promise.race([last.exited, sleep(5000)]);
   last.child.kill();

@@ -1812,7 +1812,7 @@ export const REMOVE_LAST_STEP = "Last step: if your computer does not ask for yo
 // which still runs on this computer, serving no agent.
 export const REMOVED_TEXT = {
   title: "BasaltDB was removed from your database",
-  asked: "Your computer asks for your password now, in its own dialog, to remove the engine. No dialog, or you closed it? Ask your agent to run basalt init again: this page opens again.",
+  asked: "Your computer asks for your password, in its own dialog, to remove the engine. If no dialog appears, ask your agent to run basalt init and press this again.",
 };
 
 // startRemoved is the page of a REMOVED link (CONTRACT.md, The local setup

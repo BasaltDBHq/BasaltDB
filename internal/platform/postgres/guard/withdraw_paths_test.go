@@ -25,6 +25,7 @@ func TestCommitApprovalRefusesWithdrawn(t *testing.T) {
 	ctx := context.Background()
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", leads, leads)
+	person(t, d)
 	in := newRun(t, a, "remove a lead")
 	held, _ := previewAndHold(t, a.Conn, in, heldDelete, []any{3}, []string{})
 	_, err := withdraw(a.Conn, "withdraw_approval", held.ApprovalID, withdrawReason)
@@ -139,6 +140,7 @@ func TestWithdrawMigrationRunsAgain(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", leads, leads)
 	require.GreaterOrEqual(t, scalarOf[int](t, d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`), guard.WithdrawVersion)
+	person(t, d)
 	done := openOneOfEachKind(t, a, 10)
 	done.withdrawAll(t, a)
 	waiting := openOneOfEachKind(t, a, 20)
@@ -167,6 +169,7 @@ func TestUpdateToWithdrawKeepsWaitingRequests(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", leads, leads)
 	require.Equal(t, guard.WithdrawVersion-1, scalarOf[int](t, d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
+	person(t, d)
 	waiting := openOneOfEachKind(t, a, 30)
 	held := scalarOf[uuid.UUID](t, d.Admin, `SELECT held_change FROM basalt_meta.approvals WHERE approval_id = $1`, waiting.approval)
 

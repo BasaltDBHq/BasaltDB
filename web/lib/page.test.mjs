@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { CodeError, TruncatedLinkError, parseApprovalRequest, parseRevertRequest } from "./codec.js";
-import { APPROVE_REOPEN, REVERT_REOPEN, linkFailure, webauthnError, whenText } from "./page.js";
+import { APPROVE_REOPEN, REVERT_REOPEN, WITHDRAWN_TEXT, linkFailure, webauthnError, whenText, withdrawnText } from "./page.js";
+import { RelayError } from "./local.js";
 
 const approvalFragment = JSON.parse(
   readFileSync(new URL("../../internal/core/approval/testdata/fixtures.json", import.meta.url), "utf8"),
@@ -67,4 +68,14 @@ test("a prompt that offered this database's passkeys says this device may have n
   const cancelled = { name: "NotAllowedError" };
   assert.equal(webauthnError(cancelled), "The passkey prompt was cancelled or timed out. Nothing was signed.");
   assert.match(webauthnError(cancelled, 2), /this device has none of this database's passkeys/);
+});
+
+test("a request the agent withdrew reads the engine's line, and only that refusal does", () => {
+  const withdrawn = new RelayError("approval withdrawn", "APPROVAL_INVALID", 409, {
+    reason: "WITHDRAWN", personMessage: "The agent withdrew this request: wrong rows. Nothing changed.",
+  });
+  assert.equal(withdrawnText(withdrawn), "The agent withdrew this request: wrong rows. Nothing changed.");
+  assert.equal(withdrawnText(new RelayError("x", "REVERT_INVALID", 409, { reason: "WITHDRAWN" })), WITHDRAWN_TEXT);
+  assert.equal(withdrawnText(new RelayError("used", "APPROVAL_INVALID", 409, { reason: "ALREADY_USED" })), null);
+  assert.equal(withdrawnText(new Error("WITHDRAWN")), null);
 });

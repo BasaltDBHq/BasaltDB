@@ -6,15 +6,12 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	pganalyze "github.com/pganalyze/pg_query_go/v6"
 	pgquery "github.com/wasilibs/go-pgquery"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
-
-// ReasonNotRepeatable refuses a write that would be held but whose values
-// change between transactions (decision M2-1): the preview the person
-// approves could never match the write that applies.
-const ReasonNotRepeatable Reason = "NOT_REPEATABLE"
 
 // nonRepeatableFunctions return another value in another transaction and
 // the engine cannot fix them (fixableFunctions it can): a held write that
@@ -48,11 +45,11 @@ type Holdable struct {
 func CheckRepeatable(sql string, params []any) (Holdable, error) {
 	tree, err := pgquery.Parse(sql)
 	if err != nil {
-		return Holdable{}, &RefusalError{Reason: ReasonParseError, Detail: err.Error()}
+		return Holdable{}, &action.RefusalError{Reason: action.ReasonParseError, Detail: err.Error()}
 	}
 	stmts := tree.GetStmts()
 	if len(stmts) != 1 {
-		return Holdable{}, refuse(ReasonMultipleStatements, "%d statements; send exactly one", len(stmts))
+		return Holdable{}, refuse(action.ReasonMultipleStatements, "%d statements; send exactly one", len(stmts))
 	}
 	node := stmts[0].GetStmt()
 	if what := nonRepeatable(node.ProtoReflect()); what != "" {
@@ -60,11 +57,11 @@ func CheckRepeatable(sql string, params []any) (Holdable, error) {
 		if strings.HasPrefix(what, "'") {
 			fix = "pass a fixed timestamp as a parameter ($n), not a time word"
 		}
-		return Holdable{}, refuse(ReasonNotRepeatable,
+		return Holdable{}, refuse(action.ReasonNotRepeatable,
 			"%s gives another value when the approved write runs; %s, so the person approves exactly what is written", what, fix)
 	}
 	if word := timeWordParam(params); word != "" {
-		return Holdable{}, refuse(ReasonNotRepeatable,
+		return Holdable{}, refuse(action.ReasonNotRepeatable,
 			"a parameter is the time word '%s', which Postgres reads as the time the statement runs, so it gives another value when the approved write runs; pass a fixed timestamp as the parameter ($n) so the person approves exactly what is written", word)
 	}
 	return holdable(node), nil

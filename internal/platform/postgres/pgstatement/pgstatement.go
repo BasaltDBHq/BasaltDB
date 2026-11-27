@@ -14,6 +14,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	pganalyze "github.com/pganalyze/pg_query_go/v6"
 	pgquery "github.com/wasilibs/go-pgquery"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -30,61 +32,10 @@ const (
 	KindUtility Kind = "UTILITY"
 )
 
-// Op is the statement's operation: READ (a SELECT), INSERT, UPDATE, DELETE,
-// MERGE, or the parse node name of anything else. READ is Basalt's op; the
-// SQL word for it is SELECT (sqlWord). A statement outside the four ops
-// READ, INSERT, UPDATE and DELETE (MERGE included) carries its name here
-// and is recorded as OTHER (action.OpOther).
-type Op string
-
-// sqlWord is the SQL command for op, as a refusal's detail names it.
-func (op Op) sqlWord() string {
-	if op == OpRead {
-		return "SELECT"
-	}
-	return string(op)
-}
-
-// Operations the M1 tools accept, plus MERGE which is refused by name.
-const (
-	OpRead   Op = "READ"
-	OpInsert Op = "INSERT"
-	OpUpdate Op = "UPDATE"
-	OpDelete Op = "DELETE"
-	OpMerge  Op = "MERGE"
-)
-
-// Tool is the MCP tool a statement was sent to.
-type Tool string
-
-// Tools that run agent SQL.
-const (
-	ToolQuery Tool = "QUERY"
-	ToolWrite Tool = "WRITE"
-)
-
-// Reason is why a statement was refused (CONTRACT.md, STATEMENT_REFUSED
-// reasons).
-type Reason string
-
-// Refusal reasons.
-const (
-	ReasonParseError         Reason = "PARSE_ERROR"
-	ReasonMultipleStatements Reason = "MULTIPLE_STATEMENTS"
-	ReasonWrongTool          Reason = "WRONG_TOOL"
-	ReasonDDL                Reason = "DDL_NOT_ALLOWED"
-	ReasonUtility            Reason = "STATEMENT_NOT_ALLOWED"
-	ReasonSelectInto         Reason = "SELECT_INTO"
-	ReasonLockingRead        Reason = "LOCKING_READ"
-	ReasonMerge              Reason = "MERGE_NOT_ALLOWED"
-	ReasonDataModifyingWith  Reason = "DATA_MODIFYING_WITH"
-	ReasonFunction           Reason = "FUNCTION_NOT_ALLOWED"
-)
-
 // Statement is what the engine needs from one agent statement.
 type Statement struct {
 	Kind Kind
-	Op   Op
+	Op   action.Op
 	// Tables are the relations the statement names, as written
 	// (schema-qualified when the agent qualified them), sorted. CTE names are
 	// left out.
@@ -102,27 +53,25 @@ type Statement struct {
 	RowSources []RowSource
 }
 
-// RefusalError is a statement the policy does not allow.
-type RefusalError struct {
-	Reason Reason
-	Detail string
-}
-
-func (r *RefusalError) Error() string {
-	if r.Detail == "" {
-		return string(r.Reason)
+// sqlWord is the SQL command for op, as a refusal's detail names it: READ
+// is Basalt's op, the SQL word for it is SELECT. A statement outside the
+// four ops READ, INSERT, UPDATE and DELETE (MERGE included) carries its
+// parse node name as its op and is recorded as OTHER (action.OpOther).
+func sqlWord(op action.Op) string {
+	if op == action.OpRead {
+		return "SELECT"
 	}
-	return string(r.Reason) + ": " + r.Detail
+	return string(op)
 }
 
-func refuse(reason Reason, format string, args ...any) *RefusalError {
-	return &RefusalError{Reason: reason, Detail: fmt.Sprintf(format, args...)}
+func refuse(reason action.RefusalReason, format string, args ...any) *action.RefusalError {
+	return &action.RefusalError{Reason: reason, Detail: fmt.Sprintf(format, args...)}
 }
 
 // Check parses sql and applies the policy for tool. It returns the
-// classified statement, or a *RefusalError with as much of the statement as
+// classified statement, or a *action.RefusalError with as much of the statement as
 // was classified (the op of a refused statement is still recorded).
-func Check(sql string, tool Tool) (Statement, error) {
+func Check(sql string, tool action.Tool) (Statement, error) {
 	stmt, err := Classify(sql)
 	if err != nil {
 		return stmt, err
@@ -133,18 +82,18 @@ func Check(sql string, tool Tool) (Statement, error) {
 	return stmt, nil
 }
 
-func checkTool(stmt Statement, tool Tool) *RefusalError {
+func checkTool(stmt Statement, tool action.Tool) *action.RefusalError {
 	switch tool {
-	case ToolQuery:
-		if stmt.Op != OpRead {
-			return refuse(ReasonWrongTool, "query runs one SELECT; use write for %s", stmt.Op.sqlWord())
+	case action.ToolQuery:
+		if stmt.Op != action.OpRead {
+			return refuse(action.ReasonWrongTool, "query runs one SELECT; use write for %s", sqlWord(stmt.Op))
 		}
-	case ToolWrite:
-		if stmt.Op != OpInsert && stmt.Op != OpUpdate && stmt.Op != OpDelete {
-			return refuse(ReasonWrongTool, "write runs one INSERT, UPDATE or DELETE; use query for %s", stmt.Op.sqlWord())
+	case action.ToolWrite:
+		if stmt.Op != action.OpInsert && stmt.Op != action.OpUpdate && stmt.Op != action.OpDelete {
+			return refuse(action.ReasonWrongTool, "write runs one INSERT, UPDATE or DELETE; use query for %s", sqlWord(stmt.Op))
 		}
 	default:
-		return refuse(ReasonWrongTool, "unknown tool %q", tool)
+		return refuse(action.ReasonWrongTool, "unknown tool %q", tool)
 	}
 	return nil
 }
@@ -156,11 +105,11 @@ func checkTool(stmt Statement, tool Tool) *RefusalError {
 func Classify(sql string) (Statement, error) {
 	tree, err := pgquery.Parse(sql)
 	if err != nil {
-		return Statement{}, &RefusalError{Reason: ReasonParseError, Detail: err.Error()}
+		return Statement{}, &action.RefusalError{Reason: action.ReasonParseError, Detail: err.Error()}
 	}
 	stmts := tree.GetStmts()
 	if len(stmts) != 1 {
-		return Statement{}, refuse(ReasonMultipleStatements, "%d statements; send exactly one", len(stmts))
+		return Statement{}, refuse(action.ReasonMultipleStatements, "%d statements; send exactly one", len(stmts))
 	}
 	node := stmts[0].GetStmt()
 
@@ -171,20 +120,20 @@ func Classify(sql string) (Statement, error) {
 	slices.Sort(stmt.Functions) // non-nil, so an empty list is [] and not null
 
 	stmt.Target = targetOf(node)
-	var reason Reason
+	var reason action.RefusalReason
 	stmt.Kind, stmt.Op, reason = classifyNode(node)
 	if reason != "" {
-		return stmt, refuse(reason, "%s", stmt.Op.sqlWord())
+		return stmt, refuse(reason, "%s", sqlWord(stmt.Op))
 	}
 	if sel := node.GetSelectStmt(); sel != nil {
 		stmt.RowSources = rowSources(sel)
 	}
 	if w.dataModifyingCTE != "" {
-		return stmt, refuse(ReasonDataModifyingWith, "WITH %s changes data", w.dataModifyingCTE)
+		return stmt, refuse(action.ReasonDataModifyingWith, "WITH %s changes data", w.dataModifyingCTE)
 	}
 	for _, f := range stmt.Functions {
 		if !functionAllowed(f) {
-			return stmt, refuse(ReasonFunction, "%s is not on the function allowlist", f)
+			return stmt, refuse(action.ReasonFunction, "%s is not on the function allowlist", f)
 		}
 	}
 	return stmt, nil
@@ -224,30 +173,30 @@ func targetOf(stmt *pganalyze.Node) string {
 	return qualifiedName(rel.GetSchemaname(), rel.GetRelname())
 }
 
-func classifyNode(stmt *pganalyze.Node) (Kind, Op, Reason) {
+func classifyNode(stmt *pganalyze.Node) (Kind, action.Op, action.RefusalReason) {
 	switch n := stmt.GetNode().(type) {
 	case *pganalyze.Node_SelectStmt:
 		if n.SelectStmt.GetIntoClause() != nil {
-			return KindDDL, OpRead, ReasonSelectInto
+			return KindDDL, action.OpRead, action.ReasonSelectInto
 		}
 		if len(n.SelectStmt.GetLockingClause()) > 0 {
-			return KindRead, OpRead, ReasonLockingRead
+			return KindRead, action.OpRead, action.ReasonLockingRead
 		}
-		return KindRead, OpRead, ""
+		return KindRead, action.OpRead, ""
 	case *pganalyze.Node_InsertStmt:
-		return KindWrite, OpInsert, ""
+		return KindWrite, action.OpInsert, ""
 	case *pganalyze.Node_UpdateStmt:
-		return KindWrite, OpUpdate, ""
+		return KindWrite, action.OpUpdate, ""
 	case *pganalyze.Node_DeleteStmt:
-		return KindWrite, OpDelete, ""
+		return KindWrite, action.OpDelete, ""
 	case *pganalyze.Node_MergeStmt:
-		return KindWrite, OpMerge, ReasonMerge
+		return KindWrite, action.OpMerge, action.ReasonMerge
 	}
 	name := nodeName(stmt)
 	if isDDL(name) {
-		return KindDDL, Op(name), ReasonDDL
+		return KindDDL, action.Op(name), action.ReasonDDL
 	}
-	return KindUtility, Op(name), ReasonUtility
+	return KindUtility, action.Op(name), action.ReasonUtility
 }
 
 func nodeName(stmt *pganalyze.Node) string {

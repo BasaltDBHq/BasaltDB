@@ -5,6 +5,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgstatement"
 )
 
@@ -13,7 +15,7 @@ import (
 // here once, it is not billed to whichever parallel tests happen to start
 // first, and a broken parser fails the package up front.
 func TestMain(m *testing.M) {
-	if _, err := pgstatement.Check("SELECT 1", pgstatement.ToolQuery); err != nil {
+	if _, err := pgstatement.Check("SELECT 1", action.ToolQuery); err != nil {
 		fmt.Fprintln(os.Stderr, "pgstatement: warming the parser failed:", err)
 		os.Exit(1)
 	}

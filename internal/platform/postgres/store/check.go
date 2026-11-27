@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"errors"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
@@ -20,8 +19,8 @@ func (s *Store) Check(sql string, tool action.Tool) (action.Statement, error) {
 
 // Check is Store.Check, which needs no connection.
 func Check(sql string, tool action.Tool) (action.Statement, error) {
-	stmt, err := pgstatement.Check(sql, pgstatement.Tool(tool))
-	return statementOf(stmt), refusalOf(err)
+	stmt, err := pgstatement.Check(sql, tool)
+	return statementOf(stmt), err
 }
 
 // HeldFrom reports whether held is exactly what holdPlan made of sent: sent
@@ -56,7 +55,7 @@ func (s *Store) HeldFrom(ctx context.Context, held, sent string) (bool, error) {
 func (s *Store) holdPlan(ctx context.Context, req agentstore.Request) (agentstore.Request, []string, error) {
 	h, err := pgstatement.CheckRepeatable(req.Text, req.Params)
 	if err != nil {
-		return req, nil, refusalOf(err)
+		return req, nil, err
 	}
 	assigned := h.Assigned
 	var columns []pgstatement.Column
@@ -73,7 +72,7 @@ func (s *Store) holdPlan(ctx context.Context, req agentstore.Request) (agentstor
 	}
 	fix, err := pgstatement.PlanTimes(req.Text, columns)
 	if err != nil {
-		return req, nil, refusalOf(err)
+		return req, nil, err
 	}
 	if fix.Eval == "" {
 		return req, assigned, nil
@@ -88,8 +87,8 @@ func (s *Store) holdPlan(ctx context.Context, req agentstore.Request) (agentstor
 	}
 	// The held statement is checked again when it applies: refuse it now
 	// rather than hold a write that could never apply.
-	if _, err := pgstatement.Check(text, pgstatement.ToolWrite); err != nil {
-		return req, nil, refusalOf(err)
+	if _, err := pgstatement.Check(text, action.ToolWrite); err != nil {
+		return req, nil, err
 	}
 	return agentstore.Request{Text: text, Params: req.Params}, assigned, nil
 }
@@ -97,15 +96,5 @@ func (s *Store) holdPlan(ctx context.Context, req agentstore.Request) (agentstor
 // statementOf is the checked statement as the service takes it: the row
 // sources a recorded read versions travel as its opaque handle.
 func statementOf(stmt pgstatement.Statement) action.Statement {
-	return action.Statement{Op: action.Op(stmt.Op), Tables: stmt.Tables, Target: stmt.Target, ParamCount: stmt.ParamCount, Handle: stmt.RowSources}
-}
-
-// refusalOf is a policy refusal as an *action.RefusalError with the
-// same reason; any other error as it is.
-func refusalOf(err error) error {
-	var re *pgstatement.RefusalError
-	if !errors.As(err, &re) {
-		return err
-	}
-	return &action.RefusalError{Reason: action.RefusalReason(re.Reason), Detail: re.Detail}
+	return action.Statement{Op: stmt.Op, Tables: stmt.Tables, Target: stmt.Target, ParamCount: stmt.ParamCount, Handle: stmt.RowSources}
 }

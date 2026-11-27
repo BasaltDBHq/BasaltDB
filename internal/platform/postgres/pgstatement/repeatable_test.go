@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgstatement"
@@ -83,9 +85,9 @@ func TestCheckRepeatable(t *testing.T) {
 	}
 	for sql, what := range refused {
 		_, err := pgstatement.CheckRepeatable(sql, nil)
-		var re *pgstatement.RefusalError
+		var re *action.RefusalError
 		require.True(t, errors.As(err, &re), sql)
-		require.Equal(t, pgstatement.ReasonNotRepeatable, re.Reason, sql)
+		require.Equal(t, action.ReasonNotRepeatable, re.Reason, sql)
 		require.Contains(t, re.Detail, what, sql)
 		require.Contains(t, re.Detail, "parameter", sql)
 	}
@@ -96,9 +98,9 @@ func TestCheckRepeatableParams(t *testing.T) {
 	const sql = `UPDATE leads SET updated_at = $1 WHERE id <= $2`
 	for _, p := range []any{"now", "Now", " TODAY ", "tomorrow", "yesterday", "tomorrow 10:00", "now,UTC", "yesterday\t23:59 PST", "now()", "NOW() ", "now ()", "(now)", "\"now\"", "now;", "[now]", "{now}", "today()", "today+02", "today T10:00", "today 10:00:00Z", "tomorrow 10:00 z", "{now,tomorrow}", "[today,tomorrow)", "tomorrow 10:00 +0530", "today 12:00 pm", "yesterday msk", "tomorrow 09:00 Europe/Berlin", "today 09:00 America/Argentina/Buenos_Aires", "now Etc/GMT+2", "tomorrow 10:00 nzt", "now on", "Sun today", "tomorrow 10:00 hkt", "today 10:00 ta" + "ht"} {
 		_, err := pgstatement.CheckRepeatable(sql, []any{p, 12})
-		var re *pgstatement.RefusalError
+		var re *action.RefusalError
 		require.True(t, errors.As(err, &re), "%q", p)
-		require.Equal(t, pgstatement.ReasonNotRepeatable, re.Reason, "%q", p)
+		require.Equal(t, action.ReasonNotRepeatable, re.Reason, "%q", p)
 		require.Contains(t, re.Detail, "time word", "%q", p)
 		require.Contains(t, re.Detail, "parameter", "%q", p)
 		// The second parameter position is checked too.

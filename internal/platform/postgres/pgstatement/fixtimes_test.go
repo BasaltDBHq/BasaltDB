@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgstatement"
@@ -18,7 +20,7 @@ func fixed(t *testing.T, sent string, columns []pgstatement.Column, values ...st
 	require.NoError(t, err, sent)
 	held, err = fix.Apply(values)
 	require.NoError(t, err, sent)
-	_, err = pgstatement.Check(held, pgstatement.ToolWrite)
+	_, err = pgstatement.Check(held, action.ToolWrite)
 	require.NoError(t, err, held)
 	_, err = pgstatement.CheckRepeatable(held, nil)
 	require.NoError(t, err, held)
@@ -128,7 +130,7 @@ func TestPlanTimesInsertDefaults(t *testing.T) {
 	// A default the policy refuses is not written into the statement.
 	_, err := pgstatement.PlanTimes(`INSERT INTO t VALUES (1)`,
 		[]pgstatement.Column{{Name: "id"}, {Name: "at", Default: "app.stamp(now())"}})
-	var re *pgstatement.RefusalError
+	var re *action.RefusalError
 	require.ErrorAs(t, err, &re)
 	require.Contains(t, re.Detail, `"at"`)
 	require.Contains(t, re.Detail, "list the columns")
@@ -170,9 +172,9 @@ func TestPlanTimesRefusesVolatileDefaults(t *testing.T) {
 	}
 	for column, cols := range cases {
 		_, err := pgstatement.PlanTimes(`INSERT INTO t VALUES ('a')`, cols)
-		var re *pgstatement.RefusalError
+		var re *action.RefusalError
 		require.True(t, errors.As(err, &re), column)
-		require.Equal(t, pgstatement.ReasonNotRepeatable, re.Reason, column)
+		require.Equal(t, action.ReasonNotRepeatable, re.Reason, column)
 		require.Contains(t, re.Detail, column)
 		require.Contains(t, re.Detail, "list the columns", column)
 	}
@@ -236,9 +238,9 @@ func TestNowWithOverIsRefused(t *testing.T) {
 		`UPDATE t SET a = clock_timestamp() OVER ()`: "clock_timestamp()",
 	} {
 		_, err := pgstatement.CheckRepeatable(sql, nil)
-		var re *pgstatement.RefusalError
+		var re *action.RefusalError
 		require.ErrorAs(t, err, &re, sql)
-		require.Equal(t, pgstatement.ReasonNotRepeatable, re.Reason, sql)
+		require.Equal(t, action.ReasonNotRepeatable, re.Reason, sql)
 		require.Contains(t, re.Detail, what, sql)
 	}
 }
@@ -247,9 +249,9 @@ func TestPlanTimesRefusesAVolatileFunctionInADefault(t *testing.T) {
 	t.Parallel()
 	cols := []pgstatement.Column{{Name: "name"}, {Name: "token", Default: "extensions.uuid_generate_v4()", Volatile: "extensions.uuid_generate_v4()"}}
 	_, err := pgstatement.PlanTimes(`INSERT INTO t VALUES ('a')`, cols)
-	var re *pgstatement.RefusalError
+	var re *action.RefusalError
 	require.ErrorAs(t, err, &re)
-	require.Equal(t, pgstatement.ReasonNotRepeatable, re.Reason)
+	require.Equal(t, action.ReasonNotRepeatable, re.Reason)
 	require.Contains(t, re.Detail, `"token"`)
 	require.Contains(t, re.Detail, "extensions.uuid_generate_v4()")
 }

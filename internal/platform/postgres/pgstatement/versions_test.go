@@ -3,6 +3,8 @@ package pgstatement_test
 import (
 	"testing"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgstatement"
@@ -58,7 +60,7 @@ func TestRowSources(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			stmt, err := pgstatement.Check(c.sql, pgstatement.ToolQuery)
+			stmt, err := pgstatement.Check(c.sql, action.ToolQuery)
 			require.NoError(t, err)
 			require.Equal(t, c.want, stmt.RowSources)
 		})

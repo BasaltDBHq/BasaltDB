@@ -49,7 +49,7 @@ type statementChecker interface {
 	Check(sql string, tool action.Tool) (action.Statement, error)
 	// HeldFrom reports whether held is sent with only the times the store
 	// fixed when it held the write.
-	HeldFrom(held, sent string) bool
+	HeldFrom(ctx context.Context, held, sent string) (bool, error)
 }
 
 // txRows is how a SQL store hands the rows a write returns to the wiring,
@@ -141,8 +141,8 @@ func (l liveChecker) Check(sql string, tool action.Tool) (action.Statement, erro
 	return l.d.Data.Check(sql, tool)
 }
 
-func (l liveChecker) HeldFrom(held, sent string) bool {
-	return l.d.Data.HeldFrom(held, sent)
+func (l liveChecker) HeldFrom(ctx context.Context, held, sent string) (bool, error) {
+	return l.d.Data.HeldFrom(ctx, held, sent)
 }
 
 // agentData is the SQL store as the agent's query and write use cases run

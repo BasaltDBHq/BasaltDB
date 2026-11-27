@@ -88,7 +88,7 @@ type Language interface {
 	// only the values the store fixed when it held the write (Postgres:
 	// now() and the other time functions held as literals): the agent may
 	// send its own request again with the approval.
-	HeldFrom(held, sent agentstore.Request) bool
+	HeldFrom(ctx context.Context, held, sent agentstore.Request) (bool, error)
 	// Args is a request as the store family's query and write tools take
 	// it, for the call a next step repeats.
 	agentstore.RequestArgs

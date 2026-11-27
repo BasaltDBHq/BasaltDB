@@ -111,7 +111,9 @@ func (docLanguage) DeniedTarget(string) (string, bool) { return "", false }
 func (docLanguage) RLSRefusal(string) (string, bool)   { return "", false }
 func (docLanguage) NoKeyTarget(string) (string, bool)  { return "", false }
 
-func (docLanguage) HeldFrom(held, sent agentstore.Request) bool { return held.Text == sent.Text }
+func (docLanguage) HeldFrom(_ context.Context, held, sent agentstore.Request) (bool, error) {
+	return held.Text == sent.Text, nil
+}
 
 func (docLanguage) ParseName(s string) (string, string, error) {
 	ns, name, ok := strings.Cut(s, "/")
@@ -381,7 +383,7 @@ func (a *docApprovals) Hold(_ context.Context, in action.Intent, req agentstore.
 		ID: id, RunID: in.RunID, Intent: in.Text, Request: action.HeldRequest{Kind: docRequestKind, Text: req.Text, Params: params}, Rows: len(lines),
 		Status: action.ApprovalPending, ExpiresAt: expires, Lines: lines, BindingText: "binding",
 	}
-	return approvalsvc.HeldWrite{Held: approvalstore.Held{ApprovalID: id, BindingText: "binding", ExpiresAt: expires}, Lines: lines}, nil
+	return approvalsvc.HeldWrite{Held: approvalstore.Held{ApprovalID: id, BindingText: "binding", ExpiresAt: expires}, Request: req, Lines: lines}, nil
 }
 
 func (a *docApprovals) FindApproval(_ context.Context, id uuid.UUID) (action.Approval, error) {

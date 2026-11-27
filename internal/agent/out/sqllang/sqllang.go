@@ -8,6 +8,7 @@
 package sqllang
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -29,7 +30,7 @@ const maxParamsBytes = 64 << 10
 // the store fixed when it held the write.
 type Checker interface {
 	Check(sql string, tool action.Tool) (action.Statement, error)
-	HeldFrom(held, sent string) bool
+	HeldFrom(ctx context.Context, held, sent string) (bool, error)
 }
 
 // Language is the SQL language over a store's statement check.
@@ -55,8 +56,8 @@ func (l Language) Check(req agentstore.Request, tool action.Tool) (action.Statem
 
 // HeldFrom is the store's HeldFrom on the statements; the parameters are
 // compared by the caller.
-func (l Language) HeldFrom(held, sent agentstore.Request) bool {
-	return l.checker.HeldFrom(held.Text, sent.Text)
+func (l Language) HeldFrom(ctx context.Context, held, sent agentstore.Request) (bool, error) {
+	return l.checker.HeldFrom(ctx, held.Text, sent.Text)
 }
 
 // checkArgs checks the parameters match the statement's placeholders and

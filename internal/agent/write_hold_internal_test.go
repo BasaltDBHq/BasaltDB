@@ -203,12 +203,15 @@ type fixedChecker struct {
 	held, sent string
 }
 
-func (c fixedChecker) HeldFrom(held, sent string) bool { return held == c.held && sent == c.sent }
+func (c fixedChecker) HeldFrom(_ context.Context, held, sent string) (bool, error) {
+	return held == c.held && sent == c.sent, nil
+}
 
 // The agent may send its own request again with the approval when the
-// store says the held one is it with the times the store fixed; its
-// parameters must still be the held ones.
-func TestSameAsHeldAcceptsTheFixedTimes(t *testing.T) {
+// store says the held one is it with the times the store fixed: the held
+// text applies. Any other text is left as sent, so sameAsHeld refuses it,
+// and the parameters must still be the held ones.
+func TestWithFixedTimesAppliesTheHeldText(t *testing.T) {
 	t.Parallel()
 	const sent = "UPDATE public.leads SET seen = now() WHERE id <= $1"
 	const fixed = "UPDATE public.leads SET seen = '2026-11-27 10:00:00+00'::timestamp with time zone WHERE id <= $1"
@@ -219,13 +222,22 @@ func TestSameAsHeldAcceptsTheFixedTimes(t *testing.T) {
 		ID: uuid.Must(uuid.NewV7()), RunID: uuid.Must(uuid.NewV7()), Status: action.ApprovalPending,
 		Request: action.HeldRequest{Kind: "SQL", Text: fixed, Params: json.RawMessage(`[25]`)},
 	}
-	require.NoError(t, wc.sameAsHeld(held, WriteParams{RunID: held.RunID, Request: agentstore.Request{Text: sent, Params: []any{json.Number("25")}}}))
-	require.NoError(t, wc.sameAsHeld(held, WriteParams{RunID: held.RunID, Request: agentstore.Request{Text: fixed, Params: []any{json.Number("25")}}}))
+	call := func(text string, param string) WriteParams {
+		p, err := wc.withFixedTimes(context.Background(), held, WriteParams{RunID: held.RunID, Request: agentstore.Request{Text: text, Params: []any{json.Number(param)}}})
+		require.NoError(t, err)
+		return p
+	}
+	p := call(sent, "25")
+	require.Equal(t, fixed, p.Request.Text)
+	require.NoError(t, wc.sameAsHeld(held, p))
+	require.NoError(t, wc.sameAsHeld(held, call(fixed, "25")))
 
 	var te *toolresult.ToolError
-	require.ErrorAs(t, wc.sameAsHeld(held, WriteParams{RunID: held.RunID, Request: agentstore.Request{Text: sent, Params: []any{json.Number("26")}}}), &te)
+	require.ErrorAs(t, wc.sameAsHeld(held, call(sent, "26")), &te)
 	require.Equal(t, guidance.ReasonDifferentWrite, te.Reason)
-	require.ErrorAs(t, wc.sameAsHeld(held, WriteParams{RunID: held.RunID, Request: agentstore.Request{Text: sent + " AND true", Params: []any{json.Number("25")}}}), &te)
+	other := call(sent+" AND true", "25")
+	require.Equal(t, sent+" AND true", other.Request.Text)
+	require.ErrorAs(t, wc.sameAsHeld(held, other), &te)
 	require.Equal(t, guidance.ReasonDifferentWrite, te.Reason)
 }
 

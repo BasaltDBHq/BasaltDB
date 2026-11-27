@@ -48,7 +48,7 @@ func (wc *Service) hold(ctx context.Context, in action.Intent, p WriteParams, st
 	// short one, which works only on this machine (CONTRACT.md, Link
 	// secrets).
 	sent := linksvc.HeldNotice{
-		ApprovalID: held.ApprovalID, Agent: wc.core.Name, Intent: p.Intent, Statement: held.Request.Text,
+		ApprovalID: held.ApprovalID, Agent: wc.core.Name, Intent: p.Intent, Statement: heldText(held, p),
 		Rows: len(lines), Headline: notice.Headline, ExpiresAt: held.ExpiresAt, ApprovalURL: notice.LongURL,
 		ShortURL: notice.ShortURL,
 	}
@@ -61,6 +61,15 @@ func (wc *Service) hold(ctx context.Context, in action.Intent, p WriteParams, st
 // applyApproved runs a held write under its approval: the same statement,
 // parameters and run as held, once the person signed on the page (waiting
 // for it when asked). The guard checks it all again at commit.
+// heldText is the statement the write is held as, or the agent's when the
+// hold reports none.
+func heldText(held approvalsvc.HeldWrite, p WriteParams) string {
+	if held.Request.Text != "" {
+		return held.Request.Text
+	}
+	return p.Request.Text
+}
+
 func (wc *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcome, error) {
 	if p.RunID == uuid.Nil {
 		return WriteOutcome{}, &guidance.ArgumentError{Message: "approvalId needs the runId the write was held in"}
@@ -76,10 +85,12 @@ func (wc *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutco
 	if err != nil {
 		return WriteOutcome{}, err
 	}
+	if p, err = wc.withFixedTimes(ctx, a, p); err != nil {
+		return WriteOutcome{}, err
+	}
 	if err := wc.sameAsHeld(a, p); err != nil {
 		return WriteOutcome{}, err
 	}
-	p.Request.Text = a.Request.Text // what the person approves: the agent's, with the times the store fixed
 	if a, err = wc.waitForSignature(ctx, a, p); err != nil {
 		return WriteOutcome{}, err
 	}
@@ -138,6 +149,21 @@ func (wc *Service) withApprovalLink(ctx context.Context, a action.Approval, err 
 	return wc.next.ApprovalLinkError(te, n)
 }
 
+// withFixedTimes is p with the held text in place of the agent's when the
+// store says the held one is the agent's with only the times it fixed when
+// it held the write: what the person approves is what applies.
+func (wc *Service) withFixedTimes(ctx context.Context, a action.Approval, p WriteParams) (WriteParams, error) {
+	if a.Request.Text == p.Request.Text {
+		return p, nil
+	}
+	same, err := wc.store.Language.HeldFrom(ctx, agentstore.Request{Text: a.Request.Text}, p.Request)
+	if err != nil || !same {
+		return p, err
+	}
+	p.Request.Text = a.Request.Text
+	return p, nil
+}
+
 // sameAsHeld checks the call repeats the held write.
 func (wc *Service) sameAsHeld(a action.Approval, p WriteParams) error {
 	switch {
@@ -149,8 +175,7 @@ func (wc *Service) sameAsHeld(a action.Approval, p WriteParams) error {
 		return &toolresult.ToolError{Code: guidance.CodeApprovalExpired, Message: fmt.Sprintf("approval %s expired at %s; the write stays blocked", a.ID, guidance.TimeText(a.ExpiresAt))}
 	case a.RunID != p.RunID:
 		return approvalsvc.DifferentWrite(a, wc.heldArgs(a), "approval %s belongs to run %s", a.ID, a.RunID)
-	case a.Request.Text != p.Request.Text && !wc.store.Language.HeldFrom(agentstore.Request{Text: a.Request.Text}, p.Request),
-		!sameParams(a.Request.Params, p.Request.Params):
+	case a.Request.Text != p.Request.Text || !sameParams(a.Request.Params, p.Request.Params):
 		return approvalsvc.DifferentWrite(a, wc.heldArgs(a), "the request must be exactly the held write's")
 	}
 	return nil

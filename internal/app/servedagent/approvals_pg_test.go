@@ -509,6 +509,16 @@ func TestHeldInsertFixesTimeDefaults(t *testing.T) {
 	requireToolError(t, body, isError, "STATEMENT_REFUSED", "NOT_REPEATABLE", "")
 	require.Contains(t, body["message"], `"token"`)
 	require.Contains(t, body["message"], "list the columns")
+
+	// A default that calls a volatile function of the app's (or of an
+	// extension) is refused the same way, from pg_proc.provolatile.
+	e.d.Exec(t, `ALTER TABLE public.leads DROP COLUMN token`)
+	e.d.Exec(t, `CREATE FUNCTION public.new_ref() RETURNS text LANGUAGE sql VOLATILE AS $$ SELECT md5(random()::text) $$`)
+	e.d.Exec(t, `ALTER TABLE public.leads ADD COLUMN ref text DEFAULT public.new_ref()`)
+	body, isError = e.h.call(t, "write", map[string]any{"sql": elevenLeads(401), "intent": "More leads"})
+	requireToolError(t, body, isError, "STATEMENT_REFUSED", "NOT_REPEATABLE", "")
+	require.Contains(t, body["message"], `"ref"`)
+	require.Contains(t, body["message"], "new_ref()")
 }
 
 // A time word as a bare literal or as a parameter is read as the current time

@@ -24,11 +24,23 @@ func Check(sql string, tool action.Tool) (action.Statement, error) {
 	return statementOf(stmt), refusalOf(err)
 }
 
-// HeldFrom reports whether held is sent with the one-time values the store
-// fixed when it held the write (sqlguard.FixedFrom), and needs no
-// connection: the agent may send its own text again with the approval.
-func (s *Store) HeldFrom(held, sent string) bool {
-	return sqlguard.FixedFrom(held, sent)
+// HeldFrom reports whether held is exactly what holdPlan made of sent: sent
+// with the times it fixed, and for an INSERT without a column list the
+// columns it added from the table's defaults, read again from the catalog
+// (sqlguard.FixedFrom). The agent may send its own text again with the
+// approval.
+func (s *Store) HeldFrom(ctx context.Context, held, sent string) (bool, error) {
+	h, err := sqlguard.CheckRepeatable(sent, nil)
+	if err != nil {
+		return false, nil //nolint:nilerr // a statement the hold refuses was not held
+	}
+	var columns []sqlguard.Column
+	if h.Assigned == nil {
+		if columns, err = s.TableColumns(ctx, h.Table); err != nil {
+			return false, err
+		}
+	}
+	return sqlguard.FixedFrom(held, sent, columns), nil
 }
 
 // holdPlan returns the request a held write is held as, and the columns

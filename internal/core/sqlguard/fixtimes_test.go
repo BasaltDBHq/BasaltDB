@@ -22,7 +22,7 @@ func fixed(t *testing.T, sent string, columns []sqlguard.Column, values ...strin
 	require.NoError(t, err, held)
 	_, err = sqlguard.CheckRepeatable(held, nil)
 	require.NoError(t, err, held)
-	require.True(t, sqlguard.FixedFrom(held, sent), "%s\nfrom\n%s", held, sent)
+	require.True(t, sqlguard.FixedFrom(held, sent, columns), "%s\nfrom\n%s", held, sent)
 	return fix.Eval, held
 }
 
@@ -188,28 +188,68 @@ func TestFixedFromRefusesAnotherWrite(t *testing.T) {
 	for _, held := range []string{
 		`UPDATE t SET a = '2026-11-27 10:00:00+00'::timestamp with time zone, b = 3 WHERE id <= 25`,
 		`UPDATE t SET a = '2026-11-27 10:00:00+00'::timestamp with time zone, b = 2 WHERE id <= 26`,
-		`UPDATE t SET a = '2026-11-27'::pg_catalog.date, b = 2 WHERE id <= 25`,
+		`UPDATE t SET a = '2026-11-27'::date, b = 2 WHERE id <= 25`,
+		`UPDATE t SET a = '2026-11-27 10:00:00+00'::text, b = 2 WHERE id <= 25`,
 		`UPDATE t SET a = 5, b = 2 WHERE id <= 25`,
+		`UPDATE t SET a = NULL::timestamp with time zone, b = 2 WHERE id <= 25`,
 		`UPDATE u SET a = '2026-11-27 10:00:00+00'::timestamp with time zone, b = 2 WHERE id <= 25`,
 		`UPDATE t SET a = now(), b = 2 WHERE id <= 25; SELECT 1`,
 		`not sql`,
 	} {
-		require.False(t, sqlguard.FixedFrom(held, sent), held)
+		require.False(t, sqlguard.FixedFrom(held, sent, nil), held)
 	}
-	// An INSERT that already had a column list gains no columns.
-	require.False(t, sqlguard.FixedFrom(
-		`INSERT INTO t (id, name, at) VALUES (1, 'a', '2026-11-27 10:00:00+00'::timestamp with time zone)`,
-		`INSERT INTO t (id, name) VALUES (1, 'a')`))
-	// An added column keeps the values sent before it.
-	held := `INSERT INTO t (id, name, at) VALUES (1, 'a', '2026-11-27 10:00:00+00'::timestamp with time zone)`
-	require.True(t, sqlguard.FixedFrom(held, `INSERT INTO t VALUES (1, 'a')`))
-	require.False(t, sqlguard.FixedFrom(held, `INSERT INTO t VALUES (2, 'a')`))
-	require.False(t, sqlguard.FixedFrom(held, `INSERT INTO t VALUES (1, 'a', 'b')`))
-	require.False(t, sqlguard.FixedFrom(held, `INSERT INTO u VALUES (1, 'a')`))
-	// A literal the agent sent is not a slot.
+	require.True(t, sqlguard.FixedFrom(`UPDATE t SET a = '2026-11-27 10:00:00+00'::timestamp with time zone, b = 2 WHERE id <= 25`, sent, nil))
+
+	// No literal of the agent's is a wildcard.
+	require.False(t, sqlguard.FixedFrom(`UPDATE t SET name = 'Bob'`, `UPDATE t SET name = 'basalt fixed value'`, nil))
 	require.False(t, sqlguard.FixedFrom(
 		`UPDATE t SET a = '2026-11-27 10:00:00+00'::timestamp with time zone`,
-		`UPDATE t SET a = '2026-11-26 10:00:00+00'::timestamp with time zone`))
-	// The same text matches itself, spacing aside.
-	require.True(t, sqlguard.FixedFrom(`UPDATE t SET a = 1`, "UPDATE  t\nSET a = 1"))
+		`UPDATE t SET a = '2026-11-26 10:00:00+00'::timestamp with time zone`, nil))
+
+	// Only the columns the hold adds from the table's defaults, in its
+	// order and with its values, are taken for the agent's.
+	cols := []sqlguard.Column{{Name: "id"}, {Name: "name"}, {Name: "at", Default: "now()"}}
+	held := `INSERT INTO t (id, name, at) VALUES (1, 'a', '2026-11-27 10:00:00+00'::timestamp with time zone)`
+	require.True(t, sqlguard.FixedFrom(held, `INSERT INTO t VALUES (1, 'a')`, cols))
+	require.False(t, sqlguard.FixedFrom(held, `INSERT INTO t VALUES (1, 'a')`, nil), "without the catalog nothing is added")
+	require.False(t, sqlguard.FixedFrom(held, `INSERT INTO t VALUES (2, 'a')`, cols))
+	require.False(t, sqlguard.FixedFrom(held, `INSERT INTO u VALUES (1, 'a')`, cols))
+	require.False(t, sqlguard.FixedFrom(
+		`INSERT INTO t (id, name, at) VALUES (1, 'a', '2026-11-27'::date)`, `INSERT INTO t VALUES (1, 'a')`, cols))
+	require.False(t, sqlguard.FixedFrom(
+		`INSERT INTO t (name, id, at) VALUES ('a', 1, '2026-11-27 10:00:00+00'::timestamp with time zone)`, `INSERT INTO t VALUES (1, 'a')`, cols))
+	// An approved INSERT with its own column list is not an INSERT without one.
+	require.False(t, sqlguard.FixedFrom(`INSERT INTO t (name, id) VALUES ('a', 1)`, `INSERT INTO t VALUES ('a')`,
+		[]sqlguard.Column{{Name: "id"}, {Name: "name"}}))
+	require.False(t, sqlguard.FixedFrom(
+		`INSERT INTO t (id, name, at) VALUES (1, 'a', '2026-11-27 10:00:00+00'::timestamp with time zone)`,
+		`INSERT INTO t (id, name) VALUES (1, 'a')`, cols))
+
+	// Spacing, comments and the case of unquoted names do not count.
+	require.True(t, sqlguard.FixedFrom(`UPDATE t SET a = 1`, "update  T\nSET a = 1 -- note", nil))
+}
+
+func TestNowWithOverIsRefused(t *testing.T) {
+	t.Parallel()
+	for sql, what := range map[string]string{
+		`UPDATE t SET a = now() OVER ()`:             "now()",
+		`UPDATE t SET a = clock_timestamp() OVER ()`: "clock_timestamp()",
+	} {
+		_, err := sqlguard.CheckRepeatable(sql, nil)
+		var re *sqlguard.RefusalError
+		require.ErrorAs(t, err, &re, sql)
+		require.Equal(t, sqlguard.ReasonNotRepeatable, re.Reason, sql)
+		require.Contains(t, re.Detail, what, sql)
+	}
+}
+
+func TestPlanTimesRefusesAVolatileFunctionInADefault(t *testing.T) {
+	t.Parallel()
+	cols := []sqlguard.Column{{Name: "name"}, {Name: "token", Default: "extensions.uuid_generate_v4()", Volatile: "extensions.uuid_generate_v4()"}}
+	_, err := sqlguard.PlanTimes(`INSERT INTO t VALUES ('a')`, cols)
+	var re *sqlguard.RefusalError
+	require.ErrorAs(t, err, &re)
+	require.Equal(t, sqlguard.ReasonNotRepeatable, re.Reason)
+	require.Contains(t, re.Detail, `"token"`)
+	require.Contains(t, re.Detail, "extensions.uuid_generate_v4()")
 }

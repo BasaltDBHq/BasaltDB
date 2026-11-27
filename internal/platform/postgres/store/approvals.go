@@ -135,8 +135,16 @@ func (s *Store) holdRaw(ctx context.Context, in action.Intent, r approvalstore.H
 // tableColumnsRaw is TableColumns before MapError.
 func (s *Store) tableColumnsRaw(ctx context.Context, table string) ([]sqlguard.Column, error) {
 	// Plain SQL: a catalog query on to_regclass.
+	// A default's dependencies on functions outside pg_catalog are in
+	// pg_depend; the first volatile one is named.
 	rows, err := s.db.Query(ctx, `SELECT a.attname::text,
-		       coalesce(pg_catalog.pg_get_expr(d.adbin, d.adrelid), ''), a.attidentity <> '', a.attgenerated <> ''
+		       coalesce(pg_catalog.pg_get_expr(d.adbin, d.adrelid), ''), a.attidentity <> '', a.attgenerated <> '',
+		       coalesce((SELECT p.oid::pg_catalog.regprocedure::text
+		                   FROM pg_catalog.pg_depend dep
+		                   JOIN pg_catalog.pg_proc p ON p.oid = dep.refobjid
+		                  WHERE dep.classid = 'pg_catalog.pg_attrdef'::pg_catalog.regclass AND dep.objid = d.oid
+		                    AND dep.refclassid = 'pg_catalog.pg_proc'::pg_catalog.regclass AND p.provolatile = 'v'
+		                  ORDER BY 1 LIMIT 1), '')
 		  FROM pg_catalog.pg_attribute a
 		  LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
 		 WHERE a.attrelid = pg_catalog.to_regclass($1) AND a.attnum > 0 AND NOT a.attisdropped
@@ -146,7 +154,7 @@ func (s *Store) tableColumnsRaw(ctx context.Context, table string) ([]sqlguard.C
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (sqlguard.Column, error) {
 		var c sqlguard.Column
-		err := row.Scan(&c.Name, &c.Default, &c.Identity, &c.Generated)
+		err := row.Scan(&c.Name, &c.Default, &c.Identity, &c.Generated, &c.Volatile)
 		return c, err
 	})
 }

@@ -63,6 +63,11 @@ type Column struct {
 	Identity bool
 	// Generated is a generated column, computed from the row.
 	Generated bool
+	// Volatile names a volatile function (pg_proc.provolatile 'v') the
+	// default calls that the catalog records it depends on (functions of
+	// extensions and of the app, not the built-ins, which nonRepeatable
+	// knows by name); "" for none.
+	Volatile string
 }
 
 // TimeFix is a held write's statement with the time functions it uses (and,
@@ -196,6 +201,10 @@ func (f *TimeFix) addDefaults(ins *pganalyze.InsertStmt, columns []Column) error
 					"list the columns the INSERT sets, so the person approves exactly what is written", c.Name)
 		case c.Default == "":
 			continue
+		case c.Volatile != "":
+			return refuse(ReasonNotRepeatable,
+				"the INSERT leaves the column %q to its default, which calls the volatile function %s and gives another value when the approved write runs; "+
+					"list the columns the INSERT sets, so the person approves exactly what is written", c.Name, c.Volatile)
 		}
 		expr, err := defaultExpr(c.Default)
 		if err != nil {
@@ -346,111 +355,47 @@ func typeName(typ string) *pganalyze.TypeName {
 	return &pganalyze.TypeName{Names: []*pganalyze.Node{pganalyze.MakeStrNode("pg_catalog"), pganalyze.MakeStrNode(typ)}, Typemod: -1, Location: -1}
 }
 
-// fixedSentinel stands for a fixed value in FixedFrom's template.
-const fixedSentinel = "basalt fixed value"
-
-// FixedFrom reports whether held is sent as PlanTimes and Apply made it: the
-// same statement with each time function the engine fixes replaced by a
-// literal of its type, and, when sent is an INSERT without a column list,
-// a column list added with values after the ones sent. It compares parse
-// trees, never text; the added columns' names and values are the store's
-// own (its defaults) and are not compared.
-func FixedFrom(held, sent string) bool {
-	tmpl, ok := fixedTemplate(sent)
-	if !ok {
+// FixedFrom reports whether held is exactly what PlanTimes and Apply make
+// of sent with columns (the same columns PlanTimes was given when the
+// write was held): the same statement, the same columns added in the same
+// order with the same defaults, and in place of every time function the
+// engine fixes, and only there, a string literal of that function's type.
+// It compares parse trees, so spacing, comments and the case of unquoted
+// names do not count; no literal of sent ever matches anything but itself.
+func FixedFrom(held, sent string, columns []Column) bool {
+	fix, err := PlanTimes(sent, columns)
+	if err != nil {
+		return false
+	}
+	// The plan's tree, its time functions still in place, deparsed and
+	// parsed again so it reads as the held statement does.
+	text, err := pgquery.Deparse(fix.tree)
+	if err != nil {
+		return false
+	}
+	tmpl, err := pgquery.Parse(text)
+	if err != nil || len(tmpl.GetStmts()) != 1 {
 		return false
 	}
 	tree, err := pgquery.Parse(held)
 	if err != nil || len(tree.GetStmts()) != 1 {
 		return false
 	}
-	h := tree.GetStmts()[0].GetStmt()
-	if !dropAddedColumns(h, tmpl) {
-		return false
-	}
-	return sameTree(tmpl.ProtoReflect(), h.ProtoReflect())
-}
-
-// fixedTemplate is sent with its fixed time functions replaced by the
-// sentinel literal, deparsed and parsed again so it reads as a held
-// statement does.
-func fixedTemplate(sent string) (*pganalyze.Node, bool) {
-	fix, err := PlanTimes(sent, nil)
-	if err != nil {
-		return nil, false
-	}
-	values := make([]string, len(fix.slots))
-	for i := range values {
-		values[i] = fixedSentinel
-	}
-	text, err := fix.Apply(values)
-	if err != nil {
-		return nil, false
-	}
-	tree, err := pgquery.Parse(text)
-	if err != nil || len(tree.GetStmts()) != 1 {
-		return nil, false
-	}
-	return tree.GetStmts()[0].GetStmt(), true
-}
-
-// dropAddedColumns takes out of held the columns addDefaults added, when
-// tmpl is an INSERT without a column list and held has one: the column
-// list, and the values after the ones tmpl gives. It is false when held
-// cannot have been made from tmpl that way.
-func dropAddedColumns(held, tmpl *pganalyze.Node) bool {
-	ti, hi := tmpl.GetInsertStmt(), held.GetInsertStmt()
-	if ti == nil || hi == nil || len(ti.GetCols()) > 0 || len(hi.GetCols()) == 0 {
-		return true
-	}
-	given, ok := insertWidth(ti)
-	if !ok {
-		return false
-	}
-	width := len(hi.GetCols())
-	if width <= given {
-		return false
-	}
-	hsel := hi.GetSelectStmt().GetSelectStmt()
-	if hsel == nil {
-		return false
-	}
-	if ti.GetSelectStmt() == nil { // DEFAULT VALUES
-		if len(hsel.GetValuesLists()) != 1 || len(hsel.GetValuesLists()[0].GetList().GetItems()) != width {
-			return false
-		}
-		hi.Cols, hi.SelectStmt = nil, nil
-		return true
-	}
-	if len(ti.GetSelectStmt().GetSelectStmt().GetValuesLists()) == 0 {
-		if len(hsel.GetValuesLists()) > 0 || len(hsel.GetTargetList()) != width {
-			return false
-		}
-		hsel.TargetList = hsel.TargetList[:given]
-		hi.Cols = nil
-		return true
-	}
-	for _, v := range hsel.GetValuesLists() {
-		l := v.GetList()
-		if l == nil || len(l.GetItems()) != width {
-			return false
-		}
-		l.Items = l.Items[:given]
-	}
-	hi.Cols = nil
-	return true
+	return sameTree(tmpl.GetStmts()[0].GetStmt().ProtoReflect(), tree.GetStmts()[0].GetStmt().ProtoReflect())
 }
 
 // sameTree compares two parse trees field by field, ignoring where in the
-// text each node was. A string literal of a that is the sentinel matches
-// any string literal of b.
+// text each node was. A time function of a the engine fixes matches a
+// string literal of its type in b (fixedLiteral), and nothing else.
 func sameTree(a, b protoreflect.Message) bool {
 	if a.Descriptor() != b.Descriptor() {
 		return false
 	}
-	if c, ok := a.Interface().(*pganalyze.A_Const); ok && c.GetSval().GetSval() == fixedSentinel {
-		d, ok := b.Interface().(*pganalyze.A_Const)
-		return ok && d.GetSval() != nil && !d.GetIsnull()
+	if n, ok := a.Interface().(*pganalyze.Node); ok {
+		if typ := fixableType(n); typ != "" {
+			h, ok := b.Interface().(*pganalyze.Node)
+			return ok && fixedLiteral(h, typ)
+		}
 	}
 	fields := a.Descriptor().Fields()
 	for i := range fields.Len() {
@@ -469,6 +414,41 @@ func sameTree(a, b protoreflect.Message) bool {
 		}
 	}
 	return true
+}
+
+// fixedLiteral reports whether n is a non-null string literal cast to typ,
+// as Apply writes it once deparsed and parsed again.
+func fixedLiteral(n *pganalyze.Node, typ string) bool {
+	cast := n.GetTypeCast()
+	c := cast.GetArg().GetAConst()
+	if cast == nil || c == nil || c.GetIsnull() || c.GetSval() == nil {
+		return false
+	}
+	want := parsedLiteral(c.GetSval().GetSval(), typ)
+	return want != nil && sameTree(want.ProtoReflect(), n.ProtoReflect())
+}
+
+// parsedLiteral is literal(value, typ) as the parser reads it back from
+// the deparsed text, or nil when it does not read back as one cast.
+func parsedLiteral(value, typ string) *pganalyze.Node {
+	sel := &pganalyze.ParseResult{Stmts: []*pganalyze.RawStmt{{Stmt: &pganalyze.Node{
+		Node: &pganalyze.Node_SelectStmt{SelectStmt: &pganalyze.SelectStmt{
+			TargetList: []*pganalyze.Node{pganalyze.MakeResTargetNodeWithVal(literal(value, typ), -1)},
+		}},
+	}}}}
+	text, err := pgquery.Deparse(sel)
+	if err != nil {
+		return nil
+	}
+	tree, err := pgquery.Parse(text)
+	if err != nil || len(tree.GetStmts()) != 1 {
+		return nil
+	}
+	targets := tree.GetStmts()[0].GetStmt().GetSelectStmt().GetTargetList()
+	if len(targets) != 1 {
+		return nil
+	}
+	return targets[0].GetResTarget().GetVal()
 }
 
 func sameValue(fd protoreflect.FieldDescriptor, a, b protoreflect.Value) bool {

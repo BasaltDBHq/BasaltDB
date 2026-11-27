@@ -24,7 +24,7 @@ func (noChecker) Check(string, action.Tool) (action.Statement, error) {
 	return action.Statement{}, errors.New("these tests check no statement")
 }
 
-func (noChecker) HeldFrom(string, string) bool { return false }
+func (noChecker) HeldFrom(context.Context, string, string) (bool, error) { return false, nil }
 
 // settings are what a test sets before the service is built.
 type settings struct {

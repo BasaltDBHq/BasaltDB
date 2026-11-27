@@ -202,7 +202,9 @@ func nonRepeatableNode(m protoreflect.Message) string {
 	switch v := m.Interface().(type) {
 	case *pganalyze.FuncCall:
 		name := strings.TrimPrefix(nameOf(v.GetFuncname()), "pg_catalog.")
-		if nonRepeatableFunctions[name] || (name == "age" && len(v.GetArgs()) == 1) {
+		// A time function the engine does not fix (with arguments or OVER)
+		// is refused like the others; fixable ones never reach here.
+		if nonRepeatableFunctions[name] || fixableFunctions[name] || (name == "age" && len(v.GetArgs()) == 1) {
 			return name + "()"
 		}
 	case *pganalyze.SQLValueFunction:

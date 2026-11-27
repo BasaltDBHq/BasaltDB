@@ -1,6 +1,7 @@
 package sqllang_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -23,7 +24,9 @@ type checker struct {
 	calls int
 }
 
-func (c *checker) HeldFrom(held, sent string) bool { return held == sent }
+func (c *checker) HeldFrom(_ context.Context, held, sent string) (bool, error) {
+	return held == sent, nil
+}
 
 func (c *checker) Check(sql string, tool action.Tool) (action.Statement, error) {
 	c.calls++

@@ -52,8 +52,8 @@ func (nopStore) History(context.Context, action.ChangeListParams) (changeHistory
 	return changeHistory{}, nil
 }
 
-func (nopStore) ListRuns(context.Context, action.RunListParams) (pagination.Page[action.RunSummary], error) {
-	return pagination.Page[action.RunSummary]{}, nil
+func (nopStore) ListRuns(context.Context, action.RunListParams) (pagination.Page[action.RunListItem], error) {
+	return pagination.Page[action.RunListItem]{}, nil
 }
 
 func deps() Deps {

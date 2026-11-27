@@ -2,7 +2,7 @@
   "name": "list_runs",
   "status": "IMPLEMENTED",
   "milestone": "M4.1",
-  "description": "This agent's own runs, newest first, with what each did: its intent, when it started, how many changes it applied, held, had refused or saw reverted, the rows it wrote and the resources it wrote to. Use it to find the run the person means (\"what you did yesterday on leads\") before run_history, preview_revert and request_revert. Without startTime or endTime you get the newest runs; you do not have to ask the person for a period. startTime and endTime filter on the run's start. Only runs of this agent are listed. Cursor-paginated.",
+  "description": "This agent's own history, newest first, in three kinds of item. A RUN is one of its runs with what it did: its intent, when it started, how many changes it applied, held, had refused or saw reverted, the rows it wrote and the resources it wrote to. A REVERT is a revert the person signed for this agent: its scope, how many rows it restored and skipped, and its intent. LOOSE_READS is the reads this agent made outside any run in one UTC hour: how many, and which resources; run_history with from and to lists them. Use it to find the run the person means (\"what you did yesterday on leads\") before run_history, preview_revert and request_revert, and to answer \"what happened\" without missing a revert or a read made outside a run. Without startTime or endTime you get the newest items; you do not have to ask the person for a period. startTime and endTime filter on each item's time: a run's start, a revert's signature, the start of the hour. Only this agent's records are listed. Cursor-paginated.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -10,12 +10,12 @@
       "startTime": {
         "type": "string",
         "format": "date-time",
-        "description": "Only runs that started at or after this time (RFC 3339)."
+        "description": "Only items at or after this time (RFC 3339): a run's start, a revert's signature, the start of a LOOSE_READS hour."
       },
       "endTime": {
         "type": "string",
         "format": "date-time",
-        "description": "Only runs that started before this time (RFC 3339). Must be after startTime when both are given."
+        "description": "Only items before this time (RFC 3339), by the same time. Must be after startTime when both are given."
       },
       "limit": {
         "type": "integer",
@@ -29,7 +29,7 @@
       "sort": {
         "type": "string",
         "pattern": "^-?id$",
-        "description": "id or -id. Default -id (newest first; run ids are time-ordered)."
+        "description": "id or -id. Default -id (newest first). Items are ordered by their time, then kind, then id."
       }
     }
   },
@@ -43,85 +43,191 @@
       "items": {
         "type": "array",
         "items": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "runId",
-            "taskId",
-            "intent",
-            "startedAt",
-            "applied",
-            "held",
-            "refused",
-            "reverted",
-            "reads",
-            "rowsWritten",
-            "resources"
-          ],
-          "properties": {
-            "runId": {
-              "type": "string",
-              "format": "uuid"
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "runId",
+                "taskId",
+                "intent",
+                "startedAt",
+                "applied",
+                "held",
+                "refused",
+                "reverted",
+                "reads",
+                "rowsWritten",
+                "resources"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "RUN"
+                },
+                "runId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "taskId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "intent": {
+                  "type": "string"
+                },
+                "startedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "lastChangeAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "When the run's latest change record (read or write) was made. Absent for a run with none."
+                },
+                "applied": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Writes applied (status APPLIED, op INSERT, UPDATE or DELETE)."
+                },
+                "held": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Writes still waiting for the person's approval (APPROVAL_PENDING)."
+                },
+                "refused": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Actions refused (REFUSED)."
+                },
+                "reverted": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Writes reverted in full (REVERTED). A partly reverted write counts as applied; run_history shows its revertedBy."
+                },
+                "reads": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Reads recorded in the run (op READ)."
+                },
+                "rowsWritten": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Rows written by the applied and reverted writes, cascaded rows included."
+                },
+                "resources": {
+                  "type": "array",
+                  "maxItems": 10,
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Resources the run wrote to, in the store's form (schema.table in Postgres) (CONTRACT.md, Stores, What every store writes), at most 10, in name order."
+                },
+                "resourcesTruncated": {
+                  "type": "boolean",
+                  "description": "True when the run wrote to more than 10 resources; run_history has them all."
+                }
+              }
             },
-            "taskId": {
-              "type": "string",
-              "format": "uuid"
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "revertId",
+                "scope",
+                "scopeId",
+                "signedAt",
+                "restored",
+                "skipped",
+                "intent"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "REVERT"
+                },
+                "revertId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "CHANGE",
+                    "RUN",
+                    "TASK"
+                  ],
+                  "description": "What the revert covered."
+                },
+                "scopeId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "The change, run or task the revert covered."
+                },
+                "signedAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "When the person signed the revert. The item's place in the list."
+                },
+                "restored": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Rows restored so far."
+                },
+                "skipped": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Rows skipped because they changed since."
+                },
+                "intent": {
+                  "type": "string"
+                }
+              }
             },
-            "intent": {
-              "type": "string"
-            },
-            "startedAt": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "lastChangeAt": {
-              "type": "string",
-              "format": "date-time",
-              "description": "When the run's latest change record (read or write) was made. Absent for a run with none."
-            },
-            "applied": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Writes applied (status APPLIED, op INSERT, UPDATE or DELETE)."
-            },
-            "held": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Writes still waiting for the person's approval (APPROVAL_PENDING)."
-            },
-            "refused": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Actions refused (REFUSED)."
-            },
-            "reverted": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Writes reverted in full (REVERTED). A partly reverted write counts as applied; run_history shows its revertedBy."
-            },
-            "reads": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Reads recorded in the run (op READ)."
-            },
-            "rowsWritten": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Rows written by the applied and reverted writes, cascaded rows included."
-            },
-            "resources": {
-              "type": "array",
-              "maxItems": 10,
-              "items": {
-                "type": "string"
-              },
-              "description": "Resources the run wrote to, in the store's form (schema.table in Postgres) (CONTRACT.md, Stores, What every store writes), at most 10, in name order."
-            },
-            "resourcesTruncated": {
-              "type": "boolean",
-              "description": "True when the run wrote to more than 10 resources; run_history has them all."
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "from",
+                "to",
+                "reads",
+                "resources"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "LOOSE_READS"
+                },
+                "from": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "Start of the UTC hour, inclusive."
+                },
+                "to": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "End of the hour, exclusive."
+                },
+                "reads": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Reads recorded in the hour outside any run (op READ, status APPLIED)."
+                },
+                "resources": {
+                  "type": "array",
+                  "maxItems": 10,
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Resources the reads named, in the store's form, at most 10, in name order."
+                },
+                "resourcesTruncated": {
+                  "type": "boolean",
+                  "description": "True when the reads named more than 10 resources."
+                }
+              }
             }
-          }
+          ]
         }
       },
       "nextCursor": {

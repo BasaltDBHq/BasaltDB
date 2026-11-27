@@ -5,6 +5,7 @@
         "applied": 1,
         "held": 1,
         "intent": "Tidy the lead list",
+        "kind": "RUN",
         "lastChangeAt": "<time>",
         "reads": 2,
         "refused": 10,

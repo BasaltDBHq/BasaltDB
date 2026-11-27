@@ -36,15 +36,9 @@ ALTER TABLE basalt_meta.plugin_approvals ADD CONSTRAINT plugin_approvals_withdra
            AND (withdrawn_at IS NULL) = (withdraw_reason IS NULL));
 
 -- A held write's change record reads APPROVAL_WITHDRAWN once withdrawn.
--- The check is added NOT VALID, which reads no row, and then validated:
--- VALIDATE reads the rows under a lock that lets them be read and
--- written. An update runs every version in one transaction, so the lock
--- the DROP takes is still held to its end.
 ALTER TABLE basalt_meta.changes DROP CONSTRAINT IF EXISTS changes_status;
 ALTER TABLE basalt_meta.changes ADD CONSTRAINT changes_status
-    CHECK (status IN ('APPLIED', 'PREVIEW', 'REFUSED', 'APPROVAL_PENDING', 'APPROVAL_EXPIRED', 'APPROVAL_WITHDRAWN', 'REVERTED'))
-    NOT VALID;
-ALTER TABLE basalt_meta.changes VALIDATE CONSTRAINT changes_status;
+    CHECK (status IN ('APPLIED', 'PREVIEW', 'REFUSED', 'APPROVAL_PENDING', 'APPROVAL_EXPIRED', 'APPROVAL_WITHDRAWN', 'REVERTED'));
 
 -- The sentence a refused signature of a withdrawn request carries as its
 -- hint.

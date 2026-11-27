@@ -34,7 +34,7 @@ Step 10 never had a section. Step 13 gave agent roles `SELECT` on `schema_versio
 
 | Object | Purpose |
 |---|---|
-| `schema_version` | Installed migration versions |
+| `schema_version` | Installed migration versions, with the BasaltDB release that wrote each from version 14 on (`release`) |
 | `guarded_tables` | Tables carrying the guard, with primary-key columns and reason `AGENT_WRITABLE` or `CASCADE_TARGET` |
 | `runs` | One row per run: `run_id`, `task_id`, `agent`, `intent`, `started_at`. Index `runs_agent` on `(agent, run_id)`, for the per-agent keyset of `list_runs` (N12-R1) |
 | `changes` | The change record: one row per agent action (one top-level statement), `status` `APPLIED` or `REFUSED` in M1 |

@@ -2,6 +2,8 @@ package pgdial
 
 import (
 	"context"
+	"net/url"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -69,6 +71,20 @@ func ExplainWith(dsn string, set *trustprofile.Set) (trustprofile.Applied, error
 		return trustprofile.Applied{}, err
 	}
 	return explainConfig(cfg, set), nil
+}
+
+// SSLMode is the sslmode dsn names, "" when it names none: a postgres://
+// URL's query parameter, or a key=value string's sslmode.
+func SSLMode(dsn string) string {
+	if u, err := url.Parse(dsn); err == nil && (u.Scheme == "postgres" || u.Scheme == "postgresql") {
+		return u.Query().Get("sslmode")
+	}
+	for _, f := range strings.Fields(dsn) {
+		if v, ok := strings.CutPrefix(f, "sslmode="); ok {
+			return strings.Trim(v, "'")
+		}
+	}
+	return ""
 }
 
 // ConnectPinned opens one connection to dsn that trusts only p's

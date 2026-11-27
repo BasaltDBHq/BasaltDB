@@ -186,6 +186,8 @@
     { "code": "TRUST_ROOT_EXPIRING", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "RUN_COMMAND" }] },
     { "code": "TRUST_ROOT_CHANGED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }] },
     { "code": "TRUST_PIN_MISMATCH", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "RUN_COMMAND" }] },
+    { "code": "CERTIFICATE_NOT_CHECKED", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }] },
+    { "code": "CONNECTION_NOT_ENCRYPTED", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }] },
     { "code": "TRUST_PROFILE_REFUSED", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "TELL_AGENT" }] },
     { "code": "PORTAL_MISMATCH", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }] },
     { "code": "PLUGIN_UNAVAILABLE", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },

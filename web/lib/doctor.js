@@ -50,6 +50,28 @@ export function certificateRow(database) {
   return { title: `${database || "Your database"} renewed its security certificate`, text: "Your agents are paused until you confirm." };
 }
 
+// notCheckedRow is the warning row for an agent whose connection is
+// encrypted but does not check the certificate (doctor's NOT_CHECKED):
+// its action is the TRUST fix, which turns the check on.
+export function notCheckedRow(agent, c) {
+  const mode = `sslmode=${c?.sslMode || "prefer"}`;
+  const who = String(agent || "Your agent");
+  const provider = typeof c?.provider === "string" ? c.provider : "";
+  const text = provider ? `${who} connects with ${mode}. Encrypted, but not proven to be ${provider}.` : `${who} connects with ${mode}. Encrypted, but nothing checks the certificate is your database's.`;
+  return { title: "Certificate not checked", text };
+}
+
+// notEncryptedRow is the warning row for an agent whose connection uses no
+// TLS (doctor's NOT_ENCRYPTED). With a provider the TRUST fix turns on
+// verify-full, as for require; without one there is nothing to click.
+export function notEncryptedRow(agent, c) {
+  const mode = `sslmode=${c?.sslMode || "prefer"}`;
+  const who = String(agent || "Your agent");
+  const provider = typeof c?.provider === "string" ? c.provider : "";
+  const text = `${who} connects with ${mode}. Its data and queries travel unencrypted.`;
+  return { title: "Connection not encrypted", text: provider ? text : `${text} Use a connection string with sslmode=verify-full.`, fixable: provider !== "" };
+}
+
 // FIX_ORDER are the fixes a critical row's action starts, in the order the
 // rows list them. UPDATE is the guard update, which opens its own job.
 export const FIX_ORDER = ["TRUST", "UPDATE", "PASSKEY_ADD", "REPAIR"];
@@ -77,9 +99,10 @@ const allLeft = (columns, left) => columns.length > 0 && columns.every((c) => le
 // checkView is the check-up. Critical rows stop BasaltDB working and each
 // carries its own fix; warning rows do not block and carry a link; OK rows
 // have a check. left lists the unlabeled columns the person chose to leave
-// (saved by the page). done is the Done button: enabled only with nothing
-// critical open, else it says what unlocks it.
-export function checkView(d, origin, left = []) {
+// (saved by the page); agent is the link's agent, named by the certificate
+// warning. done is the Done button: enabled only with nothing critical
+// open, else it says what unlocks it.
+export function checkView(d, origin, left = [], agent = "") {
   const crit = [];
   const warn = [];
   const unknown = d.passkeys?.state === "UNKNOWN";
@@ -100,6 +123,14 @@ export function checkView(d, origin, left = []) {
   // cannot say it is running, so setup is not done.
   const cannotCheck = unknown && crit.length === 0;
   if (cannotCheck) critical(null, "BasaltDB can't check your database yet", "The rest is checked once BasaltDB can connect.", "", "BasaltDB has to reach your database before setup is done.");
+  if (cert === "NOT_CHECKED") {
+    const r = notCheckedRow(agent, d.certificate);
+    warn.push({ job: "TRUST", mark: "!", tone: "warning", title: r.title, text: r.text, action: "Check it", later: r.title });
+  }
+  if (cert === "NOT_ENCRYPTED") {
+    const r = notEncryptedRow(agent, d.certificate);
+    warn.push({ job: r.fixable ? "TRUST" : null, mark: "!", tone: "warning", title: r.title, text: r.text, action: r.fixable ? "Check it" : "", later: r.title });
+  }
   const labelCols = d.labels?.state === "UNLABELED" ? (d.labels.columns ?? []) : [];
   let leftNote = false;
   if (d.labels?.state === "UNLABELED") {
@@ -109,9 +140,10 @@ export function checkView(d, origin, left = []) {
   }
   const devices = localPasskeys(d.passkeys, origin);
   const ok = [];
-  if (!unknown && !d.login && cert === "OK") {
+  if (!unknown && !d.login && ["OK", "NOT_CHECKED", "NOT_ENCRYPTED"].includes(cert)) {
     if (d.labels?.state === "OK") ok.push({ job: null, mark: "✓", tone: "good", title: ALL_GOOD.rows[0], text: "", action: "" });
-    ok.push({ job: null, mark: "✓", tone: "good", title: ALL_GOOD.rows[1], text: "", action: "" });
+    // A certificate not checked is a warning row instead.
+    if (cert === "OK") ok.push({ job: null, mark: "✓", tone: "good", title: ALL_GOOD.rows[1], text: "", action: "" });
   }
   if (d.passkeys?.state === "OK") ok.push({ job: "MANAGE", mark: "✓", tone: "good", title: "Passkeys", text: devicesText(devices), action: "Manage" });
   const later = (title) => ({ job: null, mark: "·", tone: "later", title, text: "Checked once BasaltDB can connect.", action: "" });

@@ -1158,3 +1158,38 @@ test("a replace never runs without the database's name, and an install that repl
   await p.run(async () => ({ credentialId: "aWQ" }), "app");
   assert.equal(plain.bodies.at(-1).body.confirmName, undefined);
 });
+
+test("Check the certificate sends the same string with only its sslmode replaced; a refusal keeps the pasted one", async () => {
+  const supa = "postgresql://postgres" + ":" + "p%40ss@db.abcdefghijklmnopqrst.supabase.co:5432/postgres?sslmode=require&application_name=x";
+  const notChecked = { ...listing, certificate: { kind: "NOT_VERIFIED", provider: "Supabase" } };
+  const verified = { ...listing, certificate: { kind: "PROVIDER", issuer: "Supabase" } };
+  let fail = false;
+  const refusal = { code: "CERTIFICATE_NOT_VERIFIED", message: "The database's TLS certificate could not be verified for its host name." };
+  const e = fakeEngine({
+    answer: (path, body) => {
+      if (body.tables || path !== CHECK_PATH) return null;
+      if (!body.databaseUrl.includes("verify-full")) return new Response(JSON.stringify(notChecked), { status: 200 });
+      return fail ? new Response(JSON.stringify(refusal), { status: 412 }) : new Response(JSON.stringify(verified), { status: 200 });
+    },
+  });
+  const i = new Install(e.fetchFn, real);
+  await i.list(supa);
+  assert.equal(i.sslMode, "require");
+  assert.equal(i.listing.certificate.provider, "Supabase");
+
+  fail = true;
+  await assert.rejects(i.checkCertificate(), (err) => err.code === "CERTIFICATE_NOT_VERIFIED");
+  assert.equal(e.bodies[1].body.databaseUrl, supa.replace("sslmode=require", "sslmode=verify-full"), "only the sslmode changes, the password's encoding too");
+  assert.equal(i.sslMode, "require", "the pasted string stays");
+  assert.equal(i.listing.certificate.kind, "NOT_VERIFIED", "and its listing");
+  await i.check();
+  assert.equal(e.bodies.at(-1).body.databaseUrl, supa, "Continue without checking keeps the pasted sslmode");
+
+  fail = false;
+  await i.checkCertificate();
+  assert.equal(i.listing.certificate.kind, "PROVIDER");
+  await i.check();
+  await i.run(async () => ({}));
+  assert.equal(e.bodies.at(-1).path, RUN_PATH);
+  assert.equal(e.bodies.at(-1).body.databaseUrl, supa.replace("sslmode=require", "sslmode=verify-full"), "the run writes the agent's string with verify-full");
+});

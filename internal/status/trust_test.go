@@ -153,3 +153,80 @@ func TestStatusCertificateNotVerifiedOwnRoots(t *testing.T) {
 		require.NotContains(t, p.PersonMessage, "basalt ", applies)
 	}
 }
+
+// An encrypted connection whose sslmode is below verify-full is
+// CERTIFICATE_NOT_CHECKED, a warning that names the provider and leads to
+// the check-up; verify-full and a connection without TLS are not.
+func TestStatusCertificateNotChecked(t *testing.T) {
+	t.Parallel()
+	ok := &fakeProbe{st: currentGuard()}
+	host := "db.abcdefghijklmnopqrst.supabase.co"
+	notVerified := trustprofile.Applied{Host: host, Applies: trustprofile.AppliesNotVerified}
+	with := func(rep TrustReport) TrustReporter { return func() TrustReport { return rep } }
+	tlsOn := func(on bool) func(context.Context) (bool, error) {
+		return func(context.Context) (bool, error) { return on, nil }
+	}
+
+	r := trustLocal(t, ok, with(TrustReport{Applied: notVerified, Encrypted: tlsOn(true), SSLMode: "require", Provider: "Supabase"}))
+	p := findProblem(t, r, "CERTIFICATE_NOT_CHECKED")
+	require.Equal(t, "WARNING", p.Severity)
+	require.Contains(t, p.Message, host)
+	require.Contains(t, p.Message, "sslmode=require")
+	require.Equal(t, "Your agent's connection to Supabase is encrypted but doesn't check the certificate. Open the link the agent gives you and choose Check it to turn the check on, then tell the agent.", p.PersonMessage)
+	require.Len(t, p.NextSteps, 2)
+	require.Equal(t, toolresult.ActionRunCommand, p.NextSteps[0].Action)
+	require.Equal(t, "basalt init --agent bot", p.NextSteps[0].Command)
+	require.Equal(t, toolresult.NextStep{Actor: toolresult.ActorPerson, Action: toolresult.ActionTellAgent, Text: p.NextSteps[1].Text}, p.NextSteps[1])
+	require.True(t, r.Ready, "a warning: the agent keeps working")
+
+	r = trustLocal(t, ok, with(TrustReport{Applied: notVerified, Encrypted: tlsOn(true)}))
+	p = findProblem(t, r, "CERTIFICATE_NOT_CHECKED")
+	require.Contains(t, p.Message, "sslmode=prefer", "no sslmode is the driver's prefer")
+	require.Contains(t, p.PersonMessage, host, "no provider: the host")
+
+	r = trustLocal(t, ok, with(TrustReport{Applied: notVerified, Encrypted: tlsOn(false), SSLMode: "prefer"}))
+	require.Len(t, r.Problems, 1, "no TLS on the connection: the other warning")
+	require.Equal(t, "CONNECTION_NOT_ENCRYPTED", r.Problems[0].Code)
+	r = trustLocal(t, ok, with(TrustReport{Applied: trustprofile.Applied{Host: host, Applies: trustprofile.AppliesSystem}, Encrypted: tlsOn(true), SSLMode: "verify-full"}))
+	require.Empty(t, r.Problems)
+}
+
+// A connection with no TLS (disable, or prefer that fell back) is
+// CONNECTION_NOT_ENCRYPTED, naming the host; a Unix socket and an
+// agent-operated engine are not warned.
+func TestStatusConnectionNotEncrypted(t *testing.T) {
+	t.Parallel()
+	ok := &fakeProbe{st: currentGuard()}
+	plain := func(context.Context) (bool, error) { return false, nil }
+	host := "db.abcdefghijklmnopqrst.supabase.co"
+	rep := func(h, mode, provider string) TrustReporter {
+		return func() TrustReport {
+			return TrustReport{Applied: trustprofile.Applied{Host: h, Applies: trustprofile.AppliesNotVerified}, Encrypted: plain, SSLMode: mode, Provider: provider}
+		}
+	}
+
+	r := trustLocal(t, ok, rep(host, "disable", "Supabase"))
+	p := findProblem(t, r, "CONNECTION_NOT_ENCRYPTED")
+	require.Equal(t, "WARNING", p.Severity)
+	require.Contains(t, p.Message, host)
+	require.Contains(t, p.Message, "sslmode=disable")
+	require.Contains(t, p.PersonMessage, host)
+	require.Contains(t, p.PersonMessage, "data and queries travel unencrypted")
+	require.Contains(t, p.PersonMessage, "Supabase certificate check")
+	require.Len(t, p.NextSteps, 2)
+	require.Equal(t, "basalt init --agent bot", p.NextSteps[0].Command)
+	require.Equal(t, toolresult.ActionTellAgent, p.NextSteps[1].Action)
+	require.True(t, r.Ready)
+
+	r = trustLocal(t, ok, rep("db.example.com", "", ""))
+	p = findProblem(t, r, "CONNECTION_NOT_ENCRYPTED")
+	require.Contains(t, p.Message, "sslmode=prefer")
+	require.Contains(t, p.PersonMessage, "how to turn encryption on")
+
+	r = trustLocal(t, ok, rep("/var/run/postgresql", "disable", ""))
+	require.Empty(t, r.Problems, "a Unix socket is no network connection")
+	for _, h := range []string{"localhost", "127.0.0.1", "::1", "[::1]", "LOCALHOST."} {
+		r = trustLocal(t, ok, rep(h, "disable", ""))
+		require.Empty(t, r.Problems, "a loopback host never leaves this machine: %s", h)
+	}
+}

@@ -38,14 +38,16 @@ func TestLoadRefusesParkedNotify(t *testing.T) {
 	}
 }
 
-// An agent with the older top-level credentialFile is refused with the edit
-// that fixes it, not the decoder's unknown-field text.
-func TestLoadRefusesOldCredentialFile(t *testing.T) {
+// An engine.json from before the last breaking release (an agent with its
+// own credentialFile) is refused with what fixes it, basalt init, not the
+// decoder's unknown-field text.
+func TestLoadRefusesAConfigFromBeforeTheLastBreakingRelease(t *testing.T) {
 	t.Parallel()
 	path := write(t, "engine.json", `{"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "credentialFile": "/c/a.cred"}]}`, 0o600)
 	_, err := config.Load(path)
-	require.EqualError(t, err, "config "+path+`: agent "a": "credentialFile" now goes inside "store"; `+
-		`replace "credentialFile": "/c/a.cred" with "store": {"kind": "POSTGRES", "credentialFile": "/c/a.cred"}`)
+	require.True(t, config.IsBreaking(err))
+	require.EqualError(t, err, "config "+path+": it was written by a BasaltDB release before the last breaking one (breaking 0, this basalt needs 1): "+
+		"run basalt init, which moves it aside and sets this computer up again")
 }
 
 // An engine.json from an older basalt init carries the agent's saved

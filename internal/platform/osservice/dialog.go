@@ -250,8 +250,13 @@ func InstallScript(goos string, src Source) (string, error) {
 	if err := validateSpec(spec); err != nil {
 		return "", err
 	}
+	steps, err := installSteps(goos, spec)
+	if err != nil {
+		return "", err
+	}
 	var b strings.Builder
 	b.WriteString(scriptHelpers(goos))
+	b.WriteString(breakingHelpers)
 	b.WriteString(ScriptHelpersEnd)
 	// Every check runs before anything is created: a refused folder never
 	// leaves a new OS user or folder behind.
@@ -260,33 +265,42 @@ func InstallScript(goos string, src Source) (string, error) {
 	} else {
 		b.WriteString(binaryCheck(binary))
 	}
-	switch goos {
-	case goosLinux:
-		b.WriteString(linuxPreflight(spec))
-	case goosDarwin:
-		b.WriteString(darwinPreflight(spec))
-	}
+	b.WriteString(installPreflight(goos, spec))
 	b.WriteString(ScriptPreflightEnd)
 	if src.copies(goos) {
 		b.WriteString(copyBinary(goos, src))
 	}
-	switch goos {
-	case goosLinux:
-		b.WriteString(linuxScript(spec))
-	case goosDarwin:
-		b.WriteString(darwinScript(spec))
+	// A config left by a release before the last breaking one is moved
+	// aside first: the install then starts from no config.
+	b.WriteString(breakingReset(goos))
+	b.WriteString(steps)
+	return b.String(), nil
+}
+
+// installPreflight checks the engine's account and every folder the
+// install writes in, changing nothing.
+func installPreflight(goos string, spec servicespec.Spec) string {
+	if goos == goosDarwin {
+		return darwinPreflight(spec)
 	}
+	return linuxPreflight(spec)
+}
+
+// installSteps makes the engine's account and folders, writes the unit and
+// starts it: the install script's steps after its checks.
+func installSteps(goos string, spec servicespec.Spec) (string, error) {
+	body := linuxScript(spec)
 	unit := SystemdUnit(spec)
 	start := "systemctl daemon-reload\nsystemctl enable --now " + servicespec.SystemdUnitName + "\n"
 	if goos == goosDarwin {
+		body = darwinScript(spec)
 		unit = LaunchdDaemon(spec)
 		start = "launchctl bootstrap system " + LaunchdPlist + "\nlaunchctl enable system/" + servicespec.LaunchdLabel + "\n"
 	}
 	if strings.Contains(unit, "\n"+unitEnd+"\n") {
 		return "", errors.New("the unit holds the script's own end marker")
 	}
-	fmt.Fprintf(&b, "put_file %s <<'%s'\n%s%s\n%s", scriptWord(UnitPath(goos)), unitEnd, unit, unitEnd, start)
-	return b.String(), nil
+	return body + fmt.Sprintf("put_file %s <<'%s'\n%s%s\n%s", scriptWord(UnitPath(goos)), unitEnd, unit, unitEnd, start), nil
 }
 
 // scriptHelpers are the shell functions the install script uses. stat

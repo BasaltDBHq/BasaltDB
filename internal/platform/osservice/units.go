@@ -117,18 +117,39 @@ func RestartArgs(goos string) []string {
 // otherwise it first copies src over that copy, root's, as the install does
 // (InstallScript), so an upgraded basalt (brew upgrade) reaches the service
 // in the same administrator dialog.
+//
+// A config at the system path from before the last breaking release
+// (breakingReset) is not restarted onto: the script stops and removes the
+// service, moves the config folder aside and installs the service again,
+// as a first install does, in the same administrator dialog.
 func RestartScript(goos string, src Source) (string, error) {
 	if goos != goosDarwin && goos != goosLinux {
 		return "", fmt.Errorf("no engine service to restart on %s", goos)
 	}
 	restart := strings.Join(RestartArgs(goos), " ") + "\n"
-	if !src.copies(goos) {
-		return restart, nil
-	}
-	if err := src.validate(); err != nil {
+	spec := SystemSpec(goos, ServiceBinary(goos))
+	if err := validateSpec(spec); err != nil {
 		return "", err
 	}
-	return scriptHelpers(goos) + ScriptHelpersEnd + sourceCheck(goos, src) + ScriptPreflightEnd + copyBinary(goos, src) + restart, nil
+	steps, err := installSteps(goos, spec)
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	b.WriteString(scriptHelpers(goos) + breakingHelpers + ScriptHelpersEnd)
+	if src.copies(goos) {
+		if err := src.validate(); err != nil {
+			return "", err
+		}
+		b.WriteString(sourceCheck(goos, src))
+	}
+	b.WriteString(ScriptPreflightEnd)
+	if src.copies(goos) {
+		b.WriteString(copyBinary(goos, src))
+	}
+	b.WriteString(breakingReset(goos))
+	fmt.Fprintf(&b, "if [ -n \"$breaking_reset\" ]; then\n%s%selse\n%sfi\n", installPreflight(goos, spec), steps, restart)
+	return b.String(), nil
 }
 
 // specArgs is the command line s's unit runs.

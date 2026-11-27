@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/user"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -80,13 +82,21 @@ type fakeHost struct {
 	// with lastExit; none is no service manager.
 	runs     []int
 	lastExit int
+	// userConfig is the person's config directory; "" is none.
+	userConfig string
 }
 
 func newFakeHost() *fakeHost {
 	return &fakeHost{euid: 501, sys: &fakeSys{}}
 }
 
-func (h *fakeHost) Euid() int                           { return h.euid }
+func (h *fakeHost) Euid() int { return h.euid }
+func (h *fakeHost) UserConfigDir() (string, error) {
+	if h.userConfig == "" {
+		return "", errors.New("no config directory")
+	}
+	return h.userConfig, nil
+}
 func (h *fakeHost) ResolvedExecutable() (string, error) { return fakeBin, nil }
 func (h *fakeHost) DialogAvailable(string) error        { return h.noDialog }
 
@@ -289,6 +299,38 @@ func TestInitInstallsThroughTheDialogThenPrintsAndOpensTheLink(t *testing.T) {
 	require.NotContains(t, r.stderr, "[Y/n]", "init asks nothing in the terminal")
 	require.NotContains(t, r.stderr, "Admin connection string")
 	require.NotContains(t, r.stdout+r.stderr, "pw@db.example")
+}
+
+// A config 0.0.1 left in the person's own folder (its shape: the agent's
+// own credentialFile) is moved aside, whole and never deleted, once the
+// dialog installed the service; init says so in one line and goes on as a
+// first install, with the MCP line to register again. A config of today's
+// shape there (basalt init --remote's) stays.
+func TestInitMovesAConfigFromBeforeTheLastBreakingReleaseAside(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost()
+	h.userConfig = t.TempDir()
+	dir := filepath.Join(h.userConfig, "basalt")
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	old := `{"socketDir": "/s", "agents": [{"name": "demo_bot", "osUser": "alice", "credentialFile": "` + dir + `/agents/demo_bot.url"}]}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "engine.json"), []byte(old), 0o600))
+	r, _ := localInit(t, h, "--demo")
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
+	require.Len(t, h.dialogs, 1, "one password")
+	require.NoDirExists(t, dir)
+	require.FileExists(t, filepath.Join(dir+".old", "engine.json"), "moved, never deleted")
+	require.Contains(t, r.stderr, "basalt: "+filepath.Join(dir, "engine.json")+" was written by a BasaltDB release before the last breaking one: its folder is moved to "+dir+".old")
+	require.Contains(t, r.stdout, "\nbasalt mcp --agent demo_bot\n", "the line the agent registers again")
+
+	today := newFakeHost()
+	today.userConfig = t.TempDir()
+	kept := filepath.Join(today.userConfig, "basalt")
+	require.NoError(t, os.MkdirAll(kept, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(kept, "engine.json"), []byte(`{"breaking": 1, "socketDir": "/s", "agents": []}`), 0o600))
+	r, _ = localInit(t, today, "--demo")
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
+	require.DirExists(t, kept)
+	require.NotContains(t, r.stderr, "breaking")
 }
 
 // Without --demo the link opens the page's install of the person's own

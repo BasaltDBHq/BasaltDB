@@ -78,6 +78,10 @@ func (c Config) StateDirFor(goos string) string {
 
 // Config is the engine configuration file.
 type Config struct {
+	// Breaking is the breaking epoch the file was written in
+	// (BreakingEpoch): every write sets it. A file without it is read by its
+	// shape (EpochOf).
+	Breaking int `json:"breaking,omitempty"`
 	// SocketDir holds one socket per agent, <SocketDir>/<name>.sock.
 	SocketDir string  `json:"socketDir" validate:"required"`
 	Agents    []Agent `json:"agents" validate:"required,min=1,unique=Name,dive"`
@@ -404,7 +408,7 @@ func parse(path string, raw []byte) (Config, error) {
 	if err := refuseParked(raw); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
-	if err := refuseOldCredentialFile(raw); err != nil {
+	if err := refuseBreaking(raw); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	raw = dropInitArgs(raw)
@@ -507,51 +511,6 @@ func dropInitArgs(raw []byte) []byte {
 		return raw
 	}
 	return out
-}
-
-// OldCredentialFileError is the error of a config with the older per-agent
-// "credentialFile" key.
-type OldCredentialFileError struct{ msg string }
-
-func (e *OldCredentialFileError) Error() string { return e.msg }
-
-// IsOldCredentialFile reports whether err (from Load) is that refusal, so a
-// caller that otherwise ignores a config it cannot read can still show it.
-func IsOldCredentialFile(err error) bool {
-	var e *OldCredentialFileError
-	return errors.As(err, &e)
-}
-
-// refuseOldCredentialFile refuses an agent that still has the older
-// per-agent "credentialFile" key (it moved into "store"), with the exact
-// edit. The key is never read as a credential: only its value, as the path
-// to put into the edit, and only when it is a string. Every command that
-// loads engine.json gets this error, not the decoder's unknown-field one.
-func refuseOldCredentialFile(raw []byte) error {
-	var top struct {
-		Agents []map[string]json.RawMessage `json:"agents"`
-	}
-	//nolint:nilerr // not this shape: left to the decoder
-	if err := json.Unmarshal(raw, &top); err != nil {
-		return nil
-	}
-	for _, a := range top.Agents {
-		old, ok := a["credentialFile"]
-		if !ok {
-			continue
-		}
-		var name, path string
-		if err := json.Unmarshal(a["name"], &name); err != nil || name == "" {
-			name = "?"
-		}
-		if err := json.Unmarshal(old, &path); err != nil || path == "" {
-			path = "<path>"
-		}
-		return &OldCredentialFileError{msg: fmt.Sprintf(`agent %q: "credentialFile" now goes inside "store"; `+
-			`replace "credentialFile": %q with "store": {"kind": "POSTGRES", "credentialFile": %q}`,
-			name, path, path)}
-	}
-	return nil
 }
 
 // ConnectLinkBudget is the link budget for the connect link, or 0 when the

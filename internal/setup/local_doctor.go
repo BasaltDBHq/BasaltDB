@@ -149,7 +149,7 @@ func (s *LocalService) Doctor(ctx context.Context, req DoctorRequest) (DoctorAns
 		return DoctorAnswer{}, err
 	}
 	defer conn.Close(context.WithoutCancel(ctx))
-	s.certificateNotChecked(a, &out)
+	s.certificateNotChecked(conn, a, &out)
 	if err := s.readDoctor(ctx, conn, a, &out); err != nil {
 		return DoctorAnswer{}, timeLimit(ctx, s.setupFailed("read the doctor checks", err))
 	}

@@ -23,7 +23,7 @@ func ServeRestarting(ctx context.Context, run func(context.Context, Restart) err
 		if errors.Is(err, ErrReload) && ctx.Err() == nil {
 			// Same binary, same process: the config is read again and the
 			// engine serves anew. A config it cannot read now stops it.
-			log.Info("serving the engine config again: an agent's connect-only setup changed")
+			log.Info("serving the engine config again: an agent's setup changed")
 			if err := reload(); err != nil {
 				return err
 			}

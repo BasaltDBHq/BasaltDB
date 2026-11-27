@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 
@@ -27,7 +28,16 @@ func trustOf(pool *pgxpool.Pool) status.TrustReporter {
 		host, port := trustprofile.NormalizeHost(cfg.Host), cfg.Port
 		return status.TrustReport{
 			Applied: a, Refused: refused, Port: port,
-			TLS: cfg.TLSConfig != nil, SSLMode: pgdial.SSLMode(pool.Config().ConnString()),
+			SSLMode: pgdial.SSLMode(pool.Config().ConnString()),
+			Encrypted: func(ctx context.Context) (bool, error) {
+				c, err := pool.Acquire(ctx)
+				if err != nil {
+					return false, err
+				}
+				defer c.Release()
+				_, on := c.Conn().PgConn().Conn().(*tls.Conn)
+				return on, nil
+			},
 			Provider: trustprofile.BuiltInProvider(host, pgdial.Trust()),
 			Presented: func(ctx context.Context) (*x509.Certificate, error) {
 				chain, err := trustpin.Fetch(ctx, nil, host, int(port))

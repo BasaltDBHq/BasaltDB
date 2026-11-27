@@ -13,10 +13,19 @@ import (
 // credBackend is testBackend with the agent's credential dsn.
 type credBackend struct {
 	testBackend
-	dsn string
+	dsn   string
+	plain bool
 }
 
 func (b credBackend) ReadCredential(string) (string, error) { return b.dsn, nil }
+
+// ConnCertificate is the login's TLS: on unless plain.
+func (b credBackend) ConnCertificate(_ Conn, kind, _ string) (string, string) {
+	if b.plain {
+		return certificateNone, ""
+	}
+	return kind, ""
+}
 
 // TestUncheckedCredential: an agent credential is NOT_CHECKED when it is
 // encrypted below verify-full (none is prefer), naming the provider whose
@@ -35,6 +44,7 @@ func TestUncheckedCredential(t *testing.T) {
 		{supa + "?sslmode=verify-full", "", "", false},
 		{supa + "?sslmode=disable", "", "", false},
 		{supa + "?sslmode=allow", "", "", false},
+		{supa + "?sslmode=verify-ca&sslrootcert=/x/root.crt", "", "", false},
 	} {
 		s, err := NewLocal(LocalOptions{
 			Backend:    credBackend{dsn: tc.dsn},
@@ -48,11 +58,22 @@ func TestUncheckedCredential(t *testing.T) {
 		require.Equal(t, tc.provider, uc.provider, tc.dsn)
 		var out DoctorAnswer
 		out.Certificate.State = StateOK
-		s.certificateNotChecked(config.Agent{}, &out)
+		s.certificateNotChecked(nil, config.Agent{}, &out)
 		if tc.ok {
 			require.Equal(t, DoctorCertificate{State: StateNotChecked, Host: uc.host, Port: uc.port, SSLMode: tc.mode, Provider: tc.provider}, out.Certificate, tc.dsn)
 		} else {
 			require.Equal(t, StateOK, out.Certificate.State, tc.dsn)
 		}
 	}
+
+	// prefer on a server without TLS fell back to none: not this warning.
+	s, err := NewLocal(LocalOptions{
+		Backend:    credBackend{dsn: at("db.example.com:5432/app"), plain: true},
+		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: "http://localhost:8787",
+		Profiles: trustprofile.BuiltInSet,
+	})
+	require.NoError(t, err)
+	out := DoctorAnswer{Certificate: DoctorCertificate{State: StateOK}}
+	s.certificateNotChecked(nil, config.Agent{}, &out)
+	require.Equal(t, StateOK, out.Certificate.State)
 }

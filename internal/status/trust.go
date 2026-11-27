@@ -56,9 +56,10 @@ type TrustReport struct {
 	// Recorded is the pin's fingerprint the ledger records for the host
 	// and port (TRUST_PIN_MISMATCH): false for none; nil reads nothing.
 	Recorded func(ctx context.Context) (string, bool, error)
-	// TLS: the agent's connection uses TLS (any sslmode but disable and
-	// allow), so one below verify-full is CERTIFICATE_NOT_CHECKED.
-	TLS bool
+	// Encrypted reports whether a connection of the agent's pool uses TLS
+	// now (prefer falls back to none on a server without it), so a mode
+	// below verify-full is CERTIFICATE_NOT_CHECKED; nil reads nothing.
+	Encrypted func(ctx context.Context) (bool, error)
 	// SSLMode is the sslmode the agent's connection string names, "" for
 	// none (the driver's prefer).
 	SSLMode string
@@ -83,7 +84,7 @@ func (s statusDeps) trustStatus(ctx context.Context, ps *guidance.Problems) (*gu
 	}
 	a := rep.Applied
 	out := &guidance.TrustStatus{Host: a.Host, Applies: string(a.Applies)}
-	s.addNotChecked(ps, rep)
+	s.addNotChecked(ctx, ps, rep)
 	if a.Profile == nil {
 		return out, &rep
 	}
@@ -108,8 +109,16 @@ const sslModeDefault = "prefer"
 // encrypted but its sslmode is below verify-full, so nothing checks the
 // certificate is its database's. The setup page's check-up turns the check
 // on. A connection without TLS (sslmode=disable) is not this warning.
-func (s statusDeps) addNotChecked(ps *guidance.Problems, rep TrustReport) {
-	if rep.Applied.Applies != trustprofile.AppliesNotVerified || !rep.TLS || s.cmds.AgentOperated() {
+func (s statusDeps) addNotChecked(ctx context.Context, ps *guidance.Problems, rep TrustReport) {
+	if rep.Applied.Applies != trustprofile.AppliesNotVerified || rep.Encrypted == nil || s.cmds.AgentOperated() {
+		return
+	}
+	on, err := rep.Encrypted(ctx)
+	if err != nil {
+		s.log.Debug("status: read whether the agent's connection is encrypted", "err", err)
+		return
+	}
+	if !on {
 		return
 	}
 	host := cmp.Or(rep.Applied.Host, "the database")

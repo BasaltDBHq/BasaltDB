@@ -47,8 +47,9 @@ func (s *LocalService) uncheckedCredential(a config.Agent) (unchecked, bool) {
 	if err != nil {
 		return unchecked{}, false
 	}
-	mode := u.Query().Get(paramSSLMode)
-	if mode == sslDisable || mode == "allow" {
+	q := u.Query()
+	mode := q.Get(paramSSLMode)
+	if mode == sslDisable || mode == "allow" || q.Has("sslrootcert") {
 		return unchecked{}, false
 	}
 	applied, err := s.be.ExplainTrust(dsn, s.opts.Profiles())
@@ -66,13 +67,19 @@ func (s *LocalService) uncheckedCredential(a config.Agent) (unchecked, bool) {
 }
 
 // certificateNotChecked sets the doctor's certificate row NOT_CHECKED when
-// the agent's credential connects with TLS but does not check the
-// certificate, as status's CERTIFICATE_NOT_CHECKED does. A warning: the
-// page still says Ready.
-func (s *LocalService) certificateNotChecked(a config.Agent, out *DoctorAnswer) {
-	if uc, ok := s.uncheckedCredential(a); ok {
-		out.Certificate = DoctorCertificate{State: StateNotChecked, Host: uc.host, Port: uc.port, SSLMode: uc.mode, Provider: uc.provider}
+// the agent logged in with TLS on conn and its credential does not check
+// the certificate, as status's CERTIFICATE_NOT_CHECKED does: prefer on a
+// server without TLS falls back to none, which is not this warning. A
+// warning: the page still says Ready.
+func (s *LocalService) certificateNotChecked(conn Conn, a config.Agent, out *DoctorAnswer) {
+	uc, ok := s.uncheckedCredential(a)
+	if !ok {
+		return
 	}
+	if shown, _ := s.be.ConnCertificate(conn, certNotVerified, ""); shown != certNotVerified {
+		return // no TLS on this connection
+	}
+	out.Certificate = DoctorCertificate{State: StateNotChecked, Host: uc.host, Port: uc.port, SSLMode: uc.mode, Provider: uc.provider}
 }
 
 // verifiedCredential is the agent's credential with sslmode=verify-full,

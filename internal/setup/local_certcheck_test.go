@@ -147,20 +147,17 @@ func (cf *certCheckFixture) sslMode(t *testing.T) string {
 	return u.Query().Get("sslmode")
 }
 
-// The check-up warns about an agent whose connection does not check the
-// certificate, and its TRUST fix turns the check on once a login with
-// sslmode=verify-full passes: a certificate that does not verify changes
-// nothing, and a fixed agent has nothing left to fix.
+// The TRUST fix of an agent whose connection does not check the
+// certificate turns the check on once a login with sslmode=verify-full
+// passes: a certificate that does not verify changes nothing, and a fixed
+// agent has nothing left to fix.
 func TestTrustFixTurnsTheCertificateCheckOn(t *testing.T) {
 	t.Parallel()
 	cf := newCertCheckFixture(t)
 	ctx := context.Background()
 
-	got, err := cf.svc.Doctor(ctx, cf.doctor())
-	require.NoError(t, err)
-	require.Equal(t, setup.DoctorCertificate{State: setup.StateNotChecked, Host: supabaseHost, Port: 5432, SSLMode: "require", Provider: "Supabase"}, got.Certificate)
-	require.Nil(t, got.Login, "a warning: the agent logs in")
-
+	// The test server has no TLS, so the doctor's NOT_CHECKED row, which
+	// reads the login's TLS, is TestUncheckedCredential's.
 	checked, err := cf.svc.Check(ctx, cf.trust())
 	require.NoError(t, err)
 	require.Len(t, checked.Lines, 1)
@@ -186,8 +183,9 @@ func TestTrustFixTurnsTheCertificateCheckOn(t *testing.T) {
 	require.Equal(t, "verify-full", cf.sslMode(t))
 	require.Equal(t, int32(1), cf.reloads.Load(), "the engine serves the new credential")
 
-	got, err = cf.svc.Doctor(ctx, cf.doctor())
+	got, err := cf.svc.Doctor(ctx, cf.doctor())
 	require.NoError(t, err)
+	require.Nil(t, got.Login, "the agent logs in with the new credential")
 	require.Equal(t, setup.StateOK, got.Certificate.State)
 	_, err = cf.svc.Check(ctx, cf.trust())
 	refusal(t, err, setup.CodeNothingToFix)

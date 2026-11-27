@@ -163,8 +163,11 @@ func TestStatusCertificateNotChecked(t *testing.T) {
 	host := "db.abcdefghijklmnopqrst.supabase.co"
 	notVerified := trustprofile.Applied{Host: host, Applies: trustprofile.AppliesNotVerified}
 	with := func(rep TrustReport) TrustReporter { return func() TrustReport { return rep } }
+	tlsOn := func(on bool) func(context.Context) (bool, error) {
+		return func(context.Context) (bool, error) { return on, nil }
+	}
 
-	r := trustLocal(t, ok, with(TrustReport{Applied: notVerified, TLS: true, SSLMode: "require", Provider: "Supabase"}))
+	r := trustLocal(t, ok, with(TrustReport{Applied: notVerified, Encrypted: tlsOn(true), SSLMode: "require", Provider: "Supabase"}))
 	p := findProblem(t, r, "CERTIFICATE_NOT_CHECKED")
 	require.Equal(t, "WARNING", p.Severity)
 	require.Contains(t, p.Message, host)
@@ -176,13 +179,13 @@ func TestStatusCertificateNotChecked(t *testing.T) {
 	require.Equal(t, toolresult.NextStep{Actor: toolresult.ActorPerson, Action: toolresult.ActionOpenLink, Text: p.NextSteps[1].Text}, p.NextSteps[1])
 	require.True(t, r.Ready, "a warning: the agent keeps working")
 
-	r = trustLocal(t, ok, with(TrustReport{Applied: notVerified, TLS: true}))
+	r = trustLocal(t, ok, with(TrustReport{Applied: notVerified, Encrypted: tlsOn(true)}))
 	p = findProblem(t, r, "CERTIFICATE_NOT_CHECKED")
 	require.Contains(t, p.Message, "sslmode=prefer", "no sslmode is the driver's prefer")
 	require.Contains(t, p.PersonMessage, host, "no provider: the host")
 
-	r = trustLocal(t, ok, with(TrustReport{Applied: notVerified, SSLMode: "disable"}))
-	require.Empty(t, r.Problems, "no TLS: not this warning")
-	r = trustLocal(t, ok, with(TrustReport{Applied: trustprofile.Applied{Host: host, Applies: trustprofile.AppliesSystem}, TLS: true, SSLMode: "verify-full"}))
+	r = trustLocal(t, ok, with(TrustReport{Applied: notVerified, Encrypted: tlsOn(false), SSLMode: "prefer"}))
+	require.Empty(t, r.Problems, "no TLS on the connection (prefer fell back, or disable): not this warning")
+	r = trustLocal(t, ok, with(TrustReport{Applied: trustprofile.Applied{Host: host, Applies: trustprofile.AppliesSystem}, Encrypted: tlsOn(true), SSLMode: "verify-full"}))
 	require.Empty(t, r.Problems)
 }

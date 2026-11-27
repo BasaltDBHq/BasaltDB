@@ -116,9 +116,8 @@ func newCertCheckFixture(t *testing.T) *certCheckFixture {
 	require.NoError(t, err)
 	u, err := url.Parse(cred)
 	require.NoError(t, err)
-	pw, _ := u.User.Password()
-	require.NoError(t, config.WriteFile(f.credentialFile(),
-		[]byte("postgresql://"+u.User.Username()+":"+pw+"@"+supabaseHost+":5432"+u.Path+"?sslmode=require\n")))
+	u.Host, u.RawQuery = supabaseHost+":5432", "sslmode=require"
+	require.NoError(t, config.WriteFile(f.credentialFile(), []byte(u.String()+"\n")))
 	cf := &certCheckFixture{fixture: f, dial: newSupabaseDial(t, f.db.URL), admin: supabaseURL(t, f.db.URL, "?sslmode=require")}
 	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},

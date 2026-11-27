@@ -266,6 +266,7 @@ func InstallScript(goos string, src Source) (string, error) {
 		b.WriteString(binaryCheck(binary))
 	}
 	b.WriteString(installPreflight(goos, spec))
+	b.WriteString(breakingVerdict(goos))
 	b.WriteString(ScriptPreflightEnd)
 	if src.copies(goos) {
 		b.WriteString(copyBinary(goos, src))

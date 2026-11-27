@@ -98,10 +98,11 @@ func TestConfigEpochMatchesTheConfigPackage(t *testing.T) {
 }
 
 // The install and restart scripts reset a config from before the last
-// breaking release, after their checks: they stop and remove the engine's
-// and plugins' units, move the config folder to the first free .old name
-// (never deleting it) and say where; the restart then installs the service
-// again instead of restarting it.
+// breaking release: the verdict, and after a reset the install's own
+// checks, run with the checks, before anything changes; then they stop and
+// remove the engine's and plugins' units, move the config folder to the
+// first free .old name (never deleting it) and say where; the restart then
+// installs the service again instead of restarting it.
 func TestTheScriptsResetAConfigFromBeforeTheLastBreakingRelease(t *testing.T) {
 	t.Parallel()
 	for goos, v := range map[string]struct{ dir, stop, unit string }{
@@ -113,21 +114,27 @@ func TestTheScriptsResetAConfigFromBeforeTheLastBreakingRelease(t *testing.T) {
 		restart, err := osservice.RestartScript(goos, dialogSource)
 		require.NoError(t, err)
 		for name, script := range map[string]string{"install": install, "restart": restart} {
-			checks, body, ok := strings.Cut(script, osservice.ScriptPreflightEnd)
+			_, rest, ok := strings.Cut(script, osservice.ScriptHelpersEnd)
 			require.True(t, ok)
-			require.NotContains(t, checks, "config_epoch "+v.dir, "%s %s: the checks change nothing", goos, name)
+			checks, body, ok := strings.Cut(rest, osservice.ScriptPreflightEnd)
+			require.True(t, ok)
+			require.Contains(t, checks, "config_epoch ", "%s %s: the verdict is a check", goos, name)
+			require.Contains(t, checks, `[ "$epoch" -lt 1 ]`)
+			for _, never := range []string{"mv ", v.stop, v.unit} {
+				require.NotContains(t, checks, never, "%s %s: the checks change nothing", goos, name)
+			}
 			for _, step := range []string{
-				`[ "$epoch" -lt 1 ]`, v.stop, v.unit, "old=" + v.dir + ".old\n", `old=` + v.dir + `.old.$n`,
+				v.stop, v.unit, "old=" + v.dir + ".old\n", `old=` + v.dir + `.old.$n`,
 				"mv " + v.dir + ` "$old"`, osservice.BreakingResetLine,
 			} {
 				require.Contains(t, body, step, "%s %s", goos, name)
 			}
 			require.NotContains(t, body, "rm -rf "+v.dir, "the folder is moved, never deleted")
-			require.Less(t, strings.Index(body, "breaking_reset=\n"), strings.Index(body, "put_file"), "%s %s: reset before the unit is written", goos, name)
+			require.Less(t, strings.Index(body, "mv "+v.dir), strings.Index(body, "put_file"), "%s %s: reset before the unit is written", goos, name)
 		}
-		_, branch, ok := strings.Cut(restart, `if [ -n "$breaking_reset" ]; then`)
-		require.True(t, ok)
-		require.Contains(t, branch, "put_file "+scriptWordOf(osservice.UnitPath(goos)), "%s: the restart installs the service again after a reset", goos)
+		checks, body, _ := strings.Cut(restart, osservice.ScriptPreflightEnd)
+		require.Contains(t, checks, "if [ -n \"$breaking_reset\" ]; then\nengine_uid=\n", "%s: after a reset, the install's checks run with the others", goos)
+		require.Contains(t, body, "put_file "+scriptWordOf(osservice.UnitPath(goos)), "%s: the restart installs the service again after a reset", goos)
 	}
 }
 

@@ -12,6 +12,9 @@ import (
 // bumps it by one: basalt init then moves an engine.json below it aside
 // and sets the computer up again (the install and restart scripts'
 // reset), as the setup page replaces a guard below the update floor.
+// A release that raises the guard's update floor (a migration marked
+// reinstall) bumps it too: only an engine with no config runs the setup
+// page's INSTALL, which is what replaces such a guard.
 const BreakingEpoch = 1
 
 // EpochOf is the breaking epoch of an engine.json: its "breaking" number;

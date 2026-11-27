@@ -143,12 +143,16 @@ func RestartScript(goos string, src Source) (string, error) {
 		}
 		b.WriteString(sourceCheck(goos, src))
 	}
+	// The verdict and, after a reset, the install's own checks run before
+	// anything changes: a check that fails leaves the service as it was.
+	b.WriteString(breakingVerdict(goos))
+	fmt.Fprintf(&b, "if [ -n \"$breaking_reset\" ]; then\n%sfi\n", installPreflight(goos, spec))
 	b.WriteString(ScriptPreflightEnd)
 	if src.copies(goos) {
 		b.WriteString(copyBinary(goos, src))
 	}
 	b.WriteString(breakingReset(goos))
-	fmt.Fprintf(&b, "if [ -n \"$breaking_reset\" ]; then\n%s%selse\n%sfi\n", installPreflight(goos, spec), steps, restart)
+	fmt.Fprintf(&b, "if [ -n \"$breaking_reset\" ]; then\n%selse\n%sfi\n", steps, restart)
 	return b.String(), nil
 }
 

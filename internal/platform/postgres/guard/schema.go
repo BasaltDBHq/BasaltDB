@@ -143,7 +143,9 @@ var nonBreakingVersions = map[int]bool{
 // reinstallVersions are the versions an older install is never updated to
 // (migration.reinstall): it is removed and set up again. A guard change that
 // cannot be applied over an older install sets its version here and nothing
-// else, and CHANGELOG.md names it under "Breaking for alpha installs".
+// else, and CHANGELOG.md names it under "Breaking for alpha installs". The
+// same release bumps config.BreakingEpoch: the setup page replaces such a
+// guard only in an INSTALL, which only an engine with no config runs.
 // versionInstallIDs: every 0.0.1 release shipped only version 1, and its
 // SQL is different from today's version 1 (schema/001, 004, 005 and 006
 // changed after it), so versions 2 and later were not written for it.

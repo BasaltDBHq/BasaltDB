@@ -3,7 +3,6 @@ package osservice
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
@@ -43,10 +42,29 @@ config_epoch() {
 // BreakingResetLine starts the line the scripts print after a reset.
 const BreakingResetLine = "basalt: this computer's BasaltDB was set up by a release before the last breaking one: its engine service is removed and its config folder moved to "
 
-// breakingReset is the reset step: it sets breaking_reset when it ran.
+// breakingVerdict reads, changing nothing, whether the engine.json at the
+// system path is below this build's breaking epoch, and sets
+// breaking_reset then. It runs with the checks, so a check that fails
+// stops the script before anything was moved.
+func breakingVerdict(goos string) string {
+	path := scriptWord(config.DefaultPath(goos))
+	return fmt.Sprintf(`breaking_reset=
+if [ -f %[1]s ] && [ ! -L %[1]s ]; then
+	epoch=$(config_epoch %[1]s)
+	case $epoch in '' | *[!0-9]*) epoch=%[2]d ;; esac
+	if [ "$epoch" -lt %[2]d ]; then
+		no_link %[3]s
+		breaking_reset=1
+	fi
+fi
+`, path, config.BreakingEpoch, scriptWord(filepath.Dir(config.DefaultPath(goos))))
+}
+
+// breakingReset is the reset itself, after the checks, when the verdict set
+// breaking_reset: it stops and removes the engine's and the plugins' units
+// and moves the config folder to the first free .old name.
 func breakingReset(goos string) string {
-	path := config.DefaultPath(goos)
-	dir := filepath.Dir(path)
+	dir := scriptWord(filepath.Dir(config.DefaultPath(goos)))
 	var stop string
 	switch goos {
 	case goosLinux:
@@ -70,37 +88,15 @@ func breakingReset(goos string) string {
 	rm -f %[4]s
 `, servicespec.LaunchdLabel, launchDaemonsDir, pluginLabelPrefix, LaunchdPlist)
 	}
-	return fmt.Sprintf(`breaking_reset=
-if [ -f %[1]s ] && [ ! -L %[1]s ]; then
-	epoch=$(config_epoch %[1]s)
-	case $epoch in '' | *[!0-9]*) epoch=%[3]d ;; esac
-	if [ "$epoch" -lt %[3]d ]; then
-		no_link %[2]s
-%[4]s		old=%[2]s.old
-		n=1
-		while [ -e "$old" ] || [ -L "$old" ]; do
-			n=$((n + 1))
-			old=%[2]s.old.$n
-		done
-		mv %[2]s "$old"
-		breaking_reset=1
-		echo "%[5]s$old. Delete that folder once the new setup works."
-	fi
+	return fmt.Sprintf(`if [ -n "$breaking_reset" ]; then
+%[2]s	old=%[1]s.old
+	n=1
+	while [ -e "$old" ] || [ -L "$old" ]; do
+		n=$((n + 1))
+		old=%[1]s.old.$n
+	done
+	mv %[1]s "$old"
+	echo "%[3]s$old. Delete that folder once the new setup works."
 fi
-`, scriptWord(path), scriptWord(dir), config.BreakingEpoch, indent(stop), BreakingResetLine)
-}
-
-// indent puts one more tab before every line of s.
-func indent(s string) string {
-	if s == "" {
-		return ""
-	}
-	lines := strings.SplitAfter(s, "\n")
-	var b strings.Builder
-	for _, l := range lines {
-		if l != "" {
-			b.WriteString("\t" + l)
-		}
-	}
-	return b.String()
+`, dir, stop, BreakingResetLine)
 }

@@ -402,7 +402,8 @@ func TestRestartScript(t *testing.T) {
 			checks, body, ok := strings.Cut(got, osservice.ScriptPreflightEnd)
 			require.True(t, ok)
 			require.True(t, strings.HasSuffix(body, "else\n"+restart+"fi\n"), "%s %s: the restart is the branch without a reset", goos, name)
-			reset := strings.Index(body, "breaking_reset=\n")
+			require.Contains(t, checks, "breaking_reset=\n", "%s %s: the verdict is a check", goos, name)
+			reset := strings.Index(body, `if [ -n "$breaking_reset" ]; then`)
 			require.GreaterOrEqual(t, reset, 0, "%s %s: the reset step", goos, name)
 			if src.Path == dialogSource.Path {
 				require.Contains(t, checks, "src='/usr/local/bin/basalt'\n")

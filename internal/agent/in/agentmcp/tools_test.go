@@ -56,3 +56,22 @@ func TestRunSummaryMatchesTheSchema(t *testing.T) {
 	toolschema.Validate(t, sch, map[string]any{"items": []runSummaryDTO{full, empty}})
 	require.Equal(t, []string{}, empty.Resources, "an empty list, never null")
 }
+
+// The other two kinds of list_runs item validate against the same schema,
+// and each matches only its own kind.
+func TestRevertAndLooseReadsItemsMatchTheSchema(t *testing.T) {
+	t.Parallel()
+	sch := toolschema.Output(t, "list_runs")
+	at := time.Date(2026, 11, 27, 9, 0, 0, 0, time.UTC)
+	revert := runListItemFromDomain(action.RunListItem{Kind: action.RunItemRevert, At: at, Revert: action.RevertSummary{
+		ID: uuid.Must(uuid.NewV7()), Scope: "RUN", ScopeID: uuid.NullUUID{UUID: uuid.Must(uuid.NewV7()), Valid: true},
+		SignedAt: at, Restored: 3, Skipped: 1, Intent: "Undo the tidy",
+	}})
+	loose := runListItemFromDomain(action.RunListItem{Kind: action.RunItemLooseReads, At: at, Loose: action.LooseReads{
+		From: at, To: at.Add(time.Hour), Reads: 2, Resources: []string{"public.leads"}, ResourcesTruncated: true,
+	}})
+	none := runListItemFromDomain(action.RunListItem{Kind: action.RunItemLooseReads, At: at, Loose: action.LooseReads{From: at, To: at.Add(time.Hour)}})
+	toolschema.Validate(t, sch, map[string]any{"items": []any{revert, loose, none}})
+	require.Equal(t, []string{}, none.(looseReadsDTO).Resources, "an empty list, never null")
+	require.Equal(t, "2026-11-27T10:00:00Z", loose.(looseReadsDTO).To)
+}

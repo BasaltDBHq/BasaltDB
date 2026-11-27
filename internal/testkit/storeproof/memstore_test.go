@@ -132,6 +132,7 @@ func (memLanguage) StaleTarget(string) (string, map[string]any, error) {
 	return "", nil, errors.New("the memory store reports no stale reads")
 }
 func (memLanguage) DeniedTarget(string) (string, bool) { return "", false }
+func (memLanguage) RLSRefusal(string) (string, bool)   { return "", false }
 func (memLanguage) NoKeyTarget(string) (string, bool)  { return "", false }
 
 func (memLanguage) ParseName(s string) (string, string, error) {
@@ -458,8 +459,8 @@ func (s *memStore) RecordRefusal(_ context.Context, r action.Refusal) error {
 	return nil
 }
 
-func (s *memStore) ListRuns(context.Context, action.RunListParams) (pagination.Page[action.RunSummary], error) {
-	return pagination.Page[action.RunSummary]{}, nil
+func (s *memStore) ListRuns(context.Context, action.RunListParams) (pagination.Page[action.RunListItem], error) {
+	return pagination.Page[action.RunListItem]{}, nil
 }
 
 // Catalog.

@@ -95,7 +95,7 @@ func (wc *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, erro
 	if err := seen.check(res); err != nil {
 		return WriteOutcome{}, err
 	}
-	return WriteOutcome{WriteResult: res, RunID: run.ID, Op: op, Warnings: wc.rlsWarnings(ctx, stmt.Tables, res.Rows)}, nil
+	return WriteOutcome{WriteResult: res, RunID: run.ID, Op: op, Warnings: wc.rlsWarnings(ctx, stmt.Tables)}, nil
 }
 
 // returnedRows hands a write's returned rows to the PII port, as the store

@@ -115,6 +115,24 @@ func TestPlanTimesInsertDefaults(t *testing.T) {
 		require.Equal(t, tc.held, held, tc.sent)
 	}
 
+	// The usual UTC defaults go in as they are, their now() fixed.
+	for def, want := range map[string]string{
+		"timezone('utc'::text, now())":     `timezone('utc'::text, '` + ts + `'::timestamp with time zone)`,
+		"(now() AT TIME ZONE 'utc'::text)": `'` + ts + `'::timestamp with time zone AT TIME ZONE 'utc'::text`,
+	} {
+		cols := []sqlguard.Column{{Name: "id"}, {Name: "created_at", Default: def}}
+		_, held := fixed(t, `INSERT INTO t VALUES (1)`, cols, ts)
+		require.Equal(t, `INSERT INTO t (id, created_at) VALUES (1, `+want+`)`, held, def)
+	}
+
+	// A default the policy refuses is not written into the statement.
+	_, err := sqlguard.PlanTimes(`INSERT INTO t VALUES (1)`,
+		[]sqlguard.Column{{Name: "id"}, {Name: "at", Default: "app.stamp(now())"}})
+	var re *sqlguard.RefusalError
+	require.ErrorAs(t, err, &re)
+	require.Contains(t, re.Detail, `"at"`)
+	require.Contains(t, re.Detail, "list the columns")
+
 	// A statement time and a default time are separate slots, in order.
 	eval, held := fixed(t, `INSERT INTO leads VALUES (1, now())`, leads[:2:2], ts)
 	require.Equal(t, `SELECT now()::pg_catalog.text`, eval)

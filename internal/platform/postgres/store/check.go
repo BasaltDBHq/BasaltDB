@@ -74,6 +74,11 @@ func (s *Store) holdPlan(ctx context.Context, req agentstore.Request) (agentstor
 	if err != nil {
 		return req, nil, err
 	}
+	// The held statement is checked again when it applies: refuse it now
+	// rather than hold a write that could never apply.
+	if _, err := sqlguard.Check(text, sqlguard.ToolWrite); err != nil {
+		return req, nil, refusalOf(err)
+	}
 	return agentstore.Request{Text: text, Params: req.Params}, assigned, nil
 }
 

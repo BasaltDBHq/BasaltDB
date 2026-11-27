@@ -463,17 +463,16 @@ func TestHeldWriteFixesNow(t *testing.T) {
 	}
 	require.NoError(t, rows.Err())
 	require.Len(t, values, 1, "every row has the one fixed time")
-	fixed, err := time.Parse("2006-01-02 15:04:05.999999-07", values[0])
-	require.NoError(t, err, values[0])
-	require.WithinDuration(t, time.Now(), fixed, 5*time.Minute)
+	require.Contains(t, held, "'"+values[0]+"'", "the applied value is the one the person approved")
 }
 
-// elevenLeads is an INSERT of leads 101 to 111 without a column list.
-func elevenLeads() string {
+// elevenLeads is an INSERT of eleven new leads from id first, without a
+// column list (the harness seeds leads 1 to 200).
+func elevenLeads(first int) string {
 	var b strings.Builder
 	b.WriteString("INSERT INTO leads VALUES ")
-	for id := 101; id <= 111; id++ {
-		if id > 101 {
+	for id := first; id < first+11; id++ {
+		if id > first {
 			b.WriteString(", ")
 		}
 		fmt.Fprintf(&b, "(%d, 'lead %d')", id, id)
@@ -490,7 +489,7 @@ func TestHeldInsertFixesTimeDefaults(t *testing.T) {
 	e := agentHarness(t)
 	e.d.Exec(t, `ALTER TABLE public.leads ADD COLUMN seen timestamptz NOT NULL DEFAULT now()`)
 	run, _ := e.h.call(t, "run_start", map[string]any{"intent": "Add leads"})
-	args := map[string]any{"sql": elevenLeads(), "intent": "Eleven new leads", "runId": str(t, run["runId"])}
+	args := map[string]any{"sql": elevenLeads(301), "intent": "Eleven new leads", "runId": str(t, run["runId"])}
 	body, isError := e.h.call(t, "write", args)
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	require.Contains(t, e.sent.sent[0].Statement, "seen", "the held INSERT names the column it fixed")
@@ -501,12 +500,12 @@ func TestHeldInsertFixesTimeDefaults(t *testing.T) {
 	require.Equal(t, "APPLIED", body["status"])
 	var n, seen int
 	require.NoError(t, e.d.Admin.QueryRow(context.Background(),
-		`SELECT count(*), count(DISTINCT seen) FROM public.leads WHERE id BETWEEN 101 AND 111`).Scan(&n, &seen))
+		`SELECT count(*), count(DISTINCT seen) FROM public.leads WHERE id BETWEEN 301 AND 311`).Scan(&n, &seen))
 	require.Equal(t, 11, n)
 	require.Equal(t, 1, seen, "one fixed time for every row")
 
 	e.d.Exec(t, `ALTER TABLE public.leads ADD COLUMN token uuid DEFAULT gen_random_uuid()`)
-	body, isError = e.h.call(t, "write", map[string]any{"sql": strings.ReplaceAll(elevenLeads(), "(1", "(2"), "intent": "More leads"})
+	body, isError = e.h.call(t, "write", map[string]any{"sql": elevenLeads(401), "intent": "More leads"})
 	requireToolError(t, body, isError, "STATEMENT_REFUSED", "NOT_REPEATABLE", "")
 	require.Contains(t, body["message"], `"token"`)
 	require.Contains(t, body["message"], "list the columns")

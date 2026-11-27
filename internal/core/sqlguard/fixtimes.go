@@ -1,6 +1,7 @@
 package sqlguard
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -205,9 +206,21 @@ func (f *TimeFix) addDefaults(ins *pganalyze.InsertStmt, columns []Column) error
 				"the INSERT leaves the column %q to its default %s, which gives another value when the approved write runs; "+
 					"list the columns the INSERT sets, so the person approves exactly what is written", c.Name, what)
 		}
-		if len(timeNodes(expr)) > 0 {
-			added, exprs = append(added, c), append(exprs, expr)
+		if len(timeNodes(expr)) == 0 {
+			continue
 		}
+		// The default goes into the statement, so it must pass the policy
+		// the held statement is checked with again when it applies.
+		if _, err := Check("SELECT "+c.Default, ToolQuery); err != nil {
+			var re *RefusalError
+			if !errors.As(err, &re) {
+				return err
+			}
+			return refuse(re.Reason,
+				"the INSERT leaves the column %q to its default, which the engine would write into the held statement to fix its time, but the default is refused: %s; "+
+					"list the columns the INSERT sets and give the column a value", c.Name, re.Detail)
+		}
+		added, exprs = append(added, c), append(exprs, expr)
 	}
 	if len(added) == 0 {
 		return nil

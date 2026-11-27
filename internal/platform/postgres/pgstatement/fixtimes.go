@@ -1,9 +1,11 @@
-package sqlguard
+package pgstatement
 
 import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 
 	pganalyze "github.com/pganalyze/pg_query_go/v6"
 	pgquery "github.com/wasilibs/go-pgquery"
@@ -100,11 +102,11 @@ type timeSlot struct {
 func PlanTimes(sql string, columns []Column) (*TimeFix, error) {
 	tree, err := pgquery.Parse(sql)
 	if err != nil {
-		return nil, &RefusalError{Reason: ReasonParseError, Detail: err.Error()}
+		return nil, &action.RefusalError{Reason: action.ReasonParseError, Detail: err.Error()}
 	}
 	stmts := tree.GetStmts()
 	if len(stmts) != 1 {
-		return nil, refuse(ReasonMultipleStatements, "%d statements; send exactly one", len(stmts))
+		return nil, refuse(action.ReasonMultipleStatements, "%d statements; send exactly one", len(stmts))
 	}
 	fix := &TimeFix{tree: tree}
 	for _, n := range timeNodes(stmts[0].GetStmt()) {
@@ -196,13 +198,13 @@ func (f *TimeFix) addDefaults(ins *pganalyze.InsertStmt, columns []Column) error
 		case c.Generated:
 			continue
 		case c.Identity:
-			return refuse(ReasonNotRepeatable,
+			return refuse(action.ReasonNotRepeatable,
 				"the INSERT leaves the identity column %q to its next value, which is another one when the approved write runs; "+
 					"list the columns the INSERT sets, so the person approves exactly what is written", c.Name)
 		case c.Default == "":
 			continue
 		case c.Volatile != "":
-			return refuse(ReasonNotRepeatable,
+			return refuse(action.ReasonNotRepeatable,
 				"the INSERT leaves the column %q to its default, which calls the volatile function %s and gives another value when the approved write runs; "+
 					"list the columns the INSERT sets, so the person approves exactly what is written", c.Name, c.Volatile)
 		}
@@ -211,7 +213,7 @@ func (f *TimeFix) addDefaults(ins *pganalyze.InsertStmt, columns []Column) error
 			return err
 		}
 		if what := nonRepeatable(expr.ProtoReflect()); what != "" {
-			return refuse(ReasonNotRepeatable,
+			return refuse(action.ReasonNotRepeatable,
 				"the INSERT leaves the column %q to its default %s, which gives another value when the approved write runs; "+
 					"list the columns the INSERT sets, so the person approves exactly what is written", c.Name, what)
 		}
@@ -220,8 +222,8 @@ func (f *TimeFix) addDefaults(ins *pganalyze.InsertStmt, columns []Column) error
 		}
 		// The default goes into the statement, so it must pass the policy
 		// the held statement is checked with again when it applies.
-		if _, err := Check("SELECT "+c.Default, ToolQuery); err != nil {
-			var re *RefusalError
+		if _, err := Check("SELECT "+c.Default, action.ToolQuery); err != nil {
+			var re *action.RefusalError
 			if !errors.As(err, &re) {
 				return err
 			}

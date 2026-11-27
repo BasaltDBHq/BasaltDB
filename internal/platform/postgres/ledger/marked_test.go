@@ -18,7 +18,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
@@ -169,7 +168,7 @@ func TestListOpenApprovalsReadsAHeldWrite(t *testing.T) {
 	in := newRun(t, a, "remove a lead")
 	ctx := context.Background()
 	sql := "DELETE FROM public.leads WHERE id = $1"
-	store := postgres.NewStore(a.Conn, sqlguard.DefaultLimits(), time.Now)
+	store := postgres.NewStore(a.Conn, action.DefaultLimits(), time.Now)
 	req := action.Request{Text: sql, Params: []any{1}}
 	p, err := store.Preview(ctx, action.Intent(in), req)
 	require.NoError(t, err)
@@ -195,7 +194,7 @@ func TestFindApprovalReadsTheHeldRequest(t *testing.T) {
 	in := newRun(t, a, "remove a lead")
 	ctx := context.Background()
 	sql := "DELETE FROM public.leads WHERE id = $1"
-	store := postgres.NewStore(a.Conn, sqlguard.DefaultLimits(), time.Now)
+	store := postgres.NewStore(a.Conn, action.DefaultLimits(), time.Now)
 	req := action.Request{Text: sql, Params: []any{1}}
 	p, err := store.Preview(ctx, action.Intent(in), req)
 	require.NoError(t, err)

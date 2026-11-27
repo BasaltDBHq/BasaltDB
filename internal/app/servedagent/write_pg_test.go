@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
 
@@ -20,7 +21,7 @@ func guarded(t *testing.T) (*guardtest.DB, harness) {
 	t.Helper()
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", leads, leads)
-	return d, newHarness(t, a.URL, sqlguard.DefaultLimits())
+	return d, newHarness(t, a.URL, action.DefaultLimits())
 }
 
 func str(t *testing.T, v any) string {
@@ -255,8 +256,8 @@ func TestQueryRefusalInARunIsRecorded(t *testing.T) {
 func TestAnotherAgentsRunIsNotFound(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
-	bot := newHarness(t, d.NewAgent(t, "bot", leads, leads).URL, sqlguard.DefaultLimits())
-	other := newHarness(t, d.NewAgent(t, "other", leads, leads).URL, sqlguard.DefaultLimits())
+	bot := newHarness(t, d.NewAgent(t, "bot", leads, leads).URL, action.DefaultLimits())
+	other := newHarness(t, d.NewAgent(t, "other", leads, leads).URL, action.DefaultLimits())
 
 	run, isError := bot.call(t, "run_start", map[string]any{"intent": "Bot's own run"})
 	require.False(t, isError, "%v", run)

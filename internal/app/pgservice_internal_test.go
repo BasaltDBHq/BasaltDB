@@ -5,9 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
@@ -27,7 +28,7 @@ func newPGAgent(t *testing.T, url string, conns int32) pgAgent {
 	pool, _, err := postgres.NewSwitchablePool(context.Background(), url, conns)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	limits := sqlguard.DefaultLimits()
+	limits := action.DefaultLimits()
 	return pgAgent{
 		store:  postgres.NewStore(pool, limits, time.Now),
 		reader: postgres.NewReader(pool, limits, time.Now),

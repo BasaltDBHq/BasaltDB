@@ -17,7 +17,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/pii/out/dictfile"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
@@ -40,7 +39,7 @@ func scanDict(t *testing.T, keys *corepii.Keys) (*corepii.FuseDictionary, *corep
 }
 
 // scanSource is the agent "bot" scanned through pool.
-func scanSource(pool Pool, limits sqlguard.Limits) pii.ScanSource {
+func scanSource(pool Pool, limits action.Limits) pii.ScanSource {
 	return pii.ScanSource{
 		Agent: "bot", Map: pii.NewMap(slog.New(slog.DiscardHandler)), Classes: Classes(pool),
 		Fields: Fields(pool, limits, pii.DefaultLoadTimeout),
@@ -56,7 +55,7 @@ func TestScanRebuildsFromEveryKindOfRelation(t *testing.T) {
 	log, out := newLog()
 	var slept time.Duration
 	clock := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
-	s := pii.NewScanner(dict, []pii.ScanSource{scanSource(f.pool, sqlguard.DefaultLimits())},
+	s := pii.NewScanner(dict, []pii.ScanSource{scanSource(f.pool, action.DefaultLimits())},
 		pii.ScanOptions{
 			PageRows: 2, RowsPerSecond: 4, Now: func() time.Time { return clock },
 			Sleep: func(_ context.Context, d time.Duration) error { slept += d; clock = clock.Add(d); return nil },
@@ -98,7 +97,7 @@ func TestScanOverBudgetKeepsThePreviousDictionary(t *testing.T) {
 	f.classify(t, time.Now())
 	ctx := context.Background()
 	dict, keys, _ := scanDict(t, nil)
-	src := []pii.ScanSource{scanSource(f.pool, sqlguard.DefaultLimits())}
+	src := []pii.ScanSource{scanSource(f.pool, action.DefaultLimits())}
 	_, err := pii.NewScanner(dict, src, pii.ScanOptions{}, slog.New(slog.DiscardHandler)).Cycle(ctx)
 	require.NoError(t, err)
 	require.NoError(t, dict.Add(corepii.EntityEmail, "delta@corp.ee", ""))
@@ -122,7 +121,7 @@ func TestScanSkipsAKeylessRelationThatTimesOut(t *testing.T) {
 	f.classifyWith(t, time.Now(), map[string]string{"slow_v.mail": guardmodel.EntityEmail})
 	ctx := context.Background()
 	dict, keys, _ := scanDict(t, nil)
-	limits := sqlguard.DefaultLimits()
+	limits := action.DefaultLimits()
 	limits.StatementTimeout = 200 * time.Millisecond
 	log, out := newLog()
 	s := pii.NewScanner(dict, []pii.ScanSource{scanSource(f.pool, limits)}, pii.ScanOptions{}, log)
@@ -145,7 +144,7 @@ func TestScanWarnsWhenBuildsKeepFailing(t *testing.T) {
 	pool.Close() // every cycle fails
 	dict, _, _ := scanDict(t, nil)
 	log, out := newLog()
-	s := pii.NewScanner(dict, []pii.ScanSource{scanSource(pool, sqlguard.DefaultLimits())}, pii.ScanOptions{}, log)
+	s := pii.NewScanner(dict, []pii.ScanSource{scanSource(pool, action.DefaultLimits())}, pii.ScanOptions{}, log)
 	for i := range pii.FailWarnAfter {
 		_, err := s.Cycle(context.Background())
 		require.Error(t, err)
@@ -167,12 +166,12 @@ func TestScanTextMatchesTheQueryTool(t *testing.T) {
 	})
 	ctx := context.Background()
 	scanned, keys, _ := scanDict(t, nil)
-	_, err := pii.NewScanner(scanned, []pii.ScanSource{scanSource(f.pool, sqlguard.DefaultLimits())}, pii.ScanOptions{},
+	_, err := pii.NewScanner(scanned, []pii.ScanSource{scanSource(f.pool, action.DefaultLimits())}, pii.ScanOptions{},
 		slog.New(slog.DiscardHandler)).Cycle(ctx)
 	require.NoError(t, err)
 
 	read, _, _ := scanDict(t, keys)
-	res, err := postgres.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now).
+	res, err := postgres.NewReader(f.pool, action.DefaultLimits(), time.Now).
 		Read(ctx, `SELECT j, jb, t FROM public.docs`, nil, action.Statement{})
 	require.NoError(t, err)
 	fields := make([]piistore.ResultField, len(res.Columns))

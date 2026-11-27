@@ -9,10 +9,11 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 )
@@ -140,7 +141,7 @@ func (h harness) toolsList(t *testing.T) map[string]any {
 func TestServedToolsListGolden(t *testing.T) {
 	t.Parallel()
 	_, agentURL := testDB(t)
-	h := newHarness(t, agentURL, sqlguard.DefaultLimits())
+	h := newHarness(t, agentURL, action.DefaultLimits())
 	requireGoldenFile(t, "served", "tools_list", h.toolsList(t))
 }
 

@@ -21,7 +21,7 @@ person --> approval / revert page (passkey) -----------> engine or relay --> bas
 
 ## How a held write reaches approval, and how it is reverted
 
-1. The agent calls the `write` tool. The engine parses the statement (`internal/core/sqlguard`), refuses what the policy does not allow, and runs the rest on the agent's credential through the guard, inside a transaction that carries the agent's stated intent.
+1. The agent calls the `write` tool. The engine parses the statement (`internal/platform/postgres/pgstatement`), refuses what the policy does not allow, and runs the rest on the agent's credential through the guard, inside a transaction that carries the agent's stated intent.
 2. The guard's row triggers record old and new rows in the ledger in the same transaction and count rows, cascades included. A write over the row limit, and every `DELETE`, raises an error that the guard turns into a hold instead of a change.
 3. The engine previews the rows, stores the hold, and answers `APPROVAL_REQUIRED` with a link. The agent hands the link to the person (`internal/core/links`, `internal/links`, `internal/approval`).
 4. The person opens the page and signs with a passkey. The pages are static files in `web/`, served by the engine on a loopback listener (`internal/platform/pageserver`) or by a hosted portal. The page and whatever carries the signed result are not trusted.
@@ -39,5 +39,5 @@ The code layout, the import rules, the core register and the file lists for reve
 - **Adding or changing an MCP tool:** the contract first (`api/mcp`, CONTRACT.md), then the domain that owns the tool, for example `internal/agent` and `internal/agent/in/agentmcp`, or `internal/revert/in/revertmcp`.
 - **Changing what the guard enforces:** a new numbered file in `internal/platform/postgres/guard/schema`, never an edit to an applied one.
 - **Changing a CLI command:** the command table in `internal/app/main.go` and the domain's `in/<domain>cli` package, and the CLI section of the contract (`contract/cli.md`).
-- **Changing what an agent may run:** `internal/core/sqlguard`.
+- **Changing what an agent may run:** `internal/platform/postgres/pgstatement`.
 - **Changing a signing page:** `web/`, and the codes in `internal/core/approval` or `internal/core/revert`.

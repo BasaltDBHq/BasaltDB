@@ -1,11 +1,13 @@
-package sqlguard_test
+package pgstatement_test
 
 import (
 	"fmt"
 	"os"
 	"testing"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgstatement"
 )
 
 // TestMain parses one statement before any test runs. The first parse in a
@@ -13,8 +15,8 @@ import (
 // here once, it is not billed to whichever parallel tests happen to start
 // first, and a broken parser fails the package up front.
 func TestMain(m *testing.M) {
-	if _, err := sqlguard.Check("SELECT 1", sqlguard.ToolQuery); err != nil {
-		fmt.Fprintln(os.Stderr, "sqlguard: warming the parser failed:", err)
+	if _, err := pgstatement.Check("SELECT 1", action.ToolQuery); err != nil {
+		fmt.Fprintln(os.Stderr, "pgstatement: warming the parser failed:", err)
 		os.Exit(1)
 	}
 	os.Exit(m.Run())

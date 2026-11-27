@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -27,7 +29,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
@@ -297,7 +298,7 @@ func TestShortLinkRevertThroughTheRelay(t *testing.T) {
 	keys, err := channel.GenerateEngineKeys(time.Now)
 	require.NoError(t, err)
 	secrets := links.NewSecrets(time.Now, rand.Reader)
-	env := agentHarnessWith(t, d, a, keys, sqlguard.DefaultLimits(), func(dp *app.Deps) { dp.Delivery.Links = secrets }, pageOrigin)
+	env := agentHarnessWith(t, d, a, keys, action.DefaultLimits(), func(dp *app.Deps) { dp.Delivery.Links = secrets }, pageOrigin)
 	p := newLocalPages(t, env)
 	ctx := context.Background()
 

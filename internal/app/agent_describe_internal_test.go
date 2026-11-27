@@ -21,7 +21,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
@@ -175,7 +174,7 @@ func describeService(t *testing.T, cat agentcatalog.Postgres, classes fakeClasse
 }
 
 // testLimits are the default limits, as describe's overview reports them.
-func testLimits() action.Limits { return action.Limits(sqlguard.DefaultLimits()) }
+func testLimits() action.Limits { return action.DefaultLimits() }
 
 // noChecker is a statement check describe never asks: it refuses every
 // statement.
@@ -373,8 +372,8 @@ func TestOverviewSmallListsResources(t *testing.T) {
 	first := m["resources"].([]any)[0].(map[string]any)
 	require.Equal(t, map[string]any{"resource": "app.t001", "kind": "TABLE", "estimatedRows": 12.0, "access": []any{"READ"}}, first)
 	limits := m["limits"].(map[string]any)
-	require.EqualValues(t, sqlguard.DefaultReadRowLimit, limits["readRowLimit"])
-	require.EqualValues(t, sqlguard.DefaultStatementTimeout.Milliseconds(), limits["statementTimeoutMs"])
+	require.EqualValues(t, action.DefaultReadRowLimit, limits["readRowLimit"])
+	require.EqualValues(t, action.DefaultStatementTimeout.Milliseconds(), limits["statementTimeoutMs"])
 	require.Equal(t, map[string]any{
 		"allowedUpTo": 10.0, "heldUpTo": 50.0, "refusedOver": 50.0, "deleteHeld": true,
 		"cascadedRowsCounted": true,

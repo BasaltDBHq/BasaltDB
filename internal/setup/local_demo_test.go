@@ -132,12 +132,15 @@ func TestDemoInstallLeavesAnExistingTableAlone(t *testing.T) {
 	require.Zero(t, demoPolicies(t, f.db), "a basalt_demo the demo did not make gets no policy")
 }
 
-// demoPolicies counts the policies on the sample tables.
+// demoPolicies counts the agents' policies on the sample tables. The guard
+// role's own policy, which attaching a table with row-level security on adds
+// so the guard sees every row, is not one of them.
 func demoPolicies(t *testing.T, d *guardtest.DB) int {
 	t.Helper()
 	var n int
 	require.NoError(t, d.Admin.QueryRow(context.Background(),
-		`SELECT count(*)::int FROM pg_catalog.pg_policies WHERE schemaname = 'basalt_demo'`).Scan(&n))
+		`SELECT count(*)::int FROM pg_catalog.pg_policies
+		WHERE schemaname = 'basalt_demo' AND NOT $1::name = ANY (roles)`, d.Names.Guard()).Scan(&n))
 	return n
 }
 

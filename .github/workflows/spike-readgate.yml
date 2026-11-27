@@ -1,0 +1,71 @@
+name: spike-readgate
+
+# Throwaway spike: a ticket-gated read login. Runs only on its own branch.
+on:
+  push:
+    branches: [spike/pii-read-gate]
+
+permissions:
+  contents: read
+
+jobs:
+  readgate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ["15", "17"]
+    services:
+      postgres:
+        image: postgres:${{ matrix.pg }}
+        env:
+          # Throwaway credential for the service container only.
+          POSTGRES_PASSWORD: spike-super
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/go
+      - name: Start pgbouncer (transaction mode)
+        id: pgb
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq pgbouncer
+          sudo systemctl stop pgbouncer || true
+          d="$RUNNER_TEMP/pgb"; mkdir -p "$d"
+          printf '"postgres" "spike-super"\n' > "$d/userlist.txt"
+          cat > "$d/pgbouncer.ini" <<EOF
+          [databases]
+          spike = host=127.0.0.1 port=5432 dbname=spike
+          [pgbouncer]
+          listen_addr = 127.0.0.1
+          listen_port = 6432
+          unix_socket_dir =
+          auth_type = scram-sha-256
+          auth_file = $d/userlist.txt
+          auth_user = postgres
+          auth_query = SELECT usename, passwd FROM pg_shadow WHERE usename=\$1
+          pool_mode = transaction
+          default_pool_size = 1
+          max_client_conn = 50
+          logfile = $d/pgbouncer.log
+          pidfile = $d/pgbouncer.pid
+          EOF
+          pgbouncer -d "$d/pgbouncer.ini"
+          pgbouncer --version
+          echo "port=6432" >> "$GITHUB_OUTPUT"
+      - name: Run the spike
+        env:
+          PGVER: ${{ matrix.pg }}
+          PGHOST: 127.0.0.1
+          PGPORT: "5432"
+          PGBOUNCER_PORT: ${{ steps.pgb.outputs.port }}
+        run: go test -tags readgate -count=1 -v ./spike/readgate/ 2>&1 | tee "$RUNNER_TEMP/out.txt"
+      - name: Results
+        if: always()
+        run: |
+          grep '^RESULT' "$RUNNER_TEMP/out.txt" || true
+          echo '--- pgbouncer log'; tail -n 40 "$RUNNER_TEMP/pgb/pgbouncer.log" 2>/dev/null || true

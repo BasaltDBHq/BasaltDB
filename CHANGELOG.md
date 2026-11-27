@@ -4,16 +4,6 @@ All notable changes to BasaltDB are recorded in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Changed
-
-- A setup code run against the wrong database (`TARGET_MISMATCH`) now tells the person to paste the admin connection string of the code's database on the page, or to ask the agent for a new code. It no longer says to run a command. The refusals that told the person to fix or update "this computer" now say what to do on the connect page: `UNSUPPORTED_FORMAT` says to try again later and `BINARY_TOO_OLD` to try again shortly, since the connect service runs the code; `SETUP_ID_IN_FUTURE` and `EXPIRY_TOO_FAR` say to check the clock of the agent's machine; and a code the database's clock refuses says to check the database's clock, no longer "this computer's".
-
-### Removed
-
-- The Go setup package (`pkg/setup`) drops `Request.ConnectPage` and the `CONNECT_ONLY` refusal (`CodeConnectOnly`), left from the removed laptop setup command. Every request is run the way the connect page runs it: a code without a target is accepted, `Check` always returns the column labels (and, for a code with a target, the passkeys), and `Run` refuses a code with ticks and no `Included` with `NO_TABLES`. The laptop's passkey step goes too: `RunInput.AskPasskey`, `RunInput.AddPasskey` and the `PASSKEY_NOT_REGISTERED` refusal (`CodePasskeyNotRegistered`). A run needs `RunInput.Passkey` whenever the database has no active portal passkey. The contract no longer promises OSC 8 terminal hyperlinks, which the CLI never printed.
-
 ## [0.1.0-alpha] - 2026-11-24
 
 The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup moves from the terminal to a page: the agent runs `basalt init` and the person finishes on the page it links. The CLI only starts things. Expect bugs and breaking changes between alpha releases, and read "Breaking for alpha installs" before you upgrade.
@@ -72,6 +62,7 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 - `describe`'s search names what matched in words that fit any store: `matched` is `resource`, `namespace` or `field <name>` (was `table`, `schema` or `column <name>`); `comment` does not change. The approval and revert pages' request, served by the engine, carries `fields` (was `columns`), each resource to its field names in the store's order, for display only. `describe`'s messages and next steps, a revert's person message ("only resource <name>", was "only table <name>") and the plugin feed's revert headline, and the descriptions of `describe`, `preview_revert`, `run_history`, `run_start`, `status` and `write` say resource, namespace and field where they said table, schema and column. An agent or tool that reads `matched` needs the new values.
 - `engine.json` must hold only its one JSON object. A file with anything after the closing brace, such as a second object, a `//` comment or stray characters, was accepted before. The engine now refuses to start with `config <path>: data after the JSON value`. To fix it, remove everything after the closing `}`.
 - Go API: `pkg/trustprofile` takes a host and its `*tls.Config` (`TrustTLS`, `ExplainTLS`) in place of `Trust` and `Explain`, which took a `*pgconn.Config`, so the package no longer links the Postgres driver. Call `TrustTLS` once for each host of a connection.
+- A setup code run against the wrong database (`TARGET_MISMATCH`) now tells the person to paste the admin connection string of the code's database on the page, or to ask the agent for a new code. It no longer says to run a command. The refusals that told the person to fix or update "this computer" now say what to do on the connect page: `UNSUPPORTED_FORMAT` says to try again later and `BINARY_TOO_OLD` to try again shortly, since the connect service runs the code; `SETUP_ID_IN_FUTURE` and `EXPIRY_TOO_FAR` say to check the clock of the agent's machine; and a code the database's clock refuses says to check the database's clock, no longer "this computer's".
 
 ### Removed
 
@@ -87,6 +78,7 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 - The environment variables `BASALT_DATABASE_URL`, `BASALT_ADMIN_DATABASE_URL`, `BASALT_CACHE_DIR` and `BASALTDB_ALLOWED_HOSTS`. The engine reads its connection from `engine.json` only, and the update notice keeps its cache in the user cache folder.
 - The passkey registration request no longer takes `handBack` (`api/mcp/approval/registration-request.schema.json`), and the registration page no longer shows a pairing code; the shared pairing-code vectors are gone. Both went with the terminal setup's hand-back to `basalt init`; the page shows the code to paste, as before.
 - The plugin person schema (`api/plugin/approval/person.schema.json`) no longer lists `PLUGIN_APPROVE` or its params and result: a plugin approval is signed on its page, which relays the signature.
+- The Go setup package (`pkg/setup`) drops `Request.ConnectPage` and the `CONNECT_ONLY` refusal (`CodeConnectOnly`), left from the removed laptop setup command. Every request is run the way the connect page runs it: a code without a target is accepted, `Check` always returns the column labels (and, for a code with a target, the passkeys), and `Run` refuses a code with ticks and no `Included` with `NO_TABLES`. The laptop's passkey step goes too: `RunInput.AskPasskey`, `RunInput.AddPasskey` and the `PASSKEY_NOT_REGISTERED` refusal (`CodePasskeyNotRegistered`). A run needs `RunInput.Passkey` whenever the database has no active portal passkey. The contract no longer promises OSC 8 terminal hyperlinks, which the CLI never printed.
 
 ### Fixed
 

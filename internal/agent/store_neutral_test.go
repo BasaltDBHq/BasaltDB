@@ -108,9 +108,10 @@ func (docLanguage) StaleTarget(string) (string, map[string]any, error) {
 	return "", nil, errors.New("the document store reports no stale reads")
 }
 func (docLanguage) DeniedTarget(string) (string, bool) { return "", false }
+func (docLanguage) RLSRefusal(string) (string, bool)   { return "", false }
+func (docLanguage) NoKeyTarget(string) (string, bool)  { return "", false }
 
 func (docLanguage) HeldFrom(held, sent agentstore.Request) bool { return held.Text == sent.Text }
-func (docLanguage) NoKeyTarget(string) (string, bool)           { return "", false }
 
 func (docLanguage) ParseName(s string) (string, string, error) {
 	ns, name, ok := strings.Cut(s, "/")
@@ -314,8 +315,8 @@ func (s *docStore) RecordRefusal(_ context.Context, r action.Refusal) error {
 	return nil
 }
 
-func (s *docStore) ListRuns(context.Context, action.RunListParams) (pagination.Page[action.RunSummary], error) {
-	return pagination.Page[action.RunSummary]{}, nil
+func (s *docStore) ListRuns(context.Context, action.RunListParams) (pagination.Page[action.RunListItem], error) {
+	return pagination.Page[action.RunListItem]{}, nil
 }
 
 // docClasses are the store's PII classes: a separate type, as Resolve and

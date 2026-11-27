@@ -119,6 +119,10 @@ type Uncovered = action.Uncovered
 type DemoPlan struct {
 	// SQL is what runs, in order; empty when the sample already exists.
 	SQL []string
+	// Ours: the schema is the demo's own, made by this plan or carrying the
+	// demo's comment from an earlier one. Only then does the install add the
+	// agent's policies on its tables where row-level security is on.
+	Ours bool
 }
 
 // Shown is the SQL the person reads before confirming.

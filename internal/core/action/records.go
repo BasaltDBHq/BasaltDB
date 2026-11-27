@@ -15,6 +15,10 @@ import (
 type ChangeListParams struct {
 	pagination.Params
 	RunID uuid.UUID
+	// From and To (both or neither; To exclusive) list the agent's reads
+	// outside any run in that period instead of a run's changes: one
+	// LOOSE_READS item of list_runs. RunID is then uuid.Nil.
+	From, To *time.Time
 }
 
 // Change is one change record (CONTRACT.md "The change record").

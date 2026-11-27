@@ -333,7 +333,7 @@ func (s *Store) RevealRevertRows(ctx context.Context, id uuid.UUID, proof passke
 // ListRuns returns one page of the agent's own runs, read through the
 // guard's agent views (agent_runs filters on session_user in Postgres).
 // Keyset on run_id; the time filters narrow the same keyset.
-func (s *Store) ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error) {
+func (s *Store) ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunListItem], error) {
 	r0, err := s.listRunsRaw(ctx, p)
 	return r0, MapError(err)
 }

@@ -114,7 +114,7 @@ func (wc *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutco
 	}
 	return WriteOutcome{
 		WriteResult: res, RunID: run.ID, Op: op, ApprovalID: a.ID,
-		Warnings: wc.rlsWarnings(ctx, stmt.Tables, res.Rows), Receipt: receipt,
+		Warnings: wc.rlsWarnings(ctx, stmt.Tables), Receipt: receipt,
 	}, nil
 }
 

@@ -2,7 +2,7 @@
   "body": {
     "code": "INVALID_ARGUMENT",
     "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
-    "message": "invalid arguments: Key: 'runHistoryArgs.RunID' Error:Field validation for 'RunID' failed on the 'required' tag",
+    "message": "invalid arguments: Key: 'runHistoryArgs.RunID' Error:Field validation for 'RunID' failed on the 'required_without' tag",
     "nextSteps": [
       {
         "action": "REVISE_CALL",

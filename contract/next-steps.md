@@ -149,6 +149,7 @@ Results and warnings:
 | `request_revert` | `APPLIED` | A `STOP`; +pm |
 | `request_revert` | `EXPIRED` | A `ASK_PERSON`, A `REVISE_CALL` (request form again); +pm |
 | `request_revert` | `REJECTED` | A `STOP` (do not request it again unless the person asks); +pm: "The revert was rejected on the signing page. Nothing was reverted.", with the person's note when they wrote one |
+| `request_revert` | `WITHDRAWN` (the agent withdrew it, [Withdrawn requests](approvals.md#withdrawn-requests)) | A `STOP` (do not ask the person to sign it); +pm: "The agent withdrew this request: <reason>. Nothing changed." |
 | `request_plugin` | `REQUESTED` (an approval just opened) | P `OPEN_LINK`, A `CALL_TOOL` (wait form, once); +pm |
 | `request_plugin` | `WAIT_ENDED` (`PENDING` after a wait) | P `OPEN_LINK` (the short link the agent gave earlier, no `url`), P `TELL_AGENT`, A `END_TURN`, A `CALL_TOOL` (wait form, `waitForApproval: 0`); +pm |
 | `request_plugin` | `APPROVED` | A `CALL_TOOL` (`status`: its `plugins` and problems say why the plugin does not run yet); +pm |
@@ -156,6 +157,9 @@ Results and warnings:
 | `request_plugin` | `NARROWED` | A `STOP` (tell the person); +pm |
 | `request_plugin` | `REMOVED` | A `STOP` (tell the person); +pm |
 | `request_plugin` | `ENDED` | A `ASK_PERSON` (whether to ask again), A `CALL_TOOL` (`request_plugin` with `name` and `instance`, when they want it); +pm |
+| `request_plugin` | `WITHDRAWN` (wait form: the agent withdrew the approval) | A `STOP`; +pm: as `request_revert` `WITHDRAWN` |
+| `withdraw` | `WITHDRAWN` (withdrawn now or earlier) | A `STOP` (tell the person; never ask them to sign it or apply it); +pm: as `request_revert` `WITHDRAWN` |
+| `withdraw` | `NOT_WAITING` (signed, applied, rejected, expired or ended: nothing changed) | A `STOP` (tell the person its state); +pm: what it is and that nothing was withdrawn |
 | `describe` | `OVERVIEW_LARGE` (more than 50 visible tables) | A `CALL_TOOL` (`describe` with `query`) |
 | `describe` | `NOT_GRANTED` (overview with `counts.notGranted` above 0) | P `TELL_AGENT` (when the agent needs one of them: its `basalt init` link opens the page that lists and grants them, never shown to the agent); +pm: the count and how to grant one, and no `ASK_PERSON` (platform schemas such as Supabase's `auth` are ungranted on every project, so asking on every overview would nag) |
 | `list_pending` item | `PENDING` | P `OPEN_LINK`; +pm |
@@ -169,6 +173,7 @@ Results and warnings:
 | `revert_plan` | `APPLIED` | A `STOP`; +pm |
 | `revert_plan` | `EXPIRED` | A `ASK_PERSON`, A `REVISE_CALL` (`request_revert` with the same scope); +pm |
 | `revert_plan` | `REJECTED` | A `STOP` (do not request it again unless the person asks); +pm: as `request_revert` `REJECTED` |
+| `revert_plan` | `WITHDRAWN` | A `STOP`; +pm: as `request_revert` `WITHDRAWN` |
 | `apply_revert_batch` | `APPLYING` | A `CALL_TOOL` (`revert_plan`, `pending: true`, `limit: 200`) |
 | `apply_revert_batch` | `APPLIED` | A `STOP`; +pm |
 | `confirm_database` | `CONFIRMED` | For a connect-only code. A `CALL_TOOL` (`status`) |

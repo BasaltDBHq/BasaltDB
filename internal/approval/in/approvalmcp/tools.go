@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
+
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
@@ -24,8 +26,15 @@ type Pending interface {
 	ListPending(ctx context.Context, p approvalsvc.PendingParams) (pagination.Page[approvalsvc.PendingEntry], error)
 }
 
+// Withdrawer withdraws the agent's own held write, revert or plugin
+// approval while it waits for the person (the withdraw tool).
+type Withdrawer interface {
+	Withdraw(ctx context.Context, p approvalsvc.WithdrawParams) (approvalsvc.WithdrawResult, error)
+}
+
 type handlers struct {
-	svc Pending
+	svc      Pending
+	withdraw Withdrawer
 }
 
 // --- list_pending ---
@@ -116,9 +125,66 @@ func (h handlers) listPending(ctx context.Context, raw json.RawMessage) (any, er
 // Tools are the tools that read held writes. mount lists a tool under its
 // contract, around the agent's admission and error mapping; the tool list's
 // composer supplies it.
-func Tools(svc Pending, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool) []mcpserver.Tool {
-	h := handlers{svc: svc}
+type withdrawArgs struct {
+	ApprovalID string `json:"approvalId" validate:"omitempty,uuid"`
+	RevertID   string `json:"revertId" validate:"omitempty,uuid"`
+	Reason     string `json:"reason" validate:"required,min=1,max=500"`
+}
+
+type withdrawResult struct {
+	Kind          string                `json:"kind"`
+	ApprovalID    string                `json:"approvalId,omitempty"`
+	RevertID      string                `json:"revertId,omitempty"`
+	Status        string                `json:"status"`
+	WithdrawnAt   string                `json:"withdrawnAt,omitempty"`
+	Reason        string                `json:"reason,omitempty"`
+	Name          string                `json:"name,omitempty"`
+	Instance      string                `json:"instance,omitempty"`
+	PersonMessage string                `json:"personMessage"`
+	NextSteps     []toolresult.NextStep `json:"nextSteps"`
+}
+
+func (h handlers) withdrawItem(ctx context.Context, raw json.RawMessage) (any, error) {
+	var args withdrawArgs
+	if err := guidance.DecodeArgs(raw, &args); err != nil {
+		return nil, err
+	}
+	if (args.ApprovalID == "") == (args.RevertID == "") {
+		return nil, &guidance.ArgumentError{Message: "invalid arguments: name exactly one of approvalId (a held write or a plugin approval) " +
+			"or revertId, with reason; nothing was withdrawn"}
+	}
+	p := approvalsvc.WithdrawParams{Reason: args.Reason}
+	if args.ApprovalID != "" {
+		p.ApprovalID = uuid.MustParse(args.ApprovalID)
+	} else {
+		p.RevertID = uuid.MustParse(args.RevertID)
+	}
+	w, err := h.withdraw.Withdraw(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	out := withdrawResult{
+		Kind: w.Kind, Status: w.Status, Name: w.Name, Instance: w.Instance,
+		PersonMessage: w.PersonMessage, NextSteps: w.NextSteps,
+	}
+	if w.Withdrawn() {
+		out.Reason = w.Reason
+		if w.WithdrawnAt != nil {
+			out.WithdrawnAt = guidance.TimeText(*w.WithdrawnAt)
+		}
+	}
+	if w.Kind == guidance.KindRevert {
+		out.RevertID = w.ID.String()
+	} else {
+		out.ApprovalID = w.ID.String()
+	}
+	return out, nil
+}
+
+func Tools(svc Pending, withdraw Withdrawer, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool) []mcpserver.Tool {
+	h := handlers{svc: svc, withdraw: withdraw}
 	return []mcpserver.Tool{
 		mount("list_pending", h.listPending),
+		mount("withdraw", h.withdrawItem),
 	}
 }

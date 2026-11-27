@@ -77,6 +77,9 @@ func (rc *Service) planGuidance(plan RevertPlan) (string, []toolresult.NextStep,
 	case r.Status == action.RevertRejected:
 		steps, err := b.Stop("The person rejected the revert and nothing was reverted. Do not request it again on your own.").Build()
 		return rejectedMessage(r), steps, err
+	case r.Status == action.RevertWithdrawn:
+		steps, err := b.Stop(withdrawnText).Build()
+		return guidance.WithdrawnMessage(r.WithdrawReason), steps, err
 	}
 	steps, err := b.AskPerson("Tell the person the revert expired and ask whether to prepare it again.").
 		ReviseCall(guidance.ToolRequestRevert, scopeArgs(proposalOf(r)), requestAgainText).Build()

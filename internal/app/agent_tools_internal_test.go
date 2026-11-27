@@ -50,7 +50,7 @@ func TestServedToolListOrder(t *testing.T) {
 	}
 	want := []string{
 		"run_start", "query", "write", "run_history", "list_runs", "list_pending", "preview_revert", "revert_plan",
-		"apply_revert_batch", "request_revert", "request_plugin", "describe", "status", "confirm_database",
+		"apply_revert_batch", "request_revert", "request_plugin", "withdraw", "describe", "status", "confirm_database",
 	}
 	require.Equal(t, want, names)
 }
@@ -75,7 +75,7 @@ func TestServedToolListOrderWithoutSQL(t *testing.T) {
 	}
 	want := []string{
 		"run_start", "run_history", "list_runs", "list_pending", "preview_revert", "revert_plan",
-		"apply_revert_batch", "request_revert", "request_plugin", "describe", "status", "confirm_database",
+		"apply_revert_batch", "request_revert", "request_plugin", "withdraw", "describe", "status", "confirm_database",
 	}
 	require.Equal(t, want, names)
 }

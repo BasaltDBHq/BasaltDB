@@ -27,5 +27,6 @@ func PluginResultKeys() []string {
 		"request_plugin|REQUESTED",
 		"request_plugin|RUNNING",
 		"request_plugin|WAIT_ENDED",
+		"request_plugin|WITHDRAWN",
 	)
 }

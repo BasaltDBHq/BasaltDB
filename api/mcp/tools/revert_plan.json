@@ -56,9 +56,10 @@
           "APPLYING",
           "APPLIED",
           "EXPIRED",
-          "REJECTED"
+          "REJECTED",
+          "WITHDRAWN"
         ],
-        "description": "PENDING until the person signs; APPLYING while lines are pending; APPLIED when none is; EXPIRED when not signed within 1 hour or not finished within 24 hours of the signature. REJECTED when the person rejected it on the signing page; nothing was reverted, and you do not request it again unless the person asks."
+        "description": "PENDING until the person signs; APPLYING while lines are pending; APPLIED when none is; EXPIRED when not signed within 1 hour or not finished within 24 hours of the signature. REJECTED when the person rejected it on the signing page; nothing was reverted, and you do not request it again unless the person asks. WITHDRAWN when you withdrew it with withdraw before the person signed; nothing was reverted."
       },
       "scope": {
         "type": "string",

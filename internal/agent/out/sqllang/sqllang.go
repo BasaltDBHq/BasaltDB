@@ -64,6 +64,9 @@ func (l Language) HeldFrom(ctx context.Context, held, sent agentstore.Request) (
 // fit the guard's ledger limit.
 func checkArgs(stmt action.Statement, params []any) error {
 	if stmt.ParamCount != len(params) {
+		if stmt.ParamCount == 0 {
+			return &guidance.ArgumentError{Message: fmt.Sprintf("the statement uses no parameters but %d were given", len(params))}
+		}
 		return &guidance.ArgumentError{Message: fmt.Sprintf("the statement uses %d parameters ($1..$%d) but %d were given",
 			stmt.ParamCount, stmt.ParamCount, len(params))}
 	}

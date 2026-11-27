@@ -9,7 +9,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 
 	pganalyze "github.com/pganalyze/pg_query_go/v6"
-	pgquery "github.com/wasilibs/go-pgquery"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
@@ -43,15 +42,10 @@ type Holdable struct {
 // target table and assigned columns otherwise. Anything it misses fails
 // closed at commit (the guard recomputes the preview lines).
 func CheckRepeatable(sql string, params []any) (Holdable, error) {
-	tree, err := pgquery.Parse(sql)
+	_, node, err := parseOne(sql)
 	if err != nil {
-		return Holdable{}, &action.RefusalError{Reason: action.ReasonParseError, Detail: err.Error()}
+		return Holdable{}, err
 	}
-	stmts := tree.GetStmts()
-	if len(stmts) != 1 {
-		return Holdable{}, refuse(action.ReasonMultipleStatements, "%d statements; send exactly one", len(stmts))
-	}
-	node := stmts[0].GetStmt()
 	if what := nonRepeatable(node.ProtoReflect()); what != "" {
 		fix := "pass the value as a parameter ($n)"
 		if strings.HasPrefix(what, "'") {
@@ -198,7 +192,7 @@ func nonRepeatable(root protoreflect.Message) string {
 func nonRepeatableNode(m protoreflect.Message) string {
 	switch v := m.Interface().(type) {
 	case *pganalyze.FuncCall:
-		name := strings.TrimPrefix(nameOf(v.GetFuncname()), "pg_catalog.")
+		name := funcName(v)
 		// A time function the engine does not fix (with arguments or OVER)
 		// is refused like the others; fixable ones never reach here.
 		if nonRepeatableFunctions[name] || fixableFunctions[name] || (name == "age" && len(v.GetArgs()) == 1) {
@@ -226,22 +220,18 @@ func holdable(node *pganalyze.Node) Holdable {
 	switch {
 	case node.GetUpdateStmt() != nil:
 		u := node.GetUpdateStmt()
-		return Holdable{Table: rangeVarName(u.GetRelation()), Assigned: targetNames(u.GetTargetList())}
+		return Holdable{Table: writtenRelation(node), Assigned: targetNames(u.GetTargetList())}
 	case node.GetInsertStmt() != nil:
 		ins := node.GetInsertStmt()
-		h := Holdable{Table: rangeVarName(ins.GetRelation())}
+		h := Holdable{Table: writtenRelation(node)}
 		if len(ins.GetCols()) > 0 {
 			h.Assigned = union(targetNames(ins.GetCols()), targetNames(ins.GetOnConflictClause().GetTargetList()))
 		}
 		return h
 	case node.GetDeleteStmt() != nil:
-		return Holdable{Table: rangeVarName(node.GetDeleteStmt().GetRelation()), Assigned: []string{}}
+		return Holdable{Table: writtenRelation(node), Assigned: []string{}}
 	}
 	return Holdable{Assigned: []string{}}
-}
-
-func rangeVarName(r *pganalyze.RangeVar) string {
-	return qualifiedName(r.GetSchemaname(), r.GetRelname())
 }
 
 func targetNames(list []*pganalyze.Node) []string {

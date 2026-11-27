@@ -160,6 +160,18 @@ func TestRefusedRecordsTheStatementsResources(t *testing.T) {
 	}
 }
 
+// A refusal is recorded with one of the four ops the ledger names, or
+// OTHER: MERGE, a DDL or utility statement and one that did not parse.
+func TestRefusalOp(t *testing.T) {
+	t.Parallel()
+	for op, want := range map[action.Op]action.Op{
+		action.OpRead: action.OpRead, action.OpInsert: action.OpInsert, action.OpUpdate: action.OpUpdate,
+		action.OpDelete: action.OpDelete, action.OpMerge: action.OpOther, action.OpOther: action.OpOther, "": action.OpOther,
+	} {
+		require.Equal(t, want, refusalOp(op), op)
+	}
+}
+
 // DIFFERENT_WRITE's step sends the held request back as it was held: a
 // parameter past 2^53 keeps its exact value through the step's JSON, and
 // the write the step makes is the held one.

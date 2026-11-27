@@ -42,16 +42,6 @@ type agentLedger interface {
 	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunListItem], error)
 }
 
-// statementChecker checks a statement against the engine's SQL policy for
-// a tool, and returns it as the store will run it, or an
-// *action.RefusalError.
-type statementChecker interface {
-	Check(sql string, tool action.Tool) (action.Statement, error)
-	// HeldFrom reports whether held is sent with only the times the store
-	// fixed when it held the write.
-	HeldFrom(ctx context.Context, held, sent string) (bool, error)
-}
-
 // txRows is how a SQL store hands the rows a write returns to the wiring,
 // inside the write's transaction, before COMMIT: tx is that transaction,
 // driver-free. It is the Postgres store's Returned.
@@ -62,7 +52,7 @@ type SQLStore interface {
 	agentStore
 	approvalsvc.Store
 	revertsvc.Store
-	statementChecker
+	sqllang.Checker
 	// Read runs one read, with the versions of the rows of the statement's
 	// sources it can identify.
 	Read(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error)

@@ -68,7 +68,7 @@ func (p parts) RevealNonce(ctx context.Context, kind string, id uuid.UUID) ([]by
 
 // Check is the Postgres store's policy check, which needs no connection.
 func (parts) Check(sql string, tool action.Tool) (action.Statement, error) {
-	return store.Check(sql, tool)
+	return (*store.Store)(nil).Check(sql, tool)
 }
 
 // HeldFrom is the exact compare: these tests hold no write with fixed times.

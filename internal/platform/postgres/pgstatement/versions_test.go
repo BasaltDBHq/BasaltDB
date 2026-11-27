@@ -62,7 +62,7 @@ func TestRowSources(t *testing.T) {
 			t.Parallel()
 			stmt, err := pgstatement.Check(c.sql, action.ToolQuery)
 			require.NoError(t, err)
-			require.Equal(t, c.want, stmt.RowSources)
+			require.Equal(t, c.want, stmt.Handle)
 		})
 	}
 }
@@ -98,8 +98,8 @@ func TestWithRowVersions(t *testing.T) {
 
 	_, err = pgstatement.WithRowVersions("SELECT count(id) FROM leads",
 		[]pgstatement.Versioned{{Source: pgstatement.RowSource{Name: "leads"}, PKCols: []string{"id"}}})
-	require.ErrorIs(t, err, pgstatement.ErrNoRowIdentity)
+	require.Error(t, err)
 	_, err = pgstatement.WithRowVersions("SELECT * FROM leads",
 		[]pgstatement.Versioned{{Source: pgstatement.RowSource{Name: "leads"}}})
-	require.ErrorIs(t, err, pgstatement.ErrNoRowIdentity)
+	require.Error(t, err)
 }

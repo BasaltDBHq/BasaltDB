@@ -7,16 +7,21 @@ import (
 	"context"
 	"crypto/x509"
 	"errors"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
 	coretrust "github.com/basaltdbhq/basaltdb/internal/core/trustprofile"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/lib/certroots"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
+	"github.com/basaltdbhq/basaltdb/internal/platform/keyfile"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/demo"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
@@ -295,4 +300,16 @@ func pgxTx(q setup.Querier) (pgx.Tx, error) {
 		return nil, errors.New("setupbackend: the call needs a transaction, not a connection")
 	}
 	return t, nil
+}
+
+// The engine's key.
+
+// LoadOrCreateStateKeys reads <stateDir>/channel.json, creating the
+// directory and the file when they do not exist, as the engine does at its
+// start.
+func (Backend) LoadOrCreateStateKeys(stateDir string, now func() time.Time) (*channel.EngineKeys, error) {
+	if err := os.MkdirAll(stateDir, engine.StateDirMode); err != nil {
+		return nil, err
+	}
+	return keyfile.LoadOrCreateKeys(filepath.Join(stateDir, channel.KeyFileName), now)
 }

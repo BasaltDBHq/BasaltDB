@@ -14,10 +14,12 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/piistore"
@@ -156,7 +158,7 @@ type RunAnswer struct {
 	Passkeys   []RegisteredPasskey `json:"passkeys"`
 	MCPCommand string              `json:"mcpCommand"`
 	// EngineRemoved: a REMOVE removed this engine's last agent and deleted
-	// engine.json; basalt init removes the engine service next.
+	// engine.json; basalt init then asks the person what is next.
 	EngineRemoved bool `json:"engineRemoved"`
 	// Remaining is a PASSKEY_REMOVE's: the active passkeys of this page's
 	// origin left.
@@ -205,6 +207,15 @@ type LocalOptions struct {
 	// CredentialChanged tells the running engine an agent's new password,
 	// after a REPAIR wrote it (a no-op when nothing listens).
 	CredentialChanged func(agent, password string)
+	// Reinstalled tells the running engine that an INSTALL on it, removed,
+	// wrote engine.json again, so it serves that config (a no-op when
+	// nothing listens).
+	Reinstalled func()
+	// StateDir holds the engine's key file, channel.json, whose signing key
+	// an install records: the state directory the engine will run with
+	// (config.DefaultStateDir, as the engine.json the install writes names
+	// none).
+	StateDir string
 }
 
 // LocalService runs the setup jobs. One runs at a time.
@@ -216,6 +227,9 @@ type LocalService struct {
 	busy sync.Mutex
 	// mark is the person's "No, this isn't mine" (Not your database).
 	mark resetMark
+	// removing is the person's "Remove it from this computer too" on a
+	// removed engine.
+	removing removeMark
 	// updated is when each agent's last UPDATE finished, for basalt init's
 	// probe.
 	updated updateMarks
@@ -262,6 +276,12 @@ func NewLocal(o LocalOptions) (*LocalService, error) {
 	}
 	if o.CredentialChanged == nil {
 		o.CredentialChanged = func(string, string) {}
+	}
+	if o.Reinstalled == nil {
+		o.Reinstalled = func() {}
+	}
+	if o.StateDir == "" {
+		o.StateDir = config.DefaultStateDir(runtime.GOOS)
 	}
 	key, err := newKey()
 	if err != nil {
@@ -503,6 +523,16 @@ func (s *LocalService) plan(ctx context.Context, tx Tx, j job, password, databas
 			return planned{}, s.setupFailed("seed the sample data", err)
 		}
 		spec.Write = s.be.DemoTables()
+		if p.seeded.Ours {
+			// Sample tables left by an earlier demo may have row-level
+			// security on (a Remove drops the agents' policies, and a
+			// provider's table editor can turn it on): the agent gets its
+			// policy on them, as the page's ALL_ROWS answer gives it, with no
+			// question. A basalt_demo the demo did not make is left alone.
+			if opts.AgentPolicies, err = s.be.AgentBlindTables(ctx, tx.Port(), names, spec); err != nil {
+				return planned{}, s.setupFailed("read the tables without row-level security", err)
+			}
+		}
 	} else {
 		if p.list, err = s.readListing(ctx, tx.Port(), j.schemas); err != nil {
 			return planned{}, s.setupFailed("read the tables", err)
@@ -531,7 +561,22 @@ func (s *LocalService) plan(ctx context.Context, tx Tx, j job, password, databas
 	if p.script, err = s.be.PlanInit(ctx, tx.Port(), opts); err != nil {
 		return planned{}, s.setupFailed("plan the install", err)
 	}
+	p.script.Statements = append(p.script.Statements, s.recordEngine()...)
 	return p, nil
+}
+
+// recordEngine is record_engine for this engine's signing key, in the
+// install transaction as a setup code's install records it (CONTRACT.md,
+// Engine records): the key is read from <StateDir>/channel.json, the file
+// the engine loads at its start, and made there when there is none. A key
+// file that is refused records nothing and the install goes on: the engine
+// then runs with its key refused, and status says KEY_ERROR with its fix.
+func (s *LocalService) recordEngine() []guardmodel.Statement {
+	keys, err := s.be.LoadOrCreateStateKeys(s.opts.StateDir, s.opts.Now)
+	if err != nil {
+		return nil
+	}
+	return []guardmodel.Statement{s.be.RecordEngineStatement(keys.PublicKeySPKI(), s.be.LatestVersion())}
 }
 
 // ownRole: the agent's role exists and this engine holds its password. The
@@ -670,7 +715,7 @@ func (s *LocalService) verifyByDefault(dsn string) string {
 func (s *LocalService) check(ctx context.Context, req Request) (CheckAnswer, error) {
 	ctx, cancel := context.WithTimeout(ctx, callLimit)
 	defer cancel()
-	if s.opts.Configured {
+	if s.opts.Configured && !s.installOnRemoved(req) {
 		return s.checkAgentJob(ctx, req)
 	}
 	j, err := s.validate(req)

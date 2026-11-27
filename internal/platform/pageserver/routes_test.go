@@ -111,7 +111,7 @@ var apiProbes = []struct{ method, path string }{
 
 // setupProbes are the setup routes and the page.
 var setupProbes = []string{
-	pageserver.SetupCheckPath, pageserver.SetupRunPath, pageserver.SetupDoctorPath, pageserver.SetupEnginePath, pageserver.SetupNotMinePath,
+	pageserver.SetupCheckPath, pageserver.SetupRunPath, pageserver.SetupDoctorPath, pageserver.SetupEnginePath, pageserver.SetupNotMinePath, pageserver.SetupRemoveEnginePath,
 }
 
 // fileProbes are the pages, their files and what is not served.

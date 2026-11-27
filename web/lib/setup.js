@@ -16,12 +16,15 @@ export const RUN_PATH = "/api/v1/setup/run";
 export const DOCTOR_PATH = "/api/v1/setup/doctor";
 export const ENGINE_PATH = "/api/v1/setup/engine";
 export const NOT_MINE_PATH = "/api/v1/setup/not-mine";
+export const REMOVE_ENGINE_PATH = "/api/v1/setup/remove-engine";
 export const LINK_PREFIX = "1.";
 
 // JOBS are the jobs this page runs: INSTALL on an engine with no config,
-// UPDATE (the guard's missing migrations) and REMOVE (Basalt out of the
-// agent's database) on one that has it.
-export const JOBS = ["INSTALL", "UPDATE", "REMOVE", "CHANGE"];
+// UPDATE (the guard's missing migrations) and REMOVE (BasaltDB out of the
+// agent's database) on one that has it. CHANGE and REMOVED are links only:
+// the pick of Update or Remove, and the question of an engine the page
+// removed.
+export const JOBS = ["INSTALL", "UPDATE", "REMOVE", "CHANGE", "REMOVED"];
 
 // CHOICES are the jobs a CHANGE link offers: basalt init's link for an
 // engine that is already set up. The page sends the one the person picks.
@@ -604,6 +607,13 @@ function main() {
   }
   if (link.job === "INSTALL" && !link.demo) {
     startReal(link, { fetchFn: browserFetch, makePasskey: (c) => createPasskey(c, "localhost") });
+    return;
+  }
+  if (link.job === "REMOVED") {
+    startRemoved(link, {
+      fetchFn: browserFetch,
+      onSetUp: (install) => startReal(install, { fetchFn: browserFetch, makePasskey: (c) => createPasskey(c, "localhost") }),
+    });
     return;
   }
   if (link.job === "CHANGE") {
@@ -1794,8 +1804,47 @@ function list2(id, lines) {
 }
 
 // REMOVE_LAST_STEP is the removal's last step when it removed the engine's
-// last agent: the agent's basalt init removes the engine service.
-export const REMOVE_LAST_STEP = "Last step: ask your agent to finish removing BasaltDB. Your computer asks for your password once.";
+// last agent: the basalt init that opened the page removes the engine
+// service now, or a later one opens the REMOVED link, which asks.
+export const REMOVE_LAST_STEP = "Last step: if your computer does not ask for your password now, ask your agent to run basalt init. The page that opens lets you finish removing BasaltDB from this computer, or set it up again.";
+
+// REMOVED_TEXT is the page of a REMOVED link: an engine the page removed,
+// which still runs on this computer, serving no agent.
+export const REMOVED_TEXT = {
+  title: "BasaltDB was removed from your database",
+  asked: "Your computer asks for your password, in its own dialog, to remove the engine. If no dialog appears, ask your agent to run basalt init and press this again.",
+};
+
+// startRemoved is the page of a REMOVED link (CONTRACT.md, The local setup
+// page, Removing the engine service). "Set up BasaltDB again" hands the
+// install of a real database to env.onSetUp, on the same engine; "Remove it
+// from this computer too" only tells the engine, for the basalt init that
+// waits, which then asks for the computer's password in its own dialog.
+// env has fetchFn and onSetUp.
+export function startRemoved(link, env) {
+  document.title = REMOVED_TEXT.title;
+  $("removed").hidden = false;
+  const again = $("removed-again");
+  const remove = $("removed-remove");
+  again.addEventListener("click", () => {
+    $("removed").hidden = true;
+    env.onSetUp({ ...link, job: "INSTALL", demo: false });
+  });
+  remove.addEventListener("click", async () => {
+    again.disabled = true;
+    remove.disabled = true;
+    $("removed-status").textContent = "";
+    try {
+      await postSetup(env.fetchFn, REMOVE_ENGINE_PATH, {});
+    } catch (err) {
+      $("removed-status").textContent = err.message;
+      again.disabled = false;
+      remove.disabled = false;
+      return;
+    }
+    $("removed-status").textContent = REMOVED_TEXT.asked;
+  });
+}
 
 // doneText is the done screen's sentence for job and the run's answer.
 export function doneText(job, done) {

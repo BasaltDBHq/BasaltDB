@@ -60,6 +60,16 @@ test("the stylesheet pins agent-written text to stored order and clips what over
   for (const s of [".values td", ".summary dd"]) assert.ok(clipped.has(s), `${s} does not clip overflow`);
 });
 
+test("a short value's cell is never capped, so a 32-code-point CJK value cannot clip", () => {
+  const css = readFileSync(new URL("../style.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.ok(selectorsWith(css, "max-width: none").has(".values td:not(.long)"), "short cells must lift the 32ch cap");
+  // The cap (.values td) must only reach cells marked long.
+  assert.ok(selectorsWith(css, "max-width: 32ch").has(".values td"));
+  const cjk = "漢".repeat(32);
+  assert.equal([...cjk].length, 32);
+  assert.ok(!([...cjk].length > 32), "32 code points is not long, so it takes the uncapped path");
+});
+
 test("visibleText escapes every default-ignorable character, variation selectors included", () => {
   assert.equal(visibleText(`a${cp(0xfe0f)}b`), "a<U+FE0F>b");
   assert.equal(visibleText(`a${cp(0xe0100)}b`), "a<U+E0100>b");

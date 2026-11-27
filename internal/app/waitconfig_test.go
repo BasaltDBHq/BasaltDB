@@ -35,7 +35,10 @@ func pageOrigin(addr string) string {
 }
 
 func waitOptions(addr, configPath string) app.WaitOptions {
-	return app.WaitOptions{Addr: addr, Origin: pageOrigin(addr), ConfigPath: configPath, Log: slog.New(slog.DiscardHandler)}
+	return app.WaitOptions{
+		Addr: addr, Origin: pageOrigin(addr), ConfigPath: configPath, Log: slog.New(slog.DiscardHandler),
+		StateDir: filepath.Join(filepath.Dir(configPath), "state"),
+	}
 }
 
 // freeAddr is a loopback address nothing listens on, right now.

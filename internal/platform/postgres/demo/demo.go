@@ -37,7 +37,8 @@ var notesSQL string
 
 // Read reads what exists and plans only what is missing: the schema, and
 // each table with its rows. A table that exists is not touched (no row,
-// index or row-level security change).
+// index or row-level security change). Ours is set when the plan makes the
+// schema or the schema carries Comment.
 func Read(ctx context.Context, q guard.Querier) (guardmodel.DemoPlan, error) {
 	var schema, leads, notes bool
 	// Plain SQL: catalog lookups of fixed names.
@@ -48,10 +49,12 @@ func Read(ctx context.Context, q guard.Querier) (guardmodel.DemoPlan, error) {
 		return guardmodel.DemoPlan{}, err
 	}
 	var p guardmodel.DemoPlan
-	if leads && notes {
-		return p, nil
-	}
-	if !schema {
+	if schema {
+		if p.Ours, err = marked(ctx, q); err != nil {
+			return guardmodel.DemoPlan{}, err
+		}
+	} else {
+		p.Ours = true
 		p.SQL = append(p.SQL, schemaSQL)
 	}
 	if !leads {
@@ -99,17 +102,24 @@ var dropSQL = []string{`DROP TABLE basalt_demo.lead_notes`, `DROP TABLE basalt_d
 // (the schema carries Comment), and nothing otherwise. It reads the
 // catalog only.
 func PlanDrop(ctx context.Context, q guard.Querier) ([]string, error) {
+	made, err := marked(ctx, q)
+	if err != nil || !made {
+		return nil, err
+	}
+	return append([]string{}, dropSQL...), nil
+}
+
+// marked reports whether the sample schema exists and carries Comment: the
+// demo made it.
+func marked(ctx context.Context, q guard.Querier) (bool, error) {
 	var made bool
 	// Plain SQL: catalog lookup of a fixed name.
 	err := q.QueryRow(ctx, `SELECT coalesce(pg_catalog.obj_description(n.oid, 'pg_namespace') = $2, false)
 		FROM pg_catalog.pg_namespace n WHERE n.nspname = $1`, Schema, Comment).Scan(&made)
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !made) {
-		return nil, nil
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
 	}
-	if err != nil {
-		return nil, err
-	}
-	return append([]string{}, dropSQL...), nil
+	return made, err
 }
 
 // ApplyDrop runs drops (PlanDrop) in a savepoint of tx: when one fails,

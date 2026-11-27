@@ -32,10 +32,13 @@ type HoldRequest struct {
 }
 
 // HeldPreview is a held write's preview, as the store worked it out: the
-// fields whose new values the approval binds (Postgres: the columns the
-// write assigns, or for an INSERT without a column list every column of its
-// table) and the preview lines.
+// request it holds (the agent's, with any value that changes between runs
+// fixed by the store; Postgres: now() and the other time functions held as
+// literals), the fields whose new values the approval binds (Postgres: the
+// columns the write assigns, or for an INSERT without a column list every
+// column of its table) and the preview lines.
 type HeldPreview struct {
+	Request  action.Request
 	Assigned []string
 	Lines    []string
 }

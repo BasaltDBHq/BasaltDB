@@ -32,6 +32,13 @@ func TestCheckRepeatable(t *testing.T) {
 		{`UPDATE leads SET seen = 'epoch'`, "leads", []string{"seen"}},
 		{`UPDATE leads SET seen = 'infinity'`, "leads", []string{"seen"}},
 		{`UPDATE leads SET n = 7 WHERE note = ''`, "leads", []string{"n"}},
+		// The time functions PlanTimes fixes when the write is held.
+		{`UPDATE leads SET updated_at = now()`, "leads", []string{"updated_at"}},
+		{`UPDATE leads SET updated_at = pg_catalog.clock_timestamp()`, "leads", []string{"updated_at"}},
+		{`UPDATE leads SET seen = CURRENT_TIMESTAMP`, "leads", []string{"seen"}},
+		{`DELETE FROM leads WHERE created_at < CURRENT_DATE - 7`, "leads", []string{}},
+		{`UPDATE leads SET seen = LOCALTIMESTAMP(0)`, "leads", []string{"seen"}},
+		{`UPDATE leads SET x = 1 WHERE id IN (SELECT id FROM t WHERE ts > now())`, "leads", []string{"x"}},
 	}
 	for _, tc := range ok {
 		h, err := sqlguard.CheckRepeatable(tc.sql, nil)
@@ -41,13 +48,10 @@ func TestCheckRepeatable(t *testing.T) {
 	}
 
 	refused := map[string]string{
-		`UPDATE leads SET updated_at = now()`:                                      "now()",
-		`UPDATE leads SET updated_at = pg_catalog.clock_timestamp()`:               "clock_timestamp()",
-		`UPDATE leads SET seen = CURRENT_TIMESTAMP`:                                "CURRENT_TIMESTAMP",
-		`DELETE FROM leads WHERE created_at < CURRENT_DATE - 7`:                    "CURRENT_DATE",
-		`UPDATE leads SET seen = LOCALTIMESTAMP(0)`:                                "LOCALTIMESTAMP",
 		`INSERT INTO leads (id, name) VALUES (gen_random_uuid(), 'a')`:             "gen_random_uuid()",
 		`UPDATE leads SET score = (random() * 10)::int`:                            "random()",
+		`UPDATE leads SET seen = LOCALTIME`:                                        "LOCALTIME",
+		`UPDATE leads SET note = timeofday()`:                                      "timeofday()",
 		`DELETE FROM leads WHERE age(created_at) > interval '1 day'`:               "age()",
 		`UPDATE leads SET seen = 'now'::timestamptz`:                               "'now'",
 		`UPDATE leads SET updated_at = 'now' WHERE id <= 15`:                       "'now'",
@@ -76,7 +80,6 @@ func TestCheckRepeatable(t *testing.T) {
 		`UPDATE leads SET x = 1 WHERE id IN (SELECT id FROM t WHERE ts > 'today')`: "'today'",
 		`INSERT INTO leads (id, name, status) VALUES ($1, $2, DEFAULT)`:            "DEFAULT",
 		`UPDATE leads SET status = DEFAULT`:                                        "DEFAULT",
-		`UPDATE leads SET x = 1 WHERE id IN (SELECT id FROM t WHERE ts > now())`:   "now()",
 	}
 	for sql, what := range refused {
 		_, err := sqlguard.CheckRepeatable(sql, nil)

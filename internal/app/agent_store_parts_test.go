@@ -71,6 +71,11 @@ func (parts) Check(sql string, tool action.Tool) (action.Statement, error) {
 	return store.Check(sql, tool)
 }
 
+// HeldFrom is the exact compare: these tests hold no write with fixed times.
+func (parts) HeldFrom(_ context.Context, held, sent string) (bool, error) {
+	return held == sent, nil
+}
+
 // setApprovals and setReverts replace one part of d's store.
 func setApprovals(d *Deps, a approvalStore) {
 	p, _ := d.Core.Store.(parts)

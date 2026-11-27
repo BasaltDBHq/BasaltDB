@@ -16,11 +16,12 @@ import (
 // approves could never match the write that applies.
 const ReasonNotRepeatable Reason = "NOT_REPEATABLE"
 
-// nonRepeatableFunctions return another value in another transaction. All
-// are on the allowlist (decision #11); nextval and friends are not.
+// nonRepeatableFunctions return another value in another transaction and
+// the engine cannot fix them (fixableFunctions it can): a held write that
+// uses one is refused. nextval appears in a column default; a statement
+// that calls it is refused by the allowlist (decision #11) first.
 var nonRepeatableFunctions = toSet(`
-	now statement_timestamp transaction_timestamp clock_timestamp timeofday
-	random random_normal gen_random_uuid uuid_generate_v4
+	timeofday random random_normal gen_random_uuid uuid_generate_v4 uuidv4 uuidv7 nextval
 `)
 
 // Holdable is what preview and approval need from a write: the columns
@@ -36,8 +37,9 @@ type Holdable struct {
 
 // CheckRepeatable parses a write the guard held and refuses it with
 // NOT_REPEATABLE when it contains a value that changes between
-// transactions: the time functions, CURRENT_DATE and the other time SQL
-// value functions, random() and UUID generators, age() with one argument,
+// transactions that the engine does not fix (PlanTimes fixes now(),
+// CURRENT_TIMESTAMP and the other time functions it lists): timeofday(),
+// LOCALTIME, random() and UUID generators, age() with one argument,
 // a string literal or parameter that is a time word ('now', 'today',
 // 'tomorrow', 'yesterday', alone or with a time of day or zone), or the
 // DEFAULT keyword. It returns the
@@ -187,6 +189,9 @@ func nonRepeatable(root protoreflect.Message) string {
 		if found != "" {
 			return false
 		}
+		if n, ok := m.Interface().(*pganalyze.Node); ok && fixableType(n) != "" {
+			return false // fixed when the write is held (PlanTimes)
+		}
 		found = nonRepeatableNode(m)
 		return found == ""
 	})
@@ -197,7 +202,9 @@ func nonRepeatableNode(m protoreflect.Message) string {
 	switch v := m.Interface().(type) {
 	case *pganalyze.FuncCall:
 		name := strings.TrimPrefix(nameOf(v.GetFuncname()), "pg_catalog.")
-		if nonRepeatableFunctions[name] || (name == "age" && len(v.GetArgs()) == 1) {
+		// A time function the engine does not fix (with arguments or OVER)
+		// is refused like the others; fixable ones never reach here.
+		if nonRepeatableFunctions[name] || fixableFunctions[name] || (name == "age" && len(v.GetArgs()) == 1) {
 			return name + "()"
 		}
 	case *pganalyze.SQLValueFunction:

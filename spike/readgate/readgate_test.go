@@ -290,6 +290,7 @@ GRANT SELECT ON app.orders TO basalt_reads, agent_b;
 	candidateB(t, sus, adm)
 	if pgbPort != "" {
 		poolerA(t, sus, adm)
+		poolerA2(t, adm)
 		poolerB(t, adm)
 	} else {
 		observe("pooler", "PGBOUNCER_PORT unset, pooler tests skipped")
@@ -793,6 +794,38 @@ func poolerA(t *testing.T, sus, adm *pgx.Conn) {
 		m.Close(ctx)
 	}
 	result("POOL.A.revoked_refused_via_pooler", err2 != nil, fmt.Sprintf("revoke killed=%d %s | client via pgbouncer: %s", killed, errText(err), errText(err2)))
+}
+
+// A2 through the pooler: an expired ticket's role still logs in through
+// pgbouncer (it does not check VALID UNTIL), but the sweep has dropped its
+// membership, so it reads nothing.
+func poolerA2(t *testing.T, adm *pgx.Conn) {
+	gateC, err := connect("agent_gate", gatePW)
+	if err != nil {
+		t.Fatal(errText(err))
+	}
+	defer gateC.Close(ctx)
+	u, pw, err := openA2(gateC, newTicket(t, "agent_a", "engine-1", time.Now().Add(3*time.Second)))
+	if err != nil {
+		t.Fatal(errText(err))
+	}
+	e, err := connectPool(u, pw)
+	var n int64
+	if err == nil {
+		n, err = count(e, "SELECT count(*) FROM app.orders")
+		e.Close(ctx)
+	}
+	result("POOL.A2.reads_via_pgbouncer", err == nil && n == 5, fmt.Sprintf("rows=%d %s", n, errText(err)))
+	time.Sleep(4 * time.Second)
+	var swept int
+	err = adm.QueryRow(ctx, "SELECT basalt_meta.sweep_a2()").Scan(&swept)
+	m, err2 := connectPool(u, pw)
+	n = 0
+	if err2 == nil {
+		n, err2 = count(m, "SELECT count(*) FROM app.orders")
+		m.Close(ctx)
+	}
+	result("POOL.A2.expired_swept_reads_nothing_via_pooler", err2 != nil, fmt.Sprintf("swept=%d %s | expired ticket's login via pgbouncer: rows=%d %s", swept, errText(err), n, errText(err2)))
 }
 
 func poolerB(t *testing.T, adm *pgx.Conn) {

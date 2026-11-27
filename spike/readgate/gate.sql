@@ -124,11 +124,16 @@ END $$;
 -- Revoke for A: no password, and end the open sessions.
 CREATE FUNCTION basalt_meta.revoke_reads_a() RETURNS int
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
-DECLARE n int;
+DECLARE n int := 0; p int;
 BEGIN
     ALTER ROLE agent_reader PASSWORD NULL;
-    SELECT count(*) INTO n FROM pg_stat_activity a
-     WHERE a.usename = 'agent_reader' AND pg_terminate_backend(a.pid);
+    -- Pick the pids first: a filter like usename = ... AND
+    -- pg_terminate_backend(pid) may be evaluated on other roles' rows.
+    FOR p IN SELECT a.pid FROM pg_stat_activity a WHERE a.usename = 'agent_reader' LOOP
+        IF pg_terminate_backend(p) THEN
+            n := n + 1;
+        END IF;
+    END LOOP;
     RETURN n;
 END $$;
 

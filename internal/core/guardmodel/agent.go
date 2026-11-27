@@ -9,8 +9,8 @@ const (
 	// DefaultRoleStatementTimeout is the statement_timeout a setup sets on
 	// the agent's role (ALTER ROLE ... SET), the limit on any connection
 	// made with the role's credential. It is not the limit the engine puts
-	// on the agent's own statements: the engine sets action's
-	// DefaultStatementTimeout (5s, or limits.statementTimeoutMs) on every
+	// on the agent's own statements: the engine sets
+	// action.DefaultStatementTimeout (5s, or limits.statementTimeoutMs) on every
 	// transaction it runs, which wins over this role default.
 	DefaultRoleStatementTimeout = 30 * time.Second
 )

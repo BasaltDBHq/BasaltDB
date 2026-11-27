@@ -16,13 +16,30 @@ const pgstatementPkg = "internal/platform/postgres/pgstatement"
 // Postgres SQL.
 const postgresRoot = "internal/platform/postgres"
 
+// pgstatementCaller is the one package whose non-test files call the
+// statement check: the Postgres store, right before it runs a statement.
+const pgstatementCaller = "internal/platform/postgres/store"
+
+// pgstatementMayImport reports whether the statement check may import p:
+// the standard library, internal/lib, internal/core, the Postgres parser and
+// protobuf (the parse tree's messages). It restores what the core layer rule
+// guaranteed: the check reaches no driver or adapter through another
+// package.
+func pgstatementMayImport(p string) bool {
+	first, _, _ := strings.Cut(p, "/")
+	return !strings.Contains(first, ".") ||
+		underAny(p, []string{modulePath + "/internal/lib", modulePath + "/internal/core", "google.golang.org/protobuf"}) ||
+		pgParser(p)
+}
+
 // pgstatementFindings are, over the non-test files under root:
-//   - an import of the statement check or of the Postgres parser by a
-//     package outside postgresRoot;
+//   - an import of the statement check by a package other than
+//     pgstatementCaller, or of the Postgres parser by a package outside
+//     postgresRoot;
 //   - in the statement check itself, an import core may not make (the
-//     driver among them) other than the parser, a dot-import, or a call of
-//     time.Now, time.Since or time.Until: it stays pure and testable without
-//     a database.
+//     driver among them) other than the parser, an import beyond
+//     pgstatementMayImport, a dot-import, or a call of time.Now, time.Since
+//     or time.Until: it stays pure and testable without a database.
 func pgstatementFindings(root string) ([]string, int, error) {
 	pkgs, err := load(root)
 	if err != nil {
@@ -33,19 +50,22 @@ func pgstatementFindings(root string) ([]string, int, error) {
 	for rel, pk := range pkgs {
 		inside := underAny(rel, []string{postgresRoot})
 		check := underAny(rel, []string{pgstatementPkg})
+		caller := check || rel == pgstatementCaller
 		for _, f := range pk.files {
 			files++
 			for _, s := range f.ast.Imports {
 				p := importPath(s)
 				switch {
-				case !inside && (p == modulePath+"/"+pgstatementPkg || strings.HasPrefix(p, modulePath+"/"+pgstatementPkg+"/")):
-					out = append(out, relFile(rel, f.name)+": import "+p+" (only the Postgres adapter checks Postgres statements)")
+				case !caller && underAny(p, []string{modulePath + "/" + pgstatementPkg}):
+					out = append(out, relFile(rel, f.name)+": import "+p+" (only the Postgres store checks Postgres statements)")
 				case !inside && pgParser(p):
 					out = append(out, relFile(rel, f.name)+": import "+p+" (only the Postgres adapter parses Postgres SQL)")
 				case check && s.Name != nil && s.Name.Name == ".":
 					out = append(out, relFile(rel, f.name)+": dot-import "+p+" (the statement check stays pure)")
 				case check && bannedImport(p) && !pgParser(p):
 					out = append(out, relFile(rel, f.name)+": import "+p+" (the statement check stays pure)")
+				case check && !pgstatementMayImport(p):
+					out = append(out, relFile(rel, f.name)+": import "+p+" (the statement check imports only the standard library, internal/lib, internal/core, the Postgres parser and protobuf)")
 				}
 			}
 			if check {
@@ -99,6 +119,11 @@ import (
 	"time"
 	. "strings"
 
+	_ "github.com/basaltdbhq/basaltdb/internal/core/action"
+	_ "github.com/basaltdbhq/basaltdb/internal/lib/sqlident"
+	_ "github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
+	_ "github.com/other/mod"
+	_ "google.golang.org/protobuf/proto"
 	_ "github.com/jackc/pgx/v5"
 	_ "github.com/pganalyze/pg_query_go/v6"
 	_ "github.com/wasilibs/go-pgquery"
@@ -117,6 +142,7 @@ import "time"
 var _ = time.Now
 `,
 		"internal/platform/postgres/store/s.go": "package store\n\n" + imp(m+"internal/platform/postgres/pgstatement", "github.com/pganalyze/pg_query_go/v6", "time") + "\nvar _ = time.Now\n",
+		"internal/platform/postgres/other/o.go": "package other\n\n" + imp(m+"internal/platform/postgres/pgstatement", "github.com/pganalyze/pg_query_go/v6"),
 		"internal/app/a.go":                     "package app\n\n" + imp(m+"internal/platform/postgres/pgstatement"),
 		"internal/app/a_test.go":                "package app\n\n" + imp(m+"internal/platform/postgres/pgstatement"),
 		"internal/agent/out/x/x.go":             "package x\n\n" + imp("github.com/wasilibs/go-pgquery"),
@@ -128,19 +154,22 @@ var _ = time.Now
 	if err != nil {
 		t.Fatal(err)
 	}
-	if files != 7 {
-		t.Fatalf("scanned %d files, want 7 (test files are left out)", files)
+	if files != 8 {
+		t.Fatalf("scanned %d files, want 8 (test files are left out)", files)
 	}
 	want := []string{
 		"internal/agent/out/x/x.go: import github.com/wasilibs/go-pgquery (only the Postgres adapter parses Postgres SQL)",
-		"internal/app/a.go: import " + m + "internal/platform/postgres/pgstatement (only the Postgres adapter checks Postgres statements)",
+		"internal/app/a.go: import " + m + "internal/platform/postgres/pgstatement (only the Postgres store checks Postgres statements)",
+		"internal/platform/postgres/other/o.go: import " + m + "internal/platform/postgres/pgstatement (only the Postgres store checks Postgres statements)",
 		"internal/platform/postgres/pgstatement/c.go: calls time.Now (the statement check stays pure)",
 		"internal/platform/postgres/pgstatement/c.go: calls time.Since (the statement check stays pure)",
 		"internal/platform/postgres/pgstatement/c.go: dot-import strings (the statement check stays pure)",
+		"internal/platform/postgres/pgstatement/c.go: import " + m + "internal/platform/postgres/pgdial (the statement check imports only the standard library, internal/lib, internal/core, the Postgres parser and protobuf)",
 		"internal/platform/postgres/pgstatement/c.go: import github.com/jackc/pgx/v5 (the statement check stays pure)",
+		"internal/platform/postgres/pgstatement/c.go: import github.com/other/mod (the statement check imports only the standard library, internal/lib, internal/core, the Postgres parser and protobuf)",
 		"internal/platform/postgres/pgstatement/c.go: import os (the statement check stays pure)",
-		"internal/platform/postgresx/p.go: import " + m + "internal/platform/postgres/pgstatement (only the Postgres adapter checks Postgres statements)",
-		"internal/testkit/k/k.go: import " + m + "internal/platform/postgres/pgstatement/inner (only the Postgres adapter checks Postgres statements)",
+		"internal/platform/postgresx/p.go: import " + m + "internal/platform/postgres/pgstatement (only the Postgres store checks Postgres statements)",
+		"internal/testkit/k/k.go: import " + m + "internal/platform/postgres/pgstatement/inner (only the Postgres store checks Postgres statements)",
 		"internal/testkit/k/k.go: import github.com/pganalyze/pg_query_go/v6 (only the Postgres adapter parses Postgres SQL)",
 	}
 	if !slices.Equal(got, want) {

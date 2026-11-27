@@ -623,13 +623,6 @@ func bannedImport(p string) bool {
 	return false
 }
 
-// serviceBanned reports whether a service may not import p: a service reaches
-// Postgres and the network through a port, never through the driver or a
-// protocol client library itself. net/http's sub-packages (httptest,
-// httputil and the rest) count too, and so do ConnectRPC
-// (connectrpc.com/...), gRPC (google.golang.org/grpc/...) and the clients
-// generated from the module's protos (an api/ package named <pkg>connect,
-// such as connectv1connect). The proto messages themselves are not banned.
 // pgParserImports are the Postgres parser's modules (libpg_query and its
 // pure-Go wasm build). Only the Postgres adapter parses Postgres SQL.
 var pgParserImports = []string{"github.com/pganalyze/pg_query_go", "github.com/wasilibs/go-pgquery"}
@@ -639,6 +632,13 @@ func pgParser(p string) bool {
 	return slices.ContainsFunc(pgParserImports, func(b string) bool { return p == b || strings.HasPrefix(p, b+"/") })
 }
 
+// serviceBanned reports whether a service may not import p: a service reaches
+// Postgres and the network through a port, never through the driver or a
+// protocol client library itself. net/http's sub-packages (httptest,
+// httputil and the rest) count too, and so do ConnectRPC
+// (connectrpc.com/...), gRPC (google.golang.org/grpc/...) and the clients
+// generated from the module's protos (an api/ package named <pkg>connect,
+// such as connectv1connect). The proto messages themselves are not banned.
 func serviceBanned(p string) bool {
 	return p == "github.com/jackc/pgx" || strings.HasPrefix(p, "github.com/jackc/pgx/") ||
 		p == "database/sql" || p == "net/http" || strings.HasPrefix(p, "net/http/") ||

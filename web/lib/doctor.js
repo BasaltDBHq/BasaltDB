@@ -61,6 +61,17 @@ export function notCheckedRow(agent, c) {
   return { title: "Certificate not checked", text };
 }
 
+// notEncryptedRow is the warning row for an agent whose connection uses no
+// TLS (doctor's NOT_ENCRYPTED). With a provider the TRUST fix turns on
+// verify-full, as for require; without one there is nothing to click.
+export function notEncryptedRow(agent, c) {
+  const mode = `sslmode=${c?.sslMode || "prefer"}`;
+  const who = String(agent || "Your agent");
+  const provider = typeof c?.provider === "string" ? c.provider : "";
+  const text = `${who} connects with ${mode}. Its data and queries travel unencrypted.`;
+  return { title: "Connection not encrypted", text: provider ? text : `${text} Use a connection string with sslmode=verify-full.`, fixable: provider !== "" };
+}
+
 // FIX_ORDER are the fixes a critical row's action starts, in the order the
 // rows list them. UPDATE is the guard update, which opens its own job.
 export const FIX_ORDER = ["TRUST", "UPDATE", "PASSKEY_ADD", "REPAIR"];
@@ -116,6 +127,10 @@ export function checkView(d, origin, left = [], agent = "") {
     const r = notCheckedRow(agent, d.certificate);
     warn.push({ job: "TRUST", mark: "!", tone: "warning", title: r.title, text: r.text, action: "Check it", later: r.title });
   }
+  if (cert === "NOT_ENCRYPTED") {
+    const r = notEncryptedRow(agent, d.certificate);
+    warn.push({ job: r.fixable ? "TRUST" : null, mark: "!", tone: "warning", title: r.title, text: r.text, action: r.fixable ? "Check it" : "", later: r.title });
+  }
   const labelCols = d.labels?.state === "UNLABELED" ? (d.labels.columns ?? []) : [];
   let leftNote = false;
   if (d.labels?.state === "UNLABELED") {
@@ -125,7 +140,7 @@ export function checkView(d, origin, left = [], agent = "") {
   }
   const devices = localPasskeys(d.passkeys, origin);
   const ok = [];
-  if (!unknown && !d.login && (cert === "OK" || cert === "NOT_CHECKED")) {
+  if (!unknown && !d.login && ["OK", "NOT_CHECKED", "NOT_ENCRYPTED"].includes(cert)) {
     if (d.labels?.state === "OK") ok.push({ job: null, mark: "✓", tone: "good", title: ALL_GOOD.rows[0], text: "", action: "" });
     // A certificate not checked is a warning row instead.
     if (cert === "OK") ok.push({ job: null, mark: "✓", tone: "good", title: ALL_GOOD.rows[1], text: "", action: "" });

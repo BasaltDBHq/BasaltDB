@@ -11,14 +11,19 @@ import (
 
 // A certificate not checked (CONTRACT.md, The Update check): the agent's
 // connection is encrypted, but its sslmode is below verify-full, so nothing
-// checks that the certificate is its database's. BasaltDB keeps the sslmode
-// a person gave; the check-up shows a warning row, and the TRUST fix turns
-// the check on with the person's click: the agent's connection string gets
-// sslmode=verify-full once a login with it passed.
+// checks that the certificate is its database's; or it is not encrypted at
+// all (sslmode=disable, or prefer and allow on a server without TLS).
+// BasaltDB keeps the sslmode a person gave; the check-up shows a warning
+// row, and the TRUST fix turns the check on with the person's click: the
+// agent's connection string gets sslmode=verify-full once a login with it
+// passed.
 
-// StateNotChecked is the doctor's certificate row for an encrypted agent
-// connection whose certificate is not checked.
-const StateNotChecked = "NOT_CHECKED"
+// The doctor's certificate rows for an agent connection below verify-full:
+// encrypted with the certificate not checked, or not encrypted.
+const (
+	StateNotChecked   = "NOT_CHECKED"
+	StateNotEncrypted = "NOT_ENCRYPTED"
+)
 
 // sslModeDefault is the driver's sslmode for a string that names none.
 const sslModeDefault = "prefer"
@@ -35,9 +40,9 @@ type unchecked struct {
 }
 
 // uncheckedCredential reads the agent's credential and reports whether it
-// connects below verify-full with TLS: any sslmode but verify-full, disable
-// and allow (which tries without TLS first). A credential that names its
-// own roots, or one this engine cannot read, is not this case.
+// connects below verify-full: any sslmode but verify-full, disable and
+// allow included. A credential that names its own roots, or one this engine
+// cannot read, is not this case.
 func (s *LocalService) uncheckedCredential(a config.Agent) (unchecked, bool) {
 	dsn, err := s.be.ReadCredential(a.Store.CredentialFile)
 	if err != nil {
@@ -49,7 +54,7 @@ func (s *LocalService) uncheckedCredential(a config.Agent) (unchecked, bool) {
 	}
 	q := u.Query()
 	mode := q.Get(paramSSLMode)
-	if mode == sslDisable || mode == "allow" || q.Has("sslrootcert") {
+	if q.Has("sslrootcert") {
 		return unchecked{}, false
 	}
 	applied, err := s.be.ExplainTrust(dsn, s.opts.Profiles())
@@ -66,20 +71,21 @@ func (s *LocalService) uncheckedCredential(a config.Agent) (unchecked, bool) {
 	return unchecked{dsn: dsn, host: host, port: port, mode: mode, provider: trustprofile.BuiltInProvider(host, s.opts.Profiles())}, true
 }
 
-// certificateNotChecked sets the doctor's certificate row NOT_CHECKED when
-// the agent logged in with TLS on conn and its credential does not check
-// the certificate, as status's CERTIFICATE_NOT_CHECKED does: prefer on a
-// server without TLS falls back to none, which is not this warning. A
-// warning: the page still says Ready.
+// certificateNotChecked sets the doctor's certificate row when the agent's
+// credential is below verify-full, by the TLS of its login on conn, as
+// status's warnings read it: NOT_CHECKED with TLS, NOT_ENCRYPTED without
+// (prefer on a server without TLS falls back to none). A warning: the page
+// still says Ready.
 func (s *LocalService) certificateNotChecked(conn Conn, a config.Agent, out *DoctorAnswer) {
 	uc, ok := s.uncheckedCredential(a)
 	if !ok {
 		return
 	}
+	state := StateNotChecked
 	if shown, _ := s.be.ConnCertificate(conn, certNotVerified, ""); shown != certNotVerified {
-		return // no TLS on this connection
+		state = StateNotEncrypted // no TLS on this connection
 	}
-	out.Certificate = DoctorCertificate{State: StateNotChecked, Host: uc.host, Port: uc.port, SSLMode: uc.mode, Provider: uc.provider}
+	out.Certificate = DoctorCertificate{State: state, Host: uc.host, Port: uc.port, SSLMode: uc.mode, Provider: uc.provider}
 }
 
 // verifiedCredential is the agent's credential with sslmode=verify-full,

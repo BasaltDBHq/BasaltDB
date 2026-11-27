@@ -163,3 +163,15 @@ test("a certificate not checked is a warning with its own fix: the page still sa
   const own = checkView({ ...d, certificate: { state: "NOT_CHECKED", sslMode: "verify-ca" } }, ORIGIN, [], "demo_bot");
   assert.equal(own.rows[0].text, "demo_bot connects with sslmode=verify-ca. Encrypted, but nothing checks the certificate is your database's.");
 });
+
+test("a connection not encrypted is a warning: Check it on a provider's host, words only elsewhere", () => {
+  const d = { ...good, certificate: { state: "NOT_ENCRYPTED", host: "db.abc.supabase.co", port: 5432, sslMode: "disable", provider: "Supabase" } };
+  const v = checkView(d, ORIGIN, [], "demo_bot");
+  assert.equal(v.title, "Ready");
+  assert.deepEqual([v.rows[0].mark, v.rows[0].title, v.rows[0].text, v.rows[0].action, v.rows[0].job], ["!", "Connection not encrypted", "demo_bot connects with sslmode=disable. Its data and queries travel unencrypted.", "Check it", "TRUST"]);
+  assert.ok(!v.rows.some((r) => r.title === "Database certificate checked"));
+  const local = checkView({ ...d, certificate: { state: "NOT_ENCRYPTED", host: "localhost", sslMode: "disable" } }, ORIGIN, [], "demo_bot");
+  assert.equal(local.rows[0].action, "", "no built-in roots: nothing to click");
+  assert.match(local.rows[0].text, /Use a connection string with sslmode=verify-full\.$/);
+  assert.deepEqual(fixQueue(d, ORIGIN), []);
+});

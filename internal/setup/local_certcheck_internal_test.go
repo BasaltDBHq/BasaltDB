@@ -27,9 +27,10 @@ func (b credBackend) ConnCertificate(_ Conn, kind, _ string) (string, string) {
 	return kind, ""
 }
 
-// TestUncheckedCredential: an agent credential is NOT_CHECKED when it is
-// encrypted below verify-full (none is prefer), naming the provider whose
-// built-in roots cover its host; verify-full, disable and allow are not.
+// TestUncheckedCredential: an agent credential below verify-full (none is
+// prefer) is NOT_CHECKED with TLS on its login and NOT_ENCRYPTED without,
+// naming the provider whose built-in roots cover its host; verify-full and
+// a credential with its own roots are neither.
 func TestUncheckedCredential(t *testing.T) {
 	t.Parallel()
 	at := func(rest string) string { return "postgresql://u" + ":" + "pw@" + rest }
@@ -42,8 +43,6 @@ func TestUncheckedCredential(t *testing.T) {
 		{supa + "?sslmode=verify-ca", "verify-ca", "Supabase", true},
 		{at("db.example.com:6543/app"), "prefer", "", true},
 		{supa + "?sslmode=verify-full", "", "", false},
-		{supa + "?sslmode=disable", "", "", false},
-		{supa + "?sslmode=allow", "", "", false},
 		{supa + "?sslmode=verify-ca&sslrootcert=/x/root.crt", "", "", false},
 	} {
 		s, err := NewLocal(LocalOptions{
@@ -66,14 +65,22 @@ func TestUncheckedCredential(t *testing.T) {
 		}
 	}
 
-	// prefer on a server without TLS fell back to none: not this warning.
-	s, err := NewLocal(LocalOptions{
-		Backend:    credBackend{dsn: at("db.example.com:5432/app"), plain: true},
-		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: "http://localhost:8787",
-		Profiles: trustprofile.BuiltInSet,
-	})
-	require.NoError(t, err)
-	out := DoctorAnswer{Certificate: DoctorCertificate{State: StateOK}}
-	s.certificateNotChecked(nil, config.Agent{}, &out)
-	require.Equal(t, StateOK, out.Certificate.State)
+	// No TLS on the login: disable, allow, or prefer that fell back.
+	for _, tc := range []struct{ dsn, mode, provider string }{
+		{supa + "?sslmode=disable", "disable", "Supabase"},
+		{supa + "?sslmode=allow", "allow", "Supabase"},
+		{at("db.example.com:5432/app"), "prefer", ""},
+	} {
+		s, err := NewLocal(LocalOptions{
+			Backend:    credBackend{dsn: tc.dsn, plain: true},
+			ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: "http://localhost:8787",
+			Profiles: trustprofile.BuiltInSet,
+		})
+		require.NoError(t, err)
+		out := DoctorAnswer{Certificate: DoctorCertificate{State: StateOK}}
+		s.certificateNotChecked(nil, config.Agent{}, &out)
+		require.Equal(t, StateNotEncrypted, out.Certificate.State, tc.dsn)
+		require.Equal(t, tc.mode, out.Certificate.SSLMode, tc.dsn)
+		require.Equal(t, tc.provider, out.Certificate.Provider, tc.dsn)
+	}
 }

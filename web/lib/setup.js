@@ -1581,7 +1581,7 @@ export function startUpdate(link, env) {
       checking("Checking the database's certificate");
       try {
         const a = await fix.check("TRUST");
-        if (fix.answer?.certificate?.state === "NOT_CHECKED") return showCheckOn(a);
+        if (["NOT_CHECKED", "NOT_ENCRYPTED"].includes(fix.answer?.certificate?.state)) return showCheckOn(a);
         showMismatch(a);
       } catch (err) {
         if (err instanceof SetupError && err.code === "CERTIFICATE_NOT_VERIFIED" && err.trustRoot && err.pinned) return showRenewal(err.trustRoot, err.pinned);

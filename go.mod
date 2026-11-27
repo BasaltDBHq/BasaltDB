@@ -44,3 +44,7 @@ require (
 	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect
 )
+
+// Release candidates of v0.1.0-alpha sort above it in Go module order, so
+// go install ...@latest would pick one. They are test builds: retract them.
+retract [v0.1.0-alpha-rc.1, v0.1.0-alpha-rc.99]

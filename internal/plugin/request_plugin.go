@@ -272,7 +272,10 @@ func (pc *Service) waitPlugin(ctx context.Context, id uuid.UUID, wait time.Durat
 		if err != nil {
 			return requestPluginResult{}, pc.pluginError(err)
 		}
-		done := st.State == PluginStateRunning || st.State == PluginStateEnded
+		if st.State == PluginStateEnded {
+			st = pc.withdrawnOrEnded(ctx, id, st)
+		}
+		done := st.State == PluginStateRunning || st.State == PluginStateEnded || st.State == PluginStateWithdrawn
 		if done || !pc.core.Now().Add(pc.delivery.PollInterval()).Before(deadline) {
 			return pc.pluginWaited(id, st, wait > 0)
 		}
@@ -302,6 +305,20 @@ func (pc *Service) endedPluginApproval(ctx context.Context, id uuid.UUID) (Plugi
 	return PluginApprovalState{Name: r.Name, Instance: r.Instance, State: PluginStateEnded}, nil
 }
 
+// withdrawnOrEnded is st, an ENDED approval, as WITHDRAWN when the agent
+// withdrew it (CONTRACT.md, Approvals, Withdrawn requests): PLUGIN_LIST
+// reads a withdrawn approval as ended, the guard's record tells them apart.
+func (pc *Service) withdrawnOrEnded(ctx context.Context, id uuid.UUID, st PluginApprovalState) PluginApprovalState {
+	if pc.deps.Approvals == nil {
+		return st
+	}
+	r, ok, err := pc.deps.Approvals.ReadPluginApproval(ctx, id)
+	if err == nil && ok && r.Status == guardmodel.PluginApprovalStatusWithdrawn {
+		st.State, st.WithdrawReason = PluginStateWithdrawn, r.WithdrawReason
+	}
+	return st
+}
+
 // pluginWaited is the wait form's answer for st.
 func (pc *Service) pluginWaited(id uuid.UUID, st PluginApprovalState, waited bool) (requestPluginResult, error) {
 	entry := st.Name + "/" + st.Instance
@@ -315,6 +332,9 @@ func (pc *Service) pluginWaited(id uuid.UUID, st PluginApprovalState, waited boo
 	case PluginStateApproved:
 		msg = "You approved the plugin " + entry + ". It does not run yet; the agent checks why."
 		steps.CallTool(guidance.ToolStatus, map[string]any{}, "Call status: its plugins and problems say why the plugin does not run yet.")
+	case PluginStateWithdrawn:
+		msg = guidance.WithdrawnMessage(st.WithdrawReason)
+		steps.Stop("You withdrew this plugin approval and nothing runs on it. Ask for the plugin again only when the person asks.")
 	case PluginStateEnded:
 		msg = "The approval of the plugin " + entry + " is over: it expired, a newer one replaced it, or the plugin was turned off or removed. Nothing runs on it."
 		steps.AskPerson("Ask the person whether to ask for the plugin again.").

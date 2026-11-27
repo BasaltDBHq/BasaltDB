@@ -56,8 +56,8 @@
     "properties": {
       "state": {
         "type": "string",
-        "enum": ["PENDING", "APPROVED", "RUNNING", "NARROWED", "REMOVED", "ENDED"],
-        "description": "PENDING: the approval waits for the person (a new request, or a wait that ran out). APPROVED: the person approved it and the engine does not run the plugin on it yet (status.plugins says why when it does not start). RUNNING: the engine runs the plugin on this approval for every agent it names. NARROWED: the change only removed agents from a plugin that was on, so nothing needs approval and the engine applied it. REMOVED: the plugin was removed. ENDED: the approval expired, was replaced by a newer one, or the plugin was turned off or removed since; nothing runs on it."
+        "enum": ["PENDING", "APPROVED", "RUNNING", "NARROWED", "REMOVED", "ENDED", "WITHDRAWN"],
+        "description": "PENDING: the approval waits for the person (a new request, or a wait that ran out). APPROVED: the person approved it and the engine does not run the plugin on it yet (status.plugins says why when it does not start). RUNNING: the engine runs the plugin on this approval for every agent it names. NARROWED: the change only removed agents from a plugin that was on, so nothing needs approval and the engine applied it. REMOVED: the plugin was removed. ENDED: the approval expired, was replaced by a newer one, or the plugin was turned off or removed since; nothing runs on it. WITHDRAWN (wait form): you withdrew the approval with withdraw before the person signed; nothing runs on it."
       },
       "name": { "type": "string", "description": "The plugin's name." },
       "instance": { "type": "string", "description": "The plugin's instance." },

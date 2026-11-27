@@ -51,6 +51,7 @@ const (
 	ToolQuery         = "query"
 	ToolListPending   = "list_pending"
 	ToolRequestPlugin = "request_plugin"
+	ToolWithdraw      = "withdraw"
 	ToolRunHistory    = "run_history"
 	ToolPreviewRevert = "preview_revert"
 	ArgRunID          = "runId"

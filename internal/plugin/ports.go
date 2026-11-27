@@ -291,6 +291,10 @@ type PluginApprovalStore interface {
 	// verifies it and records the approval. A refusal is a
 	// *pluginmodel.ApprovalRefusalError.
 	SubmitPluginApproval(ctx context.Context, r guardmodel.PluginApprovalResponse) (time.Time, error)
+	// WithdrawPluginApproval withdraws a pending plugin approval the role
+	// opened, with the agent's reason: when it was withdrawn, nil when it
+	// was no longer waiting (left as it is).
+	WithdrawPluginApproval(ctx context.Context, id uuid.UUID, reason string) (*time.Time, error)
 }
 
 // PathRules is the port for the path rule: who may write the directories and

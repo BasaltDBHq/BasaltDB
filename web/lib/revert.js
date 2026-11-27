@@ -27,7 +27,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, rejectRevert, revertDone, revertPaths } from "./local.js";
-import { $, NO_CARRIER, REVERT_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, personText, relayFailure, setPill, showDone, showEngine, showReceipt, showRelayFailed, webauthnError } from "./page.js";
+import { $, NO_CARRIER, REVERT_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, personText, relayFailure, setPill, showDone, showEngine, showReceipt, showRelayFailed, showWithdrawn, webauthnError, withdrawnText } from "./page.js";
 import { canWiden, narrow, widen } from "./rescope.js";
 import { applyReveal, canReveal, clearReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { changeGroups, countText, rawText, rowKeyText } from "./changes.js";
@@ -96,6 +96,21 @@ let settled = false;
 function settle(text, tone) {
   settled = true;
   setPill("expires-in", text, tone);
+}
+
+// withdrawnNow shows the revert withdrawn when err is the engine's refusal
+// of a request the agent withdrew (a page opened before it did), and ends
+// the session: nothing is left to sign, reject, rescope or reveal.
+function withdrawnNow(relay, err) {
+  const text = withdrawnText(err);
+  if (text === null) return false;
+  if (relay) endSession(relay.session, ENGINE_BUTTONS);
+  settled = true;
+  // The note and scope sheets close with the page they sit over.
+  $("sheet-dim").hidden = true;
+  $("scope-panel").classList.toggle("open", false);
+  showWithdrawn("expires-in", text);
+  return true;
 }
 
 // showExpiry is the top bar's pill: amber while the link holds, red once it
@@ -238,6 +253,7 @@ async function finish(response, relay, binding) {
     endSession(relay.session, ENGINE_BUTTONS);
     settle(result?.batched ? "Signed" : "Reverted", "ok");
   } catch (err) {
+    if (withdrawnNow(relay, err)) return;
     showRelayFailed(relayFailure(err, "revert"));
     settle("Not signed", "bad");
   }
@@ -302,6 +318,7 @@ async function reject(state) {
   try {
     await rejectRevert(relay.session, relay.id, relay.secret, note);
   } catch (err) {
+    if (withdrawnNow(relay, err)) return;
     $("reject-send").disabled = false;
     $("reject-cancel").disabled = false;
     $("reject-status").textContent = err?.reason === "LINK_RESET" ? RESET_MESSAGE : personText(err) || `The engine did not take the reject: ${err.message}`;
@@ -439,6 +456,7 @@ async function changeScope(state, run) {
     applyScope(state, await run());
     $("scope-status").textContent = "";
   } catch (err) {
+    if (withdrawnNow(state.relay, err)) return;
     $("scope-status").textContent = err?.name === "NotAllowedError" || err?.name === "SecurityError" ? webauthnError(err, state.req.credentialIds.length) : scopeFailure(err);
   }
   state.busy = false;
@@ -516,6 +534,7 @@ async function showValues(state) {
       getAssertion: (options) => navigator.credentials.get(options),
     });
   } catch (err) {
+    if (withdrawnNow(relay, err)) return;
     const failure = revealFailure(err, KIND_REVERT);
     status = failure?.text ?? (err?.name === "NotAllowedError" ? webauthnError(err, req.credentialIds.length) : personText(err) || err.message);
     if (failure?.final) state.revealFinal = req;
@@ -544,6 +563,7 @@ async function main() {
     rp = relyingParty(window.location);
     ({ req, relay } = await loadOrPaste(loadRequest, describe));
   } catch (err) {
+    if (withdrawnNow(null, err)) return;
     fail(describe(err));
     return;
   }

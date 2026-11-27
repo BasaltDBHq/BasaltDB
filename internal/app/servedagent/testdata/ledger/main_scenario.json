@@ -1350,6 +1350,24 @@
       "table_name": null,
       "values_pruned": false,
       "verb": null
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": null,
+      "depth": null,
+      "detail": {
+        "reason": "the person changed their mind",
+        "revertId": "<id-25>"
+      },
+      "kind": "REVERT_WITHDRAWN",
+      "new_row": null,
+      "old_row": null,
+      "op": null,
+      "row_key": null,
+      "seq": 36,
+      "table_name": null,
+      "values_pruned": false,
+      "verb": null
     }
   ]
 }

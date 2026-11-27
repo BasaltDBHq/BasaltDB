@@ -35,6 +35,16 @@ type Delivery interface {
 type Reverts interface {
 	ListOpenReverts(ctx context.Context, p action.RevertListParams) (pagination.Page[action.Revert], error)
 	PendingRevert(ctx context.Context, p *revertsvc.PendingRevert, reissue bool) error
+	// WithdrawRevert withdraws a revert the agent prepared while it waits
+	// for the person; found is false for another agent's revert, or none.
+	WithdrawRevert(ctx context.Context, id uuid.UUID, reason string) (w action.Withdrawal, found bool, err error)
+}
+
+// PluginWithdrawer withdraws a plugin approval the agent opened while it
+// waits for the person; found is false when the agent opened none with
+// that id.
+type PluginWithdrawer interface {
+	WithdrawPluginApproval(ctx context.Context, id uuid.UUID, reason string) (w action.Withdrawal, found bool, err error)
 }
 
 // Admitter admits a call: the engine is set up and its guard is current.

@@ -1,0 +1,18 @@
+{
+  "body": {
+    "code": "NOT_FOUND",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "no held write or plugin approval <id-30> of this agent; nothing was withdrawn",
+    "nextSteps": [
+      {
+        "action": "CALL_TOOL",
+        "actor": "AGENT",
+        "text": "List your pending approvals to find the right approvalId.",
+        "tool": "list_pending"
+      }
+    ],
+    "reason": "APPROVAL"
+  },
+  "isError": true,
+  "tool": "withdraw"
+}

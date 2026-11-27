@@ -25,7 +25,7 @@ Most MCP clients take a command and its arguments. Add one server per agent, run
 - `basalt mcp` finds the engine config by itself (the system path, else the one `basalt init` leaves in your config directory) and reads the socket directory from it. `--agent NAME` is the only flag, and it is needed only when the engine serves more than one agent. When both configs exist, `basalt mcp` stops and names both.
 - Do not put a database URL in the client config. The agent never holds one.
 
-The client then lists the agent's tools: `run_start`, `describe`, `query`, `write`, `run_history`, `list_runs`, `list_pending`, `preview_revert`, `request_revert`, `status`, `revert_plan`, `apply_revert_batch`, `confirm_database` and `request_plugin`. A session usually starts a run with an intent, reads with `query` inside that run, and writes with `write` and an intent.
+The client then lists the agent's tools: `run_start`, `describe`, `query`, `write`, `run_history`, `list_runs`, `list_pending`, `preview_revert`, `request_revert`, `status`, `revert_plan`, `apply_revert_batch`, `confirm_database`, `request_plugin` and `withdraw`. A session usually starts a run with an intent, reads with `query` inside that run, and writes with `write` and an intent.
 
 ## One project, one database
 

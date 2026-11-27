@@ -361,6 +361,16 @@ func resultCases() map[string]resultCase {
 		resultKey("request_revert", "APPLIED"):  {tool: "request_revert", args: revertArgs, build: state(ledger.RevertApplied)},
 		resultKey("request_revert", "EXPIRED"):  {tool: "request_revert", args: revertArgs, build: state(ledger.RevertExpired)},
 		resultKey("request_revert", "REJECTED"): {tool: "request_revert", args: revertArgs, build: state(ledger.RevertRejected)},
+		resultKey("request_revert", "WITHDRAWN"): {
+			tool: "request_revert", args: revertArgs,
+			build: func(t *testing.T, s *testService) (string, []toolresult.Link, []toolresult.NextStep) {
+				r := caseRevertWith(t, ledger.RevertWithdrawn)
+				r.WithdrawReason = "the person changed their mind"
+				out, err := s.revertState(context.Background(), r)
+				require.NoError(t, err)
+				return out.PersonMessage, out.Links, out.NextSteps
+			},
+		},
 		resultKey("list_pending", "REVERT_PENDING"): {
 			tool: "list_pending", args: map[string]any{}, openWithoutURL: true,
 			build: func(t *testing.T, s *testService) (string, []toolresult.Link, []toolresult.NextStep) {
@@ -406,6 +416,14 @@ func resultCases() map[string]resultCase {
 			build: func(t *testing.T, s *testService) (string, []toolresult.Link, []toolresult.NextStep) {
 				r := caseBatchedRevert(t, ledger.RevertRejected)
 				r.RejectNote = "Not now."
+				return planGuidanceOf(t, s.Service, r, nil)
+			},
+		},
+		resultKey("revert_plan", "WITHDRAWN"): {
+			tool: "revert_plan", args: revertArgs,
+			build: func(t *testing.T, s *testService) (string, []toolresult.Link, []toolresult.NextStep) {
+				r := caseBatchedRevert(t, ledger.RevertWithdrawn)
+				r.WithdrawReason = "not needed any more"
 				return planGuidanceOf(t, s.Service, r, nil)
 			},
 		},

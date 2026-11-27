@@ -24,5 +24,7 @@ func ApprovalResultKeys() []string {
 		"list_pending|EXPIRED",
 		"list_pending|PENDING",
 		"list_pending|REQUEST_TOO_LARGE",
+		"withdraw|NOT_WAITING",
+		"withdraw|WITHDRAWN",
 	)
 }

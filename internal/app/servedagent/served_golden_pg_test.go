@@ -69,6 +69,8 @@ var unreachableCodes = map[string]string{
 	"request_plugin NOT_FOUND":          "the harness keeps no engine-kept plugins; internal/plugin's request_plugin and requests tests and pluginmcp's tools_test.go cover request_plugin",
 	"request_plugin UNAVAILABLE":        "needs the database to be down",
 	"request_plugin INTERNAL":           "needs a failure the engine does not expect",
+	"withdraw UNAVAILABLE":              "needs the database to be down",
+	"withdraw INTERNAL":                 "needs a failure the engine does not expect",
 }
 
 // declaredErrors reads every served tool's error codes from the contract's
@@ -118,7 +120,7 @@ func requireEveryToolAndErrorPinned(t *testing.T, gs ...*servedGolden) {
 	}
 	for _, tool := range []string{
 		"run_start", "run_history", "list_runs", "list_pending", "query", "write",
-		"preview_revert", "request_revert", "revert_plan", "apply_revert_batch", "status",
+		"preview_revert", "request_revert", "revert_plan", "apply_revert_batch", "status", "withdraw",
 	} {
 		require.True(t, tools[tool], "%s has no success golden", tool)
 	}
@@ -282,6 +284,14 @@ func servedMainScenario(t *testing.T) (*servedGolden, agentEnv) {
 	// engine it runs on.
 	g.callErr("request_plugin_no_form", "request_plugin", map[string]any{}, "INVALID_ARGUMENT")
 	g.callErr("request_plugin_not_served", "request_plugin", map[string]any{"name": "local-ner", "remove": true}, "PLUGIN_REFUSED")
+	// withdraw: the agent takes back its own revert, which still waits for
+	// the person; the wait form then answers WITHDRAWN at once. Last, so no
+	// step above sees the revert withdrawn.
+	const reason = "the person changed their mind"
+	g.callErr("withdraw_no_id", "withdraw", map[string]any{"reason": reason}, "INVALID_ARGUMENT")
+	g.callErr("withdraw_unknown_approval", "withdraw", map[string]any{"approvalId": uuid.Must(uuid.NewV7()).String(), "reason": reason}, "NOT_FOUND")
+	g.callOK("withdraw_revert", "withdraw", map[string]any{"revertId": str(t, requested["revertId"]), "reason": reason})
+	g.callOK("request_revert_withdrawn", "request_revert", map[string]any{"revertId": str(t, requested["revertId"]), "waitForSignature": 0})
 	return g, e
 }
 

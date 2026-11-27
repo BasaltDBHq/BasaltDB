@@ -215,7 +215,7 @@ func newHarness(t *testing.T, opts ...func(*memStore)) *harness {
 		return mcpserver.Tool{}
 	}
 	revertmcp.Tools(rev, mount)
-	approvalmcp.Tools(approval, mount)
+	approvalmcp.Tools(approval, nil, mount)
 	return h
 }
 

@@ -87,6 +87,7 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 
 ### Fixed
 
+- On the approval and undo pages, short values in the row tables (names, numbers, timestamps) stay on one line instead of breaking mid-value. Only long text wraps, and a wide table scrolls sideways inside its card.
 - Row-level security no longer hides itself from the agent. A table whose rows row-level security hides from the agent now gives the `RLS_HIDES_ROWS` warning on every read and write that touches it, not only on an empty result: a `count(*)` returns one row holding 0, and the agent used to take that for an empty table. A write that row-level security refuses (`new row violates row-level security policy`, in its insert, update and delete forms) is `PERMISSION_DENIED` with guidance that names row-level security and sends the person to `basalt init`, where they answer the row-level security question, instead of the generic "denied access" message.
 - `list_runs` shows all of an agent's history. Besides runs it now lists the reverts the person signed (`kind` `REVERT`) and the reads the agent made outside any run, grouped per UTC hour (`kind` `LOOSE_READS`), in one time order with the same paging, and `run_history` takes `from` and `to` instead of `runId` to list the reads of one hour. Each item now carries a `kind` (`RUN` for a run). The `cursor` of `list_runs` is a new shape: a cursor from an older engine is `INVALID_ARGUMENT`; call again without it.
 - A release now counts as newer than its release candidates. The update notice offers `0.1.0-alpha` to someone running `0.1.0-alpha-rc.3`, and `basalt init` from the release no longer refuses an engine service that runs the candidate as "newer than this basalt".
@@ -118,6 +119,8 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 - The setup page creates the passkey on the first try for an agent with a long name; before, it refused every passkey it made with "This passkey was made for another setup page". A long agent or database name in the name your password manager shows for the passkey is shortened to fit and ends with "…".
 - `basalt init` on an engine already set up ends as soon as the guard update on the page it opened is done: it prints `the guard is updated on the setup page. The agent NAME can go on` and exits `0`. Before, it kept the agent waiting, with no output, for the full 90 seconds it waits for a Remove. A Remove and "No, this isn't mine" work as before.
 - The help of `basalt` and `basalt init` now says to connect another database with `basalt init --agent NAME`, and with `basalt init --remote --agent NAME` only on a bot's machine. It named only the `--remote` command.
+- `basalt init --demo` on sample tables an earlier demo left behind, with row-level security turned on (for example in Supabase's table editor), now gives the agent its policy on them. Before, the agent saw no lead and its writes were refused, while the page said `demo ready: leads 30, lead_notes 20`. A `basalt_demo` schema that BasaltDB did not make still gets no policy.
+- An install from the local setup page records the engine's key in the database, as a setup code's install does, so `status` reports `engineRecord.state` `RECORDED`. It reported `NOT_RECORDED`.
 
 ### Security
 

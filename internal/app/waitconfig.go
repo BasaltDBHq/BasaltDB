@@ -31,6 +31,9 @@ type WaitOptions struct {
 	Dial   func(ctx context.Context, dsn string) (setup.Conn, error)
 	Users  setup.Users
 	Prefix string
+	// StateDir replaces the engine's default state directory, where an
+	// install reads the engine's key (tests only: setup.LocalOptions).
+	StateDir string
 }
 
 // WaitForConfig is an engine with no config (CONTRACT.md, The local setup
@@ -42,7 +45,7 @@ type WaitOptions struct {
 // error the listener is closed.
 func WaitForConfig(ctx context.Context, o WaitOptions) (net.Listener, error) {
 	addr, configPath, log := o.Addr, o.ConfigPath, o.Log
-	jobs, err := newLocalSetup(setup.LocalOptions{ConfigPath: configPath, Origin: o.Origin, Dial: o.Dial, Users: o.Users, Prefix: o.Prefix})
+	jobs, err := newLocalSetup(setup.LocalOptions{ConfigPath: configPath, Origin: o.Origin, Dial: o.Dial, Users: o.Users, Prefix: o.Prefix, StateDir: o.StateDir})
 	if err != nil {
 		return nil, err
 	}

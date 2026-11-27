@@ -37,7 +37,7 @@ func (ac *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret stri
 	}
 	rows, err := ac.store.Proofs.RevealHeld(ctx, id, held, in.Proof.Assertion(), key)
 	if err != nil {
-		return approval.RevealAnswer{}, ac.revealApprovalError(err, ac.delivery.PageLink(links.Approval, id, secret))
+		return approval.RevealAnswer{}, ac.revealApprovalError(ctx, id, err, ac.delivery.PageLink(links.Approval, id, secret))
 	}
 	return linksvc.CheckedAnswer(a.Lines, rows)
 }
@@ -59,8 +59,12 @@ func heldWrite(a action.Approval) (HeldRun, error) {
 }
 
 // revealApprovalError is the page's answer to a reveal the store refused,
-// by the store's refusal reason.
-func (ac *Service) revealApprovalError(err error, link string) error {
+// by the store's refusal reason. A held write withdrawn after the page
+// opened is shown withdrawn (withdrawnMeanwhile).
+func (ac *Service) revealApprovalError(ctx context.Context, id uuid.UUID, err error, link string) error {
+	if ac.core.Errors.ToolError(err).Reason == guidance.ReasonWithdrawn {
+		return ac.withdrawnMeanwhile(ctx, id, err)
+	}
 	ar := approvalstore.ApprovalRefusalOf(err)
 	if ar == nil {
 		return err

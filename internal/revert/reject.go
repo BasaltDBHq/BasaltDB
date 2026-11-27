@@ -61,7 +61,7 @@ func (rc *Service) RejectRevert(ctx context.Context, id uuid.UUID, secret string
 	}
 	out, err := rc.store.Proofs.RejectRevert(ctx, id, note, st.token)
 	if err != nil {
-		return RejectResponse{}, rc.rejectError(r, st.token != nil, err)
+		return RejectResponse{}, rc.rejectError(ctx, r, st.token != nil, err)
 	}
 	rc.rescopes.drop(id)
 	rc.revokeRejected(ctx, id)
@@ -103,7 +103,7 @@ func (rc *Service) revokeRejected(ctx context.Context, id uuid.UUID) {
 // reject without a token is one fixed answer. A revert the store no longer
 // finds for the role reads as an unknown id, an expiry is REVERT_EXPIRED,
 // and a revert signed or rejected meanwhile is REVERT_INVALID.
-func (rc *Service) rejectError(r action.Revert, heldToken bool, err error) error {
+func (rc *Service) rejectError(ctx context.Context, r action.Revert, heldToken bool, err error) error {
 	refused := refusalOf(err)
 	switch {
 	case refused.Reason == revertstore.RevertWidenRefused && heldToken:
@@ -114,6 +114,8 @@ func (rc *Service) rejectError(r action.Revert, heldToken bool, err error) error
 		return linksvc.ErrNotThisAgent
 	case refused.Reason == revertstore.RevertExpiredReason:
 		return rc.revertExpired(r)
+	case refused.Reason == revertstore.RevertWithdrawnReason:
+		return rc.withdrawnMeanwhile(ctx, r)
 	case refused.Reason == revertstore.RevertNotPending:
 		return &guidance.PageError{ToolError: &toolresult.ToolError{
 			Code:          guidance.CodeRevertInvalid,

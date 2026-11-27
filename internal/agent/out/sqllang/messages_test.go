@@ -58,6 +58,34 @@ func TestDeniedTargetNamesTheTablePostgresNamed(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestRLSRefusalNamesTheTableOfEachRefusalForm(t *testing.T) {
+	t.Parallel()
+	l := sqllang.Language{}
+	for msg, want := range map[string]string{
+		`new row violates row-level security policy for table "leads"`:                      `leads`,
+		`new row violates row-level security policy "own_rows" for table "leads"`:           `leads`,
+		`new row violates row-level security policy (USING expression) for table "leads"`:   `leads`,
+		`new row violates row-level security policy`:                                        ``,
+		`new row violates row-level security policy for table "my leads"`:                   `my leads`,
+		`new row violates row-level security policy "own rows" for table "my leads"`:        `my leads`,
+		`query would be affected by row-level security policy for table "leads"`:            `leads`,
+		`query would be affected by row-level security policy for table "my ""odd"" leads"`: `my "odd" leads`,
+		`new row violates row-level security policy for table leads`:                        `leads`,
+	} {
+		table, ok := l.RLSRefusal(msg)
+		require.True(t, ok, msg)
+		require.Equal(t, want, table, msg)
+	}
+	for _, msg := range []string{
+		"permission denied for table leads",
+		`the row-level security policy of table "leads" is odd`,
+		`log: row-level security policy for table "leads" was added`,
+	} {
+		_, ok := l.RLSRefusal(msg)
+		require.False(t, ok, msg)
+	}
+}
+
 func TestNoKeyTargetNamesTheTableTheGuardNamed(t *testing.T) {
 	t.Parallel()
 	l := sqllang.Language{}

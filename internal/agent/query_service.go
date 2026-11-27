@@ -102,11 +102,11 @@ func (wc *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, erro
 	if err != nil {
 		return QueryOutcome{}, fmt.Errorf("record read: %w", err)
 	}
-	return QueryOutcome{ReadResult: res, ChangeID: change, Warnings: wc.rlsWarnings(ctx, stmt.Tables, len(res.Rows))}, nil
+	return QueryOutcome{ReadResult: res, ChangeID: change, Warnings: wc.rlsWarnings(ctx, stmt.Tables)}, nil
 }
 
-// ListRuns returns one page of the agent's own runs with what each did.
-func (wc *Service) ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error) {
+// ListRuns returns one page of the agent's own runs, reverts and reads outside a run.
+func (wc *Service) ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunListItem], error) {
 	return wc.store.Ledger.ListRuns(ctx, p)
 }
 

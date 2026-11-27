@@ -29,7 +29,7 @@ type runStore interface {
 	Write(ctx context.Context, in action.Intent, op action.Op, sql string, params []any, returned store.Returned) (action.WriteResult, error)
 	RecordRefusal(ctx context.Context, r action.Refusal) error
 	History(ctx context.Context, p action.ChangeListParams) (changeHistory, error)
-	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error)
+	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunListItem], error)
 }
 
 type readRecorder interface {

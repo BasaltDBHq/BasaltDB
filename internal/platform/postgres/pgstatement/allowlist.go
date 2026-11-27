@@ -65,5 +65,5 @@ func toSet(words string) map[string]bool {
 // functionAllowed reports whether a called function name, as written in the
 // statement (optionally schema-qualified), is on the allowlist.
 func functionAllowed(name string) bool {
-	return allowedFunctions[strings.TrimPrefix(name, "pg_catalog.")]
+	return allowedFunctions[unqualified(name)]
 }

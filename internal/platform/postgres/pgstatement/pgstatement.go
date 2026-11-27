@@ -288,7 +288,13 @@ func (w *walker) sortedTables() []string {
 // funcName is the name a call names, without a pg_catalog qualifier: the
 // name the engine's function lists know it by.
 func funcName(f *pganalyze.FuncCall) string {
-	return strings.TrimPrefix(nameOf(f.GetFuncname()), "pg_catalog.")
+	return unqualified(nameOf(f.GetFuncname()))
+}
+
+// unqualified is a function name as written without its pg_catalog
+// qualifier, if it has one.
+func unqualified(name string) string {
+	return strings.TrimPrefix(name, "pg_catalog.")
 }
 
 func nameOf(parts []*pganalyze.Node) string {

@@ -404,7 +404,9 @@ func (rc *Service) revertState(ctx context.Context, r action.Revert) (RequestedR
 	if err != nil {
 		return out, err
 	}
-	if r.Widened {
+	// A withdrawn revert is told as the page tells it, as RevertPlan does:
+	// the agent's reason in full, its length capped for that message.
+	if r.Widened && r.Status != action.RevertWithdrawn {
 		out.PersonMessage = strings.TrimSpace(widenedMessage + " " + out.PersonMessage)
 	}
 	if r.Status != action.RevertApplied && r.Status != action.RevertApplying {

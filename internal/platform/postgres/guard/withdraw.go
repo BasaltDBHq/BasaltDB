@@ -37,9 +37,10 @@ func WithdrawPluginApproval(ctx context.Context, q Querier, approvalID uuid.UUID
 	return withdraw(ctx, q, "withdraw_plugin_approval", approvalID, reason)
 }
 
-// withdraw calls the withdraw function fn of the guard for id.
+// withdraw calls the withdraw function fn of the guard for id. The reason
+// goes in as storableText: Postgres text cannot hold a NUL.
 func withdraw(ctx context.Context, q Querier, fn string, id uuid.UUID, reason string) (*time.Time, error) {
-	sql, args, err := sqlport.Builder.Select().Column(sq.Expr("basalt_meta."+fn+"(?::uuid, ?::text)", id.String(), reason)).ToSql()
+	sql, args, err := sqlport.Builder.Select().Column(sq.Expr("basalt_meta."+fn+"(?::uuid, ?::text)", id.String(), storableText(reason))).ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", fn, err)
 	}

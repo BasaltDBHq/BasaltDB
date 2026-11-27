@@ -70,7 +70,7 @@
           "CANCELLED",
           "ENDED"
         ],
-        "description": "WITHDRAWN: the request is withdrawn (by this call or an earlier one) and can never be signed. Any other status: the request no longer waited for the person, so nothing changed; it is the request's state."
+        "description": "WITHDRAWN: the request is withdrawn (by this call or an earlier one) and can never be signed. Any other status: the request no longer waited for the person, so nothing changed; it is the request's state. CANCELLED (a newer approval replaced it) and ENDED (it was signed and has since ended) apply only to plugin approvals; APPLYING and REJECTED only to reverts."
       },
       "withdrawnAt": {
         "type": "string",

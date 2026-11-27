@@ -2,13 +2,16 @@ package revert
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -84,3 +87,22 @@ func TestAwaitRevertReportsWithdrawn(t *testing.T) {
 
 // notWaiting is the guard's answer for a request no longer waiting: no time.
 func (withdrawStore) notWaiting() *time.Time { return nil }
+
+// A widened revert the agent withdrew with a long reason is told as the
+// page tells it: no widened prefix, the same line as revert_plan's, within
+// the contract's 500 characters.
+func TestWithdrawnWidenedRevertKeepsThePersonMessageLimit(t *testing.T) {
+	t.Parallel()
+	r := caseRevert(false)
+	r.Status, r.Widened, r.ExpiresAt = action.RevertWithdrawn, true, time.Now().Add(time.Hour)
+	r.WithdrawReason = strings.Repeat("the person changed their mind ", 15)[:450]
+	calls := 0
+	rc := newService(t, "linux", "", withStore(withdrawStore{r: &r, calls: &calls}))
+	out, err := rc.revertState(context.Background(), r)
+	require.NoError(t, err)
+	require.LessOrEqual(t, utf8.RuneCountInString(out.PersonMessage), guidance.MaxPersonMessageLength)
+	require.NotContains(t, out.PersonMessage, widenedMessage)
+	plan, _, err := rc.planGuidance(RevertPlan{Revert: r})
+	require.NoError(t, err)
+	require.Equal(t, plan, out.PersonMessage, "the wait form and revert_plan say the same")
+}

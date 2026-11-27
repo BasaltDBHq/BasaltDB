@@ -39,7 +39,7 @@ type agentLedger interface {
 	RecordRead(ctx context.Context, r action.Read) (uuid.UUID, error)
 	RecordRefusal(ctx context.Context, r action.Refusal) error
 	History(ctx context.Context, p action.ChangeListParams) (changeHistory, error)
-	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error)
+	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunListItem], error)
 }
 
 // statementChecker checks a statement against the engine's SQL policy for

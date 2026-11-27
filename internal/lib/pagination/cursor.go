@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -30,6 +31,10 @@ type cursorKey struct {
 	ID   string `json:"id,omitempty"`
 	Seq  int64  `json:"seq,omitempty"`
 	Name string `json:"name,omitempty"`
+	// At is a time as Unix microseconds, with Kind and ID the key of a list
+	// ordered by time.
+	At   int64  `json:"at,omitempty"`
+	Kind string `json:"kind,omitempty"`
 }
 
 // EncodeIDCursor builds an opaque cursor from a row id (change, approval, run).
@@ -55,6 +60,28 @@ func DecodeIDCursor(cursor string) (uuid.UUID, error) {
 }
 
 // EncodeNameCursor builds a cursor for name-ordered lists (revert lines, by line hash).
+// EncodeTimeCursor is the cursor of a list ordered by (at, kind, id): the
+// item the next page continues after.
+func EncodeTimeCursor(at time.Time, kind string, id uuid.UUID) string {
+	return encodeCursor(cursorKey{At: at.UnixMicro(), Kind: kind, ID: id.String()})
+}
+
+// DecodeTimeCursor is the key EncodeTimeCursor wrote.
+func DecodeTimeCursor(cursor string) (at time.Time, kind string, id uuid.UUID, err error) {
+	k, err := decodeCursor(cursor)
+	if err != nil {
+		return time.Time{}, "", uuid.Nil, err
+	}
+	if k.At == 0 || k.Kind == "" || k.ID == "" {
+		return time.Time{}, "", uuid.Nil, fmt.Errorf("%w: missing time key", ErrStaleCursor)
+	}
+	id, err = uuid.Parse(k.ID)
+	if err != nil {
+		return time.Time{}, "", uuid.Nil, fmt.Errorf("%w: %w", ErrStaleCursor, err)
+	}
+	return time.UnixMicro(k.At).UTC(), k.Kind, id, nil
+}
+
 func EncodeNameCursor(name string) string {
 	return encodeCursor(cursorKey{Name: name})
 }

@@ -28,7 +28,7 @@ type Agent interface {
 	StartRun(ctx context.Context, intent string, taskID uuid.UUID) (agentsvc.RunInfo, error)
 	Query(ctx context.Context, p agentsvc.QueryParams) (agentsvc.QueryOutcome, error)
 	Write(ctx context.Context, p agentsvc.WriteParams) (agentsvc.WriteOutcome, error)
-	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error)
+	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunListItem], error)
 	DescribeOverview(ctx context.Context) (agentsvc.Overview, error)
 	DescribeResource(ctx context.Context, resource, ifFingerprint string) (agentsvc.Resource, error)
 	DescribeSearch(ctx context.Context, p agentsvc.DescribeSearchParams) (pagination.Page[agentsvc.SearchItem], error)

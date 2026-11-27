@@ -864,3 +864,17 @@ func walkSchema(t *testing.T, where string, node any) {
 		}
 	}
 }
+
+// TestInputSchemasHaveNoTopLevelCombinators holds every tool's inputSchema
+// to a plain object: some MCP clients reject a tool whose schema has oneOf,
+// anyOf or allOf at the top. The server enforces such choices itself.
+func TestInputSchemasHaveNoTopLevelCombinators(t *testing.T) {
+	t.Parallel()
+	tools, err := mcpcontract.LoadAll()
+	require.NoError(t, err)
+	for _, tool := range tools {
+		for _, key := range []string{"oneOf", "anyOf", "allOf"} {
+			require.NotContains(t, tool.InputSchema, key, "%s: inputSchema must not have %s at the top level", tool.Name, key)
+		}
+	}
+}

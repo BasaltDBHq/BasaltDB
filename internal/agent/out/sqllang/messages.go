@@ -61,7 +61,7 @@ func (Language) DeniedTarget(message string) (string, bool) {
 	return "", false
 }
 
-var rlsRefusal = regexp.MustCompile(`row-level security policy(?: "[^"]*")?(?: \([A-Za-z ]+\))?(?: for table (\S+))?`)
+var rlsRefusal = regexp.MustCompile(`(?:new row violates|query would be affected by) row-level security policy(?: "(?:[^"]|"")*")?(?: \([A-Za-z ]+\))?(?: for table (?:"((?:[^"]|"")+)"|(\S+)))?`)
 
 // RLSRefusal is the table a Postgres row-level security refusal ("new row
 // violates row-level security policy for table "leads"", and the USING and
@@ -72,7 +72,10 @@ func (Language) RLSRefusal(message string) (string, bool) {
 	if m == nil {
 		return "", false
 	}
-	return strings.Trim(m[1], `"`), true
+	if m[1] != "" {
+		return strings.ReplaceAll(m[1], `""`, `"`), true
+	}
+	return m[2], true
 }
 
 var noPrimaryKey = regexp.MustCompile(`table (\S+) has no primary key`)

@@ -19,7 +19,6 @@ import (
 // run that wrote to more is marked ResourcesTruncated.
 const MaxRunResources = 10
 
-// runIDColumn is the run list's sort and keyset column.
 // The filters of the per-run aggregate over agent_changes. A write is an
 // INSERT, UPDATE or DELETE record; a revert's own record (op REVERT) has no
 // run of the agent and never matches. CROSS JOIN LATERAL of an aggregate

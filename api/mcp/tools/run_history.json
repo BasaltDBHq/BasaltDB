@@ -36,20 +36,7 @@
         "pattern": "^-?id$",
         "description": "id or -id. Default -id (newest first)."
       }
-    },
-    "oneOf": [
-      {
-        "required": [
-          "runId"
-        ]
-      },
-      {
-        "required": [
-          "from",
-          "to"
-        ]
-      }
-    ]
+    }
   },
   "outputSchema": {
     "type": "object",

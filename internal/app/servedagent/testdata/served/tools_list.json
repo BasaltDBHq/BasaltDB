@@ -120,19 +120,6 @@
       "description": "The change records of one run of this agent, applied and refused, with the rows each change wrote (cascades included; values of resources the agent cannot read are redacted, values older than 30 days pruned). With from and to instead of runId, the reads this agent made outside any run in that period (the from and to of a LOOSE_READS item of list_runs). Newest first, cursor-paginated.",
       "inputSchema": {
         "additionalProperties": false,
-        "oneOf": [
-          {
-            "required": [
-              "runId"
-            ]
-          },
-          {
-            "required": [
-              "from",
-              "to"
-            ]
-          }
-        ],
         "properties": {
           "cursor": {
             "description": "nextCursor from the previous page.",

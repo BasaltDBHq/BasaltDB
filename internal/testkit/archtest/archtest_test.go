@@ -242,25 +242,25 @@ func imp(paths ...string) string {
 // TestRulesCatchViolations runs the checks on a small module with a breach of each rule.
 func TestRulesCatchViolations(t *testing.T) {
 	m := modulePath + "/"
-	guard := "package sqlguard\n\nfunc Check() {}\nfunc Other() {}\nfunc WithRowVersions() {}\ntype Limits struct{}\n"
-	use := func(_, fn string) string { return "\nvar _ = sqlguard." + fn + "\n" }
+	guard := "package policy\n\nfunc Check() {}\nfunc Other() {}\nfunc WithRowVersions() {}\ntype Limits struct{}\n"
+	use := func(_, fn string) string { return "\nvar _ = policy." + fn + "\n" }
 	files := map[string]string{
 		"go.mod":                                   "module " + modulePath + "\n",
 		"internal/platform/db/db.go":               "package db\n",
-		"internal/core/sqlguard/g.go":              guard,
-		"internal/core/leaky/l.go":                 "package leaky\n\nimport (\n\t\"os\"\n\t\"syscall\"\n\t\"time\"\n\t. \"strings\"\n)\n\nvar _ = os.Getenv\nvar _ = syscall.Getpid\nvar Now = time.Now\nvar Since = time.Since\n",
+		"internal/core/policy/g.go":                guard,
+		"internal/core/leaky/l.go":                 "package leaky\n\nimport (\n\t\"os\"\n\t\"syscall\"\n\t\"time\"\n\t. \"strings\"\n\t_ \"github.com/pganalyze/pg_query_go/v6\"\n\t_ \"github.com/wasilibs/go-pgquery\"\n)\n\nvar _ = os.Getenv\nvar _ = syscall.Getpid\nvar Now = time.Now\nvar Since = time.Since\n",
 		"internal/core/rnd/r.go":                   "package rnd\n\n" + imp("crypto/rand"),
 		"internal/core/granted/r.go":               "package granted\n\n" + imp("crypto/rand"),
 		"internal/core/setupcode/a.go":             "package setupcode\n\nimport \"net\"\n\nvar _ = net.JoinHostPort\nvar _ = net.Dial\nvar _ = net.ParseIP\n",
 		"internal/core/trustprofile/a.go":          "package trustprofile\n\nimport (\n\t\"io/fs\"\n\t\"net\"\n)\n\nvar _ fs.FS\nvar _ = fs.ReadDir\nvar _ = fs.Glob\nvar _ = net.ParseIP\nvar _ = net.JoinHostPort\n",
-		"internal/agent/s.go":                      "package agent\n\n" + imp(m+"internal/platform/db") + "import \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
-		"internal/agent/in/agentmcp/i.go":          "package agentmcp\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + "var _ sqlguard.Limits\n",
-		"internal/agent/out/other/o.go":            "package other\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + use("", "Other"),
-		"web/w.go":                                 "package web\n\n" + imp(m+"internal/agent") + "import \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + use("", "Other"),
+		"internal/agent/s.go":                      "package agent\n\n" + imp(m+"internal/platform/db") + "import \"" + m + "internal/core/policy\"\n" + use("", "Check"),
+		"internal/agent/in/agentmcp/i.go":          "package agentmcp\n\nimport \"" + m + "internal/core/policy\"\n" + use("", "Check") + "var _ policy.Limits\n",
+		"internal/agent/out/other/o.go":            "package other\n\nimport \"" + m + "internal/core/policy\"\n" + use("", "Check") + use("", "Other"),
+		"web/w.go":                                 "package web\n\n" + imp(m+"internal/agent") + "import \"" + m + "internal/core/policy\"\n" + use("", "Check") + use("", "Other"),
 		"internal/approval/s.go":                   "package approval\n\n" + imp(m+"web"),
-		"internal/app/a.go":                        "package app\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
-		"cmd/tool/c.go":                            "package main\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + "func main() {}\n",
-		"pkg/facade/p.go":                          "package facade\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
+		"internal/app/a.go":                        "package app\n\nimport \"" + m + "internal/core/policy\"\n" + use("", "Check"),
+		"cmd/tool/c.go":                            "package main\n\nimport \"" + m + "internal/core/policy\"\n" + use("", "Check") + "func main() {}\n",
+		"pkg/facade/p.go":                          "package facade\n\nimport \"" + m + "internal/core/policy\"\n" + use("", "Check"),
 		"pkg/lib2/p.go":                            "package lib2\n\n" + imp(m+"api/x"),
 		"pkg/setup/s.go":                           "package setup\n\n" + imp(m+"internal/setup", m+"internal/platform/postgres/setupstore", m+"internal/platform/db"),
 		"pkg/other/o.go":                           "package other\n\n" + imp(m+"internal/platform/db"),
@@ -285,7 +285,7 @@ func TestRulesCatchViolations(t *testing.T) {
 		"internal/agent/agenttest/main.go":         "package main\n\n" + imp(m+"internal/platform/db") + "func main() {}\n",
 		"internal/platform/vault/v.go":             "package vault\n",
 		"internal/approval/a.go":                   "package approval\n\n" + imp(m+"internal/agent/loadtest"),
-		"ARCHITECTURE.md":                          "| `leakytest` | x | types | 2 | - | - |\n| `sqlguard` | sql | decision | 1 | - | `Other` |\n| `leaky` | x | types | 2 | - | - |\n| `rnd` | x | codec | 3 | `crypto/rand` | - |\n| `granted` | x | codec | 3 | - | - |\n| `setupcode` | x | codec | 3 | `net` | - |\n| `trustprofile` | x | types | 2 | `io/fs`, `net` | - |\n| `textrule` | x | types | 2 | - | - |\n",
+		"ARCHITECTURE.md":                          "| `leakytest` | x | types | 2 | - | - |\n| `policy` | sql | decision | 1 | - | `Other` |\n| `leaky` | x | types | 2 | - | - |\n| `rnd` | x | codec | 3 | `crypto/rand` | - |\n| `granted` | x | codec | 3 | - | - |\n| `setupcode` | x | codec | 3 | `net` | - |\n| `trustprofile` | x | types | 2 | `io/fs`, `net` | - |\n| `textrule` | x | types | 2 | - | - |\n",
 	}
 	root := fixture(t, files)
 	reg, err := parseRegister(filepath.Join(root, "ARCHITECTURE.md"))
@@ -298,14 +298,14 @@ func TestRulesCatchViolations(t *testing.T) {
 	}
 	want := map[string][]string{
 		"internal/agent":                      {"imports internal/platform/db"},
-		"internal/agent/in/agentmcp":          {"i.go calls sqlguard.Check"},
+		"internal/agent/in/agentmcp":          {"i.go calls policy.Check"},
 		"internal/revert/in/revertmcp":        {"imports internal/platform/vault/vaulttest (a test helper: only test files import it)"},
-		"internal/agent/out/other":            {"o.go calls sqlguard.Check"},
+		"internal/agent/out/other":            {"o.go calls policy.Check"},
 		"internal/plugin/out/plugintransport": {"imports internal/testkit/toolschema (a test helper: only test files import it)"},
 		"e2e/release":                         {"imports internal/platform/vault/vaulttest (a test helper: only test files import it)"},
-		"web":                                 {"imports internal/agent", "w.go calls sqlguard.Check"},
-		"cmd/tool":                            {"c.go calls sqlguard.Check"},
-		"pkg/facade":                          {"imports internal/core/sqlguard", "p.go calls sqlguard.Check"},
+		"web":                                 {"imports internal/agent", "w.go calls policy.Check"},
+		"cmd/tool":                            {"c.go calls policy.Check"},
+		"pkg/facade":                          {"imports internal/core/policy", "p.go calls policy.Check"},
 		"pkg/lib2":                            {"imports api/x"},
 		"pkg/other":                           {"imports internal/platform/db"},
 		// pkg/setup imports only its allowlist beyond its layer: the setup
@@ -345,6 +345,8 @@ func TestRulesCatchViolations(t *testing.T) {
 			"l.go calls time.Now (core must stay pure)",
 			"l.go calls time.Since (core must stay pure)",
 			"l.go dot-imports strings (not allowed in core)",
+			"l.go imports github.com/pganalyze/pg_query_go/v6 (core must stay pure)",
+			"l.go imports github.com/wasilibs/go-pgquery (core must stay pure)",
 			"l.go imports os (core must stay pure)",
 			"l.go imports syscall (core must stay pure)",
 		},
@@ -402,17 +404,18 @@ func TestRegisterChecksCatchProblems(t *testing.T) {
 
 // TestNewTreeLayers checks the layer table of the new tree (domain folders):
 // platform transports are inbound, the rest of platform outbound, a domain's
-// in/ and out/ are inbound and outbound and its root is a service; the store
-// keeps its sqlguard exception and the plugin path rule its owner at the new
-// paths, and the moved test helpers stay exempt.
+// in/ and out/ are inbound and outbound and its root is a service; the
+// Postgres store, like any adapter, calls no core decision, the plugin path
+// rule keeps its owner at the new paths, and the moved test helpers stay
+// exempt.
 func TestNewTreeLayers(t *testing.T) {
 	m := modulePath + "/"
-	guard := "package sqlguard\n\nfunc Check() {}\nfunc Other() {}\nfunc WithRowVersions() {}\n"
-	use := func(fn string) string { return "\nvar _ = sqlguard." + fn + "\n" }
-	sg := "import \"" + m + "internal/core/sqlguard\"\n"
+	guard := "package policy\n\nfunc Check() {}\nfunc Other() {}\nfunc WithRowVersions() {}\n"
+	use := func(fn string) string { return "\nvar _ = policy." + fn + "\n" }
+	sg := "import \"" + m + "internal/core/policy\"\n"
 	files := map[string]string{
 		"go.mod":                                 "module " + modulePath + "\n",
-		"internal/core/sqlguard/g.go":            guard,
+		"internal/core/policy/g.go":              guard,
 		"internal/platform/postgres/store/s.go":  "package store\n\n" + sg + use("Check") + use("WithRowVersions"),
 		"internal/platform/postgres/other/o.go":  "package other\n\n" + sg + use("Check"),
 		"internal/platform/mcpserver/m.go":       "package mcpserver\n\n" + imp(m+"internal/setup"),
@@ -425,7 +428,7 @@ func TestNewTreeLayers(t *testing.T) {
 		"internal/platform/osservice/o.go":       "package osservice\n\nimport \"" + m + "internal/plugin\"\n\nfunc init() { plugin.UsePathRules() }\n",
 		"internal/app/a.go":                      "package app\n\nimport \"" + m + "internal/plugin\"\n\nfunc init() { plugin.UsePathRules() }\n",
 		"internal/zzz/z.go":                      "package zzz\n",
-		"ARCHITECTURE.md":                        "| `sqlguard` | sql | decision | 1 | - | `Other` |\n",
+		"ARCHITECTURE.md":                        "| `policy` | sql | decision | 1 | - | `Other` |\n",
 	}
 	root := fixture(t, files)
 	reg, err := parseRegister(filepath.Join(root, "ARCHITECTURE.md"))
@@ -437,7 +440,8 @@ func TestNewTreeLayers(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string][]string{
-		"internal/platform/postgres/other": {"o.go calls sqlguard.Check"},
+		"internal/platform/postgres/other": {"o.go calls policy.Check"},
+		"internal/platform/postgres/store": {"s.go calls policy.Check", "s.go calls policy.WithRowVersions"},
 		"internal/platform/vault":          {"imports internal/setup"},
 		"internal/platform/mcpserver":      {"imports internal/setup (an internal/platform package imports no domain service)"},
 		"internal/setup": {

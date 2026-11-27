@@ -36,13 +36,14 @@ type storeRule struct {
 	allowedDeps map[string]string
 }
 
-// storeBoundImports are a store's packages: the SQL guard, the Postgres
-// adapters (with their query port and the large-value SQL) and the driver.
-// A store-neutral domain imports none of them, directly or through another
-// package.
+// storeBoundImports are a store's packages: the Postgres adapters (with
+// their statement check, query port and the large-value SQL), the Postgres
+// parser and the driver. A store-neutral domain imports none of them,
+// directly or through another package.
 var storeBoundImports = []string{
-	modulePath + "/internal/core/sqlguard",
 	modulePath + "/internal/platform/postgres",
+	"github.com/pganalyze/pg_query_go",
+	"github.com/wasilibs/go-pgquery",
 	"github.com/jackc/pgx",
 	"github.com/jackc/pgconn",
 	"github.com/Masterminds/squirrel",
@@ -416,9 +417,9 @@ func TestStoreChainsFollowTheRule(t *testing.T) {
 		m + "internal/a":                       {"fmt", m + "internal/lib/x", m + "internal/lib/y"},
 		m + "internal/lib/x":                   {m + "internal/lib/z"},
 		m + "internal/lib/z":                   {sq},
-		m + "internal/lib/y":                   {sq, m + "internal/core/sqlguardian"},
+		m + "internal/lib/y":                   {sq, "github.com/wasilibs/go-pgqueryx"},
 		sq:                                     {"github.com/lann/builder"},
-		m + "internal/core/sqlguardian":        {"fmt"},
+		"github.com/wasilibs/go-pgqueryx":      {"fmt"},
 		m + "internal/b":                       {m + "internal/lib/w"},
 		m + "internal/lib/w":                   {m + "internal/platform/postgres/pgpii", "github.com/jackc/pgx/v5/pgconn"},
 		m + "internal/platform/postgres/pgpii": {m + "internal/platform/postgres/sqlport"},
@@ -516,9 +517,11 @@ func TestStoreNeutralRuleCatchesViolations(t *testing.T) {
 
 import (
 	_ "github.com/jackc/pgx/v5"
-	_ "` + modulePath + `/internal/core/sqlguard"
+	_ "` + modulePath + `/internal/platform/postgres/pgstatement"
 	_ "` + modulePath + `/internal/platform/postgres/pgdial"
-	_ "` + modulePath + `/internal/core/sqlguardian"
+	_ "` + modulePath + `/internal/platform/postgresx"
+	_ "github.com/pganalyze/pg_query_go/v6"
+	_ "github.com/wasilibs/go-pgqueryx"
 )
 
 type ref struct{ TableOID uint32; attnum int16 }
@@ -542,9 +545,10 @@ const ignored = "$1 pg_class"
 	want := []string{
 		`a.go: identifier TableOID`,
 		`a.go: identifier attnum`,
-		`a.go: import ` + modulePath + `/internal/core/sqlguard`,
 		`a.go: import ` + modulePath + `/internal/platform/postgres/pgdial`,
+		`a.go: import ` + modulePath + `/internal/platform/postgres/pgstatement`,
 		`a.go: import github.com/jackc/pgx/v5`,
+		`a.go: import github.com/pganalyze/pg_query_go/v6`,
 		`a.go: text "SELECT x FROM t WHERE id = $1"`,
 		`a.go: text "pg_catalog"`,
 	}
@@ -560,9 +564,10 @@ const ignored = "$1 pg_class"
 	got := checkStoreNeutral(findings, allowed)
 	wantProblems := []string{
 		`a.go: identifier TableOID`,
-		`a.go: import ` + modulePath + `/internal/core/sqlguard`,
 		`a.go: import ` + modulePath + `/internal/platform/postgres/pgdial`,
+		`a.go: import ` + modulePath + `/internal/platform/postgres/pgstatement`,
 		`a.go: import github.com/jackc/pgx/v5`,
+		`a.go: import github.com/pganalyze/pg_query_go/v6`,
 		`a.go: text "SELECT x FROM t WHERE id = $1"`,
 		`allowlist entry "a.go: gone" matches nothing; remove it`,
 		`allowlist entry "a.go: identifier attnum" has no reason`,
@@ -779,7 +784,7 @@ import (
 	gm "` + modulePath + `/internal/core/guardmodel"
 	g "` + modulePath + `/internal/core/guidance"
 	"` + modulePath + `/internal/core/toolresult"
-	_ "` + modulePath + `/internal/core/sqlguard"
+	_ "` + modulePath + `/internal/platform/postgres/pgstatement"
 	_ "` + modulePath + `/internal/platform/postgres/ledger"
 	_ "github.com/jackc/pgconn"
 	_ "github.com/jackc/pgx/v5"
@@ -825,8 +830,8 @@ func RevealHeld() {}
 	want := []string{
 		`a.go: identifier SQLState`,
 		`a.go: identifier TableOID`,
-		`a.go: import ` + modulePath + `/internal/core/sqlguard`,
 		`a.go: import ` + modulePath + `/internal/platform/postgres/ledger`,
+		`a.go: import ` + modulePath + `/internal/platform/postgres/pgstatement`,
 		`a.go: import github.com/jackc/pgconn`,
 		`a.go: import github.com/jackc/pgx/v5`,
 		`a.go: selector action.StoreError`,

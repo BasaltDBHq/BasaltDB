@@ -106,7 +106,7 @@ POST /api/v1/setup/not-mine origin="http://localhost:8787" type="application/jso
 GET /healthz origin="" type="" body="" -> 200 type="text/plain; charset=utf-8" cache="" allow="" ok
 GET /setup/ origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 16416 bytes sha256:c472d37077e7410b86ac5547bc7f2a4afef6e744dd9c41b8a8e51bdab368399b
 GET /setup/x origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
-GET /style.css origin="" type="" body="" -> 200 type="text/css; charset=utf-8" cache="" allow="" 34745 bytes sha256:cd968ba5348b7360b94b71422a5f339bba927b8ac49255bcf793dd1669234a36
+GET /style.css origin="" type="" body="" -> 200 type="text/css; charset=utf-8" cache="" allow="" 34849 bytes sha256:80ec359e7c7759ae3a88e1d328ae99e8d295ae69849d50d25bbe15e2152dddcf
 GET /lib/codec.js origin="" type="" body="" -> 200 type="text/javascript; charset=utf-8" cache="" allow="" 58213 bytes sha256:9c69892c02ef8d7722be457513eae3f1a5e46d94084ec38af7f3a41c6c62feaa
 GET /lib/x.css origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
 GET /fonts/OFL.txt origin="" type="" body="" -> 200 type="text/plain; charset=utf-8" cache="" allow="" 4384 bytes sha256:021caa749f89fecd7c2e40a50499de29e84d2bc19251659b47d499c2fbfffc17
@@ -119,10 +119,10 @@ GET /api/v1/ origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" c
 GET /api/v1/home origin="" type="" body="" -> 200 type="application/json" cache="no-store" allow="" {"state":"STARTING","version":"0.0.0-dev","agents":0,"databases":0,"providers":[],"guard":"UNKNOWN","passkeys":null,"checks":[]}
 GET /approvals/x origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
 GET /approvals/x origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
-GET /approvals/{id} origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 7853 bytes sha256:349888218566439d2b3c796d6c4148c97813a44f415202b81bda99fa4087d9ea
+GET /approvals/{id} origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 7853 bytes sha256:28aa3ab1b19e0f2e69e1f5e46085f6099d7394c24fb3ca26dce869a4bf2cd93a
 POST /approvals/{id} origin="http://localhost:8787" type="application/json" body="{}" -> 405 type="text/plain; charset=utf-8" cache="" allow="GET, HEAD" Method Not Allowed
 GET /reverts/x origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
-GET /reverts/{id} origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 10815 bytes sha256:a50d99f9a9a362be3ddef748598b7455b656a82f0ef5ec053518b34dd4c3320a
+GET /reverts/{id} origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 10815 bytes sha256:77cd36c387d8cd89b283c4dac12ad7c1a23aea784858c792d3afd53e0cef0c6b
 POST /reverts/{id} origin="http://localhost:8787" type="application/json" body="{}" -> 405 type="text/plain; charset=utf-8" cache="" allow="GET, HEAD" Method Not Allowed
 GET /plugins/x origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
 GET /plugins/{id} origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 6501 bytes sha256:a0620b093990fb6c264945cc23e386b7aa1cae6e6b379186676fa955b41bfe0f
@@ -237,7 +237,7 @@ POST /api/v1/setup/not-mine origin="http://localhost:8787" type="application/jso
 GET /healthz origin="" type="" body="" -> 200 type="text/plain; charset=utf-8" cache="" allow="" ok
 GET /setup/ origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 16416 bytes sha256:c472d37077e7410b86ac5547bc7f2a4afef6e744dd9c41b8a8e51bdab368399b
 GET /setup/x origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
-GET /style.css origin="" type="" body="" -> 200 type="text/css; charset=utf-8" cache="" allow="" 34745 bytes sha256:cd968ba5348b7360b94b71422a5f339bba927b8ac49255bcf793dd1669234a36
+GET /style.css origin="" type="" body="" -> 200 type="text/css; charset=utf-8" cache="" allow="" 34849 bytes sha256:80ec359e7c7759ae3a88e1d328ae99e8d295ae69849d50d25bbe15e2152dddcf
 GET /lib/codec.js origin="" type="" body="" -> 200 type="text/javascript; charset=utf-8" cache="" allow="" 58213 bytes sha256:9c69892c02ef8d7722be457513eae3f1a5e46d94084ec38af7f3a41c6c62feaa
 GET /lib/x.css origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
 GET /fonts/OFL.txt origin="" type="" body="" -> 200 type="text/plain; charset=utf-8" cache="" allow="" 4384 bytes sha256:021caa749f89fecd7c2e40a50499de29e84d2bc19251659b47d499c2fbfffc17
@@ -250,10 +250,10 @@ GET /api/v1/ origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" c
 GET /api/v1/home origin="" type="" body="" -> 200 type="application/json" cache="no-store" allow="" {"state":"STARTING","version":"0.0.0-dev","agents":0,"databases":0,"providers":[],"guard":"UNKNOWN","passkeys":null,"checks":[]}
 GET /approvals/x origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
 GET /approvals/x origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
-GET /approvals/{id} origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 7853 bytes sha256:349888218566439d2b3c796d6c4148c97813a44f415202b81bda99fa4087d9ea
+GET /approvals/{id} origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 7853 bytes sha256:28aa3ab1b19e0f2e69e1f5e46085f6099d7394c24fb3ca26dce869a4bf2cd93a
 POST /approvals/{id} origin="http://localhost:8787" type="application/json" body="{}" -> 405 type="text/plain; charset=utf-8" cache="" allow="GET, HEAD" Method Not Allowed
 GET /reverts/x origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
-GET /reverts/{id} origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 10815 bytes sha256:a50d99f9a9a362be3ddef748598b7455b656a82f0ef5ec053518b34dd4c3320a
+GET /reverts/{id} origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 10815 bytes sha256:77cd36c387d8cd89b283c4dac12ad7c1a23aea784858c792d3afd53e0cef0c6b
 POST /reverts/{id} origin="http://localhost:8787" type="application/json" body="{}" -> 405 type="text/plain; charset=utf-8" cache="" allow="GET, HEAD" Method Not Allowed
 GET /plugins/x origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
 GET /plugins/{id} origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 6501 bytes sha256:a0620b093990fb6c264945cc23e386b7aa1cae6e6b379186676fa955b41bfe0f
@@ -368,7 +368,7 @@ POST /api/v1/setup/not-mine origin="http://localhost:8787" type="application/jso
 GET /healthz origin="" type="" body="" -> 200 type="text/plain; charset=utf-8" cache="" allow="" ok
 GET /setup/ origin="" type="" body="" -> 200 type="text/html; charset=utf-8" cache="no-store" allow="" 16416 bytes sha256:c472d37077e7410b86ac5547bc7f2a4afef6e744dd9c41b8a8e51bdab368399b
 GET /setup/x origin="" type="" body="" -> 404 type="application/json" cache="no-store" allow="" {"code":"NOT_FOUND","message":"This engine has no config yet: it serves only its setup page."}
-GET /style.css origin="" type="" body="" -> 200 type="text/css; charset=utf-8" cache="" allow="" 34745 bytes sha256:cd968ba5348b7360b94b71422a5f339bba927b8ac49255bcf793dd1669234a36
+GET /style.css origin="" type="" body="" -> 200 type="text/css; charset=utf-8" cache="" allow="" 34849 bytes sha256:80ec359e7c7759ae3a88e1d328ae99e8d295ae69849d50d25bbe15e2152dddcf
 GET /lib/codec.js origin="" type="" body="" -> 200 type="text/javascript; charset=utf-8" cache="" allow="" 58213 bytes sha256:9c69892c02ef8d7722be457513eae3f1a5e46d94084ec38af7f3a41c6c62feaa
 GET /lib/x.css origin="" type="" body="" -> 404 type="text/plain; charset=utf-8" cache="" allow="" 404 page not found
 GET /fonts/OFL.txt origin="" type="" body="" -> 200 type="text/plain; charset=utf-8" cache="" allow="" 4384 bytes sha256:021caa749f89fecd7c2e40a50499de29e84d2bc19251659b47d499c2fbfffc17

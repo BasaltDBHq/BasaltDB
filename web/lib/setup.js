@@ -131,6 +131,30 @@ export function removeConfirmed(typed, checked) {
   return Boolean(checked) && typeof checked.database === "string" && checked.database !== "" && typed === checked.database;
 }
 
+// REPLACE_TITLE and REPLACE_RUN are the words of an install that replaces
+// a BasaltDB install too old to update (CONTRACT.md, The local setup page,
+// An older install): the first screen's title and the last button.
+export const REPLACE_TITLE = "This BasaltDB install is too old to update";
+export const REPLACE_RUN = "Remove the old install and set up";
+
+// replaceOf is a check answer's replace, its fields checked; null when the
+// install replaces nothing.
+export function replaceOf(r) {
+  if (!r || typeof r !== "object" || !Number.isInteger(r.guardVersion) || !Number.isInteger(r.floor) || typeof r.this !== "string") return null;
+  return { guardVersion: r.guardVersion, floor: r.floor, release: typeof r.release === "string" ? r.release : "", this: r.this };
+}
+
+// replaceLines are the first screen's words, built from the replace's data
+// only, never a fixed release name: the engine's setup.ReplaceLines after
+// its title.
+export function replaceLines(r) {
+  return [
+    r.release !== "" ? `It was set up by BasaltDB ${r.release} (guard version ${r.guardVersion}).` : `It has guard version ${r.guardVersion}.`,
+    `BasaltDB ${r.this} needs guard version ${r.floor} or later.`,
+    "Setting up removes the old install first: its agents' history and undo, their held approvals and the passkeys go with it. Your tables and rows stay.",
+  ];
+}
+
 // setupRequest is the body of a check or run: the job and the string,
 // plus the passkey on a run.
 export function setupRequest(job, databaseUrl, extra = {}) {
@@ -312,6 +336,9 @@ export class Install {
         user: String(answer.sessionUser ?? ""),
       },
       certificate: answer.certificate && typeof answer.certificate === "object" ? answer.certificate : null,
+      // replace: the database's install is too old to update, and the run
+      // removes it first (replaceOf); null otherwise.
+      replace: replaceOf(answer.replace),
     };
     // As on the connect page, every table starts ticked, with write access
     // when it can have it.
@@ -492,32 +519,36 @@ export class Install {
       sql: String(answer.sql ?? ""),
       questions: Array.isArray(answer.questions) ? answer.questions : [],
       passkeyNeeded: answer.passkeyNeeded === true,
+      replace: replaceOf(answer.replace),
     };
   }
 
   // runRequest is the run's body: the checked request unchanged, the
   // page's ALL_ROWS answer to each question the check asked, the
-  // challenge, and the passkey when one was made.
-  runRequest(passkey) {
+  // challenge, the passkey when one was made, and, for an install that
+  // replaces an old one, the database name the person typed.
+  runRequest(passkey, confirmName = "") {
     if (!this.checked) throw new Error("nothing checked");
     const { request, answer } = this.checked;
     const out = { ...structuredClone(request), challenge: answer.challenge };
     const answers = answersFor(answer.questions, null).map((a) => ({ table: a.table, choice: a.choice }));
     if (answers.length > 0) out.answers = answers;
     if (passkey) out.passkey = passkey;
+    if (replaceOf(answer.replace)) out.confirmName = confirmName;
     return out;
   }
 
   // run makes the passkey when the check asked for one (makePasskey gets
   // the challenge), then runs what was checked. The admin string is
   // dropped once the run answered.
-  async run(makePasskey) {
+  async run(makePasskey, confirmName = "") {
     if (!this.checked) throw new SetupError(0, "", "Check again: something changed since the last check.");
     const gen = this.#gen;
     const { answer } = this.checked;
+    if (replaceOf(answer.replace) && !removeConfirmed(confirmName, answer)) throw new SetupError(0, "ANSWERS_INVALID", "Type the database's name exactly as the page shows it.");
     const passkey = answer.passkeyNeeded ? await makePasskey(answer.challenge) : undefined;
     if (gen !== this.#gen || !this.checked) throw new SetupError(0, "", "Check again: something changed since the last check.");
-    const done = await postSetup(this.fetchFn, RUN_PATH, this.runRequest(passkey));
+    const done = await postSetup(this.fetchFn, RUN_PATH, this.runRequest(passkey, confirmName));
     this.forget();
     return done;
   }
@@ -626,8 +657,10 @@ async function startJob(link, preset) {
     for (const name of CHOICES) $("choice-" + name.toLowerCase()).disabled = disabled;
   };
   const confirmed = () => job !== null && $("confirm-os-user").checked;
-  // A removal also needs the database's name typed as the check named it.
-  const runnable = () => confirmed() && checked !== null && (job.job !== "REMOVE" || removeConfirmed($("confirm-remove").value, checked));
+  // A removal, and an install that replaces an old one, also need the
+  // database's name typed as the check named it.
+  const typedName = () => (replaceOf(checked?.replace) ? $("confirm-replace").value : $("confirm-remove").value);
+  const runnable = () => confirmed() && checked !== null && (job.job !== "REMOVE" && !replaceOf(checked.replace) || removeConfirmed(typedName(), checked));
   const sync = () => {
     $("check").disabled = !confirmed() || $("database-url").value === "";
   };
@@ -643,9 +676,11 @@ async function startJob(link, preset) {
       sync();
     });
   }
-  $("confirm-remove").addEventListener("input", () => {
-    if (checked) $("run").disabled = !runnable();
-  });
+  for (const id of ["confirm-remove", "confirm-replace"]) {
+    $(id).addEventListener("input", () => {
+      if (checked) $("run").disabled = !runnable();
+    });
+  }
   $("database-url").addEventListener("input", () => {
     checked = null;
     $("confirm-remove").value = "";
@@ -679,10 +714,14 @@ async function startJob(link, preset) {
     $("database").textContent = checked.database;
     $("remove-name").textContent = checked.database;
     $("confirm-remove").value = "";
-    list("lines", checked.lines);
+    const replace = replaceOf(checked.replace);
+    $("replace-confirm").hidden = replace === null;
+    $("replace-name").textContent = checked.database;
+    $("confirm-replace").value = "";
+    list("lines", replace ? [REPLACE_TITLE + ".", ...replaceLines(replace), ...checked.lines] : checked.lines);
     list("notes", checked.notes);
     $("sql").textContent = checked.sql;
-    $("run").textContent = checked.passkeyNeeded ? "Create passkey and set up" : text.run;
+    $("run").textContent = replace ? REPLACE_RUN : checked.passkeyNeeded ? "Create passkey and set up" : text.run;
     $("review").hidden = false;
     $("run").disabled = !runnable();
     sync();
@@ -692,11 +731,11 @@ async function startJob(link, preset) {
     const running = checkedFor;
     $("run").disabled = true;
     setChoices(true);
-    let extra = running.job === "REMOVE" ? { confirmName: $("confirm-remove").value } : {};
+    let extra = running.job === "REMOVE" || replaceOf(checked.replace) ? { confirmName: typedName() } : {};
     try {
       if (checked.passkeyNeeded) {
         $("status").textContent = "Create the passkey in your browser's prompt.";
-        extra = { challenge: checked.challenge, passkey: await createPasskey(checked.challenge, "localhost") };
+        extra = { ...extra, challenge: checked.challenge, passkey: await createPasskey(checked.challenge, "localhost") };
       }
     } catch (err) {
       $("status").textContent = webauthnError(err);
@@ -721,8 +760,8 @@ async function startJob(link, preset) {
 
 // ---- The real install's screens: the connect page's steps, on this page ----
 
-const SCREENS = ["s-user", "s-paste", "s-confirm", "s-checking", "s-tables", "s-labels", "s-approve"];
-const PROGRESS = { "s-user": 1, "s-paste": 2, "s-confirm": 2, "s-checking": 2, "s-tables": 3, "s-labels": 4, "s-approve": 5 };
+const SCREENS = ["s-user", "s-paste", "s-confirm", "s-checking", "s-replace", "s-tables", "s-labels", "s-approve"];
+const PROGRESS = { "s-user": 1, "s-paste": 2, "s-confirm": 2, "s-checking": 2, "s-replace": 2, "s-tables": 3, "s-labels": 4, "s-approve": 5 };
 
 function show(id, on = true) {
   $(id).hidden = !on;
@@ -796,9 +835,18 @@ export function startReal(link, env) {
   // the person confirmed and trusted the certificate, to the tables.
   const listed = (answer, confirmed = true) => {
     if (answer === null) return;
-    if (confirmed) showTables();
-    else showConfirm();
+    if (!confirmed) showConfirm();
+    else if (answer.replace) showReplace(answer.replace);
+    else showTables();
   };
+  // The first screen of an install that replaces one too old to update:
+  // what the engine found, in words from its data, then the normal steps.
+  const showReplace = (replace) => {
+    setText("replace-title", REPLACE_TITLE);
+    list2("replace-lines", replaceLines(replace));
+    go("s-replace");
+  };
+  $("replace-next").addEventListener("click", () => showTables());
   const listFailed = (err) => {
     if (install.asking) showConfirm();
     else {
@@ -838,7 +886,7 @@ export function startReal(link, env) {
   };
   $("confirm-go").addEventListener("click", async () => {
     if (screen !== "s-confirm") return;
-    if (!install.asking) return showTables();
+    if (!install.asking) return listed(install.listing);
     checking();
     let answer;
     try {
@@ -1047,10 +1095,20 @@ export function startReal(link, env) {
     list2("ap-lines", v.lines);
     list2("ap-notes", v.notes);
     setText("ap-sql", v.sql);
-    setText("approve", v.passkeyNeeded ? "Set up with passkey" : "Set up");
+    setText("approve", v.replace ? REPLACE_RUN : v.passkeyNeeded ? "Set up with passkey" : "Set up");
+    // Replacing an old install removes it first: the database's name,
+    // typed, is the confirmation, as for Remove BasaltDB.
+    show("ap-replace", v.replace !== null);
+    setText("ap-confirm-name", v.database);
+    $("ap-confirm").value = "";
+    $("approve").disabled = v.replace !== null;
     setText("approve-status", "");
     go("s-approve");
   };
+  $("ap-confirm").addEventListener("input", () => {
+    const v = install.view();
+    if (v && v.replace) $("approve").disabled = busy || !removeConfirmed($("ap-confirm").value, v);
+  });
 
   $("approve").addEventListener("click", async () => {
     if (!install.view()) return showTables();
@@ -1065,7 +1123,7 @@ export function startReal(link, env) {
           const passkey = await env.makePasskey(c);
           setText("approve-status", "Setting up…");
           return passkey;
-        });
+        }, $("ap-confirm").value);
       } catch (err) {
         busy = false;
         ranRefused(err);
@@ -1097,7 +1155,7 @@ export function startReal(link, env) {
   $("back").addEventListener("click", () => {
     if (busy) return;
     if (screen === "s-paste") go("s-user");
-    else if (screen === "s-confirm" || screen === "s-tables") {
+    else if (screen === "s-confirm" || screen === "s-replace" || screen === "s-tables") {
       install.forget();
       showPaste("");
     } else if (screen === "s-labels") showTables();

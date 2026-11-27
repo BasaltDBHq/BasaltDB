@@ -14,11 +14,13 @@ import (
 
 // from001 is a database whose guard is at version 1, as every 0.0.1
 // release left it: below the update floor. The engine on this computer
-// forgot it (reset), so the page offers an install.
+// forgot it (reset), so the page offers an install. Its schema_version has
+// 0.0.1's shape: no release column.
 func from001(t *testing.T) *fixture {
 	t.Helper()
 	f := reset(t)
-	f.db.Exec(t, `SET ROLE `+f.db.Names.Guard()+`; DELETE FROM basalt_meta.schema_version WHERE version > 1; RESET ROLE`)
+	f.db.Exec(t, `SET ROLE `+f.db.Names.Guard()+`; DELETE FROM basalt_meta.schema_version WHERE version > 1;
+		ALTER TABLE basalt_meta.schema_version DROP COLUMN release; RESET ROLE`)
 	return f
 }
 

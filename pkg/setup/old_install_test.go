@@ -61,13 +61,14 @@ func TestCheckRefusesAnInstallFrom001(t *testing.T) {
 
 // from001 is a database whose guard is at version 1, as every 0.0.1
 // release left it, with the agent bot of that install: below the update
-// floor.
+// floor. Its schema_version has 0.0.1's shape: no release column.
 func from001(t *testing.T) *guardtest.DB {
 	t.Helper()
 	d := guardtest.New(t).WithDemo(t)
 	d.Init(t, guardmodel.AgentSpec{Name: "bot", Password: guard.NewPassword(), Write: []string{"public.leads"}})
 	d.Exec(t, `SET ROLE `+d.Names.Guard()+`;
 		DELETE FROM basalt_meta.schema_version WHERE version > 1;
+		ALTER TABLE basalt_meta.schema_version DROP COLUMN release;
 		RESET ROLE`)
 	return d
 }

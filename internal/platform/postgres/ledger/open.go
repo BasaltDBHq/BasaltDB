@@ -46,7 +46,7 @@ func (l openList[T]) page(ctx context.Context, q guard.Querier, p pagination.Par
 	if status != "" {
 		statuses = []string{status}
 	}
-	b := l.selectAll.Where(sq.Eq{"status": statuses}).OrderBy(order).Limit(uint64(p.Limit) + 1)
+	b := l.selectAll.Where(sq.Eq{colStatus: statuses}).OrderBy(order).Limit(uint64(p.Limit) + 1)
 	if b, err = applyIDKeyset(b, l.idColumn, sort.Desc, p.Cursor); err != nil {
 		return pagination.Page[T]{}, fmt.Errorf("%w: %w", ErrInvalidParams, err)
 	}

@@ -6,6 +6,7 @@ package ledgermcp
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -34,7 +35,12 @@ type handlers struct {
 // pagination.Params, as every list does.
 type runHistoryArgs struct {
 	pagination.Params
-	RunID string `json:"runId" validate:"required,uuid"`
+	// RunID names a run; From and To (both, To after From) name the reads
+	// outside a run in that period instead, one LOOSE_READS item of
+	// list_runs. Exactly one of the two forms.
+	RunID string     `json:"runId" validate:"required_without=From,omitempty,uuid"`
+	From  *time.Time `json:"from" validate:"excluded_with=RunID,required_with=To"`
+	To    *time.Time `json:"to" validate:"excluded_with=RunID,required_with=From,omitempty,gtfield=From"`
 }
 
 func (h handlers) runHistory(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -42,7 +48,10 @@ func (h handlers) runHistory(ctx context.Context, raw json.RawMessage) (any, err
 	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
-	params := action.ChangeListParams{Params: args.Params, RunID: uuid.MustParse(args.RunID)}
+	params := action.ChangeListParams{Params: args.Params, From: args.From, To: args.To}
+	if args.RunID != "" {
+		params.RunID = uuid.MustParse(args.RunID)
+	}
 	params.ApplyDefaultsAndClamp()
 	hist, err := h.svc.History(ctx, params)
 	if err != nil {

@@ -429,3 +429,23 @@ func TestPermissionDeniedHandsTheGrantToTheSetupPage(t *testing.T) {
 		stepcatalogtest.RequirePersonMessage(t, te.PersonMessage, te.Links)
 	}
 }
+
+// A write that row-level security refuses is PERMISSION_DENIED with the
+// row-level security guidance: it names the table and the question, not a
+// missing grant, and hands the answer to the same setup page.
+func TestRowLevelSecurityRefusalGivesTheRLSGuidance(t *testing.T) {
+	t.Parallel()
+	s := serviceFor(t, "linux", "")
+	for _, message := range []string{
+		`new row violates row-level security policy for table "leads"`,
+		`new row violates row-level security policy (USING expression) for table "leads"`,
+	} {
+		te := s.Failure("write", writeArgs0, store.MapError(&pgconn.PgError{Code: "42501", Message: message}))
+		require.Equal(t, guidance.CodePermissionDenied, te.Code, message)
+		last := te.NextSteps[len(te.NextSteps)-1]
+		require.Equal(t, "basalt init --agent bot", last.Command, message)
+		require.Contains(t, te.PersonMessage, "Row-level security blocks the agent from writing to leads", message)
+		require.NotContains(t, te.PersonMessage, "basalt ", "the person runs no command")
+		stepcatalogtest.RequirePersonMessage(t, te.PersonMessage, te.Links)
+	}
+}

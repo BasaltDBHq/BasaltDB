@@ -23,6 +23,8 @@ type checker struct {
 	calls int
 }
 
+func (c *checker) HeldFrom(held, sent string) bool { return held == sent }
+
 func (c *checker) Check(sql string, tool action.Tool) (action.Statement, error) {
 	c.calls++
 	c.sql, c.tool = sql, tool

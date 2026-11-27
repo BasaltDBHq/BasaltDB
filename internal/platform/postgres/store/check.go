@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 )
 
@@ -23,20 +24,57 @@ func Check(sql string, tool action.Tool) (action.Statement, error) {
 	return statementOf(stmt), refusalOf(err)
 }
 
-// holdColumns returns the columns whose new values the person's approval
-// binds for a held write: the ones it assigns, or for an INSERT without a
-// column list every column of its table (TableColumns). A write whose
-// values change between runs is refused (*action.RefusalError
-// NOT_REPEATABLE): a held write is run again when the person signs.
-func (s *Store) holdColumns(ctx context.Context, sql string, params []any) ([]string, error) {
-	h, err := sqlguard.CheckRepeatable(sql, params)
+// HeldFrom reports whether held is sent with the one-time values the store
+// fixed when it held the write (sqlguard.FixedFrom), and needs no
+// connection: the agent may send its own text again with the approval.
+func (s *Store) HeldFrom(held, sent string) bool {
+	return sqlguard.FixedFrom(held, sent)
+}
+
+// holdPlan returns the request a held write is held as, and the columns
+// whose new values the person's approval binds: the ones it assigns, or
+// for an INSERT without a column list every column of its table
+// (TableColumns). The time functions it uses (now(), CURRENT_TIMESTAMP,
+// ...) are evaluated once, here, and held as typed literals, and so are
+// those in the defaults of the columns such an INSERT leaves out
+// (sqlguard.PlanTimes), so the preview, the held statement and the applied
+// write carry the same value. A write with another value that changes
+// between runs is refused (*action.RefusalError NOT_REPEATABLE): a held
+// write is run again when the person signs.
+func (s *Store) holdPlan(ctx context.Context, req agentstore.Request) (agentstore.Request, []string, error) {
+	h, err := sqlguard.CheckRepeatable(req.Text, req.Params)
 	if err != nil {
-		return nil, refusalOf(err)
+		return req, nil, refusalOf(err)
 	}
-	if h.Assigned != nil {
-		return h.Assigned, nil
+	assigned := h.Assigned
+	var columns []sqlguard.Column
+	if assigned == nil {
+		if columns, err = s.TableColumns(ctx, h.Table); err != nil {
+			return req, nil, err
+		}
+		assigned = make([]string, 0, len(columns))
+		for _, c := range columns {
+			if !c.Generated {
+				assigned = append(assigned, c.Name)
+			}
+		}
 	}
-	return s.TableColumns(ctx, h.Table)
+	fix, err := sqlguard.PlanTimes(req.Text, columns)
+	if err != nil {
+		return req, nil, refusalOf(err)
+	}
+	if fix.Eval == "" {
+		return req, assigned, nil
+	}
+	values, err := s.fixedTimes(ctx, fix.Eval)
+	if err != nil {
+		return req, nil, err
+	}
+	text, err := fix.Apply(values)
+	if err != nil {
+		return req, nil, err
+	}
+	return agentstore.Request{Text: text, Params: req.Params}, assigned, nil
 }
 
 // statementOf is the checked statement as the service takes it: the row

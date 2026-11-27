@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
@@ -132,15 +133,58 @@ func (s *Store) holdRaw(ctx context.Context, in action.Intent, r approvalstore.H
 }
 
 // tableColumnsRaw is TableColumns before MapError.
-func (s *Store) tableColumnsRaw(ctx context.Context, table string) ([]string, error) {
+func (s *Store) tableColumnsRaw(ctx context.Context, table string) ([]sqlguard.Column, error) {
 	// Plain SQL: a catalog query on to_regclass.
-	rows, err := s.db.Query(ctx, `SELECT a.attname::text FROM pg_catalog.pg_attribute a
-		WHERE a.attrelid = pg_catalog.to_regclass($1) AND a.attnum > 0 AND NOT a.attisdropped AND a.attgenerated = ''
-		ORDER BY a.attnum`, table)
+	rows, err := s.db.Query(ctx, `SELECT a.attname::text,
+		       coalesce(pg_catalog.pg_get_expr(d.adbin, d.adrelid), ''), a.attidentity <> '', a.attgenerated <> ''
+		  FROM pg_catalog.pg_attribute a
+		  LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+		 WHERE a.attrelid = pg_catalog.to_regclass($1) AND a.attnum > 0 AND NOT a.attisdropped
+		 ORDER BY a.attnum`, table)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, pgx.RowTo[string])
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (sqlguard.Column, error) {
+		var c sqlguard.Column
+		err := row.Scan(&c.Name, &c.Default, &c.Identity, &c.Generated)
+		return c, err
+	})
+}
+
+// fixedTimes runs eval, the SELECT sqlguard.PlanTimes made of a held
+// write's time functions, once, and returns each value as text in ISO form
+// with its zone offset where the type has one, which Postgres reads back
+// the same whatever the session's DateStyle. The read-only transaction
+// sets DateStyle for itself only.
+func (s *Store) fixedTimes(ctx context.Context, eval string) ([]string, error) {
+	var values []string
+	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SET LOCAL datestyle = 'ISO, YMD'`); err != nil {
+			return err
+		}
+		rows, err := tx.Query(ctx, eval)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		if !rows.Next() {
+			if err := rows.Err(); err != nil {
+				return err
+			}
+			return errors.New("fixing the times returned no row")
+		}
+		raw := rows.RawValues()
+		values = make([]string, len(raw))
+		for i, v := range raw {
+			if v == nil {
+				return errors.New("a fixed time is NULL")
+			}
+			values[i] = string(v)
+		}
+		rows.Close()
+		return rows.Err()
+	})
+	return values, MapError(err)
 }
 
 // submitApprovalRaw is SubmitApproval before MapError.

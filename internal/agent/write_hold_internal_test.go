@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/basaltdbhq/basaltdb/internal/agent/out/sqllang"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -192,6 +194,39 @@ func TestDifferentWriteStepKeepsExactNumbers(t *testing.T) {
 
 	rounded := WriteParams{RunID: held.RunID, Request: agentstore.Request{Text: call.SQL, Params: callParams(t, `[9007199254740992]`)}}
 	require.Error(t, wc.sameAsHeld(held, rounded))
+}
+
+// fixedChecker says the held text was made from one sent text by fixing
+// its times.
+type fixedChecker struct {
+	noChecker
+	held, sent string
+}
+
+func (c fixedChecker) HeldFrom(held, sent string) bool { return held == c.held && sent == c.sent }
+
+// The agent may send its own request again with the approval when the
+// store says the held one is it with the times the store fixed; its
+// parameters must still be the held ones.
+func TestSameAsHeldAcceptsTheFixedTimes(t *testing.T) {
+	t.Parallel()
+	const sent = "UPDATE public.leads SET seen = now() WHERE id <= $1"
+	const fixed = "UPDATE public.leads SET seen = '2026-11-27 10:00:00+00'::timestamp with time zone WHERE id <= $1"
+	wc := newTestService(t, "linux", "", func(s *settings) {
+		s.store.Language = sqllang.New(fixedChecker{held: fixed, sent: sent})
+	})
+	held := action.Approval{
+		ID: uuid.Must(uuid.NewV7()), RunID: uuid.Must(uuid.NewV7()), Status: action.ApprovalPending,
+		Request: action.HeldRequest{Kind: "SQL", Text: fixed, Params: json.RawMessage(`[25]`)},
+	}
+	require.NoError(t, wc.sameAsHeld(held, WriteParams{RunID: held.RunID, Request: agentstore.Request{Text: sent, Params: []any{json.Number("25")}}}))
+	require.NoError(t, wc.sameAsHeld(held, WriteParams{RunID: held.RunID, Request: agentstore.Request{Text: fixed, Params: []any{json.Number("25")}}}))
+
+	var te *toolresult.ToolError
+	require.ErrorAs(t, wc.sameAsHeld(held, WriteParams{RunID: held.RunID, Request: agentstore.Request{Text: sent, Params: []any{json.Number("26")}}}), &te)
+	require.Equal(t, guidance.ReasonDifferentWrite, te.Reason)
+	require.ErrorAs(t, wc.sameAsHeld(held, WriteParams{RunID: held.RunID, Request: agentstore.Request{Text: sent + " AND true", Params: []any{json.Number("25")}}}), &te)
+	require.Equal(t, guidance.ReasonDifferentWrite, te.Reason)
 }
 
 // A refusal whose names make recording fail is recorded once more without

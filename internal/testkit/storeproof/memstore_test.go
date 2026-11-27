@@ -132,7 +132,9 @@ func (memLanguage) StaleTarget(string) (string, map[string]any, error) {
 	return "", nil, errors.New("the memory store reports no stale reads")
 }
 func (memLanguage) DeniedTarget(string) (string, bool) { return "", false }
-func (memLanguage) NoKeyTarget(string) (string, bool)  { return "", false }
+
+func (memLanguage) HeldFrom(held, sent agentstore.Request) bool { return held.Text == sent.Text }
+func (memLanguage) NoKeyTarget(string) (string, bool)           { return "", false }
 
 func (memLanguage) ParseName(s string) (string, string, error) {
 	ns, name, ok := strings.Cut(s, "/")

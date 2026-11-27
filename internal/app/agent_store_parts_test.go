@@ -71,6 +71,11 @@ func (parts) Check(sql string, tool action.Tool) (action.Statement, error) {
 	return store.Check(sql, tool)
 }
 
+// HeldFrom is the Postgres store's compare, which needs no connection.
+func (parts) HeldFrom(held, sent string) bool {
+	return (&store.Store{}).HeldFrom(held, sent)
+}
+
 // setApprovals and setReverts replace one part of d's store.
 func setApprovals(d *Deps, a approvalStore) {
 	p, _ := d.Core.Store.(parts)

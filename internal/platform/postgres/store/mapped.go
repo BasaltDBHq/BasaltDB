@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
+	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgcatalog"
@@ -112,22 +113,24 @@ func (r *Reader) Read(ctx context.Context, sql string, params []any, stmt action
 }
 
 // Preview previews a held write. It refuses a write whose values change
-// between runs (*action.RefusalError NOT_REPEATABLE), works out the columns
-// whose new values the approval binds (holdColumns, which may read the
-// catalog), then runs the write in a preview transaction (basalt.mode =
-// PREVIEW) on the agent's credential that always rolls back, and returns
-// the columns with the preview lines. An error of the preview run is marked
+// between runs and cannot be fixed (*action.RefusalError NOT_REPEATABLE),
+// fixes the time functions it uses and works out the columns whose new
+// values the approval binds (holdPlan, which may read the catalog and
+// evaluates the times), then runs the write it holds in a preview
+// transaction (basalt.mode = PREVIEW) on the agent's credential that always
+// rolls back, and returns that request with the columns and the preview
+// lines. An error of the preview run is marked
 // *approvalstore.PreviewFailedError; a catalog read's error is not.
 func (s *Store) Preview(ctx context.Context, in action.Intent, req agentstore.Request) (approvalstore.HeldPreview, error) {
-	assigned, err := s.holdColumns(ctx, req.Text, req.Params)
+	held, assigned, err := s.holdPlan(ctx, req)
 	if err != nil {
 		return approvalstore.HeldPreview{}, err
 	}
-	lines, err := s.previewRaw(ctx, in, req.Text, req.Params, assigned)
+	lines, err := s.previewRaw(ctx, in, held.Text, held.Params, assigned)
 	if err != nil {
 		return approvalstore.HeldPreview{}, &approvalstore.PreviewFailedError{Err: MapError(err)}
 	}
-	return approvalstore.HeldPreview{Assigned: assigned, Lines: lines}, nil
+	return approvalstore.HeldPreview{Request: held, Assigned: assigned, Lines: lines}, nil
 }
 
 // RevealHeld checks the person's reveal proof for a held write
@@ -148,10 +151,10 @@ func (s *Store) Hold(ctx context.Context, in action.Intent, r approvalstore.Hold
 	return r0, MapError(err)
 }
 
-// TableColumns returns the columns an INSERT without a column list assigns:
-// every non-generated column of table, in order, resolved as the agent's
-// session would.
-func (s *Store) TableColumns(ctx context.Context, table string) ([]string, error) {
+// TableColumns returns the columns of table an INSERT without a column
+// list fills by position, in order, with their defaults, resolved as the
+// agent's session would.
+func (s *Store) TableColumns(ctx context.Context, table string) ([]sqlguard.Column, error) {
 	r0, err := s.tableColumnsRaw(ctx, table)
 	return r0, MapError(err)
 }

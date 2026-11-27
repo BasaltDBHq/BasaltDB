@@ -185,6 +185,8 @@ func (noChecker) Check(string, action.Tool) (action.Statement, error) {
 	return action.Statement{}, errors.New("describe checks no statement")
 }
 
+func (noChecker) HeldFrom(string, string) bool { return false }
+
 // describeUseCase is the describe use case over cat, on the commands cmds.
 func describeUseCase(cmds guidance.Commands, cat agentcatalog.Postgres) *agentsvc.Service {
 	set := agentsvc.StoreSet{

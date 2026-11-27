@@ -3,6 +3,7 @@ package servedagent_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -397,22 +398,118 @@ func TestHeldDeleteRelayedWithTheAgentsCredential(t *testing.T) {
 	require.Zero(t, countLeads(t, d, 7))
 }
 
+// A held write whose values change between runs and cannot be fixed is
+// refused, naming the function; under the hold limit it is not held, so it
+// applies.
 func TestHeldWriteNotRepeatable(t *testing.T) {
 	t.Parallel()
 	d, h, _, sent := approvalHarness(t)
 	body, isError := h.call(t, "write", map[string]any{
-		"sql": "UPDATE leads SET name = name || to_char(now(), 'YYYY') WHERE id BETWEEN 40 AND 60", "intent": "stamp",
+		"sql": "UPDATE leads SET score = (random() * 10)::int WHERE id BETWEEN 40 AND 60", "intent": "shuffle",
 	})
 	requireToolError(t, body, isError, "STATEMENT_REFUSED", "NOT_REPEATABLE", "")
+	require.Contains(t, body["message"], "random()")
 	require.Contains(t, body["message"], "pass the value as a parameter")
 	require.Empty(t, sent.sent)
 	require.Equal(t, "lead 40", leadName(t, d, 40))
 
-	// Under the hold limit the same statement is not held, so it applies.
 	body, isError = h.call(t, "write", map[string]any{
-		"sql": "UPDATE leads SET name = name || to_char(now(), 'YYYY') WHERE id = 40", "intent": "stamp one",
+		"sql": "UPDATE leads SET score = (random() * 10)::int WHERE id = 40", "intent": "shuffle one",
 	})
 	require.False(t, isError, "%v", body)
+}
+
+// approveHeld signs the held write body answered with and relays the
+// signature, as the person does on the page.
+func approveHeld(t *testing.T, e agentEnv, body map[string]any) string {
+	t.Helper()
+	ap := approvalOf(t, body)
+	require.NoError(t, relayApproval(e.svc, signLink(t, str(t, ap["approvalUrl"]), e.person)))
+	return str(t, ap["approvalId"])
+}
+
+// now() in a held write is evaluated once, when the write is held: the held
+// statement, the preview and the applied rows carry the same value, and the
+// agent sends its own statement again with the approval.
+func TestHeldWriteFixesNow(t *testing.T) {
+	t.Parallel()
+	e := agentHarness(t)
+	run, _ := e.h.call(t, "run_start", map[string]any{"intent": "Stamp the stale leads"})
+	args := map[string]any{
+		"sql":    "UPDATE leads SET status = now()::text WHERE id BETWEEN 21 AND 45",
+		"intent": "Mark when leads 21 to 45 were reviewed", "runId": str(t, run["runId"]),
+	}
+	body, isError := e.h.call(t, "write", args)
+	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
+	require.Len(t, e.sent.sent, 1)
+	held := e.sent.sent[0].Statement
+	require.NotContains(t, held, "now()", "the held statement carries the fixed time")
+	require.Contains(t, held, "::timestamp with time zone")
+	require.Equal(t, "open", leadStatus(t, e.d, 21), "a held write changes nothing")
+
+	args["approvalId"] = approveHeld(t, e, body)
+	body, isError = e.h.call(t, "write", args)
+	require.False(t, isError, "%v", body)
+	require.Equal(t, "APPLIED", body["status"])
+	require.Equal(t, json.Number("25"), body["rows"])
+
+	var values []string
+	rows, err := e.d.Admin.Query(context.Background(), `SELECT DISTINCT status FROM public.leads WHERE id BETWEEN 21 AND 45`)
+	require.NoError(t, err)
+	for rows.Next() {
+		var v string
+		require.NoError(t, rows.Scan(&v))
+		values = append(values, v)
+	}
+	require.NoError(t, rows.Err())
+	require.Len(t, values, 1, "every row has the one fixed time")
+	fixed, err := time.Parse("2006-01-02 15:04:05.999999-07", values[0])
+	require.NoError(t, err, values[0])
+	require.WithinDuration(t, time.Now(), fixed, 5*time.Minute)
+}
+
+// elevenLeads is an INSERT of leads 101 to 111 without a column list.
+func elevenLeads() string {
+	var b strings.Builder
+	b.WriteString("INSERT INTO leads VALUES ")
+	for id := 101; id <= 111; id++ {
+		if id > 101 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "(%d, 'lead %d')", id, id)
+	}
+	return b.String()
+}
+
+// A held INSERT without a column list binds every column: a column it
+// leaves to a now() default gets the fixed time, so the write applies as
+// approved. A column left to a default that changes on every run is
+// refused, naming it.
+func TestHeldInsertFixesTimeDefaults(t *testing.T) {
+	t.Parallel()
+	e := agentHarness(t)
+	e.d.Exec(t, `ALTER TABLE public.leads ADD COLUMN seen timestamptz NOT NULL DEFAULT now()`)
+	run, _ := e.h.call(t, "run_start", map[string]any{"intent": "Add leads"})
+	args := map[string]any{"sql": elevenLeads(), "intent": "Eleven new leads", "runId": str(t, run["runId"])}
+	body, isError := e.h.call(t, "write", args)
+	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
+	require.Contains(t, e.sent.sent[0].Statement, "seen", "the held INSERT names the column it fixed")
+
+	args["approvalId"] = approveHeld(t, e, body)
+	body, isError = e.h.call(t, "write", args)
+	require.False(t, isError, "%v", body)
+	require.Equal(t, "APPLIED", body["status"])
+	var n, seen int
+	require.NoError(t, e.d.Admin.QueryRow(context.Background(),
+		`SELECT count(*), count(DISTINCT seen) FROM public.leads WHERE id BETWEEN 101 AND 111`).Scan(&n, &seen))
+	require.Equal(t, 11, n)
+	require.Equal(t, 1, seen, "one fixed time for every row")
+
+	e.d.Exec(t, `ALTER TABLE public.leads ADD COLUMN token uuid DEFAULT gen_random_uuid()`)
+	body, isError = e.h.call(t, "write", map[string]any{"sql": strings.ReplaceAll(elevenLeads(), "(1", "(2"), "intent": "More leads"})
+	requireToolError(t, body, isError, "STATEMENT_REFUSED", "NOT_REPEATABLE", "")
+	require.Contains(t, body["message"], `"token"`)
+	require.Contains(t, body["message"], "list the columns")
 }
 
 // A time word as a bare literal or as a parameter is read as the current time

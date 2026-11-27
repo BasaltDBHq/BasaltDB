@@ -84,6 +84,11 @@ type Language interface {
 	// by the QUERY_TIMEOUT reason; any other reason is the statement
 	// timeout's.
 	LimitText(reason string) string
+	// HeldFrom reports whether held, a held write's request, is sent with
+	// only the values the store fixed when it held the write (Postgres:
+	// now() and the other time functions held as literals): the agent may
+	// send its own request again with the approval.
+	HeldFrom(held, sent agentstore.Request) bool
 	// Args is a request as the store family's query and write tools take
 	// it, for the call a next step repeats.
 	agentstore.RequestArgs

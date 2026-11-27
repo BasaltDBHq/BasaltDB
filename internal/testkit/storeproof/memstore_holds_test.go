@@ -121,7 +121,7 @@ func (s *memStore) Preview(_ context.Context, _ action.Intent, req agentstore.Re
 	defer s.mu.Unlock()
 	s.count("Preview")
 	assigned, lines := s.heldLines(r, req.Params)
-	return approvalstore.HeldPreview{Assigned: assigned, Lines: lines}, nil
+	return approvalstore.HeldPreview{Request: req, Assigned: assigned, Lines: lines}, nil
 }
 
 func (s *memStore) Hold(_ context.Context, in action.Intent, hr approvalstore.HoldRequest) (approvalstore.Held, error) {

@@ -19,8 +19,8 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/wasilibs/go-pgquery v0.0.0-20261106060434-4301e51f8dbf
 	go.uber.org/goleak v1.3.0
-	golang.org/x/crypto/x509roots/fallback v0.0.0-20261115193255-739070949446
-	golang.org/x/mod v0.42.0
+	golang.org/x/crypto/x509roots/fallback v0.0.0-20261123192653-4dc4fb521066
+	golang.org/x/mod v0.43.0
 	golang.org/x/net v0.63.0
 	golang.org/x/sys v0.50.0
 	golang.org/x/term v0.48.0

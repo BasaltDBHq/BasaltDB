@@ -71,6 +71,7 @@ const (
 	ReasonRowsChanged         = action.ReasonRowsChanged
 	ReasonPlanFinished        = action.ReasonPlanFinished
 	ReasonNotSigned           = action.ReasonNotSigned
+	ReasonWithdrawn           = action.ReasonWithdrawn
 	ReasonRevealRefused       = action.ReasonRevealRefused
 	ReasonNotFinished         = "NOT_FINISHED"
 	ReasonReadsOnly           = "READS_ONLY"

@@ -702,7 +702,8 @@ func TestBindingBuiltByPostgres(t *testing.T) {
 // functions, and agents keep exactly their grants. Version 10 replaces some
 // of them, so it runs again after, as an upgrade would. The chain is not
 // checked: rows hashed before version 10 do not verify after it (clean
-// state).
+// state). The reruns happen on a guard at version 10, as an upgrade from
+// version 4 meets them; the versions after it then run over the result.
 func TestPluginApprovalsMigration(t *testing.T) {
 	ctx := context.Background()
 	restore := guardtest.UpToVersion(t, 4)
@@ -717,12 +718,16 @@ func TestPluginApprovalsMigration(t *testing.T) {
 	requireCode(t, guard.RecordPluginEntryEvent(ctx, a.Conn, guardmodel.PluginEnabled, signed), guard.CodeLedgerInputInvalid)
 
 	restore()
+	restoreLatest := guardtest.UpToVersion(t, guard.StoreNeutralVersion)
 	d.NewAgent(t, "bot", leads, nil)
-	require.Equal(t, guard.LatestVersion(), scalarOf[int](t, d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
+	require.Equal(t, guard.StoreNeutralVersion, scalarOf[int](t, d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
 	sql := guard.PluginApprovalsSQL(d.Names)
 	for _, s := range []string{sql, sql, guard.StoreNeutralSQL(d.Names)} {
 		d.Exec(t, "BEGIN; SET LOCAL ROLE "+d.Names.Guard()+"; SET LOCAL search_path = pg_catalog, pg_temp;"+s+"COMMIT;")
 	}
+	restoreLatest()
+	d.NewAgent(t, "bot", leads, nil)
+	require.Equal(t, guard.LatestVersion(), scalarOf[int](t, d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
 	_, err = guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Name), guardmodel.PluginSettings{})
 	require.NoError(t, err)
 	require.NoError(t, guard.RecordPluginEntryEvent(ctx, a.Conn, guardmodel.PluginEnabled, signed))

@@ -46,10 +46,11 @@ func TestAnInstallRecordsTheRelease(t *testing.T) {
 }
 
 // An update records this build's release on the versions it adds, and
-// leaves the rows it found as they were: a guard updated from version 13,
-// which has no release column, gets the release on version 14 only.
+// leaves the rows it found as they were: a guard updated from the version
+// before the release column (13) gets the release on version 14 and every
+// later one only.
 func TestAnUpdateRecordsTheReleaseOnTheVersionsItAdds(t *testing.T) {
-	restore := guardtest.UpToVersion(t, guard.LatestVersion()-1)
+	restore := guardtest.UpToVersion(t, guard.ReleaseVersion-1)
 	d := guardtest.New(t).WithDemo(t)
 	d.NewAgent(t, "bot", leads, nil)
 	restore()
@@ -60,7 +61,7 @@ func TestAnUpdateRecordsTheReleaseOnTheVersionsItAdds(t *testing.T) {
 	got := releases(t, d.Admin)
 	for v, r := range got {
 		want := ""
-		if v == guard.LatestVersion() {
+		if v >= guard.ReleaseVersion {
 			want = thisRelease()
 		}
 		require.Equal(t, want, r, "version %d", v)

@@ -83,4 +83,15 @@ func TestUncheckedCredential(t *testing.T) {
 		require.Equal(t, tc.mode, out.Certificate.SSLMode, tc.dsn)
 		require.Equal(t, tc.provider, out.Certificate.Provider, tc.dsn)
 	}
+	for _, h := range []string{"localhost:5432", "127.0.0.1:5432", "[::1]:5432"} {
+		s, err := NewLocal(LocalOptions{
+			Backend:    credBackend{dsn: at(h + "/app?sslmode=disable"), plain: true},
+			ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: "http://localhost:8787",
+			Profiles: trustprofile.BuiltInSet,
+		})
+		require.NoError(t, err)
+		out := DoctorAnswer{Certificate: DoctorCertificate{State: StateOK}}
+		s.certificateNotChecked(nil, config.Agent{}, &out)
+		require.Equal(t, StateOK, out.Certificate.State, "a loopback host is not warned: %s", h)
+	}
 }

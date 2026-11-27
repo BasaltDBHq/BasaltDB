@@ -12,8 +12,10 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revertstore"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // relayStore serves one pending revert, and a rescope that returns the
@@ -124,4 +126,20 @@ func TestRescopeRefusesTextsOutOfTheRules(t *testing.T) {
 			require.False(t, held, "nothing kept for the page")
 		})
 	}
+}
+
+// A revert the agent withdrew is shown withdrawn, with its reason, and its
+// page takes no signature: REVERT_INVALID WITHDRAWN.
+func TestWithdrawnRevertIsRefusedOnThePage(t *testing.T) {
+	t.Parallel()
+	binding, _, lines := relayTexts(t)
+	r := pendingRevert(binding, lines)
+	r.Status, r.WithdrawReason = action.RevertWithdrawn, "not needed\u202e any more"
+	rc := newService(t, "linux", "", withStore(relayStore{r: r}))
+	_, err := rc.RevertRequest(context.Background(), r.ID, "link secret")
+	var te *toolresult.ToolError
+	require.ErrorAs(t, err, &te)
+	require.Equal(t, guidance.CodeRevertInvalid, te.Code)
+	require.Equal(t, guidance.ReasonWithdrawn, te.Reason)
+	require.Equal(t, "The agent withdrew this request. Nothing changed.", te.PersonMessage, "a reason with a bidirectional override is not shown")
 }

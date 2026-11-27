@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"net"
 	"slices"
 	"strings"
 	"time"
@@ -114,7 +115,8 @@ const sslModeDefault = "prefer"
 // no TLS at all (sslmode=disable, or prefer and allow that fell back on a
 // server without TLS). Both are read from a live connection; the setup
 // page's check-up is where the person turns the check on. A Unix socket is
-// not a network connection and is neither.
+// not a network connection and is neither; a loopback host gets no
+// CONNECTION_NOT_ENCRYPTED.
 func (s statusDeps) addNotChecked(ctx context.Context, ps *guidance.Problems, rep TrustReport) {
 	if rep.Applied.Applies != trustprofile.AppliesNotVerified || rep.Encrypted == nil || s.cmds.AgentOperated() ||
 		strings.HasPrefix(rep.Applied.Host, "/") {
@@ -128,7 +130,9 @@ func (s statusDeps) addNotChecked(ctx context.Context, ps *guidance.Problems, re
 	host := cmp.Or(rep.Applied.Host, "the database")
 	mode := cmp.Or(rep.SSLMode, sslModeDefault)
 	if !on {
-		s.addNotEncrypted(ps, host, mode, rep.Provider)
+		if !loopback(rep.Applied.Host) {
+			s.addNotEncrypted(ps, host, mode, rep.Provider)
+		}
 		return
 	}
 	who := cmp.Or(rep.Provider, host)
@@ -138,6 +142,17 @@ func (s statusDeps) addNotChecked(ctx context.Context, ps *guidance.Problems, re
 			b.TellAgent("Tell the agent when it is done.")
 			return "Your agent's connection to " + who + " is encrypted but doesn't check the certificate. Open the link the agent gives you and choose Check it to turn the check on, then tell the agent."
 		})
+}
+
+// loopback reports whether host is this machine (localhost, 127.0.0.0/8,
+// ::1): a connection that never leaves it, as a Unix socket, is not warned
+// for having no TLS.
+func loopback(host string) bool {
+	if strings.EqualFold(strings.TrimSuffix(host, "."), "localhost") {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
 }
 
 // addNotEncrypted is CONNECTION_NOT_ENCRYPTED for host: on a provider's

@@ -28,6 +28,7 @@ func TestPluginApprovalRefusals(t *testing.T) {
 		{"expired", expired, pluginmodel.ApprovalExpired},
 		{"already approved", approvalInvalid(guard.DetailAlreadyApproved), pluginmodel.ApprovalAlreadyApproved},
 		{"cancelled", approvalInvalid(guard.DetailApprovalCancelled), pluginmodel.ApprovalCancelled},
+		{"withdrawn", approvalInvalid(guard.Withdrawn), pluginmodel.ApprovalWithdrawn},
 		{"not found", approvalInvalid(guard.DetailApprovalNotFound), pluginmodel.ApprovalNotFound},
 		{"unknown passkey", approvalInvalid("unknown passkey"), pluginmodel.ApprovalPasskeyRevoked},
 		{"bad signature", approvalInvalid("signature does not verify"), pluginmodel.ApprovalBadSignature},

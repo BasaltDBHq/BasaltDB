@@ -225,4 +225,8 @@ func TestStatusConnectionNotEncrypted(t *testing.T) {
 
 	r = trustLocal(t, ok, rep("/var/run/postgresql", "disable", ""))
 	require.Empty(t, r.Problems, "a Unix socket is no network connection")
+	for _, h := range []string{"localhost", "127.0.0.1", "::1", "[::1]", "LOCALHOST."} {
+		r = trustLocal(t, ok, rep(h, "disable", ""))
+		require.Empty(t, r.Problems, "a loopback host never leaves this machine: %s", h)
+	}
 }

@@ -258,6 +258,7 @@ var applyReasons = map[string]revertstore.RevertReason{
 	guard.RevertAlreadySigned:  revertstore.RevertAlreadySigned,
 	guard.RevertPasskeyRevoked: revertstore.RevertPasskeyRevoked,
 	guard.RevertRowsChanged:    revertstore.RevertRowsChanged,
+	guard.Withdrawn:            revertstore.RevertWithdrawnReason,
 }
 
 // guardAnswer is the store error in err, mapped by MapError, nil when err

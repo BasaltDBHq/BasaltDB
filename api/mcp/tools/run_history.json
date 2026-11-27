@@ -212,6 +212,7 @@
               "APPROVAL_PENDING",
               "REFUSED",
               "APPROVAL_EXPIRED",
+              "APPROVAL_WITHDRAWN",
               "REVERTED"
             ]
           },

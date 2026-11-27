@@ -3,7 +3,9 @@ package setup
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
+	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -83,9 +85,23 @@ func (s *LocalService) certificateNotChecked(conn Conn, a config.Agent, out *Doc
 	}
 	state := StateNotChecked
 	if shown, _ := s.be.ConnCertificate(conn, certNotVerified, ""); shown != certNotVerified {
+		if loopbackHost(uc.host) {
+			return // no TLS, but the connection never leaves this machine
+		}
 		state = StateNotEncrypted // no TLS on this connection
 	}
 	out.Certificate = DoctorCertificate{State: state, Host: uc.host, Port: uc.port, SSLMode: uc.mode, Provider: uc.provider}
+}
+
+// loopbackHost reports whether host is this machine (localhost,
+// 127.0.0.0/8, ::1), whose plaintext connection is not warned about, as
+// status's CONNECTION_NOT_ENCRYPTED skips it.
+func loopbackHost(host string) bool {
+	if strings.EqualFold(strings.TrimSuffix(host, "."), "localhost") {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
 }
 
 // verifiedCredential is the agent's credential with sslmode=verify-full,

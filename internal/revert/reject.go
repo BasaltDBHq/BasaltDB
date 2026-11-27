@@ -3,7 +3,6 @@ package revert
 import (
 	"context"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
@@ -78,27 +77,10 @@ func rejectNote(note *string) (string, error) {
 		return "", nil
 	}
 	n := utf8.RuneCountInString(*note)
-	if n == 0 || n > guardmodel.MaxRejectNote || strings.IndexFunc(*note, refusedInNote) >= 0 {
+	if n == 0 || n > guardmodel.MaxRejectNote || strings.IndexFunc(*note, guidance.RefusedInText) >= 0 {
 		return "", &guidance.ArgumentError{Message: "note must be 1 to 500 characters of text, with no control characters other than newlines and tabs"}
 	}
 	return *note, nil
-}
-
-// refusedInNote reports a rune a reject note may not hold: a control
-// character (C0, DEL, C1) other than a newline or a tab, or a bidirectional
-// mark, embedding, override or isolate.
-func refusedInNote(r rune) bool {
-	switch {
-	case r == '\n' || r == '\t':
-		return false
-	case unicode.IsControl(r):
-		return true
-	case r == '\u061c' || r == '\u200e' || r == '\u200f':
-		return true
-	case r >= '\u202a' && r <= '\u202e':
-		return true
-	}
-	return r >= '\u2066' && r <= '\u2069'
 }
 
 // revokeRejected revokes a rejected revert's link. A failure leaves a link

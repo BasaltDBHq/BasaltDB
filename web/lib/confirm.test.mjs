@@ -205,3 +205,30 @@ test("the painter shows the warning box on the page that has one, and leaves a p
   assert.equal(d.nodes["confirm-warn"].hidden, true);
   assert.equal(d.nodes["confirm-check"].hidden, true);
 });
+
+test("the sslmode is found by a parse of the URL: only the real parameter changes", async () => {
+  const { sslModeOf, withVerifyFull } = await import("./confirm.js");
+  const base = pw("postgresql", "postgres", "pw@db.abc.supabase.co:5432/postgres");
+  const inValue = `${base}?application_name=a?sslmode=disable&sslmode=require`;
+  assert.equal(sslModeOf(inValue), "require");
+  assert.equal(withVerifyFull(inValue), `${base}?application_name=a?sslmode=disable&sslmode=verify-full`);
+
+  const at = `${base}?application_name=me@x&sslmode=require`;
+  assert.equal(sslModeOf(at), "require");
+  assert.equal(withVerifyFull(at), `${base}?application_name=me@x&sslmode=verify-full`);
+
+  const encodedKey = `${base}?ssl%6Dode=require`;
+  assert.equal(sslModeOf(encodedKey), "require", "the key is read decoded, as the driver reads it");
+  assert.equal(withVerifyFull(encodedKey), `${base}?sslmode=verify-full`);
+
+  const odd = pw("postgresql", "postgres", "p@ss?word@db.abc.supabase.co:5432/postgres");
+  assert.equal(sslModeOf(`${odd}?sslmode=require`), "require");
+  assert.equal(withVerifyFull(`${odd}?sslmode=require`), `${odd}?sslmode=verify-full`, "the password stays as typed");
+  assert.equal(withVerifyFull(odd), `${odd}?sslmode=verify-full`);
+
+  const v6 = pw("postgres", "u", "pw@[2001:db8::1]:5432/app");
+  assert.equal(sslModeOf(`${v6}?sslmode=require&a=1`), "require");
+  assert.equal(withVerifyFull(`${v6}?sslmode=require&a=1`), `${v6}?sslmode=verify-full&a=1`);
+  assert.equal(withVerifyFull(pw("postgres", "u", "pw@[::1]")), `${pw("postgres", "u", "pw@[::1]")}?sslmode=verify-full`, "no path");
+  assert.equal(withVerifyFull(`${base}#x`), `${base}?sslmode=verify-full#x`);
+});

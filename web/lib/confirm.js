@@ -91,44 +91,69 @@ export function certificateLine(c) {
   return { text: "Not known", tone: "diff" };
 }
 
+const URL_SCHEME = /^postgres(ql)?:\/\//i;
+const KV_SSLMODE = /(^|\s)sslmode=('[^']*'|\S*)/;
+
+// urlParts splits a postgres:// string into the part before its query
+// (scheme, user and password, host, path), the query without its ?, and
+// the fragment with its #. The user and host part ends at the first / after
+// the scheme, so an @ or ? in the query never reads as one, and a password
+// keeps whatever it holds (a / in it must be encoded, as in any URL); a
+// string with no path ends it at the first ? or #.
+function urlParts(s) {
+  const scheme = URL_SCHEME.exec(s)[0].length;
+  const slash = s.indexOf("/", scheme);
+  let from = slash;
+  if (slash < 0) {
+    const ends = [s.indexOf("?", scheme), s.indexOf("#", scheme)].filter((i) => i >= 0);
+    from = ends.length > 0 ? Math.min(...ends) : s.length;
+  }
+  const hash = s.indexOf("#", from);
+  const bodyEnd = hash < 0 ? s.length : hash;
+  const q = s.indexOf("?", from);
+  if (q < 0 || q > bodyEnd) return { head: s.slice(0, bodyEnd), query: null, frag: s.slice(bodyEnd) };
+  return { head: s.slice(0, q), query: s.slice(q + 1, bodyEnd), frag: s.slice(bodyEnd) };
+}
+
+// keyOf is a query pair's key, decoded as the driver reads it
+// (ssl%6Dode is sslmode).
+const keyOf = (pair) => [...new URLSearchParams(pair).keys()][0] ?? "";
+
 // sslModeOf is the sslmode a connection string names: a postgres:// URL's
-// query parameter or a key=value string's, "prefer" (the driver's default)
-// when it names none.
+// query parameter (its decoded key, the last one when there are several,
+// as the driver takes it) or a key=value string's, "prefer" (the driver's
+// default) when it names none.
 export function sslModeOf(databaseUrl) {
   const s = String(databaseUrl ?? "");
-  const m = /^postgres(ql)?:\/\//i.test(s) ? /[?&]sslmode=([^&#]*)/.exec(s.slice(queryStart(s))) : /(?:^|\s)sslmode=('[^']*'|\S*)/.exec(s);
-  const mode = m ? m[1].replace(/^'|'$/g, "") : "";
-  try {
-    return decodeURIComponent(mode) || "prefer";
-  } catch {
-    return mode || "prefer";
+  if (URL_SCHEME.test(s)) {
+    const { query } = urlParts(s);
+    const modes = query === null ? [] : new URLSearchParams(query).getAll("sslmode");
+    return modes.at(-1) || "prefer";
   }
+  const m = KV_SSLMODE.exec(s);
+  return (m ? m[2].replace(/^'|'$/g, "") : "") || "prefer";
 }
 
-// queryStart is where a URL's query starts: the first ? after its user
-// and password, so a ? in an encoded password is never taken for it.
-function queryStart(s) {
-  const q = s.indexOf("?", s.lastIndexOf("@") + 1);
-  return q < 0 ? s.length : q;
-}
-
-// withVerifyFull is the string the page holds with only its sslmode
-// replaced by verify-full, or added when it names none: every other byte
-// stays, the password's encoding too (a URL round trip would change it).
+// withVerifyFull is the string the page holds with only its sslmode set to
+// verify-full (every pair whose decoded key is sslmode), or added when it
+// names none: every other byte stays, the password's encoding and the other
+// parameters too (a URL round trip would change them).
 export function withVerifyFull(databaseUrl) {
   const s = String(databaseUrl ?? "");
-  if (/^postgres(ql)?:\/\//i.test(s)) {
-    const at = queryStart(s);
-    const head = s.slice(0, at);
-    const query = s.slice(at);
-    if (/[?&]sslmode=/.test(query)) return head + query.replace(/([?&])sslmode=[^&#]*/, "$1sslmode=verify-full");
-    const hash = query.indexOf("#");
-    const [q, frag] = hash < 0 ? [query, ""] : [query.slice(0, hash), query.slice(hash)];
-    if (q === "" || q === "?") return `${head}?sslmode=verify-full${frag}`;
-    return `${head}${q}&sslmode=verify-full${frag}`;
+  if (!URL_SCHEME.test(s)) {
+    if (KV_SSLMODE.test(s)) return s.replace(KV_SSLMODE, "$1sslmode=verify-full");
+    return `${s} sslmode=verify-full`;
   }
-  if (/(^|\s)sslmode=/.test(s)) return s.replace(/(^|\s)sslmode=('[^']*'|\S*)/, "$1sslmode=verify-full");
-  return `${s} sslmode=verify-full`;
+  const { head, query, frag } = urlParts(s);
+  if (query === null || query === "") return `${head}?sslmode=verify-full${frag}`;
+  let found = false;
+  const pairs = query.split("&").map((pair) => {
+    if (keyOf(pair) !== "sslmode") return pair;
+    found = true;
+    return "sslmode=verify-full";
+  });
+  if (!found) pairs.push("sslmode=verify-full");
+  return `${head}?${pairs.join("&")}${frag}`;
 }
 
 // notCheckedBox is the warning under the facts for a connection that is

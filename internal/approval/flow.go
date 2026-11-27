@@ -197,6 +197,15 @@ func ApprovalInvalid(reason, format string, args ...any) *toolresult.ToolError {
 	return &toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Reason: reason, Message: fmt.Sprintf(format, args...)}
 }
 
+// Withdrawn is the refusal of held write a, which the agent withdrew: the
+// page shows it as withdrawn and takes no signature, and a write with its
+// approval id applies nothing (CONTRACT.md, Approvals, Withdrawn requests).
+func Withdrawn(a action.Approval) *toolresult.ToolError {
+	te := ApprovalInvalid(guidance.ReasonWithdrawn, "approval %s was withdrawn by the agent; nothing was written", a.ID)
+	te.PersonMessage = guidance.WithdrawnMessage(a.WithdrawReason)
+	return te
+}
+
 // DifferentWrite is the refusal of a write that is not the held one: its
 // step repeats the held write exactly, with its approval id. request is the
 // held request as the store family's tools take it (the caller's

@@ -66,11 +66,30 @@ func trustStatusCases(operatedBy string) map[string]statusCase {
 			r, _ := pinnedStatus(t, operatedBy, false, pinSHAOther)
 			return r
 		}},
+		"CERTIFICATE_NOT_CHECKED": {state: guardmodel.GuardOK, personOnly: true, report: func(t *testing.T) guidance.StatusReport {
+			t.Helper()
+			return trustStatusOf(t, operatedBy, &fakeProbe{st: ok}, belowVerifyFull(host, "require", true))
+		}},
+		"CONNECTION_NOT_ENCRYPTED": {state: guardmodel.GuardOK, personOnly: true, report: func(t *testing.T) guidance.StatusReport {
+			t.Helper()
+			return trustStatusOf(t, operatedBy, &fakeProbe{st: ok}, belowVerifyFull(host, "disable", false))
+		}},
 		"TRUST_PROFILE_REFUSED": {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return trustStatusOf(t, operatedBy, &fakeProbe{st: ok}, reporter(trustprofile.Applied{Host: host, Applies: trustprofile.AppliesSystem},
 				trustprofile.Refused{File: "/etc/basalt/trust.d/a.json", Reason: "it is writable by group or others"}))
 		}},
+	}
+}
+
+// belowVerifyFull is the trust reporter of an agent connection to host with
+// sslmode mode, whose live connection uses TLS when encrypted.
+func belowVerifyFull(host, mode string, encrypted bool) statussvc.TrustReporter {
+	return func() statussvc.TrustReport {
+		return statussvc.TrustReport{
+			Applied: trustprofile.Applied{Host: host, Applies: trustprofile.AppliesNotVerified}, Port: 5432, SSLMode: mode,
+			Encrypted: func(context.Context) (bool, error) { return encrypted, nil },
+		}
 	}
 }
 

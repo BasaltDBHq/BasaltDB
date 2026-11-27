@@ -305,6 +305,9 @@ textarea, input.text {
 .strip.warn { background: var(--diff-hold-bg); color: var(--diff-hold-fg); border-color: var(--diff-hold-fg); }
 .strip.bad { background: var(--diff-del-bg); color: var(--diff-del-fg); border-color: var(--diff-del-fg); }
 .strip.ok { background: var(--diff-add-bg); color: var(--diff-add-fg); border-color: var(--diff-add-fg); }
+.strip.box-action { white-space: normal; display: grid; gap: 8px; }
+.strip.box-action > p { margin: 0; }
+.strip.box-action > button { justify-self: start; min-height: 36px; }
 .connect-page .done-title { font-size: 15px; font-weight: 600; }
 .nav-row { display: flex; align-items: center; gap: 10px; min-height: 32px; }
 .nav-row:not(:has(> :not([hidden]))) { display: none; }

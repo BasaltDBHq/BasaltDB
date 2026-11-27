@@ -7,7 +7,7 @@ import { ALG_ES256, b64urlDecode, CodeError, registrationResponseJson } from "./
 import { $, el, webauthnError } from "./page.js";
 import { answersFor, ENTITY_WORDS, fingerprintText, Labels, MAX_LABELS, restNote, tableName, trustRootFrom } from "./picks.js";
 import { labelRow } from "./pickviews.js";
-import { confirmView, factsDiffer, paintConfirm, stringFacts } from "./confirm.js";
+import { confirmView, factsDiffer, paintConfirm, sslModeOf, stringFacts, withVerifyFull } from "./confirm.js";
 import { ALL_SET, checkView, columnKey, laterText, passkeyItems, PASSKEYS_NOTE, RESET, signalRemoved, targetView } from "./doctor.js";
 import { browserFetch } from "./transport.js";
 
@@ -296,6 +296,34 @@ export class Install {
   // trustRoot is the SHA-256 the person trusted, "" when none.
   get trustRoot() {
     return this.#trustRoot;
+  }
+
+  // sslMode is the sslmode of the string the page holds, for the warning
+  // of a certificate not checked.
+  get sslMode() {
+    return sslModeOf(this.#databaseUrl);
+  }
+
+  // checkCertificate is the person's click on Check the certificate: the
+  // listing is sent again with only the string's sslmode replaced by
+  // verify-full, and on a pass the page holds that string, so the agent's
+  // connection string gets it too. On any refusal the pasted string and its
+  // listing stay, as if nothing was clicked, and the error is thrown.
+  async checkCertificate() {
+    const pasted = this.#databaseUrl;
+    const { listing, picks } = this;
+    this.#stale();
+    this.#databaseUrl = withVerifyFull(pasted);
+    try {
+      return await this.#list();
+    } catch (err) {
+      this.#stale();
+      this.#databaseUrl = pasted;
+      this.listing = listing;
+      this.picks = picks;
+      this.asking = null;
+      throw err;
+    }
   }
 
   #stale() {
@@ -870,6 +898,7 @@ export function startReal(link, env) {
     if (typed.trim() === "") return;
     $("paste-url").value = "";
     hideString();
+    mismatch = "";
     checking();
     let answer;
     try {
@@ -885,17 +914,49 @@ export function startReal(link, env) {
   // who the string signs in as and the certificate. For a certificate
   // authority the provider runs itself, Yes is also the trust in it. ----
   let shownFacts = null; // what the confirm step showed
+  // mismatch is the provider's name while the step says Check the
+  // certificate found a certificate that is not the provider's.
+  let mismatch = "";
   const showConfirm = () => {
     const view = install.asking
       ? confirmView({ facts: install.stringFacts, asking: install.asking })
-      : confirmView({ facts: install.listing.facts, certificate: install.listing.certificate });
+      : confirmView({ facts: install.listing.facts, certificate: install.listing.certificate, sslMode: install.sslMode, mismatch });
     shownFacts = view.facts;
-    paintConfirm(document, view);
+    paintConfirm(document, view, { box: true });
     show("confirm-error", false);
     go("s-confirm");
   };
+  // Check the certificate: the same string with sslmode=verify-full. A
+  // pass shows the step again, verified by the provider; a certificate that
+  // is not the provider's sent nothing, and the person goes back or
+  // continues with the string as pasted.
+  $("confirm-check").addEventListener("click", async () => {
+    if (screen !== "s-confirm" || install.asking || !install.listing) return;
+    const provider = String(install.listing.certificate?.provider ?? "");
+    checking();
+    let answer;
+    try {
+      answer = await install.checkCertificate();
+    } catch (err) {
+      if (err instanceof SetupError && err.code === "CERTIFICATE_NOT_VERIFIED" && provider !== "") {
+        mismatch = provider;
+        return showConfirm();
+      }
+      install.forget();
+      showPaste(err.message);
+      return;
+    }
+    // Verified now: the step again, with the provider's check mark.
+    if (answer !== null) showConfirm();
+  });
   $("confirm-go").addEventListener("click", async () => {
     if (screen !== "s-confirm") return;
+    if (mismatch) {
+      // Go back: the string is dropped, as No, go back drops it.
+      mismatch = "";
+      install.cancelTrust();
+      return showPaste("");
+    }
     if (!install.asking) return listed(install.listing);
     checking();
     let answer;
@@ -913,6 +974,11 @@ export function startReal(link, env) {
   });
   $("confirm-back").addEventListener("click", () => {
     if (screen !== "s-confirm") return;
+    if (mismatch) {
+      // Continue without checking: the string as pasted, its sslmode kept.
+      mismatch = "";
+      return listed(install.listing);
+    }
     install.cancelTrust();
     showPaste("");
   });
@@ -1299,6 +1365,12 @@ export function labelRest(labels, more) {
   return { rest, suggested, restPublic };
 }
 
+// RELOAD_TRIES and RELOAD_WAIT_MS are how often, and how far apart, the
+// check is asked again while the engine serves its config again.
+const RELOAD_TRIES = 6;
+const RELOAD_WAIT_MS = 1000;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const UPDATE_SCREENS = ["u-check", "u-passkeys", "s-confirm", "u-mismatch", "u-confirm", "u-done", "u-allset", "s-paste", "s-labels", "s-checking"];
 
 // startUpdate runs the Update check for a CHANGE link. env has fetchFn,
@@ -1381,7 +1453,7 @@ export function startUpdate(link, env) {
   const showCheck = (d) => {
     const crumb = document.querySelector?.(".crumb-page");
     if (crumb) crumb.textContent = d.database ? `Setup · ${d.database}` : "Setup";
-    const v = checkView(d, env.origin, savedLeft());
+    const v = checkView(d, env.origin, savedLeft(), link.agent);
     view = v;
     setText("u-title", v.title);
     setText("u-sub", v.sub);
@@ -1519,6 +1591,7 @@ export function startUpdate(link, env) {
       checking("Checking the database's certificate");
       try {
         const a = await fix.check("TRUST");
+        if (["NOT_CHECKED", "NOT_ENCRYPTED"].includes(fix.answer?.certificate?.state)) return showCheckOn(a);
         showMismatch(a);
       } catch (err) {
         if (err instanceof SetupError && err.code === "CERTIFICATE_NOT_VERIFIED" && err.trustRoot && err.pinned) return showRenewal(err.trustRoot, err.pinned);
@@ -1611,6 +1684,29 @@ export function startUpdate(link, env) {
     trusting = null;
     cancel();
   });
+  // ---- a certificate not checked: the agent's connection string gets
+  // sslmode=verify-full once a login with it passed. The engine then
+  // serves its config again, so the check reconnects. ----
+  const showCheckOn = (a) =>
+    showConfirm("Check the certificate", a, "Check it", async () => {
+      await fix.run("TRUST");
+      showDone("Certificate checked", `${link.agent} now checks the database's certificate. BasaltDB reconnects it.`, [], afterReload);
+    });
+  // afterReload is afterFix while the engine serves its config again: an
+  // engine that does not answer yet is asked again, a few times.
+  const afterReload = async () => {
+    checking("Checking BasaltDB and your database");
+    for (let i = 1; i < RELOAD_TRIES; i++) {
+      try {
+        await fix.doctor();
+        return showCheck(fix.answer);
+      } catch (err) {
+        if (!(err instanceof SetupError) || err.status !== 0) break;
+        await (env.sleep ?? sleep)(RELOAD_WAIT_MS);
+      }
+    }
+    refresh();
+  };
   let mismatchPinned = "";
   const showMismatch = (a) => {
     if (!SHA256_HEX.test(String(a.pinned)) || !SHA256_HEX.test(String(a.recorded))) return failed(new SetupError(0, "", "The engine sent a check this page cannot show."), FIXES.TRUST);

@@ -30,7 +30,7 @@ func VerifyFullByDefault(dsn string, set *Set) string {
 	if err != nil || q.Has("sslmode") || q.Has("sslrootcert") || q.Has("host") || q.Has("hostaddr") {
 		return dsn
 	}
-	if p := set.For(u.Hostname()); p == nil || p.Origin != BuiltIn {
+	if BuiltInProvider(u.Hostname(), set) == "" {
 		return dsn
 	}
 	switch {
@@ -40,4 +40,18 @@ func VerifyFullByDefault(dsn string, set *Set) string {
 		return dsn + sslModeVerifyFull
 	}
 	return dsn + "?" + sslModeVerifyFull
+}
+
+// BuiltInProvider is the provider whose built-in profile of set is the one
+// that applies to host ("Supabase", "Amazon RDS"), "" when none does: no
+// profile covers it, or an operator's profile decides for it (a pin, a
+// replaced or disabled built-in). It is the condition VerifyFullByDefault
+// adds verify-full on, and the one the setup page offers to check the
+// certificate on for a string whose sslmode is below verify-full.
+func BuiltInProvider(host string, set *Set) string {
+	p := set.For(host)
+	if p == nil || p.Origin != BuiltIn {
+		return ""
+	}
+	return ProviderName(p.Name)
 }

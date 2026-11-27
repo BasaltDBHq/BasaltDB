@@ -30,6 +30,38 @@ type WithdrawResult struct {
 	NextSteps     []toolresult.NextStep
 }
 
+// Withdraw is the withdraw tool (CONTRACT.md, MCP tools, withdraw): a
+// revertId is one of the agent's reverts; an approvalId one of its held
+// writes, else a plugin approval it opened (through plugins, nil on an
+// engine without them). An id the agent holds nothing waiting for is
+// NOT_FOUND; otherwise the answer is the item's state after the call.
+func (ac *Service) Withdraw(ctx context.Context, p WithdrawParams, plugins PluginWithdrawer) (WithdrawResult, error) {
+	var (
+		w     action.Withdrawal
+		found bool
+		err   error
+	)
+	switch {
+	case p.RevertID != uuid.Nil:
+		w, found, err = ac.reverts.WithdrawRevert(ctx, p.RevertID, p.Reason)
+		if err == nil && !found {
+			return WithdrawResult{}, WithdrawNotFound(action.WithdrawRevert, p.RevertID)
+		}
+	default:
+		w, found, err = ac.WithdrawApproval(ctx, p.ApprovalID, p.Reason)
+		if err == nil && !found && plugins != nil {
+			w, found, err = plugins.WithdrawPluginApproval(ctx, p.ApprovalID, p.Reason)
+		}
+		if err == nil && !found {
+			return WithdrawResult{}, WithdrawNotFound(action.WithdrawHeldWrite, p.ApprovalID)
+		}
+	}
+	if err != nil {
+		return WithdrawResult{}, err
+	}
+	return WithdrawAnswer(w)
+}
+
 // WithdrawApproval withdraws one of the agent's held writes while it waits
 // for the person. found is false when the agent holds no held write with
 // that id (it may be a plugin approval). The answer is the held write as the

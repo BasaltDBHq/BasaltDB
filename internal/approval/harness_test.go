@@ -153,3 +153,8 @@ func (noReverts) ListOpenReverts(context.Context, action.RevertListParams) (pagi
 }
 
 func (noReverts) PendingRevert(context.Context, *revertsvc.PendingRevert, bool) error { return nil }
+
+// WithdrawRevert finds no revert to withdraw.
+func (noReverts) WithdrawRevert(context.Context, uuid.UUID, string) (action.Withdrawal, bool, error) {
+	return action.Withdrawal{}, false, nil
+}

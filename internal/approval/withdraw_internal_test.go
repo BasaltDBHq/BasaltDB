@@ -10,6 +10,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approvalstore"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // withdrawStore holds one held write; a withdraw of a pending one marks it
@@ -100,3 +102,42 @@ func (s expiredStore) WithdrawApproval(context.Context, uuid.UUID, string) (*tim
 
 // notWaiting is the guard's answer for a request no longer waiting: no time.
 func (withdrawStore) notWaiting() *time.Time { return nil }
+
+// pluginWithdrawals withdraws the one plugin approval it holds.
+type pluginWithdrawals struct{ id uuid.UUID }
+
+func (p pluginWithdrawals) WithdrawPluginApproval(_ context.Context, id uuid.UUID, reason string) (action.Withdrawal, bool, error) {
+	if id != p.id {
+		return action.Withdrawal{}, false, nil
+	}
+	return action.Withdrawal{Kind: action.WithdrawPluginApproval, ID: id, Status: action.ApprovalWithdrawn, Reason: reason}, true, nil
+}
+
+// An approvalId that is no held write of the agent's is tried as a plugin
+// approval it opened; an id of neither, or a revertId of no revert of its
+// own, is NOT_FOUND with the reason of its kind.
+func TestWithdrawFindsTheKind(t *testing.T) {
+	t.Parallel()
+	calls := 0
+	ac := newService(t, "linux", "", func(s *settings) { s.store = withdrawStore{calls: &calls} })
+	plugin := uuid.Must(uuid.NewV7())
+	out, err := ac.Withdraw(context.Background(), WithdrawParams{ApprovalID: plugin, Reason: "wrong plugin"}, pluginWithdrawals{id: plugin})
+	require.NoError(t, err)
+	require.Equal(t, action.WithdrawPluginApproval, out.Kind)
+	require.Equal(t, "The agent withdrew this request: wrong plugin. Nothing changed.", out.PersonMessage)
+
+	for _, c := range []struct {
+		p      WithdrawParams
+		reason string
+	}{
+		{WithdrawParams{ApprovalID: uuid.Must(uuid.NewV7()), Reason: "x"}, guidance.ReasonApproval},
+		{WithdrawParams{RevertID: uuid.Must(uuid.NewV7()), Reason: "x"}, guidance.ReasonRevert},
+	} {
+		_, err := ac.Withdraw(context.Background(), c.p, pluginWithdrawals{id: plugin})
+		var te *toolresult.ToolError
+		require.ErrorAs(t, err, &te)
+		require.Equal(t, guidance.CodeNotFound, te.Code)
+		require.Equal(t, c.reason, te.Reason)
+	}
+	require.Zero(t, calls, "nothing was withdrawn")
+}

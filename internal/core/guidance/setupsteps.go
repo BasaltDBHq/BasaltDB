@@ -77,6 +77,25 @@ func FixSteps(b *Steps, cmds Commands, reason string) string {
 	return problem + " " + initPersonText
 }
 
+// GuardBelowFloorSteps are the fix steps of a guard below the build's
+// update floor, an install from 0.0.1 (GUARD_OUTDATED with
+// guardmodel.Status.BelowFloor): never the setup page's UPDATE link, which
+// cannot update it. The person removes the install as doc says, and the
+// link basalt init prints sets BasaltDB up again.
+func GuardBelowFloorSteps(b *Steps, cmds Commands, doc string) (string, []toolresult.Link) {
+	m := NewMessage().
+		Text("Basalt's guard in this database is from an older BasaltDB release that this engine cannot update, so the agent cannot work. Remove the old install first, as this page says:").
+		Link("Remove an older install", doc)
+	if cmds.AgentOperated() {
+		b.AgentRunCommand(cmds.Init(), "Run this once the person has removed the old install, then show them the link it prints and follow its steps.")
+		return m.Text("Then the agent gives you a link to set up again.").Build()
+	}
+	b.AgentRunCommand(cmds.Init(), "Run this once and show the person the link it prints: they remove the old install first, then set up again.")
+	b.TellAgent("Tell the agent when it is done.")
+	b.Stop("Do not retry until the person says it is set up again.")
+	return m.Text("Then open the link the agent gives you to set up again, and tell the agent when it is done.").Build()
+}
+
 // removedInitText and removedPersonText are the fix steps' texts on an
 // engine the setup page removed.
 const (

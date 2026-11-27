@@ -175,7 +175,7 @@ A write of 11 to 50 rows, or any `DELETE`, is held. The agent shows you `Held fo
 
 When a newer release is out, your agent tells you. The engine checks the public release list of BasaltDBHq/BasaltDB once a day and sends nothing else. To turn the check off, set `BASALT_UPDATE_CHECK=off` or `"updateCheck": "OFF"` in `engine.json`.
 
-Upgrade the binary the way you installed it: `brew upgrade basaltdbhq/tap/basaltdb`, or install the new release over the old one at the same path. Then ask your agent to run `basalt init`: the engine service runs its own copy of `basalt`, so `init` sees the engine runs another build and asks for your password once, to copy the new `basalt` over the service's copy and restart the engine onto it. When the release needs a newer guard, pick Update on the page `init` opens; `init` ends as soon as the update is done, and the agent goes on.
+Upgrade the binary the way you installed it: `brew upgrade basaltdbhq/tap/basaltdb`, or install the new release over the old one at the same path. Then ask your agent to run `basalt init`: the engine service runs its own copy of `basalt`, so `init` sees the engine runs another build and asks for your password once, to copy the new `basalt` over the service's copy and restart the engine onto it. When the release needs a newer guard, pick Update on the page `init` opens; `init` ends as soon as the update is done, and the agent goes on. A database set up by 0.0.1 is not updated: the page refuses it with `GUARD_UNUSABLE`, so remove the old install as [Remove an older install](remove-old-install.md) says, then set up again.
 
 Without the service (a bot machine, a container), and with the service when its own copy changes, the engine restarts onto the new binary by itself:
 

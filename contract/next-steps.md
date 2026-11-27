@@ -108,7 +108,7 @@ Served (owner decisions AE-1 to AE-14), except the parts marked planned. Every e
 | `UNAVAILABLE` | `TOO_MANY_CONNECTIONS` | — | SQLSTATE `53300` on a new connection: the agent role is at its `CONNECTION LIMIT` of 8. A `CALL_TOOL` (same call), A `ASK_PERSON`; +pm: "The agent <name> has used all 8 database connections Basalt allows it. Another engine for the same agent may be running, or a stopped engine left sessions open. Stop any second engine; stale sessions close on their own within a few minutes." |
 | `UNAVAILABLE` | `CREDENTIAL_REJECTED` | — | A `RUN_COMMAND` (`basalt init`: its page sets a new password), P `TELL_AGENT`, A `STOP`; +pm |
 | `UNAVAILABLE` | `GUARD_MISSING` | — | A `RUN_COMMAND` (`basalt init`: its page installs the guard again), P `TELL_AGENT`, A `STOP`; +pm |
-| `UNAVAILABLE` | `GUARD_OUTDATED` | — | P `OPEN_LINK` (the setup page's `UPDATE` link, when the engine serves it; else A `RUN_COMMAND` `basalt init`, whose page updates the guard), P `TELL_AGENT`, A `STOP`; +pm |
+| `UNAVAILABLE` | `GUARD_OUTDATED` | — | P `OPEN_LINK` (the setup page's `UPDATE` link, when the engine serves it and the guard is not below the update floor; else A `RUN_COMMAND` `basalt init`, whose page updates the guard; below the floor, an install from 0.0.1, the `personMessage` says to remove the install first, with the link to [Remove an older install](../docs/remove-old-install.md), then set up again), P `TELL_AGENT`, A `STOP`; +pm |
 | `UNAVAILABLE` | `ENGINE_UNREACHABLE` | — | P `RUN_COMMAND` (start the engine), P `TELL_AGENT`, A `STOP`; +pm |
 | `UNAVAILABLE` | `PAGES_OFF` | — | A `CALL_TOOL` (`list_pending`, hand over each item's `approvalUrl`) |
 | `UNAVAILABLE` | `SETUP_PENDING` | — | A `RUN_COMMAND` (`basalt init`, which prints the link for the pending setup), P `TELL_AGENT`, A `END_TURN`, A `CALL_TOOL` (`status`); +pm |
@@ -185,7 +185,7 @@ Status problems (`status` tool, every one +pm):
 | `TOO_MANY_CONNECTIONS` | `ERROR` | A `ASK_PERSON` (stop a second engine for the agent, or wait for stale sessions to close; the error's person message) |
 | `CREDENTIAL_REJECTED` | `ERROR` | A `RUN_COMMAND` (`basalt init`: its page sets a new password), P `TELL_AGENT`, A `STOP` |
 | `GUARD_MISSING` | `ERROR` | A `RUN_COMMAND` (`basalt init`: its page installs the guard again), P `TELL_AGENT`, A `STOP` |
-| `GUARD_OUTDATED` | `ERROR` | P `OPEN_LINK` (the setup page's `UPDATE` link, when the engine serves it; else A `RUN_COMMAND` `basalt init`, whose page updates the guard), P `TELL_AGENT`, A `STOP` |
+| `GUARD_OUTDATED` | `ERROR` | P `OPEN_LINK` (the setup page's `UPDATE` link, when the engine serves it and the guard is not below the update floor; else A `RUN_COMMAND` `basalt init`, whose page updates the guard; below the floor, an install from 0.0.1, the `personMessage` says to remove the install first, with the link to [Remove an older install](../docs/remove-old-install.md), then set up again), P `TELL_AGENT`, A `STOP` |
 | `GUARD_UPGRADE_AVAILABLE` | `WARNING` | A `ASK_PERSON` (whether to update the guard now), then on the person's yes P `OPEN_LINK` (the setup page's `UPDATE` link, when the engine serves it; else A `RUN_COMMAND` `basalt init`, whose page updates the guard) |
 | `NO_PASSKEY` | `ERROR` | No active passkey on the origin of the agent's pages, so nothing held can be signed; `ready` is false, and every tool still works (held writes wait for a passkey). P `OPEN_LINK` (the setup page's `UPDATE` link, when the engine serves it: its Update check adds a passkey on this device), A `END_TURN`; else A `RUN_COMMAND` (`basalt init`: its page registers a passkey) |
 | `SETUP_NOT_RUN` | `ERROR` | A `RUN_COMMAND` (`basalt init`, which prints the link for the pending setup), P `TELL_AGENT`, A `END_TURN`, A `CALL_TOOL` (`status`) |
@@ -226,7 +226,7 @@ Chat-only operator. When `operatedBy` is `AGENT`, each entry below replaces the 
 | error | `APPROVAL_REQUIRED` | `NO_PASSKEY` | A `RUN_COMMAND` (init --remote: an `AGENT` code with no change; the person's computer registers a portal passkey); +pm |
 | error | `UNAVAILABLE` | `CREDENTIAL_REJECTED` | A `RUN_COMMAND` (init --remote: the database refuses the credential, so an `AGENT` code with a new password); +pm |
 | error | `UNAVAILABLE` | `GUARD_MISSING` | A `RUN_COMMAND` (init --remote: an `INSTALL` code); +pm |
-| error | `UNAVAILABLE` | `GUARD_OUTDATED` | A `RUN_COMMAND` (init --remote: an `UPGRADE` code); +pm |
+| error | `UNAVAILABLE` | `GUARD_OUTDATED` | A `RUN_COMMAND` (init --remote: an `UPGRADE` code; below the update floor, the `personMessage` says to remove the install first, with the link to [Remove an older install](../docs/remove-old-install.md)); +pm |
 | error | `UNAVAILABLE` | `ENGINE_UNREACHABLE` | A `RUN_COMMAND` (start the engine), A `CALL_TOOL` (same call, `repeatCall`) |
 | warning | `RLS_HIDES_ROWS` | — | A `ASK_PERSON`, A `RUN_COMMAND` (init --remote: an `AGENT` code; the person answers the row-level security question on their computer); +pm |
 | problem | `ENGINE_UNREACHABLE` | — | A `RUN_COMMAND` (start the engine), A `CALL_TOOL` (`status`) |
@@ -234,7 +234,7 @@ Chat-only operator. When `operatedBy` is `AGENT`, each entry below replaces the 
 | problem | `ENGINE_GAVE_UP` | — | A `RUN_COMMAND` (start the engine), A `CALL_TOOL` (`status`) |
 | problem | `CREDENTIAL_REJECTED` | — | A `RUN_COMMAND` (init --remote: the database refuses the credential, so an `AGENT` code with a new password); +pm |
 | problem | `GUARD_MISSING` | — | A `RUN_COMMAND` (init --remote: an `INSTALL` code); +pm |
-| problem | `GUARD_OUTDATED` | — | A `RUN_COMMAND` (init --remote: an `UPGRADE` code); +pm |
+| problem | `GUARD_OUTDATED` | — | A `RUN_COMMAND` (init --remote: an `UPGRADE` code; below the update floor, the `personMessage` says to remove the install first, with the link to [Remove an older install](../docs/remove-old-install.md)); +pm |
 
 The other entries read the same in both modes: their `PERSON` steps are links, and the agent's `basalt init` names `--remote` on an agent-operated engine.
 

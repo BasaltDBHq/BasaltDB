@@ -873,17 +873,33 @@ func versionAfter(installed, upTo int) int {
 
 // RemoveOldInstallDoc is the page that says how to remove an older
 // BasaltDB install from a database.
-const RemoveOldInstallDoc = "https://github.com/BasaltDBHq/BasaltDB/blob/master/docs/remove-old-install.md"
+const RemoveOldInstallDoc = guardmodel.RemoveOldInstallDoc
+
+// updatableFrom is the update floor: the lowest installed version this
+// build updates in place. A guard below it is unusable (CheckUsable), and
+// the engine tells the person to remove it and set up again instead of
+// offering the update (guardmodel.Status.BelowFloor). Every 0.0.1 release
+// shipped only version 1, whose SQL later builds changed, and every 0.1
+// build installs version 8 or later: a guard at version 1 is a 0.0.1
+// install, and updating it would run versions written for another
+// version 1.
+//
+// When to raise it: a guard change that cannot be applied over an older
+// install raises the floor to that change's version, and CHANGELOG.md
+// names it under "Breaking for alpha installs".
+const updatableFrom = versionInstallIDs
 
 // ErrUnusableInstall: the database has a basalt_meta this build can neither
-// install over nor update: an older install (from before the guard's
-// versions started again at 1, which this build cannot read), or a
-// partial one. Nothing is changed for it; the person removes it first.
+// install over nor update: an older install (below the update floor, or
+// from before the guard's versions started again at 1, which this build
+// cannot read), or a partial one. Nothing is changed for it; the person
+// removes it first.
 var ErrUnusableInstall = errors.New("basalt_meta is an older or partial BasaltDB install this build cannot use")
 
 // CheckUsable returns ErrUnusableInstall, wrapped with what is missing,
 // for a basalt_meta this build cannot install over: objects but no
-// recorded version, no installs table, or an installs table without the id
+// recorded version, a recorded version below the update floor
+// (updatableFrom), no installs table, or an installs table without the id
 // column from version 2 on. No basalt_meta, or an empty one, is usable.
 // It reads the catalog and schema_version and changes nothing.
 func CheckUsable(ctx context.Context, q Querier) error {
@@ -909,11 +925,20 @@ func CheckUsable(ctx context.Context, q Querier) error {
 			return err
 		}
 	}
+	return usable(version, objects, installs, installID)
+}
+
+// usable is CheckUsable's verdict on what it read: the recorded version (0
+// for none), and whether basalt_meta holds objects, an installs table, and
+// that table's id column.
+func usable(version int, objects, installs, installID bool) error {
 	switch {
 	case version == 0 && objects:
 		return fmt.Errorf("%w: it holds objects but no recorded version", ErrUnusableInstall)
 	case version == 0:
 		return nil // an empty basalt_meta: the install fills it
+	case version < updatableFrom:
+		return fmt.Errorf("%w: version %d is older than this build can update", ErrUnusableInstall, version)
 	case !installs:
 		return fmt.Errorf("%w: version %d has no basalt_meta.installs", ErrUnusableInstall, version)
 	case version >= versionInstallIDs && !installID:

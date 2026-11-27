@@ -116,7 +116,7 @@ func (s statusDeps) report(ctx context.Context) (guidance.StatusReport, error) {
 		}
 	}
 	if err == nil && st.State != guardmodel.GuardMissing {
-		r.Passkeys = s.countPasskeys(ctx, &ps, setup.Status.State == handoff.SetupDone)
+		r.Passkeys = s.countPasskeys(ctx, &ps, setup.Status.State == handoff.SetupDone, !st.BelowFloor)
 	}
 	if err == nil {
 		r.Ledger = s.ledgerStatus(ctx, st)
@@ -220,8 +220,11 @@ func (s statusDeps) addReinstalled(ctx context.Context, ps *guidance.Problems) {
 
 // passkeys counts the active passkeys that can sign the agent's links:
 // those registered on the origin of its pages (pagesPasskeys); none is
-// NO_PASSKEY. A count that fails is logged and leaves active out.
-func (s statusDeps) countPasskeys(ctx context.Context, ps *guidance.Problems, setupDone bool) guidance.PasskeysStatus {
+// NO_PASSKEY when noPasskeyProblem. A count that fails is logged and leaves
+// active out. A guard below the update floor gets no NO_PASSKEY: its
+// install is removed with its passkeys, and the setup page's Update cannot
+// add one there.
+func (s statusDeps) countPasskeys(ctx context.Context, ps *guidance.Problems, setupDone, noPasskeyProblem bool) guidance.PasskeysStatus {
 	all, err := s.passkeys(ctx)
 	if err != nil {
 		s.log.Error("status: count passkeys", "err", err)
@@ -229,7 +232,7 @@ func (s statusDeps) countPasskeys(ctx context.Context, ps *guidance.Problems, se
 	}
 	keys, origin := passkey.OnPagesOrigin(all, s.pagesBase)
 	n := len(keys)
-	if n == 0 {
+	if n == 0 && noPasskeyProblem {
 		msg := "no passkey is registered, so held writes and reverts cannot be signed"
 		if len(all) > 0 {
 			msg = "no passkey is registered on " + origin + ", where this agent's links open, so held writes and reverts cannot be signed"

@@ -35,7 +35,16 @@ type Status struct {
 	Build              int
 	MissingBreaking    []int
 	MissingNonBreaking []int
+	// BelowFloor: Installed is below the build's update floor, so the guard
+	// cannot be updated in place (an install from 0.0.1). The State is then
+	// OUTDATED, and the person removes the install and sets up again
+	// (RemoveOldInstallDoc) instead of updating it.
+	BelowFloor bool
 }
+
+// RemoveOldInstallDoc is the page that says how to remove an older
+// BasaltDB install from a database.
+const RemoveOldInstallDoc = "https://github.com/BasaltDBHq/BasaltDB/blob/master/docs/remove-old-install.md"
 
 // Served reports whether an engine serves the agent's tools on this guard:
 // nothing breaking is missing.

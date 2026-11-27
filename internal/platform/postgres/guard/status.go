@@ -84,13 +84,14 @@ func judge(installed []int, migs []guardmodel.Migration) guardmodel.Status {
 		}
 		st.MissingNonBreaking = append(st.MissingNonBreaking, m.Version)
 	}
+	st.BelowFloor = st.Installed > 0 && st.Installed < updatableFrom
 	st.State = stateOf(st)
 	return st
 }
 
 func stateOf(st guardmodel.Status) string {
 	switch {
-	case len(st.MissingBreaking) > 0:
+	case st.BelowFloor, len(st.MissingBreaking) > 0:
 		return guardmodel.GuardOutdated
 	case len(st.MissingNonBreaking) > 0:
 		return guardmodel.GuardUpgradeAvailable

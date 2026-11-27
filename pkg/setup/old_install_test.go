@@ -37,3 +37,26 @@ func TestCheckRefusesAnOlderInstall(t *testing.T) {
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT count(*) FROM basalt_meta.schema_version WHERE version = 30`).Scan(&versions))
 	require.Equal(t, 1, versions, "nothing changed")
 }
+
+// A guard recorded at version 1, as every 0.0.1 release left it, is below
+// the update floor: Check and Run refuse it GUARD_UNUSABLE and change
+// nothing.
+func TestCheckRefusesAnInstallFrom001(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	ctx := context.Background()
+	d.Init(t, guardmodel.AgentSpec{Name: "other", Password: guard.NewPassword(), Write: []string{"public.leads"}})
+	d.Exec(t, `SET ROLE `+d.Names.Guard()+`;
+		DELETE FROM basalt_meta.schema_version WHERE version > 1;
+		RESET ROLE`)
+	code := newCode(t, d, nil)
+
+	_, err := setup.Check(ctx, d.Admin, request(code))
+	require.Equal(t, setup.CodeGuardUnusable, codeOf(t, err))
+	require.Contains(t, err.Error(), "docs/remove-old-install.md")
+	_, err = setup.Run(ctx, d.Admin, request(code), setup.RunInput{})
+	require.Equal(t, setup.CodeGuardUnusable, codeOf(t, err))
+	var versions []int32
+	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT array_agg(version ORDER BY version) FROM basalt_meta.schema_version`).Scan(&versions))
+	require.Equal(t, []int32{1}, versions, "nothing changed")
+}

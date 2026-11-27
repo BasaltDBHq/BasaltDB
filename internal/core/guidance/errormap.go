@@ -3,6 +3,7 @@ package guidance
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
@@ -27,6 +28,7 @@ func (m ErrorMap) ToolError(err error) *toolresult.ToolError {
 		pe *action.StoreError
 		se *SetupError
 		dn *DatabaseNotConfirmedError
+		bf *GuardBelowFloorError
 	)
 	switch {
 	case errors.As(err, &te):
@@ -47,6 +49,8 @@ func (m ErrorMap) ToolError(err error) *toolresult.ToolError {
 		return &toolresult.ToolError{Code: CodeUnavailable, Reason: reason, Message: se.Error()}
 	case errors.As(err, &dn):
 		return &toolresult.ToolError{Code: CodeUnavailable, Reason: ReasonDatabaseNotConfirmed, Message: dn.Error()}
+	case errors.As(err, &bf):
+		return &toolresult.ToolError{Code: CodeUnavailable, Reason: ReasonGuardOutdated, Message: bf.Error()}
 	case errors.As(err, &ae):
 		return &toolresult.ToolError{Code: CodeInvalidArgument, Reason: ae.Reason, Message: ae.Message}
 	case errors.Is(err, pagination.ErrStaleCursor):
@@ -100,6 +104,17 @@ type DatabaseNotConfirmedError struct {
 
 func (e *DatabaseNotConfirmedError) Error() string {
 	return "the agent's database waits for the person's confirmation; no tool but status and confirm_database works until then"
+}
+
+// GuardBelowFloorError refuses a tool while the guard is below the build's
+// update floor (UNAVAILABLE GUARD_OUTDATED): an install from 0.0.1, which
+// is removed and set up again, never updated.
+type GuardBelowFloorError struct {
+	Installed int
+}
+
+func (e *GuardBelowFloorError) Error() string {
+	return fmt.Sprintf("the guard in this database is version %d, from an older release this engine cannot update; only status works until the person removes it and sets up again", e.Installed)
 }
 
 // sentinel reports whether err is target, false for a nil target. NewService

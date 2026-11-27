@@ -68,6 +68,8 @@ func TestAnInstallRefusesAnOlderInstallItCannotUse(t *testing.T) {
 			CREATE TABLE basalt_meta.installs (install oid PRIMARY KEY, installed_at timestamptz NOT NULL, installed_by name NOT NULL, vault_user text);
 			INSERT INTO basalt_meta.schema_version (version) VALUES (37)`,
 		"no version table": `DROP TABLE basalt_meta.schema_version CASCADE`,
+		// Every 0.0.1 release shipped only version 1: below the update floor.
+		"0.0.1, version 1": `DELETE FROM basalt_meta.schema_version WHERE version > 1`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -150,14 +152,27 @@ func TestSetupFailedLogsItsCauseWithoutSecrets(t *testing.T) {
 // the guard is newer than this engine.
 func TestAnUpdateRefusesAnOlderInstallItCannotUse(t *testing.T) {
 	t.Parallel()
-	f, svc := installed(t)
-	ctx := context.Background()
-	f.db.Exec(t, `SET ROLE `+f.db.Names.Guard()+`; DROP TABLE basalt_meta.installs CASCADE;
-		INSERT INTO basalt_meta.schema_version (version) VALUES (30); RESET ROLE`)
-	before := guardObjects(t, f)
-	_, err := svc.Check(ctx, f.agentJob(setup.JobUpdate))
-	refusal(t, err, setup.CodeGuardUnusable)
-	_, err = svc.Run(ctx, f.agentJob(setup.JobUpdate))
-	refusal(t, err, setup.CodeGuardUnusable)
-	require.Equal(t, before, guardObjects(t, f), "nothing changed in basalt_meta")
+	for name, old := range map[string]string{
+		"older numbering, no installs table": `DROP TABLE basalt_meta.installs CASCADE;
+			INSERT INTO basalt_meta.schema_version (version) VALUES (30)`,
+		// Every 0.0.1 release shipped only version 1: below the update
+		// floor, so the page never updates it.
+		"0.0.1, version 1": `DELETE FROM basalt_meta.schema_version WHERE version > 1`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f, svc := installed(t)
+			ctx := context.Background()
+			f.db.Exec(t, `SET ROLE `+f.db.Names.Guard()+`; `+old+`; RESET ROLE`)
+			before := guardObjects(t, f)
+			_, err := svc.Check(ctx, f.agentJob(setup.JobUpdate))
+			refusal(t, err, setup.CodeGuardUnusable)
+			var r *setup.RefusalError
+			require.ErrorAs(t, err, &r)
+			require.Contains(t, r.Message, "docs/remove-old-install.md")
+			_, err = svc.Run(ctx, f.agentJob(setup.JobUpdate))
+			refusal(t, err, setup.CodeGuardUnusable)
+			require.Equal(t, before, guardObjects(t, f), "nothing changed in basalt_meta")
+		})
+	}
 }

@@ -648,7 +648,7 @@ func TestInitOnARemovedEngineRemovesNothingWhenNothingIsPicked(t *testing.T) {
 	require.Equal(t, cli.ExitOK, r.code, r.stderr)
 	require.Empty(t, h.dialogs)
 	require.Len(t, h.opened, 1)
-	require.Contains(t, r.stderr, "nothing was picked on that page yet")
+	require.Contains(t, r.stderr, "Setting BasaltDB up again on that page needs no more from the agent")
 }
 
 // basalt init --demo on a removed engine sets the demo up again on the

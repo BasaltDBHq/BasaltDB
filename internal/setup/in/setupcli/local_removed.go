@@ -50,7 +50,7 @@ func removedEngine(c *cli.IO, h LocalHost, job localsetup.Job) (code int, instal
 		return cli.ExitOK, false
 	case choiceNone:
 	}
-	fmt.Fprintln(c.Stderr, "basalt: nothing was picked on that page yet. When the person has picked, run basalt init once more: it finishes the removal or opens the setup again.")
+	fmt.Fprintln(c.Stderr, "basalt: this init stops waiting. Setting BasaltDB up again on that page needs no more from the agent. To remove it from this computer, run basalt init again and press Remove it from this computer too on the page it opens.")
 	return cli.ExitOK, false
 }
 

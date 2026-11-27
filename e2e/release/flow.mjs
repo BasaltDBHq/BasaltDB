@@ -386,8 +386,8 @@ async function removedPage() {
   await page.locator("#removed").waitFor({ state: "visible" });
   await page.locator("#removed-again").click();
   await realInstall();
+  // init ends once the engine serves the new config, or when its wait is up.
   assert.equal(await Promise.race([again.exited, sleep(120000).then(() => "timeout")]), 0, `init after Set up again: ${again.err()}`);
-  assert.match(again.err(), /BasaltDB is set up again on this computer/);
 
   // The engine serves the agent again: init opens the Update or Remove link.
   const change = basaltInit(["--agent", AGENT]);

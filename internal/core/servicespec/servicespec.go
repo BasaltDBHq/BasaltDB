@@ -32,7 +32,7 @@ var (
 // reaches them.
 const (
 	InstallPrompt = "BasaltDB wants to install its engine on this Mac. It copies basalt into a system folder, creates the engine's own system account and folders and starts the engine. Cancel unless you just asked to set up BasaltDB."
-	RemovePrompt  = "BasaltDB wants to remove its engine from this Mac. It stops the engine and deletes its folders and system accounts. Cancel unless you just chose to remove BasaltDB from this computer on the setup page."
+	RemovePrompt  = "BasaltDB wants to remove its engine from this Mac. It stops the engine and deletes its folders and system accounts. Cancel unless you just chose to remove BasaltDB."
 	RestartPrompt = "BasaltDB wants to restart its engine on this Mac. The engine runs another build than the basalt you just ran, so it copies that basalt into a system folder and restarts the engine onto it. Cancel unless you just installed or upgraded BasaltDB."
 	ResetPrompt   = "BasaltDB wants to reset its engine on this Mac. It deletes the engine's config and credentials. Cancel unless you just answered 'No, this isn't mine' on the setup page."
 )

@@ -93,13 +93,13 @@ Each agent's engine opens up to 4 connections to the database, plus 1 while the 
 
 Budget for it. The number of agents times 8 must fit next to your app's own connections, within the limit your database allows in total.
 
-**On Supabase.** The smallest instance allows roughly 60 direct connections in total. The session pooler (port 5432 on the pooler host, the string recommended above) gives each client connection its own server connection from a shared pool. Count every engine connection against that pool. Transaction mode (port 6543) would share server connections, but it is not yet verified with Basalt. Do not rely on it.
+**On Supabase.** The smallest instance allows roughly 60 direct connections in total. The session pooler (port 5432 on the pooler host, the string recommended above) gives each client connection its own server connection from a shared pool. Count every engine connection against that pool. Transaction mode (port 6543) would share server connections, but it is not yet verified with BasaltDB. Do not rely on it.
 
 If it does not fit, run fewer agents per database or move to a bigger instance.
 
 When an agent hits its cap, its `status` tool reports `TOO_MANY_CONNECTIONS` with this message:
 
-> The agent <name> has used all 8 database connections Basalt allows it. Another engine for the same agent may be running, or a stopped engine left sessions open. Stop any second engine; stale sessions close on their own within a few minutes.
+> The agent <name> has used all 8 database connections BasaltDB allows it. Another engine for the same agent may be running, or a stopped engine left sessions open. Stop any second engine; stale sessions close on their own within a few minutes.
 
 ## 3. Set up with the sample database
 

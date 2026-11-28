@@ -50,7 +50,7 @@ Every text that describes a change to the person's data, whatever store holds it
 
 | Part | Holds | Defined by |
 |---|---|---|
-| Shared | What Basalt decides and the person agrees to: ids, agent, intent, counts, hashes, expiry, action, conflict, change ids, `resource`, and the values `key`, `old`, `now`, `set` (`before` and `after` in a change record) | This contract, the same for every store |
+| Shared | What BasaltDB decides and the person agrees to: ids, agent, intent, counts, hashes, expiry, action, conflict, change ids, `resource`, and the values `key`, `old`, `now`, `set` (`before` and `after` in a change record) | This contract, the same for every store |
 | Shape | Which kind of data the values describe: `shape`, [below](#shapes) | This contract. A page draws per shape |
 | Store part | `store: {kind, …}`: `name` (in a binding), `verb` (the store's own word for the operation), `code` (the store's own error code) and store-only extras. A held request's body is `request: {kind, …}` | Each store's adapter, documented per store |
 
@@ -70,11 +70,11 @@ Every text that describes a change to the person's data, whatever store holds it
 
 #### Operations
 
-`op` is Basalt's safety class. The store's own word for the operation goes beside it, in `store.verb`. Which operation it names depends on the text:
+`op` is BasaltDB's safety class. The store's own word for the operation goes beside it, in `store.verb`. Which operation it names depends on the text:
 
 - **On a line** (a preview line or a revert line, the texts the [text rules](#text-rules) cover), `verb` is the store's word for that line's own `op`, which can differ from the request's. In Postgres it is `INSERT`, `UPDATE` or `DELETE`: a child row set to `NULL` by `ON DELETE SET NULL` under a `DELETE` has `op` `UPDATE` and `verb` `UPDATE`, a row an `INSERT … ON CONFLICT DO UPDATE` updated has `UPDATE`, and a revert line's `verb` names its inverse write. A ledger `ROW_CHANGE` row, one per row written, takes its `verb` the same way, from its own `op`.
 - **On a change record, a feed event and the ledger's other rows** (`CHANGE`, `READ`, `REFUSED`), `verb` is the request's own command: in Postgres the statement's command, `SELECT`, `INSERT`, `UPDATE`, `DELETE` or the DDL command; in MongoDB `insertOne`, `find`, ….
-- **No `verb`** (`null` in the ledger, absent from a change record and a feed event) in exactly two cases. `REVERT` is Basalt's own action, which no store command names. `OTHER` has its command only when the store gives it to Basalt: in Postgres the guard knows a DDL command only from an event trigger (`TG_TAG`), and a request that did not parse has none. Every other `op` has its `verb`.
+- **No `verb`** (`null` in the ledger, absent from a change record and a feed event) in exactly two cases. `REVERT` is BasaltDB's own action, which no store command names. `OTHER` has its command only when the store gives it to BasaltDB: in Postgres the guard knows a DDL command only from an event trigger (`TG_TAG`), and a request that did not parse has none. Every other `op` has its `verb`.
 
 | `op` | Means |
 |---|---|
@@ -103,7 +103,7 @@ Every text names an agent `agent:<name>`, with `<name>` the agent's name in `eng
 
 #### Store logins
 
-Each login or user Basalt creates in a store carries the install's prefix and belongs to one group the operator can list, so a database administrator can find everything Basalt owns during a security issue. The rule holds for every store:
+Each login or user BasaltDB creates in a store carries the install's prefix and belongs to one group the operator can list, so a database administrator can find everything BasaltDB owns during a security issue. The rule holds for every store:
 
 | Store | Login | Group |
 |---|---|---|
@@ -121,8 +121,8 @@ The passkey signs `sha256` of a binding's text, and `rowsHash` covers the lines'
 - **Arrays.** `[`, then the values joined by `, `, then `]`, in the store's order.
 - **Strings.** Escaped as `\"`, `\\`, `\b`, `\f`, `\n`, `\r`, `\t`; any other character below U+0020 as `\u00xx` (lowercase hex); every other character as it is.
 - **Literals.** `true`, `false` and `null`, lowercase.
-- **Numbers.** A number from the person's data is a valid JSON number as the store holds it (Postgres keeps `1.50` as `1.50`). Basalt's own integers (`rows`, `skipped`, the values of `agentRows`) are plain decimal digits: no sign, no leading zero, no fraction or exponent (`0`, `27`). Clients read a number and never rewrite it.
-- **Timestamps** Basalt writes (`expiresAt`) are strings of exactly the form `YYYY-MM-DDTHH:MM:SS.ffffffZ`: UTC, always six fraction digits, and `Z`, never `+00:00` (`2026-11-11T07:02:11.123456Z`; in Postgres `to_char(t AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`, as the guard writes it). A value from the person's data keeps the store's form ([Wire format](../CONTRACT.md#wire-format)).
+- **Numbers.** A number from the person's data is a valid JSON number as the store holds it (Postgres keeps `1.50` as `1.50`). BasaltDB's own integers (`rows`, `skipped`, the values of `agentRows`) are plain decimal digits: no sign, no leading zero, no fraction or exponent (`0`, `27`). Clients read a number and never rewrite it.
+- **Timestamps** BasaltDB writes (`expiresAt`) are strings of exactly the form `YYYY-MM-DDTHH:MM:SS.ffffffZ`: UTC, always six fraction digits, and `Z`, never `+00:00` (`2026-11-11T07:02:11.123456Z`; in Postgres `to_char(t AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`, as the guard writes it). A value from the person's data keeps the store's form ([Wire format](../CONTRACT.md#wire-format)).
 - **Lines** are ordered bytewise by their text (`COLLATE "C"` in Postgres). `rowsHash` is the lowercase hex `sha256` of the lines joined by `\n`. A redacted line's `rowHash` is the lowercase hex `sha256` of the array `[key, old or now, set]` written by these rules.
 - **Clients never re-serialize.** They hash and parse a text as given. The engine checks that every signed text and line it relays follows these rules and refuses one that does not.
 - **Vectors** in the contract are generated by code (the guard or the codec), never written by hand. A vector file whose texts the code has not generated yet in the current form says so in its `description` and marks each such case `"pending": true` in place of its texts; a test that reads a pending case fails.

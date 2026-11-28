@@ -367,7 +367,7 @@ func nothingSigned(r action.Revert) error {
 	if r.Skipped > 0 {
 		te.Reason = guidance.ReasonAllChangedByPeople
 		te.PersonMessage = guidance.Sentence(revertTitle(r)) + " has no row to restore: every row in it was changed since by someone " +
-			"else, and Basalt never overwrites them (people win). Nothing was reverted."
+			"else, and BasaltDB never overwrites them (people win). Nothing was reverted."
 	}
 	return te
 }
@@ -498,7 +498,7 @@ func (rc *Service) nothingToRevertError(ctx context.Context, tool string, scope 
 		b.ReviseCall(guidance.ToolRequestRevert, args, "On yes, call request_revert with the revert's changeId and the person's reason as intent.")
 	default:
 		te.PersonMessage = fmt.Sprintf("Nothing to revert for %s: every row it wrote was changed since by someone else, and "+
-			"Basalt never overwrites them (people win).", what)
+			"BasaltDB never overwrites them (people win).", what)
 		b.Stop("There is nothing to revert; do not retry.")
 	}
 	if scope.Kind == revert.ScopeTask {

@@ -183,7 +183,7 @@ func PrintRemoteResult(c *cli.IO, res setup.RemoteInitResult) error {
 	if err == nil && res.PasteAtPortal {
 		// The link is over the budget: no link is printed, the code is
 		// pasted at the connect page instead.
-		_, err = fmt.Fprintf(c.Stdout, "\nTo use Basalt Vault, a hosted service, paste the setup code at %s.\n", strings.TrimPrefix(links.Portal+links.ConnectPath, "https://"))
+		_, err = fmt.Fprintf(c.Stdout, "\nTo use BasaltVault, a hosted service, paste the setup code at %s.\n", strings.TrimPrefix(links.Portal+links.ConnectPath, "https://"))
 	}
 	if err != nil {
 		return err

@@ -17,22 +17,22 @@
   <link rel="modulepreload" href="../lib/deflate.js" integrity="sha384-jYvkCzNHlr7rnXMbluHr7+f08Oo3djFPnbjD4hlC5cKer+nCf+uLf2CZYslw19rU">
   <link rel="modulepreload" href="../lib/doctor.js" integrity="sha384-VvLKwdb/kxs/jh2ekS35H2Px0Z/Pkoc3ipRcPCObewuTV01I+/XPvr0Hx1xPK2N2">
   <link rel="modulepreload" href="../lib/local.js" integrity="sha384-hdqElFsnaTlCN9HGy5Qnv7DsFnQ++ZQUS8JN2hK06TrvY0UXn9snJ6QiExIIAU4j">
-  <link rel="modulepreload" href="../lib/page.js" integrity="sha384-dncWGw9Ljwk0cXuJxKjYGqdsotqbisEBlLp4ktczz9xGtyM52hJBpAsYdfv9jSOm">
-  <link rel="modulepreload" href="../lib/picks.js" integrity="sha384-Lr3kak9YvctWHYkskK/VnVjXzLrCqxE5t70AaJoCNULfOQnRfYwDLG86owrkBa+j">
+  <link rel="modulepreload" href="../lib/page.js" integrity="sha384-M1z5Hcw1rbJpakOZ1kmJ/VPNPr93ojzgOyqhO4zzmDa2LkBqdVoYlm2E8HL4KbwS">
+  <link rel="modulepreload" href="../lib/picks.js" integrity="sha384-+FO9thuxATBUglNIPSfoZYzKLFURCembsemXpxqZ5DzqX94eXf5brXAiTzN9wQ8H">
   <link rel="modulepreload" href="../lib/pickviews.js" integrity="sha384-BytItDacs/UqEsTyea9Pdd56yhISnBMtmq29BahV7Ip57MbFIOlSsp1vHJpFGDcE">
-  <link rel="modulepreload" href="../lib/relay.js" integrity="sha384-S0vG6FymzaG1gP2ZfUDDH6OcyFtgyMKpSjWEd43jqJgkKpI3jPFhLZZpXNfAIoN7">
+  <link rel="modulepreload" href="../lib/relay.js" integrity="sha384-oDaJA/d2qGOdBC6Lm6dHkQFE3WBholBzb2p2aeM4iAdQ/3cfHFtiKvSy+9pmTD/i">
   <link rel="modulepreload" href="../lib/remove.js" integrity="sha384-PFeBT7V6kM26Fk37uk6mUQ8Tw+EjZi83o0bFtYwMSPwUqK2GdCgB+6q/f5ePgESV">
   <link rel="modulepreload" href="../lib/repair.js" integrity="sha384-HkJl9aDNug2+VopgohfSBPxXO+/AOQLiGndqOl2w/dv8zQ3JJzzjif2AyVXG19tI">
   <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-p6vkHEc71VcwfVRBo8QA9PIZ0Vfi/kGJ/txhor5XxRvZ/WgGSJioTA2bDMRWOtDb">
   <link rel="modulepreload" href="../lib/transport.js" integrity="sha384-fmaF1B7m6aioKcEJxQqfEJUIzbf/1AkZfuiiV/jhdK47t9PoulK6uwbz6ho2AYws">
-  <script type="module" src="../lib/connect.js" integrity="sha384-Yl9EM48aRxu1ZqI7HXJT4++3jCdbei8QpOGx2EfgEU26KBSoFkqTDYeLaf1paO/o"></script>
+  <script type="module" src="../lib/connect.js" integrity="sha384-0m35VLTXz10Jh4q2wt6NKmNY+GjxApCkPt0NwE3TAHo6WH5L7HH0805JwlgqEL81"></script>
   <!-- sri:end -->
 </head>
 <body class="connect-page">
   <header class="topbar">
     <div class="bar">
-      <svg class="logo" width="22" height="22" viewBox="0 0 100 100" role="img" aria-label="Basalt"><polygon class="col-top" points="50,18 65.59,27 65.59,45 50,54 34.41,45 34.41,27"/><polygon class="col-left" points="31.3,50.4 46.89,59.4 46.89,77.4 31.3,86.4 15.71,77.4 15.71,59.4"/><polygon class="col-right" points="68.7,50.4 84.29,59.4 84.29,77.4 68.7,86.4 53.11,77.4 53.11,59.4"/></svg>
+      <svg class="logo" width="22" height="22" viewBox="0 0 100 100" role="img" aria-label="BasaltDB"><polygon class="col-top" points="50,18 65.59,27 65.59,45 50,54 34.41,45 34.41,27"/><polygon class="col-left" points="31.3,50.4 46.89,59.4 46.89,77.4 31.3,86.4 15.71,77.4 15.71,59.4"/><polygon class="col-right" points="68.7,50.4 84.29,59.4 84.29,77.4 68.7,86.4 53.11,77.4 53.11,59.4"/></svg>
       <span class="brand">BasaltDB</span><span class="sep">/</span><span class="crumb-page">Connect</span>
     </div>
   </header>
@@ -98,7 +98,7 @@
       <p id="passkey-existing" class="muted">Already have one for this database? <button id="passkey-use" type="button" class="link">Use it</button></p>
       <button id="passkey-skip" type="button" class="secondary" hidden>I don't have it</button>
       <p id="passkey-status" class="muted" role="status"></p>
-      <p class="muted">Your fingerprint, face or device password never leaves this device; Basalt only receives a signature.</p>
+      <p class="muted">Your fingerprint, face or device password never leaves this device; BasaltDB only receives a signature.</p>
     </section>
 
     <section id="s-paste" class="screen" hidden>
@@ -252,7 +252,7 @@
         <p><output id="check-code" class="fp" aria-label="Passkey check code" hidden></output></p>
       </div>
       <p id="check-problem" class="strip bad" role="alert" hidden></p>
-      <p id="waitlist" class="muted">Want to hear when Basalt Vault launches? <a href="https://basaltvault.app/#waitlist" target="_blank" rel="noopener noreferrer">Join the list</a></p>
+      <p id="waitlist" class="muted">Want to hear when BasaltVault launches? <a href="https://basaltvault.app/#waitlist" target="_blank" rel="noopener noreferrer">Join the list</a></p>
     </section>
   </main>
 

@@ -30,7 +30,7 @@ func TestRemovedCommandCatchesEveryRemovedForm(t *testing.T) {
 	}
 	for _, ok := range []string{
 		"basalt init --agent bot", "basalt init --agent bot --remote", "sudo systemctl start basalt-engine.service",
-		"Basalt's status reports KEY_ERROR", "Tell the agent when it is done.", "the revert page",
+		"BasaltDB's status reports KEY_ERROR", "Tell the agent when it is done.", "the revert page",
 	} {
 		require.Empty(t, stepcatalogtest.RemovedCommand.FindString(ok), ok)
 	}
@@ -131,7 +131,7 @@ func TestTooManyConnectionsMessageWords(t *testing.T) {
 	t.Parallel()
 	cmds, err := newCommands("lead_bot", "", "linux", osservice.Manager())
 	require.NoError(t, err)
-	require.Equal(t, "The agent lead_bot has used all 8 database connections Basalt allows it. "+
+	require.Equal(t, "The agent lead_bot has used all 8 database connections BasaltDB allows it. "+
 		"Another engine for the same agent may be running, or a stopped engine left sessions open. "+
 		"Stop any second engine; stale sessions close on their own within a few minutes.",
 		guidance.TooManyConnectionsMessage(cmds))

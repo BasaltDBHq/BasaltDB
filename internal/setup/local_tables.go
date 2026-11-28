@@ -254,7 +254,7 @@ func policies(blind []guardmodel.BlindTable, answers []Answer) ([]guardmodel.Bli
 
 // realSummary is the lines of a real install's check.
 func realSummary(j job, database string, write, read []string, passkeyNeeded, keep bool) []string {
-	lines := []string{fmt.Sprintf("This sets up Basalt in the database %s.", database)}
+	lines := []string{fmt.Sprintf("This sets up BasaltDB in the database %s.", database)}
 	if keep {
 		lines = append(lines, fmt.Sprintf("The agent %s (role %s) is already in the database, and this engine holds its password: this finishes its setup, which stopped before the engine wrote its config. Its password stays.", j.req.Agent, j.role))
 	} else {

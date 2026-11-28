@@ -21,12 +21,12 @@ const DatabaseUnreachableMessage = "The agent cannot reach the database. Check t
 
 // TooManyConnectionsAsk is the ASK_PERSON step when the agent role is at its
 // connection limit, in an error and in status.
-const TooManyConnectionsAsk = "Tell the person the agent has used all the database connections Basalt allows it, and ask them to stop any second engine for this agent."
+const TooManyConnectionsAsk = "Tell the person the agent has used all the database connections BasaltDB allows it, and ask them to stop any second engine for this agent."
 
 // TooManyConnectionsMessage is the person's message when the agent role is at
 // its connection limit, in an error and in status (CONTRACT.md, Error codes).
 func TooManyConnectionsMessage(cmds Commands) string {
-	return fmt.Sprintf("The agent %s has used all %d database connections Basalt allows it. "+
+	return fmt.Sprintf("The agent %s has used all %d database connections BasaltDB allows it. "+
 		"Another engine for the same agent may be running, or a stopped engine left sessions open. "+
 		"Stop any second engine; stale sessions close on their own within a few minutes.",
 		cmds.AgentName(), setupcode.AgentConnectionLimit)
@@ -38,8 +38,8 @@ func TooManyConnectionsMessage(cmds Commands) string {
 // setup page, or the connect page on an agent-operated engine, for that job.
 var fixes = map[string]string{
 	ReasonCredentialRejected: "The database refuses the agent's credential (its password changed or was never right), so the agent needs a new one.",
-	ReasonGuardMissing:       "Basalt's guard is not installed in this database (or was removed), so the agent cannot work.",
-	ReasonGuardOutdated:      "Basalt's guard in this database is older than this engine needs, so the agent cannot work until it is updated.",
+	ReasonGuardMissing:       "BasaltDB's guard is not installed in this database (or was removed), so the agent cannot work.",
+	ReasonGuardOutdated:      "BasaltDB's guard in this database is older than this engine needs, so the agent cannot work until it is updated.",
 }
 
 // FixSteps: the agent runs basalt init, whose link the person opens to fix
@@ -81,7 +81,7 @@ func FixSteps(b *Steps, cmds Commands, reason string) string {
 // link basalt init prints sets BasaltDB up again.
 func GuardBelowFloorSteps(b *Steps, cmds Commands, doc string) (string, []toolresult.Link) {
 	m := NewMessage().
-		Text("Basalt's guard in this database is from an older BasaltDB release that this engine cannot update, so the agent cannot work. Remove the old install first, as this page says:").
+		Text("BasaltDB's guard in this database is from an older BasaltDB release that this engine cannot update, so the agent cannot work. Remove the old install first, as this page says:").
 		Link("Remove an older install", doc)
 	if cmds.AgentOperated() {
 		b.AgentRunCommand(cmds.Init(), "Run this once the person has removed the old install, then show them the link it prints and follow its steps.")
@@ -136,7 +136,7 @@ func EngineUnreachableSteps(b *Steps, cmds Commands, tool string) string {
 	if !cmds.AgentOperated() {
 		return personFix(b, cmds.EngineStart(), "The agent cannot reach the engine, so it is not running.")
 	}
-	b.AgentRunCommand(cmds.EngineStart(), "Start the Basalt engine on this machine, once; ask the person when it still does not answer.")
+	b.AgentRunCommand(cmds.EngineStart(), "Start the BasaltDB engine on this machine, once; ask the person when it still does not answer.")
 	if tool == "" || tool == ToolStatus {
 		b.CallTool(ToolStatus, map[string]any{}, "Then call status to check that the engine answers.")
 		return ""
@@ -168,7 +168,7 @@ func SetupExpiredSteps(b *Steps, cmds Commands) string {
 // or UPGRADE code does not.
 //
 // With a connect link (budget is not 0 and the whole link fits it) the
-// person opens it, and the message says the link uses Basalt Vault, a
+// person opens it, and the message says the link uses BasaltVault, a
 // hosted service (CONTRACT.md, Next steps with the connect link). Without
 // one there is no page to hand over: the agent runs basalt init, which
 // prints the link. The links are those of the message.

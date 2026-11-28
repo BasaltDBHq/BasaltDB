@@ -203,7 +203,7 @@ func Manifest(o Options, sum [sha256.Size]byte) ([]byte, error) {
 		args = []string{}
 	}
 	return json.MarshalIndent(map[string]any{
-		"manifestVersion": 1, "name": Name, "version": Version, "publisher": "Basalt tests",
+		"manifestVersion": 1, "name": Name, "version": Version, "publisher": "BasaltDB tests",
 		"protocol": []string{"basalt-plugin/1"},
 		"hooks":    hooks,
 		"endpoint": map[string]any{"local": map[string]any{"transport": transport, "command": "bin/" + Binary, "args": args}},

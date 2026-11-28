@@ -466,7 +466,7 @@ test("where it runs, and a limit this machine does not enforce", () => {
   assert.ok(known.includes(SENTENCES.sameAccess), "a known publisher still gets the plain line");
   assert.ok(!known.includes(SENTENCES.tick));
   const declared = pluginSentences(pluginView(binding({ egress: ["a.example:443", "b.example:443"], isolation: { files: "OS_USER", network: "DECLARED" } })));
-  assert.ok(declared.includes("It says it connects only to a.example:443, b.example:443. That is not enforced on the computer Basalt runs on."));
+  assert.ok(declared.includes("It says it connects only to a.example:443, b.example:443. That is not enforced on the computer BasaltDB runs on."));
   const level3 = pluginSentences(pluginView(binding({})));
   assert.ok(!level3.includes(SENTENCES.sameAccess), "at level 3 the warning says it");
   assert.equal(level3[0], SENTENCES.level3);
@@ -500,9 +500,9 @@ test("every change key leads with its sentence, in the contract's order", () => 
   assert.deepEqual(view.change, [
     "This changes p, which you approved before.",
     "Its files change, but its version stays 2.0.0.",
-    "Its publisher was unknown; now it is Basalt.",
-    "It moves from the computer Basalt runs on to new.example:443.",
-    "How it is kept apart from Basalt changes.",
+    "Its publisher was unknown; now it is BasaltDB.",
+    "It moves from the computer BasaltDB runs on to new.example:443.",
+    "How it is kept apart from BasaltDB changes.",
     "It gets new access to: your approval links; the names of your tables and columns.",
     "It no longer gets: the text your agents send to the AI provider.",
     "It no longer looks for names in the text.",
@@ -521,7 +521,7 @@ test("every fixed sentence is written in CONTRACT.md word for word", () => {
   }
 });
 
-test("on the portal the page says, at every level, that Basalt and the agent share one user, between where it runs and a declared limit", () => {
+test("on the portal the page says, at every level, that BasaltDB and the agent share one user, between where it runs and a declared limit", () => {
   for (const b of [binding({}), binding({ signer: "KNOWN" }), binding({ endpoint: { kind: "REMOTE", host: "ner.example:443" }, isolation: undefined })]) {
     const here = pluginView(b, { portal: true });
     assert.ok(here.where.includes(SENTENCES.portalSameUser), JSON.stringify(b.endpoint));

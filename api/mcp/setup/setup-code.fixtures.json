@@ -390,7 +390,7 @@
       },
       "binaryGuardVersion": 16,
       "summary": [
-        "This upgrades Basalt's guard from version 14 to 16; no agent changes.",
+        "This upgrades BasaltDB's guard from version 14 to 16; no agent changes.",
         "Setup fingerprint: b295 78e2 b6cb 7d01 d806."
       ]
     },

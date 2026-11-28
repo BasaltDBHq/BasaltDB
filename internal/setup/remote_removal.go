@@ -162,7 +162,7 @@ const LabelRemove = "Remove BasaltDB"
 // link: one page, one box, one press, and the admin string stays there.
 func RemovalMessage(lead, url string) (string, []toolresult.Link) {
 	return guidance.NewMessage().
-		Text(lead+" Open this link, paste your database's admin connection string there and press Remove. The link uses Basalt Vault, a hosted service:").
+		Text(lead+" Open this link, paste your database's admin connection string there and press Remove. The link uses BasaltVault, a hosted service:").
 		Link(LabelRemove, url).
 		Text("The page shows when BasaltDB is gone from the database and from this computer. Never paste your database password into this chat.").
 		Build()

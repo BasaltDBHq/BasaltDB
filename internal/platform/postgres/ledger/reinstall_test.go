@@ -43,7 +43,7 @@ func TestReinstallNoticeWording(t *testing.T) {
 	require.Equal(t, []string{
 		"This database's ledger was reinstalled on 2026-11-14T08:30:00Z by postgres (via Vault: alice@example.com). " +
 			"Previous ledger ended at entry 42 (hash " + hashHex + "), as reported with the credential of basalt_agent_bot. " +
-			"If nobody on your team reinstalled Basalt, treat this as tampering.",
+			"If nobody on your team reinstalled BasaltDB, treat this as tampering.",
 		"Also reported with the credential of basalt_agent_two: entry 40 (hash " + hashHex + "), and 2 more reports.",
 		"Also reported with the credential of basalt_agent_three: entry 41 (hash " + hashHex + ").",
 		"and 4 more agents",
@@ -59,7 +59,7 @@ func TestReinstallNoticeWithoutAnInstallRecord(t *testing.T) {
 	require.Equal(t, []string{
 		"This database's ledger was recreated or restored outside basalt init (no install record), first reported 2026-11-14T09:30:00Z. " +
 			"Previous ledger ended at entry 7 (hash " + hashHex + "), as reported with the credential of basalt_agent_bot. " +
-			"If nobody on your team reinstalled Basalt, treat this as tampering.",
+			"If nobody on your team reinstalled BasaltDB, treat this as tampering.",
 	}, ledger.ReinstallNotice(r))
 }
 

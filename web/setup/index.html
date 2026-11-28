@@ -16,21 +16,21 @@
   <link rel="modulepreload" href="../lib/deflate.js" integrity="sha384-jYvkCzNHlr7rnXMbluHr7+f08Oo3djFPnbjD4hlC5cKer+nCf+uLf2CZYslw19rU">
   <link rel="modulepreload" href="../lib/doctor.js" integrity="sha384-VvLKwdb/kxs/jh2ekS35H2Px0Z/Pkoc3ipRcPCObewuTV01I+/XPvr0Hx1xPK2N2">
   <link rel="modulepreload" href="../lib/local.js" integrity="sha384-hdqElFsnaTlCN9HGy5Qnv7DsFnQ++ZQUS8JN2hK06TrvY0UXn9snJ6QiExIIAU4j">
-  <link rel="modulepreload" href="../lib/page.js" integrity="sha384-dncWGw9Ljwk0cXuJxKjYGqdsotqbisEBlLp4ktczz9xGtyM52hJBpAsYdfv9jSOm">
-  <link rel="modulepreload" href="../lib/picks.js" integrity="sha384-Lr3kak9YvctWHYkskK/VnVjXzLrCqxE5t70AaJoCNULfOQnRfYwDLG86owrkBa+j">
+  <link rel="modulepreload" href="../lib/page.js" integrity="sha384-M1z5Hcw1rbJpakOZ1kmJ/VPNPr93ojzgOyqhO4zzmDa2LkBqdVoYlm2E8HL4KbwS">
+  <link rel="modulepreload" href="../lib/picks.js" integrity="sha384-+FO9thuxATBUglNIPSfoZYzKLFURCembsemXpxqZ5DzqX94eXf5brXAiTzN9wQ8H">
   <link rel="modulepreload" href="../lib/pickviews.js" integrity="sha384-BytItDacs/UqEsTyea9Pdd56yhISnBMtmq29BahV7Ip57MbFIOlSsp1vHJpFGDcE">
-  <link rel="modulepreload" href="../lib/relay.js" integrity="sha384-S0vG6FymzaG1gP2ZfUDDH6OcyFtgyMKpSjWEd43jqJgkKpI3jPFhLZZpXNfAIoN7">
+  <link rel="modulepreload" href="../lib/relay.js" integrity="sha384-oDaJA/d2qGOdBC6Lm6dHkQFE3WBholBzb2p2aeM4iAdQ/3cfHFtiKvSy+9pmTD/i">
   <link rel="modulepreload" href="../lib/repair.js" integrity="sha384-HkJl9aDNug2+VopgohfSBPxXO+/AOQLiGndqOl2w/dv8zQ3JJzzjif2AyVXG19tI">
   <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-p6vkHEc71VcwfVRBo8QA9PIZ0Vfi/kGJ/txhor5XxRvZ/WgGSJioTA2bDMRWOtDb">
   <link rel="modulepreload" href="../lib/transport.js" integrity="sha384-fmaF1B7m6aioKcEJxQqfEJUIzbf/1AkZfuiiV/jhdK47t9PoulK6uwbz6ho2AYws">
-  <script type="module" src="../lib/setup.js" integrity="sha384-OpJIRLmNAlArNlMnJJSuluU1BjuU53eoF5lIY9g9stORvFlr3kNwz4CrZkYgN8yY"></script>
+  <script type="module" src="../lib/setup.js" integrity="sha384-clWKZ5aRSvJYIyMfv0hwsSnSQ9/68O7IB/QakDe+3WyFwIH75rEofKg3YOSJ/EG2"></script>
   <!-- sri:end -->
 </head>
 <body>
   <header class="topbar">
     <div class="bar">
-      <svg class="logo" width="22" height="22" viewBox="0 0 100 100" role="img" aria-label="Basalt"><polygon class="col-top" points="50,18 65.59,27 65.59,45 50,54 34.41,45 34.41,27"/><polygon class="col-left" points="31.3,50.4 46.89,59.4 46.89,77.4 31.3,86.4 15.71,77.4 15.71,59.4"/><polygon class="col-right" points="68.7,50.4 84.29,59.4 84.29,77.4 68.7,86.4 53.11,77.4 53.11,59.4"/></svg>
+      <svg class="logo" width="22" height="22" viewBox="0 0 100 100" role="img" aria-label="BasaltDB"><polygon class="col-top" points="50,18 65.59,27 65.59,45 50,54 34.41,45 34.41,27"/><polygon class="col-left" points="31.3,50.4 46.89,59.4 46.89,77.4 31.3,86.4 15.71,77.4 15.71,59.4"/><polygon class="col-right" points="68.7,50.4 84.29,59.4 84.29,77.4 68.7,86.4 53.11,77.4 53.11,59.4"/></svg>
       <span class="brand">BasaltDB</span><span class="sep">/</span><span class="crumb-page">Setup</span>
     </div>
   </header>
@@ -79,7 +79,7 @@
       </div>
       <p id="remove-note" hidden>This removes BasaltDB from this database, and its ledger is deleted for good. When no other agent uses this computer's engine, it removes the engine from this computer too. The admin connection string you typed is the confirmation.</p>
       <div class="buttons"><button id="run" type="button">Set up</button></div>
-      <p id="run-passkey-note" class="muted" hidden>Your fingerprint, face or device password never leaves this device; Basalt only receives a signature.</p>
+      <p id="run-passkey-note" class="muted" hidden>Your fingerprint, face or device password never leaves this device; BasaltDB only receives a signature.</p>
     </section>
 
     <p id="status" class="muted" role="status"></p>
@@ -199,7 +199,7 @@
       </div>
       <button id="approve" type="button">Set up with passkey</button>
       <p id="approve-status" class="muted" role="status"></p>
-      <p id="ap-passkey-note" class="muted">Your fingerprint, face or device password never leaves this device; Basalt only receives a signature.</p>
+      <p id="ap-passkey-note" class="muted">Your fingerprint, face or device password never leaves this device; BasaltDB only receives a signature.</p>
     </section>
 
     <section id="u-check" class="screen" hidden>
@@ -270,6 +270,7 @@
     <p id="done-text"></p>
     <ul id="removal-steps" class="rows" hidden></ul>
     <p id="removal-mac" class="muted" hidden>macOS keeps BasaltDB's hidden system account, _basalt. A new setup uses it again.</p>
+    <p id="removal-command" class="muted" hidden>The basalt command stays where you installed it. If you installed it with Homebrew, brew uninstall basaltdb removes it.</p>
     <pre id="mcp-command"></pre>
     <ul id="done-lines" hidden></ul>
     <ul id="warnings" hidden></ul>

@@ -554,7 +554,7 @@ func TestRunUpgrade(t *testing.T) {
 	}
 	checked, err := setup.Check(ctx, d.Admin, request(upgrade()))
 	require.NoError(t, err)
-	require.Contains(t, checked.Summary, fmt.Sprintf("This upgrades Basalt's guard from version %d to %d; no agent changes.", latest-1, latest))
+	require.Contains(t, checked.Summary, fmt.Sprintf("This upgrades BasaltDB's guard from version %d to %d; no agent changes.", latest-1, latest))
 	res, err := setup.Run(ctx, d.Admin, request(upgrade()), setup.RunInput{})
 	require.NoError(t, err)
 	require.True(t, res.Ran)

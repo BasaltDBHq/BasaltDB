@@ -45,7 +45,7 @@ Ledger kind `PIN_SET_ASIDE`: `agent` the caller (`session_user`), detail `pinned
 **The notice.** The engine, on every engine, reads `agent_reinstalls` and its own kept copy. It shows one notice per reinstall (one `install` with rows), newest first, at most 3, followed by "and N earlier reinstalls" when there are more:
 
 ```
-This database's ledger was reinstalled on <installedAt> by <installedBy> (via Vault: <vaultUser>). Previous ledger ended at entry <n> (hash <h>), as reported with the credential of <agent>. If nobody on your team reinstalled Basalt, treat this as tampering.
+This database's ledger was reinstalled on <installedAt> by <installedBy> (via Vault: <vaultUser>). Previous ledger ended at entry <n> (hash <h>), as reported with the credential of <agent>. If nobody on your team reinstalled BasaltDB, treat this as tampering.
 ```
 
 - `(via Vault: <vaultUser>)` appears only when `vault_user` is set. `<installedAt>` is RFC 3339 UTC.

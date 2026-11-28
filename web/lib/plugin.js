@@ -45,7 +45,7 @@ export const SENTENCES = Object.freeze({
   changeFiles: "Its files change, but its version stays <version>.",
   changeSigner: "Its publisher was <fromPublisher>; now it is <publisher>.",
   changeEndpoint: "It moves from <fromWhere> to <where>.",
-  changeIsolation: "How it is kept apart from Basalt changes.",
+  changeIsolation: "How it is kept apart from BasaltDB changes.",
   hooksAdded: "It gets new access to: <hookLabels>.",
   hooksRemoved: "It no longer gets: <hookLabels>.",
   namesAdded: "It now also looks for names in the text.",
@@ -57,28 +57,28 @@ export const SENTENCES = Object.freeze({
   agentsAdded: "It will now also be used for <agents>.",
   agentsRemoved: "It will no longer be used for <agents>.",
   settingsChanged: "Its settings change.",
-  level1: "Published by Basalt.",
+  level1: "Published by BasaltDB.",
   level2: "Nobody vouches for this plugin. Add it only if you trust where it came from.",
-  level3: "Nobody vouches for this plugin. It runs a stranger's program on the computer Basalt runs on, with the same access as Basalt itself, so it could read your database password and the key Basalt uses to hide private values.",
+  level3: "Nobody vouches for this plugin. It runs a stranger's program on the computer BasaltDB runs on, with the same access as BasaltDB itself, so it could read your database password and the key BasaltDB uses to hide private values.",
   tick: "I know who made this plugin and I trust them with my data.",
   remote: "It runs at <host>. Everything it sees is sent there.",
-  remoteOnward: "Basalt cannot check what runs there or where it sends things next.",
-  ownUser: "It runs on the computer Basalt runs on, as its own user, so it cannot read Basalt's files.",
-  sameAccess: "It runs on the computer Basalt runs on, with the same access as Basalt itself.",
-  noNetwork: "It says it needs no network. That is not enforced on the computer Basalt runs on.",
-  egressLimit: "It says it connects only to <hosts>. That is not enforced on the computer Basalt runs on.",
+  remoteOnward: "BasaltDB cannot check what runs there or where it sends things next.",
+  ownUser: "It runs on the computer BasaltDB runs on, as its own user, so it cannot read BasaltDB's files.",
+  sameAccess: "It runs on the computer BasaltDB runs on, with the same access as BasaltDB itself.",
+  noNetwork: "It says it needs no network. That is not enforced on the computer BasaltDB runs on.",
+  egressLimit: "It says it connects only to <hosts>. That is not enforced on the computer BasaltDB runs on.",
   nameCue: "It also sees values from your database that appear in that text.",
   usedFor: "Used for: <agents>.",
   askedBy: "Asked by <agent>.",
   fingerprint: "Plugin fingerprint: <fingerprint>",
-  portalSameUser: "Basalt runs on the agent's own computer, as the same user as the agent. Your approval decides whether Basalt runs this plugin. It cannot stop the agent from reading what Basalt can.",
+  portalSameUser: "BasaltDB runs on the agent's own computer, as the same user as the agent. Your approval decides whether BasaltDB runs this plugin. It cannot stop the agent from reading what BasaltDB can.",
   approved: "Approved. The plugin starts within a few seconds.",
 });
 
 // What each hook sees, in plain words, and the label of that access in a
 // change's list (CONTRACT.md, The plugin approval page, What it sees).
 export const HOOK_SEES = Object.freeze({
-  "wire.detect": "It reads the text your agents send to the AI provider, before Basalt hides private values in it.",
+  "wire.detect": "It reads the text your agents send to the AI provider, before BasaltDB hides private values in it.",
   "feed.observe": "It is told what your agents do in the database, such as which tables they change and how many rows, never the values.",
   "approval.deliver": "It delivers your approval links. Anyone who can read where it delivers them can see the rows of writes waiting for your approval. Some links carry the whole request, so they can also see what the agent asked to run and why.",
   "classify.suggest": "It reads the names and types of your tables and columns, never their values, and suggests which ones hold private data.",
@@ -93,7 +93,7 @@ export const HOOK_LABELS = Object.freeze({
 const ROLES_ADDED = { NAME_CUE: SENTENCES.namesAdded, VALUE: SENTENCES.valuesAdded };
 const ROLES_REMOVED = { NAME_CUE: SENTENCES.namesRemoved, VALUE: SENTENCES.valuesRemoved };
 const LEVEL_LINES = { 1: SENTENCES.level1, 2: SENTENCES.level2, 3: SENTENCES.level3 };
-const COMPUTER = "the computer Basalt runs on";
+const COMPUTER = "the computer BasaltDB runs on";
 const FINGERPRINT_GROUP = 4;
 const FINGERPRINT_GROUPS = 4;
 
@@ -103,7 +103,7 @@ function fill(template, values) {
   return template.replace(/<(\w+)>/g, (part, key) => (key in values ? values[key] : part));
 }
 
-const publisher = (signer) => (signer === SIGNER_KNOWN ? "Basalt" : "unknown");
+const publisher = (signer) => (signer === SIGNER_KNOWN ? "BasaltDB" : "unknown");
 const where = (endpoint) => (endpoint.kind === ENDPOINT_LOCAL ? COMPUTER : endpoint.host);
 const hosts = (list) => list.join(", ");
 const agents = (roles) => roles.map(agentName).join(", ");
@@ -145,9 +145,9 @@ export function changeLines(b) {
   return out;
 }
 
-// whereLines say where it runs, then, on the portal, that Basalt and the
+// whereLines say where it runs, then, on the portal, that BasaltDB and the
 // agent share one OS user, then a declared limit this machine does not
-// enforce. At level 3 the warning already says it runs with Basalt's
+// enforce. At level 3 the warning already says it runs with BasaltDB's
 // access.
 function whereLines(b, level, portal) {
   const out = [];
@@ -216,9 +216,9 @@ const PLUGIN_REFUSALS = { [WRONG_KIND]: NOT_A_PLUGIN, [SETTINGS_MISMATCH]: SETTI
 // approval's words (CONTRACT.md, Close codes): engine offline, broken, or
 // try later. A plugin approval has no long link to offer instead.
 export const PLUGIN_SESSION_TEXT = Object.freeze({
-  vault: "This page cannot reach the Basalt Vault (relay.basaltvault.app), which carries it to your engine. Wait a minute and open the link again.",
-  offline: "Your engine is not connected to the Basalt Vault right now. Ask the agent to check its status, then open the link again.",
-  busy: "Your engine or the Basalt Vault is busy. Wait a minute and open the link again.",
+  vault: "This page cannot reach the BasaltVault relay (relay.basaltvault.app), which carries it to your engine. Wait a minute and open the link again.",
+  offline: "Your engine is not connected to BasaltVault right now. Ask the agent to check its status, then open the link again.",
+  busy: "Your engine or the BasaltVault relay is busy. Wait a minute and open the link again.",
   broken: "The secure session to your engine failed, and this page used nothing from it. Open the link again. If it keeps failing, ask the agent to check its status.",
 });
 const SESSION_TEXTS = new Map([[VAULT_UNREACHABLE, PLUGIN_SESSION_TEXT.vault], [ENGINE_NOT_CONNECTED, PLUGIN_SESSION_TEXT.offline], [BUSY, PLUGIN_SESSION_TEXT.busy]]);

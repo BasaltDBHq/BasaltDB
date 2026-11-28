@@ -2,7 +2,7 @@
 // or from the engine for a short link /approvals/<id>), check the rows against
 // the binding, show them, and sign the binding with the person's passkey.
 // From a short link it posts the signature to the engine that served it
-// (its own pages, or through Basalt Vault), which relays it to Postgres. A
+// (its own pages, or through BasaltVault), which relays it to Postgres. A
 // long link has no engine to send a signature to: the page only shows it.
 import { changeGroups, countText } from "./changes.js";
 import {

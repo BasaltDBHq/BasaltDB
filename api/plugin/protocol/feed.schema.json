@@ -29,7 +29,7 @@
       }
     },
     "event": {
-      "description": "One CloudEvents 1.0 event in its JSON form (application/cloudevents+json). The attribute names are the standard's; Basalt's camelCase keys and SCREAMING_SNAKE_CASE values apply inside data.",
+      "description": "One CloudEvents 1.0 event in its JSON form (application/cloudevents+json). The attribute names are the standard's; BasaltDB's camelCase keys and SCREAMING_SNAKE_CASE values apply inside data.",
       "type": "object",
       "additionalProperties": false,
       "required": ["specversion", "id", "source", "type", "subject", "datacontenttype", "data"],

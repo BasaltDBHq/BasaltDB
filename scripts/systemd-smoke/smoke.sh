@@ -261,7 +261,7 @@ plugin_tool="github.com/basaltdbhq/basalt-plugin-go/cmd/basalt-plugin@${BASALT_P
 sum=$(sha256sum "$work/src/bin/$name" | cut -d' ' -f1)
 cat >"$work/src/basalt-plugin.json" <<EOF
 {
-  "manifestVersion": 1, "name": "$name", "version": "0.1.0", "publisher": "Basalt CI",
+  "manifestVersion": 1, "name": "$name", "version": "0.1.0", "publisher": "BasaltDB CI",
   "protocol": ["basalt-plugin/1"],
   "hooks": { "feed.observe": { "contract": "feed/1" } },
   "endpoint": { "local": { "transport": "jsonrpc-unix", "command": "bin/$name",

@@ -102,7 +102,7 @@ const docsInstructions = "For error codes and troubleshooting, read https://docs
 
 // linkInstructions is the sentence CONTRACT.md (Showing links, What the agent
 // is told) puts in the initialize instructions, unchanged.
-const linkInstructions = "When you show the person a link from Basalt, put it on its own line exactly as Basalt gave it, " +
+const linkInstructions = "When you show the person a link from BasaltDB, put it on its own line exactly as BasaltDB gave it, " +
 	"or as a Markdown link [label](url) with the label from links. Never put a link in a code block or inline code, " +
 	"never split, wrap, shorten, encode or rewrite it, and put nothing after it on its line. " +
 	"Show personMessage verbatim and keep its line breaks."

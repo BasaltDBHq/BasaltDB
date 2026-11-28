@@ -235,7 +235,7 @@ func (s statusDeps) addTrustRefused(ps *guidance.Problems, r trustprofile.Refuse
 	ps.Add(problemTrustProfileRefused, "the trust profile file "+r.File+" is refused: "+r.Reason,
 		func(b *guidance.Steps) string {
 			b.TellAgent("Fix or remove the file on the engine's machine, then tell the agent.")
-			return "Basalt refused the trust profile file " + r.File + ": " + r.Reason + ". It does not apply, and a built-in profile of the same " +
+			return "BasaltDB refused the trust profile file " + r.File + ": " + r.Reason + ". It does not apply, and a built-in profile of the same " +
 				"name stays off until it is fixed; the other files still apply. Fix or remove the file, then tell the agent."
 		})
 }

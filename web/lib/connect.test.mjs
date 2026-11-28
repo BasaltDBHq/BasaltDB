@@ -167,7 +167,7 @@ function challenge() {
     challenge: b64urlEncode(new Uint8Array(32).fill(7)),
     userId: b64urlEncode(new Uint8Array(16).fill(9)),
     userName: "bot@db.example.com",
-    displayName: "Basalt approvals",
+    displayName: "BasaltDB approvals",
     expiresAt: "2026-11-20T10:15:00Z",
     mac: "opaque-mac",
   };
@@ -841,7 +841,7 @@ test("a code with a target: no reach check, the code's tables without ticks, and
     RunSetup: () => ({ body: { warnings: ["row-level security still hides public.notes"], passkeys: [{ credentialId: CRED_ID, checkCode: BASE_POINT_CODE }] } }),
   });
   await toPaste(nodes, env(fetchFn));
-  assert.match(nodes.disclosure.textContent, /^Your database password goes to Basalt Vault's connect service for this one setup and is never stored\.$/);
+  assert.match(nodes.disclosure.textContent, /^Your database password goes to BasaltVault's connect service for this one setup and is never stored\.$/);
   await paste(nodes);
   assert.equal(shown(nodes), "s-tables");
   assert.equal(nodes["db-name"].textContent, "db.example.com");

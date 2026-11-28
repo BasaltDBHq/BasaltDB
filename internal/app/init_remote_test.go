@@ -412,7 +412,7 @@ func requireConnectGuidance(t *testing.T, res setup.RemoteInitResult) {
 	pm := res.PersonMessage
 	require.Contains(t, pm, res.Fingerprint)
 	require.Contains(t, pm, "\n\n"+res.ConnectURL+"\n\n", "the link stands on a line of its own")
-	require.Contains(t, pm, "Basalt Vault, a hosted service")
+	require.Contains(t, pm, "BasaltVault, a hosted service")
 	require.NotContains(t, pm, "basalt init", "the person runs no command")
 	mcptest.Require(t, pm, []toolresult.Link{{Label: guidance.LabelConnect, URL: res.ConnectURL}})
 }
@@ -477,7 +477,7 @@ func TestConnectMessageFitsForTheLongestName(t *testing.T) {
 			name = candidate
 		}
 	}
-	pm, ls := guidance.ConnectMessage("Finish setting up Basalt for "+name+".", links.Portal+"/connect#basalt-setup.1.x.y", "3f9a 21c0 7d44 e1b2 90ac")
+	pm, ls := guidance.ConnectMessage("Finish setting up BasaltDB for "+name+".", links.Portal+"/connect#basalt-setup.1.x.y", "3f9a 21c0 7d44 e1b2 90ac")
 	require.NoError(t, guidance.CheckPersonMessage(pm), pm)
 	mcptest.Require(t, pm, ls)
 }

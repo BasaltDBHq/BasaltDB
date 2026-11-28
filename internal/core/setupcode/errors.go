@@ -26,7 +26,7 @@ const (
 
 // Fixed messages (CONTRACT.md, The setup code).
 const (
-	msgNotASetupCode = "This is not a Basalt setup code."
+	msgNotASetupCode = "This is not a BasaltDB setup code."
 	msgUnsupported   = "This setup code is in a newer format than the connect service reads yet: try again later."
 	msgDamaged       = "This setup code is damaged; copy it again."
 	msgInvalid       = "This setup code is not valid"

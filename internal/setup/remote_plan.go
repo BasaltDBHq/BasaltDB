@@ -239,7 +239,7 @@ func (r RemoteRun) withSetupGuidance(res RemoteInitResult, s config.Setup, conne
 	url := guidance.ConnectLink(s.Code, connectBudget)
 	if url != "" {
 		res.ConnectURL = url
-		res.PersonMessage, _ = guidance.ConnectMessage("Finish setting up Basalt for "+r.Agent+".", url, s.Fingerprint)
+		res.PersonMessage, _ = guidance.ConnectMessage("Finish setting up BasaltDB for "+r.Agent+".", url, s.Fingerprint)
 	}
 	res.PasteAtPortal = url == ""
 	return res
@@ -267,7 +267,7 @@ func (r RemoteRun) connectOnlyResult(res RemoteInitResult, s config.Setup, conne
 // guidance.MaxPersonMessageLength for the longest agent name: it names the
 // agent once.
 func SetupPersonMessage(name, fingerprint string) string {
-	return fmt.Sprintf("Finish setting up Basalt for %s: open %s, paste the setup code the agent shows you, "+
+	return fmt.Sprintf("Finish setting up BasaltDB for %s: open %s, paste the setup code the agent shows you, "+
 		"check that it shows the setup fingerprint %s, and follow the page. "+
 		"The page asks for your database's connection string: paste it there only, never into this chat.",
 		name, strings.TrimPrefix(links.Portal+links.ConnectPath, "https://"), fingerprint)

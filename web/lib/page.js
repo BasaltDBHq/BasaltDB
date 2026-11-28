@@ -8,6 +8,10 @@ import { BlockAssembler, HASH_PREFIX, MAX_REQUEST_FILE_BYTES, readRequestFile } 
 
 export const $ = (id) => document.getElementById(id);
 
+// controlsOf lists the buttons and boxes under the elements the ids name, to
+// lock while one of them works. A page with no such elements gives none.
+export const controlsOf = (...ids) => [...(globalThis.document?.querySelectorAll?.(ids.flatMap((id) => [`${id} button`, `${id} input`]).join(", ")) ?? [])];
+
 // busy marks a pressed button as working, at once and before any await: it
 // disables the button, sets aria-busy="true" (the stylesheet draws the
 // spinner from it) and swaps the label for the working one. It returns done,
@@ -19,7 +23,10 @@ export const $ = (id) => document.getElementById(id);
 // a screen shown again does not come back stuck. done() puts the label and
 // the disabled state back, so paint the same button's disabled state after
 // it; a label the page painted meanwhile is left alone.
-export function busy(button, label) {
+// lock lists the other controls that would start or change the same action
+// (the Check button, the boxes): they are disabled while the button is busy,
+// and done() gives back the ones that were enabled.
+export function busy(button, label, lock = []) {
   if (!button || button.getAttribute("aria-busy") === "true") return null;
   // A button with an icon keeps it: its child nodes come back, not its text.
   const kept = button.childNodes && button.replaceChildren ? [...button.childNodes] : null;
@@ -28,6 +35,8 @@ export function busy(button, label) {
   button.setAttribute("aria-busy", "true");
   button.disabled = true;
   button.textContent = label;
+  const locked = lock.filter((n) => n && n !== button && n.disabled !== true);
+  for (const n of locked) n.disabled = true;
   let shown = label;
   let over = false;
   const done = () => {
@@ -40,6 +49,7 @@ export function busy(button, label) {
       else button.textContent = label0;
     }
     button.disabled = disabled0;
+    for (const n of locked) n.disabled = false;
   };
   done.label = (text) => {
     if (over) return;
@@ -141,11 +151,11 @@ export const APPROVE_REOPEN = "ask the agent for a new link to this approval";
 export const REVERT_REOPEN = "ask the agent for a new link to this revert";
 
 // NO_CARRIER is what a page says on a long link: it shows the change, but
-// only a short link (from the engine's own pages, or from Basalt Vault)
+// only a short link (from the engine's own pages, or from BasaltVault)
 // can send a signature to the engine, so the page offers no passkey prompt.
 export const NO_CARRIER =
   "This link shows the change but cannot send your signature to the engine, so it cannot be signed here. " +
-  "Only a short link from the engine's own pages or from Basalt Vault can. Nothing was signed.";
+  "Only a short link from the engine's own pages or from BasaltVault can. Nothing was signed.";
 
 const NO_LINK_IN_PASTE =
   "No link found in that text. Paste the whole message from your agent, from the line before the link to the line after it.";
@@ -298,7 +308,7 @@ export function showEngine(session) {
   const engine = session?.engine;
   if (!engine) return;
   const fp = engineFingerprint(engine.engineId);
-  $("engine").textContent = `Through the Basalt Vault to the engine with fingerprint ${fp}. Before you sign, check that your agent's status shows the same fingerprint (vault.fingerprint).`;
+  $("engine").textContent = `Through the BasaltVault relay to the engine with fingerprint ${fp}. Before you sign, check that your agent's status shows the same fingerprint (vault.fingerprint).`;
   $("engine").hidden = false;
 }
 

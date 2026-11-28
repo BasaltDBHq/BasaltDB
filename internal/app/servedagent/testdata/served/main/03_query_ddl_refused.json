@@ -15,7 +15,7 @@
         "text": "Tell the person which schema change you need; they make it themselves."
       }
     ],
-    "personMessage": "The agent tried to change the database schema (DDL). Basalt never lets an agent do that. Make the change yourself if you want it.",
+    "personMessage": "The agent tried to change the database schema (DDL). BasaltDB never lets an agent do that. Make the change yourself if you want it.",
     "reason": "DDL_NOT_ALLOWED"
   },
   "isError": true,

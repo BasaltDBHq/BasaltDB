@@ -4,7 +4,7 @@
 // install. The string stays in a variable of this page only: never in
 // storage, never in the URL, and cleared after the run.
 import { ALG_ES256, b64urlDecode, CodeError, registrationResponseJson } from "./codec.js";
-import { $, busy as working, el, webauthnError } from "./page.js";
+import { $, busy as working, controlsOf, el, webauthnError } from "./page.js";
 import { answersFor, ENTITY_WORDS, fingerprintText, Labels, MAX_LABELS, restNote, tableName, trustRootFrom } from "./picks.js";
 import { labelRow } from "./pickviews.js";
 import { confirmView, factsDiffer, paintConfirm, sslModeOf, stringFacts, withVerifyFull } from "./confirm.js";
@@ -828,7 +828,7 @@ export async function startJob(link, preset, env = {}) {
     if (job?.job === "REMOVE" && $("database-url").value !== "") autoCheck = setTimeout(runCheck, env.checkDelayMs ?? CHECK_DELAY_MS);
   });
   const runCheck = async () => {
-    if ($("database-url").value === "") return;
+    if ($("database-url").value === "" || $("run").getAttribute("aria-busy") === "true") return;
     const auto = job?.job === "REMOVE";
     const done = auto ? () => {} : working($("check"), "Checking…");
     if (!done) return;
@@ -899,8 +899,13 @@ export async function startJob(link, preset, env = {}) {
     if (!checked || !runnable() || !answerFits(checkedFor, job)) return;
     const running = checkedFor;
     const workText = running.job === "REMOVE" ? "Removing BasaltDB…" : running.job === "UPDATE" ? "Updating…" : "Setting up…";
-    const stop = working($("run"), checked.passkeyNeeded ? "Waiting for your passkey…" : workText);
+    // Everything that would start or change this run is off until it ends:
+    // the Check button, the connection string, the OS-user box and the
+    // replace box. A check that was due is dropped.
+    const locks = [$("check"), $("database-url"), $("confirm-os-user"), $("confirm-replace")];
+    const stop = working($("run"), checked.passkeyNeeded ? "Waiting for your passkey…" : workText, locks);
     if (!stop) return;
+    clearTimeout(autoCheck);
     setChoices(true);
     let extra = replaceOf(checked.replace) ? { confirmName: typedName() } : {};
     try {
@@ -923,6 +928,8 @@ export async function startJob(link, preset, env = {}) {
       $("status").textContent = "";
       stop();
       $("run").disabled = true;
+      // The job is done: nothing on the page starts it again.
+      for (const n of locks) n.disabled = true;
       if (running.job === "REMOVE") {
         showRemoved(running, done, checked.database, fetchFn);
         return;
@@ -1647,7 +1654,7 @@ export function startUpdate(link, env) {
       b.type = "button";
       b.addEventListener("click", async () => {
         if (r.job === "MANAGE" || r.job === "UPDATE") return act(r.job);
-        const stop = working(b, FIX_WORK[r.job] ?? "Checking…");
+        const stop = working(b, FIX_WORK[r.job] ?? "Checking…", controlsOf("#u-check"));
         if (!stop) return;
         try {
           await act(r.job);
@@ -2007,7 +2014,7 @@ export function startUpdate(link, env) {
     b.type = "button";
     b.setAttribute("aria-label", `Remove ${k.label}`);
     b.addEventListener("click", async () => {
-      const stop = working(b, "Checking…");
+      const stop = working(b, "Checking…", controlsOf("#u-passkeys"));
       if (!stop) return;
       try {
         await withString(() => removeKey(k));
@@ -2038,7 +2045,7 @@ export function startUpdate(link, env) {
     });
   };
   $("u-add").addEventListener("click", async () => {
-    const stop = working($("u-add"), "Waiting for your passkey…");
+    const stop = working($("u-add"), "Waiting for your passkey…", controlsOf("#u-passkeys"));
     if (!stop) return;
     try {
       await startFix("PASSKEY_ADD");
@@ -2150,6 +2157,10 @@ export async function showRemoved(job, done, database, fetchFn, env = {}) {
   $("done-text").textContent = "";
   list("done-lines", []);
   $("removal-mac").hidden = !(done.engineRemoving && isMac(env.navigator ?? globalThis.navigator));
+  // The command is the person's own install: the removal leaves it, and the
+  // screen says so only when the engine left this computer. While other agents
+  // stay, or the engine still runs, they still need the command.
+  $("removal-command").hidden = true;
   if (!done.engineRemoving) {
     steps(done.engineRemoved ? "notAsked" : "kept");
     $("done-title").textContent = JOB_TEXT.REMOVE.removed;
@@ -2161,6 +2172,7 @@ export async function showRemoved(job, done, database, fetchFn, env = {}) {
   steps(gone ? "removed" : "stuck");
   $("done-title").textContent = gone ? JOB_TEXT.REMOVE.removed : "Removing BasaltDB…";
   if (gone) $("done-text").textContent = REMOVAL_TEXT.done(database);
+  $("removal-command").hidden = !gone;
 }
 
 if (typeof document !== "undefined") main();

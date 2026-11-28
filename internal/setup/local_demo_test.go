@@ -99,7 +99,7 @@ func TestDemoInstallAgainKeepsEdits(t *testing.T) {
 	req.Agent = "demo_two"
 	checked, err := second.svc.Check(context.Background(), req)
 	require.NoError(t, err)
-	require.Contains(t, checked.Notes, "sample schema basalt_demo already exists; its rows are left as they are")
+	require.Contains(t, checked.Lines, "The sample schema basalt_demo already exists: its rows stay as they are.")
 	lines := installDemo(t, second, "demo_two")
 	require.Contains(t, lines, "demo ready: leads 30, lead_notes 19")
 	var status string

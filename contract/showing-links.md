@@ -68,7 +68,7 @@ A `PERSON` step's `url` is shown under the same rules: on its own line, unchange
 
 The engine's MCP `initialize` result carries, in its `instructions`, this text unchanged:
 
-> When you show the person a link from Basalt, put it on its own line exactly as Basalt gave it, or as a Markdown link [label](url) with the label from links. Never put a link in a code block or inline code, never split, wrap, shorten, encode or rewrite it, and put nothing after it on its line. Show personMessage verbatim and keep its line breaks.
+> When you show the person a link from BasaltDB, put it on its own line exactly as BasaltDB gave it, or as a Markdown link [label](url) with the label from links. Never put a link in a code block or inline code, never split, wrap, shorten, encode or rewrite it, and put nothing after it on its line. Show personMessage verbatim and keep its line breaks.
 
 The tool descriptions say the same where they mention `personMessage`.
 

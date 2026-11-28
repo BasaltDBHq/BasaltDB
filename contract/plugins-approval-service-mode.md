@@ -60,8 +60,8 @@ The agent's `status` shows both kinds of entry served to it, with their health (
 
 **Isolation, the binding and the page.** An engine-kept local entry is bound and recorded with `isolation` `{"files": "NONE", "network": "NOT_ENFORCED"}`, on Linux and macOS: the plugin has the engine's files and network. A remote one has no `isolation`, as always. So the [page](plugins-approval.md#the-plugin-approval-page) is unchanged:
 
-- An unknown publisher is level 3, with the warning that it runs with the same access as Basalt itself, and the tick.
-- A known publisher is level 1, with the plain line "It runs on the computer Basalt runs on, with the same access as Basalt itself."
+- An unknown publisher is level 3, with the warning that it runs with the same access as BasaltDB itself, and the tick.
+- A known publisher is level 1, with the plain line "It runs on the computer BasaltDB runs on, with the same access as BasaltDB itself."
 - The ledger records `files: NONE`, `network: NOT_ENFORCED` for it ([In the ledger](plugins-ledger.md#in-the-ledger)), next to config entries recorded `files: OS_USER`.
 
 **The upload.** `basalt mcp` sends the plugin's files to the engine over a second connection to the agent's own socket ([`request_plugin`](mcp-tools.md#mcp-tools), The upload connection). The engine never reads the agent's directories.

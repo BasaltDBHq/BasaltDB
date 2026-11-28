@@ -23,7 +23,7 @@ func checkAgentOSUserWith(osUser, engineUser string, lookupGroup func(string) (*
 	groups func(string) ([]string, error),
 ) error {
 	if strings.HasPrefix(osUser, "basalt-plugin-") || strings.HasPrefix(osUser, "_basalt-plugin-") {
-		return fmt.Errorf("%w: --os-user %s is named as a plugin's OS user; Basalt keeps those names for plugins", cli.ErrUsage, osUser)
+		return fmt.Errorf("%w: --os-user %s is named as a plugin's OS user; BasaltDB keeps those names for plugins", cli.ErrUsage, osUser)
 	}
 	if osUser == engineUser {
 		return fmt.Errorf("%w: --os-user %s is the engine's own OS user; give the agent an OS user of its own", cli.ErrUsage, osUser)

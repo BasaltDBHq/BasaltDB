@@ -452,7 +452,7 @@ async function remove() {
     const s = await after.call("status");
     const codes = (s.data.problems ?? []).map((p) => p.code);
     assert.deepEqual(codes, ["REMOVED"], `status after the removal: ${s.text}`);
-    assert.match(JSON.stringify(s.data.problems[0].nextSteps), /Remove this MCP server/);
+    assert.match(JSON.stringify(s.data.problems[0].nextSteps), /remove this MCP server/);
   } finally {
     after.close();
   }

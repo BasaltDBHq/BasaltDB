@@ -46,8 +46,10 @@ func installed(t *testing.T) (*fixture, *setup.LocalService) {
 // of its last agent creates the removal job's marker.
 func stateDirOf(f *fixture) string { return filepath.Join(filepath.Dir(f.config), "state") }
 
-// markerOf is that marker's path.
-func markerOf(f *fixture) string { return filepath.Join(stateDirOf(f), servicespec.RemovalMarkerName) }
+// markerOf is that marker's path, in the config folder.
+func markerOf(f *fixture) string {
+	return filepath.Join(filepath.Dir(f.config), servicespec.RemovalMarkerName)
+}
 
 func (f *fixture) agentJob(job string) setup.Request {
 	return setup.Request{Job: job, Agent: "demo_bot", OSUser: "alice", DatabaseURL: f.db.URL}
@@ -305,6 +307,11 @@ func TestRemoveKeepsOtherAgentsOfTheEngine(t *testing.T) {
 	require.False(t, kept.EngineRemoved, "another agent is left: the service stays")
 	require.False(t, kept.EngineRemoving)
 	require.NoFileExists(t, markerOf(f), "no removal job is asked")
+	// basalt init's probe for that agent, from before the Remove, ends its
+	// wait: AGENT_REMOVED.
+	since := f.now.Add(-time.Minute)
+	_, err = svc.Check(ctx, setup.Request{Agent: "demo_bot", Since: &since})
+	refusal(t, err, setup.CodeAgentRemoved)
 	cfg, err = config.Load(f.config)
 	require.NoError(t, err)
 	require.Len(t, cfg.Agents, 1)

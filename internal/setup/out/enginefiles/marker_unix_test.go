@@ -5,6 +5,7 @@ package enginefiles_test
 import (
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -31,6 +32,9 @@ func TestCreateMarker(t *testing.T) {
 	link := filepath.Join(dir, "link")
 	require.NoError(t, os.Symlink(target, link))
 	require.Error(t, enginefiles.Files{}.CreateMarker(link))
+	fifo := filepath.Join(dir, "fifo")
+	require.NoError(t, syscall.Mkfifo(fifo, 0o600))
+	require.Error(t, enginefiles.Files{}.CreateMarker(fifo), "a FIFO is refused, without blocking")
 	b, err := os.ReadFile(target)
 	require.NoError(t, err)
 	require.Equal(t, "keep", string(b), "the link's target is untouched")

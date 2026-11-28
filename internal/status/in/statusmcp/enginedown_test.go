@@ -256,8 +256,8 @@ func TestEngineDownStatusSaysRemovedWhenTheConfigFolderIsGone(t *testing.T) {
 		require.Equal(t, []mcpcontract.StepKind{{Actor: "AGENT", Action: "STOP"}}, steps(t, first))
 		raw, err := json.Marshal(first["nextSteps"])
 		require.NoError(t, err)
-		require.Contains(t, string(raw), "Remove this MCP server (basalt mcp --agent bot) from your own MCP configuration")
-		require.Contains(t, first["personMessage"], "To set BasaltDB up again, ask the agent to run basalt init.")
+		require.Contains(t, string(raw), "remove this MCP server (basalt mcp --agent bot) from your MCP config")
+		require.Contains(t, first["personMessage"], "If you did not remove BasaltDB, or want it back, ask the agent to run basalt init.")
 		require.Equal(t, false, body["ready"])
 	}
 }

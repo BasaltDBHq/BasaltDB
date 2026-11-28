@@ -133,7 +133,7 @@ func TestInstallScriptWritesTheRemovalJob(t *testing.T) {
 			"put_file /etc/systemd/system/basalt-remove.service <<'END_OF_REMOVAL_UNIT'\n",
 			"Type=oneshot\nExecStart=/bin/sh /usr/libexec/basalt-remove\n",
 			"put_file /etc/systemd/system/basalt-remove.path <<'END_OF_REMOVAL_UNIT'\n",
-			"PathExists=/var/lib/basalt/remove-requested\nUnit=basalt-remove.service\n",
+			"PathExists=/etc/basalt/remove-requested\nUnit=basalt-remove.service\n",
 			"systemctl daemon-reload\nsystemctl enable --now basalt-remove.path\n",
 		},
 		"darwin": {
@@ -141,7 +141,7 @@ func TestInstallScriptWritesTheRemovalJob(t *testing.T) {
 			"put_file /usr/local/libexec/basalt-remove <<'END_OF_REMOVAL_JOB'\n#!/bin/sh\n",
 			"put_file /Library/LaunchDaemons/dev.basaltdb.remove.plist <<'END_OF_REMOVAL_UNIT'\n",
 			"<string>/bin/sh</string>\n\t\t<string>/usr/local/libexec/basalt-remove</string>",
-			"<key>WatchPaths</key>\n\t<array>\n\t\t<string>/Library/Application Support/Basalt/state/remove-requested</string>",
+			"<key>WatchPaths</key>\n\t<array>\n\t\t<string>/Library/Application Support/Basalt/remove-requested</string>",
 			"launchctl print system/dev.basaltdb.remove >/dev/null 2>&1 || launchctl bootstrap system /Library/LaunchDaemons/dev.basaltdb.remove.plist\n",
 		},
 	} {

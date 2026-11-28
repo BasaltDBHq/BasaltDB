@@ -98,12 +98,12 @@ func GuardBelowFloorSteps(b *Steps, cmds Commands, doc string) (string, []toolre
 // removed): the agent removes its own MCP entry for basalt and stops. It
 // returns the personMessage.
 func RemovedSteps(b *Steps, cmds Commands) string {
-	b.Stop(fmt.Sprintf("BasaltDB is removed. Remove this MCP server (basalt mcp --agent %s) from your own MCP configuration, then stop: do not call its tools again.", cmds.AgentName()))
+	b.Stop(fmt.Sprintf("BasaltDB is removed: remove this MCP server (basalt mcp --agent %s) from your MCP config, show the person the message, and stop.", cmds.AgentName()))
 	return RemovedPersonText
 }
 
 // RemovedPersonText is what the person reads after a removal.
-const RemovedPersonText = "BasaltDB is removed. Your agent drops its connection to it now. To set BasaltDB up again, ask the agent to run basalt init."
+const RemovedPersonText = "BasaltDB is removed. Your agent drops its connection to it now. If you did not remove BasaltDB, or want it back, ask the agent to run basalt init."
 
 // initStepText is the text of the agent's basalt init step: it prints the
 // one link the person opens (CONTRACT.md, basalt init).

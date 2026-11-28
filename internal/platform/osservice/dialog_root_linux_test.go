@@ -77,7 +77,7 @@ func TestInstallScriptAsRoot(t *testing.T) {
 		t.Skip("runs as root in a throwaway container: make test-root-container")
 	}
 	// A stub systemctl records its calls; the binary is root's, 0755.
-	sh(t, `printf '#!/bin/sh\necho "$*" >>/tmp/systemctl.log\n' >/usr/bin/systemctl && chmod 0755 /usr/bin/systemctl`)
+	sh(t, `printf '#!/bin/sh\n[ "$1" = is-active ] && exit 3\necho "$*" >>/tmp/systemctl.log\n' >/usr/bin/systemctl && chmod 0755 /usr/bin/systemctl`)
 	sh(t, "mkdir -p /etc/systemd/system /usr/local/bin && install -o root -g root -m 0755 /bin/true "+rootBinary)
 	clean := func() {
 		sh(t, "userdel basalt 2>/dev/null; groupdel basalt 2>/dev/null; rm -rf /etc/basalt /opt/basalt "+osservice.SystemdUnitPath+
@@ -240,7 +240,7 @@ func TestRemoveScriptAsRoot(t *testing.T) {
 	if os.Getenv(rootScriptEnv) != "1" || os.Geteuid() != 0 {
 		t.Skip("runs as root in a throwaway container: make test-root-container")
 	}
-	sh(t, `printf '#!/bin/sh\necho "$*" >>/tmp/systemctl.log\n' >/usr/bin/systemctl && chmod 0755 /usr/bin/systemctl`)
+	sh(t, `printf '#!/bin/sh\n[ "$1" = is-active ] && exit 3\necho "$*" >>/tmp/systemctl.log\n' >/usr/bin/systemctl && chmod 0755 /usr/bin/systemctl`)
 	sh(t, "mkdir -p /etc/systemd/system /usr/local/bin && install -o root -g root -m 0755 /bin/true "+rootBinary)
 	clean := func() {
 		sh(t, "for u in basalt basalt-plugin-ner-default basalt-plugin-shell-default; do userdel $u 2>/dev/null; done; groupdel basalt 2>/dev/null; "+
@@ -320,28 +320,28 @@ func TestRemoveScriptAsRoot(t *testing.T) {
 		require.FileExists(t, osservice.SystemdUnitPath, "no marker: nothing is removed")
 		require.True(t, exists("getent passwd basalt"))
 
-		sh(t, "ln -s /etc/passwd /var/lib/basalt/remove-requested")
+		sh(t, "ln -s /etc/passwd /etc/basalt/remove-requested")
 		out, err = runJob()
 		require.Error(t, err, out)
 		require.Contains(t, out, "so nothing was removed")
-		require.NoFileExists(t, "/var/lib/basalt/remove-requested", "the link is unlinked")
+		require.NoFileExists(t, "/etc/basalt/remove-requested", "the link is unlinked")
 		require.FileExists(t, "/etc/passwd", "its target stays")
 		require.FileExists(t, osservice.SystemdUnitPath)
 
-		sh(t, "touch /var/lib/basalt/remove-requested")
+		sh(t, "touch /etc/basalt/remove-requested")
 		out, err = runJob()
 		require.Error(t, err, out)
 		require.Contains(t, out, "so nothing was removed", "a marker root made is not the engine's")
 		require.FileExists(t, osservice.SystemdUnitPath)
 
-		sh(t, "touch /etc/basalt/engine.json && install -o basalt -g basalt -m 0600 /dev/null /var/lib/basalt/remove-requested")
+		sh(t, "touch /etc/basalt/engine.json && install -o basalt -g basalt -m 0600 /dev/null /etc/basalt/remove-requested")
 		out, err = runJob()
 		require.Error(t, err, out)
 		require.Contains(t, out, "/etc/basalt/engine.json still exists")
-		require.NoFileExists(t, "/var/lib/basalt/remove-requested", "a refused marker is unlinked too")
+		require.NoFileExists(t, "/etc/basalt/remove-requested", "a refused marker is unlinked too")
 		sh(t, "rm -f /etc/basalt/engine.json")
 
-		sh(t, "install -o basalt -g basalt -m 0600 /dev/null /var/lib/basalt/remove-requested")
+		sh(t, "install -o basalt -g basalt -m 0600 /dev/null /etc/basalt/remove-requested")
 		sh(t, "rm -f /tmp/systemctl.log")
 		out, err = runJob()
 		require.NoError(t, err, out)

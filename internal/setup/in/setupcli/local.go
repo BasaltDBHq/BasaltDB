@@ -72,13 +72,7 @@ func RunLocal(c *cli.IO, h LocalHost, args []string) int {
 		return c.Fail(err)
 	}
 	if remove {
-		if state != setup.EngineSetUp {
-			fmt.Fprintln(c.Stderr, nothingToRemoveLine)
-			return cli.ExitOK
-		}
-		job.Job = setup.JobRemove
-		code, _ := changeLink(c, h, job)
-		return code
+		return removeLink(c, h, job, state)
 	}
 	switch state {
 	case setup.EngineSetUp:
@@ -100,7 +94,7 @@ func RunLocal(c *cli.IO, h LocalHost, args []string) int {
 		// agent (its removal job did not run): it sets up again as a first
 		// install, --demo or not.
 		fmt.Fprintln(c.Stderr, removedAgainLine)
-	case setup.EngineWaiting, setup.EngineResetAsked, setup.EngineUpdated:
+	case setup.EngineWaiting, setup.EngineResetAsked, setup.EngineUpdated, setup.EngineAgentRemoved:
 		// EngineResetAsked is never the answer here: waitForSetupPage
 		// takes a "No" it finds at the start as an engine set up.
 		// EngineUpdated is only waitForRemoval's.
@@ -285,6 +279,9 @@ func changeLink(c *cli.IO, h LocalHost, job localsetup.Job) (code int, reset boo
 	case setup.EngineRemoved:
 		fmt.Fprintln(c.Stderr, removedLine)
 		return cli.ExitOK, false
+	case setup.EngineAgentRemoved:
+		fmt.Fprintf(c.Stderr, "basalt: BasaltDB is removed from the database of the agent %s. The engine stays on this computer for its other agents.\n", job.Agent)
+		return cli.ExitOK, false
 	case setup.EngineResetAsked:
 		if code := resetEngineService(c, h); code != cli.ExitOK {
 			return code, false
@@ -297,6 +294,28 @@ func changeLink(c *cli.IO, h LocalHost, job localsetup.Job) (code int, reset boo
 	}
 	fmt.Fprintln(c.Stderr, "basalt: this init stops waiting. The page needs nothing more from the agent.")
 	return cli.ExitOK, false
+}
+
+// removeLink is basalt init --remove once the engine answered. An engine
+// that serves the agent opens the removal's own link. An engine that serves
+// no agent (the page removed it and its removal job did not finish, or it
+// never had an agent) is removed by the fixed removal script through the
+// administrator dialog: one password, and nothing left.
+func removeLink(c *cli.IO, h LocalHost, job localsetup.Job, state setup.BasaltEngineState) int {
+	job.Job = setup.JobRemove
+	if state == setup.EngineSetUp {
+		code, _ := changeLink(c, h, job)
+		return code
+	}
+	return runServiceDialog(c, serviceDialog{
+		script:    h.OSRemoveScript,
+		prompt:    servicespec.RemovePrompt,
+		noDialog:  "the engine service is removed through the system's administrator dialog, which cannot be shown here (%w). Run basalt init --remove again in a desktop session on this machine",
+		asking:    "basalt: this computer's engine serves no agent. Asking for your password in the system's administrator dialog to remove it: it stops the service and deletes its files.",
+		cancelled: "the administrator dialog was closed, so the engine service stays. Run basalt init --remove again to remove it",
+		failed:    "the engine service was not removed: %w",
+		done:      "basalt: the engine service is removed from this computer.",
+	})
 }
 
 // The lines basalt init prints after the setup page removed BasaltDB
@@ -329,6 +348,8 @@ func waitForRemoval(c *cli.IO, agent string, opened time.Time) setup.BasaltEngin
 			return setup.EngineResetAsked
 		case err == nil && code == setup.CodeGuardUpdated:
 			return setup.EngineUpdated
+		case err == nil && code == setup.CodeAgentRemoved:
+			return setup.EngineAgentRemoved
 		case err != nil && !c.Host.System(io.Discard, io.Discard).Exists(filepath.Dir(config.DefaultPath(c.Goos))):
 			return setup.EngineRemoved
 		}
@@ -362,6 +383,9 @@ func resetEngineService(c *cli.IO, h LocalHost) int {
 // its default OS user.
 type LocalHost interface {
 	enginecli.InstallHost
+	// OSRemoveScript is the fixed script that removes the engine service,
+	// for a removal its removal job cannot finish (basalt init --remove).
+	OSRemoveScript(goos string) (string, error)
 	// OSRestartScript is the fixed script that restarts the engine service
 	// onto binary, copying it to OSServiceBinary first unless it is that
 	// copy.

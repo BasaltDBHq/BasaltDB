@@ -120,6 +120,12 @@ func (s *LocalService) engineRemoved() error {
 // what its check does not.
 func (s *LocalService) validateAgentJob(req Request, run bool) (agentJob, error) {
 	if err := s.engineRemoved(); err != nil {
+		if req.Job == JobRemove {
+			// The page of basalt init --remove on an engine its removal job
+			// did not remove: ask the job again (the marker is all it reads).
+			var answer RunAnswer
+			s.askRemoval(&answer)
+		}
 		return agentJob{}, err
 	}
 	if req.Job == JobChange {
@@ -135,6 +141,11 @@ func (s *LocalService) validateAgentJob(req Request, run bool) (agentJob, error)
 	if req.Job == "" && req.Since != nil && s.updatedSince(req.Agent, *req.Since) {
 		// basalt init's probe, after the page's Update for its agent.
 		return agentJob{}, refuse(CodeGuardUpdated, "The guard is updated. basalt init tells the agent to go on.")
+	}
+	if req.Job == "" && req.Since != nil && s.removedSince(req.Agent, *req.Since) {
+		// basalt init's probe, after the page's Remove of its agent on an
+		// engine that keeps other agents.
+		return agentJob{}, refuse(CodeAgentRemoved, "BasaltDB is removed from this agent's database; the engine goes on serving its other agents.")
 	}
 	if !isAgentJob(req.Job) {
 		return agentJob{}, refuse(CodeJobUnavailable, alreadySetUp)
@@ -535,6 +546,7 @@ func (s *LocalService) runAgentJob(ctx context.Context, req Request) (RunAnswer,
 	}
 	answer.Lines = []string{fmt.Sprintf("BasaltDB removed from the database %s", database), "removed from this engine: " + strings.Join(p.removed, ", ")}
 	answer.EngineRemoved = gone
+	s.markRemoved(p.removed)
 	if gone {
 		answer.EngineRemoving = s.askRemoval(&answer)
 	}
@@ -544,14 +556,14 @@ func (s *LocalService) runAgentJob(ctx context.Context, req Request) (RunAnswer,
 	return answer, nil
 }
 
-// askRemoval creates the removal job's marker in the state folder, after
+// askRemoval creates the removal job's marker in the config folder, after
 // the removal committed and engine.json is gone (CONTRACT.md, The local
 // setup page, Removing the engine service): the root job then stops this
 // engine and removes it from this computer. It reports whether the marker
 // is there; when it is not, a warning says so and the engine stays,
 // serving no agent.
 func (s *LocalService) askRemoval(answer *RunAnswer) bool {
-	marker := filepath.Join(s.opts.StateDir, servicespec.RemovalMarkerName)
+	marker := filepath.Join(filepath.Dir(s.opts.ConfigPath), servicespec.RemovalMarkerName)
 	if err := s.be.CreateMarker(marker); err != nil {
 		answer.Warnings = append(answer.Warnings, "this engine could not ask to be removed from this computer, so it stays, serving no agent: "+err.Error())
 		return false

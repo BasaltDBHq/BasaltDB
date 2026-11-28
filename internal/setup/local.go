@@ -22,9 +22,10 @@ const (
 type BasaltEngineState int
 
 const (
-	EngineWaiting    BasaltEngineState = iota // no config yet: the setup page installs
-	EngineSetUp                               // it has a config
-	EngineRemoved                             // the page removed its last agent
-	EngineResetAsked                          // the person said the database is not theirs
-	EngineUpdated                             // the page's Update for the agent finished
+	EngineWaiting      BasaltEngineState = iota // no config yet: the setup page installs
+	EngineSetUp                                 // it has a config
+	EngineRemoved                               // the page removed its last agent
+	EngineResetAsked                            // the person said the database is not theirs
+	EngineUpdated                               // the page's Update for the agent finished
+	EngineAgentRemoved                          // the page removed the agent; other agents stay
 )

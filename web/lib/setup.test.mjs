@@ -771,6 +771,7 @@ test("the removal's checklist: the database, this computer, the agent's connecti
   assert.match(removalSteps("app", "notAsked")[1], /serving no agent/);
   assert.match(removalSteps("app", "stuck")[1], /still running/);
   assert.match(removalSteps("app", "kept")[1], /serving your other agents/);
+  assert.doesNotMatch(removalSteps("app", "kept")[2], /drops it/, "other agents stay: no agent drops its connection");
   assert.ok(isMac({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" }));
   assert.ok(!isMac({ userAgent: "Mozilla/5.0 (X11; Linux x86_64)" }));
 });
@@ -1415,6 +1416,42 @@ test("the Update check's fix, paste and confirm buttons show their working label
   rested(nodes["confirm-go"], yes);
   assert.equal(nodes["confirm-error"].textContent, "The engine said no.");
   delete globalThis.localStorage;
+});
+
+test("a removal's check follows the box: a string changed while an older check runs is checked, and the older answer or refusal is dropped", async () => {
+  for (const older of ["answer", "refusal"]) {
+    const nodes = fakePage();
+    nodes["database-url"].value = "";
+    let releaseA;
+    const heldA = new Promise((r) => { releaseA = r; });
+    const checks = [];
+    const fetchFn = async (path, init) => {
+      const body = JSON.parse(init.body);
+      if (path === CHECK_PATH && !body.databaseUrl) return new Response(JSON.stringify({ code: "CONNECTION_STRING_REFUSED", message: "x" }), { status: 400 });
+      checks.push(body.databaseUrl);
+      if (body.databaseUrl === "postgres://a") {
+        await heldA;
+        if (older === "refusal") return new Response(JSON.stringify({ code: "LOGIN_FAILED", message: "A was refused." }), { status: 409 });
+        return new Response(JSON.stringify({ database: "a_db", host: "a:5432", lines: [], notes: [], sql: "", passkeyNeeded: false }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ database: "b_db", host: "b:5432", lines: [], notes: [], sql: "", passkeyNeeded: false }), { status: 200 });
+    };
+    await startJob({ job: "REMOVE", agent: "bot", osUser: "alice", demo: false }, "", { fetchFn, checkDelayMs: 0 });
+    const tick = () => new Promise((r) => setTimeout(r, 1));
+    nodes["database-url"].value = "postgres://a";
+    nodes["database-url"].fire("input");
+    for (let n = 0; n < 5 && checks.length < 1; n++) await tick();
+    nodes["database-url"].value = "postgres://b";
+    nodes["database-url"].fire("input");
+    for (let n = 0; n < 10 && nodes.review.hidden; n++) await tick();
+    assert.deepEqual(checks, ["postgres://a", "postgres://b"], `${older}: B is checked while A still runs`);
+    assert.equal(nodes.run.textContent, "Remove BasaltDB from b_db on b:5432");
+    releaseA();
+    for (let n = 0; n < 5; n++) await tick();
+    assert.equal(nodes.run.textContent, "Remove BasaltDB from b_db on b:5432", `${older}: A's late answer is dropped`);
+    assert.equal(nodes["remove-target"].textContent, "It opens b_db on b:5432.");
+    assert.doesNotMatch(nodes.status.textContent, /A was refused/, `${older}: A's refusal is not shown against B`);
+  }
 });
 
 test("a removal is one press: Removing BasaltDB… on the button, no name sent, then the checklist ticks this computer once the engine stops", async () => {

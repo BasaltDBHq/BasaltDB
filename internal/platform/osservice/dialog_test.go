@@ -212,6 +212,7 @@ func TestDialogPromptsNameTheirAction(t *testing.T) {
 	t.Parallel()
 	for prompt, first := range map[string]string{
 		servicespec.InstallPrompt: "BasaltDB wants to install its engine on this Mac. ",
+		servicespec.RemovePrompt:  "BasaltDB wants to remove its engine from this Mac. ",
 		servicespec.ResetPrompt:   "BasaltDB wants to reset its engine on this Mac. ",
 		servicespec.RestartPrompt: "BasaltDB wants to restart its engine on this Mac. ",
 	} {

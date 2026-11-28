@@ -148,6 +148,8 @@ func RestartScript(goos string, src Source) (string, error) {
 	b.WriteString(breakingVerdict(goos))
 	fmt.Fprintf(&b, "if [ -n \"$breaking_reset\" ]; then\n%sfi\n", installPreflight(goos, spec))
 	b.WriteString(ScriptPreflightEnd)
+	// First, before anything changes: a removal job still at work.
+	b.WriteString(waitForRemovalJob(goos))
 	if src.copies(goos) {
 		b.WriteString(copyBinary(goos, src))
 	}

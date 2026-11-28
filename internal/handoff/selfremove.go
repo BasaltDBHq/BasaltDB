@@ -47,7 +47,7 @@ type SelfRemoveOptions struct {
 	// none.
 	Pending func() (config.Removal, bool, error)
 	// Confirmed asks the engine to remove itself; it is called once.
-	Confirmed func(Removed)
+	Confirmed func(ctx context.Context, r Removed)
 	Log       *slog.Logger
 	Now       func() time.Time
 }
@@ -163,7 +163,7 @@ func (r *SelfRemove) Step(ctx context.Context) bool {
 			return c.ReportRemoved(ctx, id, r.o.Removal.Fingerprint, result, reason)
 		}
 	}
-	r.o.Confirmed(Removed{Agent: r.o.Agent, SetupID: id, Fingerprint: r.o.Removal.Fingerprint, Report: report})
+	r.o.Confirmed(ctx, Removed{Agent: r.o.Agent, SetupID: id, Fingerprint: r.o.Removal.Fingerprint, Report: report})
 	return false
 }
 

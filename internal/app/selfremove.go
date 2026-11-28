@@ -82,14 +82,14 @@ func newSelfRemove(env agentEnv, a config.Agent, cc *pgx.ConnConfig, dsn string,
 		Collector: handoff.NewClient(connectrpc.New(env.handoff.HTTP, env.handoff.serviceURL()), env.keys, env.handoff.now()),
 		Login:     func(ctx context.Context) error { return freshLogin(ctx, dsn) },
 		Pending:   files.PendingRemoval,
-		Confirmed: func(rm handoff.Removed) {
+		Confirmed: func(ctx context.Context, rm handoff.Removed) {
 			// A service engine is removed by its removal job, and one that
 			// serves other agents stays for them: both report and serve on.
 			switch {
 			case service:
-				reportRemoved(rm, handoff.RemovedKept, handoff.KeptService, log)
+				reportRemoved(ctx, rm, handoff.RemovedKept, handoff.KeptService, log)
 			case agents > 1:
-				reportRemoved(rm, handoff.RemovedKept, handoff.KeptOtherAgents, log)
+				reportRemoved(ctx, rm, handoff.RemovedKept, handoff.KeptOtherAgents, log)
 			case env.removal != nil:
 				env.removal.confirm(rm)
 			}
@@ -140,8 +140,8 @@ func freshLogin(ctx context.Context, dsn string) error {
 
 // reportRemoved sends rm's ReportRemoved, best effort: a service that does
 // not answer, or an older one without the call, is logged.
-func reportRemoved(rm handoff.Removed, result, reason string, log *slog.Logger) {
-	ctx, cancel := context.WithTimeout(context.Background(), reportTimeout)
+func reportRemoved(ctx context.Context, rm handoff.Removed, result, reason string, log *slog.Logger) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), reportTimeout)
 	defer cancel()
 	if err := rm.Report(ctx, result, reason); err != nil {
 		log.Warn("tell the connect page that the engine removed itself", "setupId", rm.SetupID, "err", err)
@@ -151,7 +151,7 @@ func reportRemoved(rm handoff.Removed, result, reason string, log *slog.Logger) 
 // finishSelfRemoval deletes the engine's folders after runWith returned for
 // the removal rm and reports the result. Nothing of the engine runs any
 // more, so nothing writes a file again.
-func finishSelfRemoval(cfg config.Config, configPath string, rm *handoff.Removed, log *slog.Logger) {
+func finishSelfRemoval(ctx context.Context, cfg config.Config, configPath string, rm *handoff.Removed, log *slog.Logger) {
 	result, reason := handoff.RemovedAll, ""
 	if err := removeEngineFiles(cfg, configPath, rm.Agent); err != nil {
 		result, reason = handoff.RemovedKept, keptReason(err)
@@ -159,7 +159,7 @@ func finishSelfRemoval(cfg config.Config, configPath string, rm *handoff.Removed
 	} else {
 		log.Info("BasaltDB removed itself from this machine; only the basalt binary stays")
 	}
-	reportRemoved(*rm, result, reason, log)
+	reportRemoved(ctx, *rm, result, reason, log)
 }
 
 // errCredentialKept is a credential file outside the engine's folders that

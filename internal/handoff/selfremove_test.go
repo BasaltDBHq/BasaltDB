@@ -53,7 +53,7 @@ func TestSelfRemove(t *testing.T) {
 				p, ok := pending(rm)
 				return p, ok, nil
 			},
-			Confirmed: func(r Removed) { got = append(got, r) },
+			Confirmed: func(_ context.Context, r Removed) { got = append(got, r) },
 			Log:       slog.New(slog.DiscardHandler), Now: func() time.Time { return now },
 		})
 		require.NoError(t, err)
@@ -114,7 +114,7 @@ func TestSelfRemoveRefusesAnotherCode(t *testing.T) {
 	opts := SelfRemoveOptions{
 		Removal: rm, Credential: db, Collector: holdCollector{},
 		Login: func(context.Context) error { return nil }, Pending: func() (config.Removal, bool, error) { return rm, true, nil },
-		Confirmed: func(Removed) {}, Log: slog.New(slog.DiscardHandler), Now: time.Now,
+		Confirmed: func(context.Context, Removed) {}, Log: slog.New(slog.DiscardHandler), Now: time.Now,
 	}
 	other := opts
 	other.Credential.Database = "another"

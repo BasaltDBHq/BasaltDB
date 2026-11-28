@@ -70,7 +70,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 			// page: everything runWith opened is closed, so the engine
 			// deletes its folders, reports and exits cleanly (a supervisor
 			// then stops too).
-			finishSelfRemoval(cfg, engine.EnginePath(*configPath), rm, log)
+			finishSelfRemoval(ctx, cfg, engine.EnginePath(*configPath), rm, log)
 			return nil
 		}
 		return err

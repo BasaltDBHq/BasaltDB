@@ -49,6 +49,10 @@ func TestRemoveThroughTheService(t *testing.T) {
 	require.Contains(t, checked.Msg.GetSql(), "DROP SCHEMA IF EXISTS basalt_meta CASCADE;")
 	require.False(t, checked.Msg.GetSampleSchema())
 
+	// A code that is not a setup code is refused before the login.
+	_, err = client.RunRemove(ctx, connect.NewRequest(&connectv1.RunRemoveRequest{DatabaseUrl: d.URL, Code: "not-a-code"}))
+	require.Equal(t, "NOT_A_SETUP_CODE", refusalReason(t, err))
+
 	// The admin login is the confirmation: no typed name, and no hold
 	// without a removal link's code.
 	done, err := client.RunRemove(ctx, connect.NewRequest(&connectv1.RunRemoveRequest{DatabaseUrl: d.URL}))

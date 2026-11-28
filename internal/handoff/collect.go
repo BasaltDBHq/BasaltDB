@@ -95,7 +95,7 @@ const (
 	KeptOtherAgents = "OTHER_AGENTS"
 	// KeptCredentialFile: the agent's credential file is outside the
 	// engine's folders and not a plain file of the engine's user.
-	KeptCredentialFile = "CREDENTIAL_FILE_KEPT"
+	KeptCredentialFile = "CREDENTIAL_FILE_KEPT" //nolint:gosec // a report reason, not a credential
 	// KeptService: a service engine, which its removal job removes.
 	KeptService = "SERVICE"
 	// KeptDeleteFailed: a folder or file of the engine could not be

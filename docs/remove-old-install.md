@@ -10,7 +10,7 @@ Upgrade `basalt` (`brew upgrade basaltdb`), then ask your agent to run `basalt i
 
 The connect page does the same for an agent on a computer you cannot reach, once its service offers it.
 
-To remove BasaltDB without setting it up again, while the install still works: open the link `basalt init` prints on an engine already set up, pick **Remove BasaltDB**, paste the admin connection string, and type the database's name.
+To remove BasaltDB without setting it up again, while the install still works: open the link `basalt init` prints on an engine already set up, pick **Remove BasaltDB**, paste the admin connection string, and press **Remove BasaltDB from <database> on <host>**.
 
 ## If it is broken
 

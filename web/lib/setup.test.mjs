@@ -971,7 +971,7 @@ test("the Update check shows what needs the person, each critical row fixes itse
   assert.equal(nodes["u-allset-title"].textContent, "All set");
   assert.equal(nodes["u-allset-text"].textContent, "Close this tab and go back to your agent. It can work now.");
   assert.match(nodes["u-allset-lines"].textContent, /✓ Passkeys: 1 device can approve/);
-  assert.equal(nodes["u-allset-later"].textContent, "Left for later: 1 column has no label. Ask your agent to run basalt init to change them.");
+  assert.equal(nodes["u-allset-later"].textContent, "Left for later: 1 column has no label. To change this, ask your agent to run basalt init.");
 });
 
 test("a certificate from a new issuer: the cautious words, Trust it anyway the weaker button, Stop here trusts nothing", async () => {

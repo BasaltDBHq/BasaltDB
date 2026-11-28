@@ -78,7 +78,7 @@ export const FIX_ORDER = ["TRUST", "UPDATE", "PASSKEY_ADD", "REPAIR"];
 
 export const MAX_WARNINGS = 3;
 export const READY_SUB = "BasaltDB is running and your agents can connect.";
-export const ALL_SET = { title: "All set", text: "Close this tab and go back to your agent. It can work now.", later: "Ask your agent to run basalt init to change them." };
+export const ALL_SET = { title: "All set", text: "Close this tab and go back to your agent. It can work now.", later: "To change this, ask your agent to run basalt init." };
 export const LEFT_NOTE = "you chose to leave them for now";
 
 // localPasskeys counts the passkeys of origin: the devices that approve on

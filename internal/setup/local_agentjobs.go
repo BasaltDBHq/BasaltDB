@@ -143,16 +143,16 @@ func (s *LocalService) validateAgentJob(req Request, run bool) (agentJob, error)
 		// basalt init's probe, after the page's Update for its agent.
 		return agentJob{}, refuse(CodeGuardUpdated, "The guard is updated. basalt init tells the agent to go on.")
 	}
+	if req.Job == "" && req.Since != nil && s.removedSince(req.Agent, *req.Since) {
+		// basalt init's probe, after the page's Remove of its agent on an
+		// engine that keeps other agents.
+		return agentJob{}, refuse(CodeAgentRemoved, "BasaltDB is removed from this agent's database; the engine goes on serving its other agents.")
+	}
 	if req.Job == "" && req.Since != nil {
 		// basalt init's probe, after a fix the page finished for its agent.
 		if job := s.fixedSince(req.Agent, *req.Since); job != "" {
 			return agentJob{}, refuse(CodeChangedPrefix+job, "The page finished a change for this agent. basalt init tells the agent to go on.")
 		}
-	}
-	if req.Job == "" && req.Since != nil && s.removedSince(req.Agent, *req.Since) {
-		// basalt init's probe, after the page's Remove of its agent on an
-		// engine that keeps other agents.
-		return agentJob{}, refuse(CodeAgentRemoved, "BasaltDB is removed from this agent's database; the engine goes on serving its other agents.")
 	}
 	if !isAgentJob(req.Job) {
 		return agentJob{}, refuse(CodeJobUnavailable, alreadySetUp)

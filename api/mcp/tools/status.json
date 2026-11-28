@@ -46,8 +46,8 @@
           },
           "startedBy": {
             "type": "string",
-            "enum": ["HAND", "MCP", "CRASH"],
-            "description": "Why this engine started: HAND (a person or a service manager ran it), MCP (basalt mcp found the engine down and started it) or CRASH (the supervisor restarted it after a crash). Reported by a running engine only."
+            "enum": ["HAND", "MCP", "CRASH", "SERVICE"],
+            "description": "Why this engine started: HAND (a person ran it), SERVICE (the computer's service manager started it), MCP (basalt mcp found the engine down and started it) or CRASH (the supervisor restarted it after a crash). Reported by a running engine only."
           },
           "lastStop": {
             "type": "object",

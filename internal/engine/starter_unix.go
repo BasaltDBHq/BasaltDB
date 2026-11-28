@@ -194,7 +194,7 @@ func (s *starter) start(ctx context.Context) error {
 		return s.record(fmt.Errorf("open the engine log: %w", err))
 	}
 	defer logFile.Close()
-	if err := s.deps.Launch(s.exe, []string{engineCommand, "--supervise", configFlag, s.configPath, "--started-by", StartedByMCP}, logFile); err != nil {
+	if err := s.deps.Launch(s.exe, []string{engineCommand, "--supervise", configFlag, s.configPath, startedByFlag, StartedByMCP}, logFile); err != nil {
 		return s.record(fmt.Errorf("start %s: %w", s.exe, err))
 	}
 	return s.waitSocket(ctx)

@@ -13,6 +13,9 @@ import (
 const (
 	StartedByMCP   = "mcp"
 	StartedByCrash = "crash"
+	// StartedByService is the engine the OS service manager started: the
+	// unit passes it.
+	StartedByService = "service"
 )
 
 const (
@@ -136,7 +139,7 @@ func ChildStarter(d ChildDeps, startedFrom, configPath, lockPath, stateDir strin
 		if err != nil {
 			return nil, err
 		}
-		wait, err := d.Start(ctx, exe, []string{engineCommand, configFlag, configPath, "--started-by", startedBy}, out, errw)
+		wait, err := d.Start(ctx, exe, []string{engineCommand, configFlag, configPath, startedByFlag, startedBy}, out, errw)
 		if err != nil {
 			return nil, err
 		}

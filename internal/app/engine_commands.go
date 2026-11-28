@@ -26,12 +26,12 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	fs.SetOutput(io.Err)
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
 	supervised := fs.Bool("supervise", false, "run the engine as a child and restart it when it crashes")
-	startedBy := fs.String("started-by", startedByHand, "why this engine started: hand, mcp or crash (set by basalt mcp and --supervise)")
+	startedBy := fs.String("started-by", startedByHand, "why this engine started: hand, mcp, crash or service (set by basalt mcp, --supervise and the service unit)")
 	if fs.Parse(args) != nil || fs.NArg() > 0 {
 		return cli.ExitUsage
 	}
-	if !slices.Contains([]string{startedByHand, engine.StartedByMCP, engine.StartedByCrash}, *startedBy) {
-		_, _ = fmt.Fprintf(io.Err, "basalt engine: --started-by is hand, mcp or crash, not %q\n", *startedBy)
+	if !slices.Contains([]string{startedByHand, engine.StartedByMCP, engine.StartedByCrash, engine.StartedByService}, *startedBy) {
+		_, _ = fmt.Fprintf(io.Err, "basalt engine: --started-by is hand, mcp, crash or service, not %q\n", *startedBy)
 		return cli.ExitUsage
 	}
 	*configPath = cli.ConfigOrFallback(h, fs, *configPath)

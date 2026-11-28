@@ -113,7 +113,7 @@ func engineRevokedSteps(b *guidance.Steps) string {
 // StartedByEnum is the status enum of a --started-by value ("" for none).
 func StartedByEnum(v string) string {
 	switch v {
-	case "hand", "mcp", "crash":
+	case "hand", "mcp", "crash", "service":
 		return strings.ToUpper(v)
 	}
 	return ""

@@ -290,10 +290,14 @@ func (s *LocalService) run(ctx context.Context, req Request) (RunAnswer, error) 
 	if s.opts.Configured && !s.installOnRemoved(req) {
 		a, err := s.runAgentJob(ctx, req)
 		if err == nil && req.Job == JobUpdate {
-			// Only an UPDATE that ran ends basalt init's wait: its done
-			// screen tells the person to let the agent go on. A fix ends
-			// back on the check, where Remove is still a pick.
+			// An UPDATE that ran ends basalt init's wait: its done screen
+			// tells the person to let the agent go on.
 			s.markUpdated(req.Agent)
+		}
+		if err == nil && slices.Contains(FixJobs, req.Job) {
+			// A fix the page finished for the agent ends basalt init's wait
+			// too: the person may go on, and the agent with them.
+			s.markFixed(req.Agent, req.Job)
 		}
 		return a, err
 	}

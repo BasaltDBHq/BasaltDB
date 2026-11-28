@@ -167,7 +167,7 @@ func RestartScript(goos string, src Source) (string, error) {
 
 // specArgs is the command line s's unit runs.
 func specArgs(s servicespec.Spec) []string {
-	return []string{s.Binary, "engine", "--config", s.ConfigPath, "--supervise"}
+	return []string{s.Binary, "engine", "--config", s.ConfigPath, "--supervise", "--started-by", startedByService}
 }
 
 // SystemdUnit renders the Linux unit. The engine gets /run/basalt for its
@@ -296,3 +296,7 @@ func RestartScriptFor(goos, path string) (string, error) {
 	}
 	return RestartScript(goos, src)
 }
+
+// startedByService is the --started-by the unit passes, so status reports
+// an engine the service manager started as SERVICE (engine.StartedByService).
+const startedByService = "service"

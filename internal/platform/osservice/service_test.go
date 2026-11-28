@@ -137,7 +137,7 @@ func TestSystemdUnit(t *testing.T) {
 	for _, want := range []string{
 		"User=basalt\n",
 		"Group=basalt\n",
-		"ExecStart=/usr/local/bin/basalt engine --config /etc/basalt/engine.json --supervise\n",
+		"ExecStart=/usr/local/bin/basalt engine --config /etc/basalt/engine.json --supervise --started-by service\n",
 		"RuntimeDirectory=basalt\n",
 		"RuntimeDirectoryMode=0755\n",
 		"StateDirectory=basalt\n",
@@ -154,7 +154,7 @@ func TestSystemdUnit(t *testing.T) {
 
 	spaced := linuxSpec()
 	spaced.ConfigPath = `/etc/my basalt/engine "x".json`
-	require.Contains(t, osservice.SystemdUnit(spaced), `ExecStart=/usr/local/bin/basalt engine --config "/etc/my basalt/engine \"x\".json" --supervise`)
+	require.Contains(t, osservice.SystemdUnit(spaced), `ExecStart=/usr/local/bin/basalt engine --config "/etc/my basalt/engine \"x\".json" --supervise --started-by service`)
 	require.Contains(t, osservice.SystemdUnit(spaced), "ReadWritePaths=\"/etc/my basalt\"\n")
 }
 
@@ -164,7 +164,7 @@ func TestSystemdUnitEscapesSpecifiersAndVariables(t *testing.T) {
 	s.Binary = "/opt/100%/basalt"
 	s.ConfigPath = "/etc/%h/$HOME/engine.json"
 	unit := osservice.SystemdUnit(s)
-	require.Contains(t, unit, `ExecStart="/opt/100%%/basalt" engine --config "/etc/%%h/$$HOME/engine.json" --supervise`)
+	require.Contains(t, unit, `ExecStart="/opt/100%%/basalt" engine --config "/etc/%%h/$$HOME/engine.json" --supervise --started-by service`)
 	require.Contains(t, unit, "ReadWritePaths=\"/etc/%%h/$HOME\"\n", "path lists expand specifiers, not variables")
 }
 
@@ -173,7 +173,7 @@ func TestLaunchdDaemon(t *testing.T) {
 	plist := osservice.LaunchdDaemon(darwinSpec())
 	for _, want := range []string{
 		"<string>dev.basaltdb.engine</string>",
-		"<string>/usr/local/bin/basalt</string>\n\t\t<string>engine</string>\n\t\t<string>--config</string>\n\t\t<string>/Library/Application Support/Basalt/engine.json</string>\n\t\t<string>--supervise</string>",
+		"<string>/usr/local/bin/basalt</string>\n\t\t<string>engine</string>\n\t\t<string>--config</string>\n\t\t<string>/Library/Application Support/Basalt/engine.json</string>\n\t\t<string>--supervise</string>\n\t\t<string>--started-by</string>\n\t\t<string>service</string>",
 		"<key>UserName</key>\n\t<string>_basalt</string>",
 		"<key>GroupName</key>\n\t<string>_basalt</string>",
 		"<key>KeepAlive</key>\n\t<true/>",

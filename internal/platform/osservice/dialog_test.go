@@ -39,7 +39,7 @@ func TestInstallScriptIsBuiltFromConstants(t *testing.T) {
 			"make_dir /etc/basalt 0750 basalt basalt",
 			"make_root_dir /opt/basalt 0755",
 			"make_root_dir /opt/basalt/run 0755",
-			"ExecStart=/usr/libexec/basalt engine --config /etc/basalt/engine.json --supervise\n",
+			"ExecStart=/usr/libexec/basalt engine --config /etc/basalt/engine.json --supervise --started-by service\n",
 			"make_root_dir /usr/libexec 0755\ncopy_binary \"$src\" /usr/libexec/basalt " + dialogSum + " 4096\n",
 		}},
 		{"darwin", osservice.LaunchdPlist, "launchctl bootstrap system " + osservice.LaunchdPlist, []string{
@@ -50,7 +50,7 @@ func TestInstallScriptIsBuiltFromConstants(t *testing.T) {
 			"make_dir /Library/Logs/Basalt 0755 0 0",
 			"make_root_dir /Library/Basalt 0755",
 			"make_root_dir /usr/local 0755\nmake_root_dir /usr/local/libexec 0755\ncopy_binary \"$src\" /usr/local/libexec/basalt " + dialogSum + " 4096\n",
-			"<string>/usr/local/libexec/basalt</string>\n\t\t<string>engine</string>\n\t\t<string>--config</string>\n\t\t<string>/Library/Application Support/Basalt/engine.json</string>\n\t\t<string>--supervise</string>",
+			"<string>/usr/local/libexec/basalt</string>\n\t\t<string>engine</string>\n\t\t<string>--config</string>\n\t\t<string>/Library/Application Support/Basalt/engine.json</string>\n\t\t<string>--supervise</string>\n\t\t<string>--started-by</string>\n\t\t<string>service</string>",
 		}},
 	} {
 		t.Run(v.goos, func(t *testing.T) {

@@ -17,7 +17,7 @@ const (
 		"and ask them to change that database password now. Do not repeat or use the string."
 	adminCredentialRevise = "Then call again without the connection string. To set up, run basalt init (basalt init --remote where the person cannot reach this computer) and show the person the link it prints."
 	// AdminCredentialPerson is the person's message of an admin-credential refusal.
-	AdminCredentialPerson = "A database connection string with a password was sent through your agent. Basalt refused the call and kept no copy. Change that database password now."
+	AdminCredentialPerson = "A database connection string with a password was sent through your agent. BasaltDB refused the call and kept no copy. Change that database password now."
 )
 
 // Failure is the call an error answers: the tool and its arguments.

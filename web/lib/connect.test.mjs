@@ -167,7 +167,7 @@ function challenge() {
     challenge: b64urlEncode(new Uint8Array(32).fill(7)),
     userId: b64urlEncode(new Uint8Array(16).fill(9)),
     userName: "bot@db.example.com",
-    displayName: "Basalt approvals",
+    displayName: "BasaltDB approvals",
     expiresAt: "2026-11-20T10:15:00Z",
     mac: "opaque-mac",
   };

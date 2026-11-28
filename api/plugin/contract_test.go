@@ -663,7 +663,7 @@ const (
 	sentChangeFiles     = "Its files change, but its version stays <version>."
 	sentChangeSigner    = "Its publisher was <fromPublisher>; now it is <publisher>."
 	sentChangeEndpoint  = "It moves from <fromWhere> to <where>."
-	sentChangeIsolation = "How it is kept apart from Basalt changes."
+	sentChangeIsolation = "How it is kept apart from BasaltDB changes."
 	sentHooksAdded      = "It gets new access to: <hookLabels>."
 	sentHooksRemoved    = "It no longer gets: <hookLabels>."
 	sentNamesAdded      = "It now also looks for names in the text."
@@ -675,31 +675,31 @@ const (
 	sentAgentsAdded     = "It will now also be used for <agents>."
 	sentAgentsRemoved   = "It will no longer be used for <agents>."
 	sentSettingsChanged = "Its settings change."
-	sentLevel1          = "Published by Basalt."
+	sentLevel1          = "Published by BasaltDB."
 	sentLevel2          = "Nobody vouches for this plugin. Add it only if you trust where it came from."
-	sentLevel3          = "Nobody vouches for this plugin. It runs a stranger's program on the computer Basalt runs on, with the same access as Basalt itself, so it could read your database password and the key Basalt uses to hide private values."
+	sentLevel3          = "Nobody vouches for this plugin. It runs a stranger's program on the computer BasaltDB runs on, with the same access as BasaltDB itself, so it could read your database password and the key BasaltDB uses to hide private values."
 	sentTick            = "I know who made this plugin and I trust them with my data."
 	sentRemote          = "It runs at <host>. Everything it sees is sent there."
-	sentRemoteOnward    = "Basalt cannot check what runs there or where it sends things next."
-	sentOwnUser         = "It runs on the computer Basalt runs on, as its own user, so it cannot read Basalt's files."
-	sentSameAccess      = "It runs on the computer Basalt runs on, with the same access as Basalt itself."
-	sentNoNetwork       = "It says it needs no network. That is not enforced on the computer Basalt runs on."
-	sentEgressLimit     = "It says it connects only to <hosts>. That is not enforced on the computer Basalt runs on."
+	sentRemoteOnward    = "BasaltDB cannot check what runs there or where it sends things next."
+	sentOwnUser         = "It runs on the computer BasaltDB runs on, as its own user, so it cannot read BasaltDB's files."
+	sentSameAccess      = "It runs on the computer BasaltDB runs on, with the same access as BasaltDB itself."
+	sentNoNetwork       = "It says it needs no network. That is not enforced on the computer BasaltDB runs on."
+	sentEgressLimit     = "It says it connects only to <hosts>. That is not enforced on the computer BasaltDB runs on."
 	sentNameCue         = "It also sees values from your database that appear in that text."
 	sentUsedFor         = "Used for: <agents>."
 	sentAskedBy         = "Asked by <agent>."
 	sentFingerprint     = "Plugin fingerprint: <fingerprint>"
 	// sentPortalSameUser is the portal page's one sentence not derived
 	// from the binding (CONTRACT.md, Plugin approval through the portal).
-	sentPortalSameUser = "Basalt runs on the agent's own computer, as the same user as the agent. Your approval decides whether Basalt runs this plugin. It cannot stop the agent from reading what Basalt can."
-	computerBasaltRuns = "the computer Basalt runs on"
+	sentPortalSameUser = "BasaltDB runs on the agent's own computer, as the same user as the agent. Your approval decides whether BasaltDB runs this plugin. It cannot stop the agent from reading what BasaltDB can."
+	computerBasaltRuns = "the computer BasaltDB runs on"
 )
 
 // hookSentence is what each hook sees, in plain words; hookLabel names that
 // access in a change's list.
 var (
 	hookSentence = map[string]string{
-		"wire.detect":      "It reads the text your agents send to the AI provider, before Basalt hides private values in it.",
+		"wire.detect":      "It reads the text your agents send to the AI provider, before BasaltDB hides private values in it.",
 		"feed.observe":     "It is told what your agents do in the database, such as which tables they change and how many rows, never the values.",
 		"approval.deliver": "It delivers your approval links. Anyone who can read where it delivers them can see the rows of writes waiting for your approval. Some links carry the whole request, so they can also see what the agent asked to run and why.",
 		"classify.suggest": "It reads the names and types of your tables and columns, never their values, and suggests which ones hold private data.",
@@ -795,7 +795,7 @@ func runsAt(e approvalEndpoint) string {
 
 func publisherOf(signer string) string {
 	if signer == "KNOWN" {
-		return "Basalt"
+		return "BasaltDB"
 	}
 	return "unknown"
 }

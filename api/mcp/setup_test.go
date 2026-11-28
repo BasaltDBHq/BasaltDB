@@ -402,7 +402,7 @@ func checksSummary(t *testing.T, p map[string]any, role string) string {
 	_, rotates := agent["verifier"]
 	switch {
 	case kind == "UPGRADE":
-		lines = append(lines, fmt.Sprintf("This upgrades Basalt's guard from version %v to %v; no agent changes.", guard["from"], guard["to"]),
+		lines = append(lines, fmt.Sprintf("This upgrades BasaltDB's guard from version %v to %v; no agent changes.", guard["from"], guard["to"]),
 			fmt.Sprintf("Prefix %s.", prefix))
 	case kind == "INSTALL":
 		lines = append(lines, fmt.Sprintf("This creates the agent %s (role %s). Its password comes from the code: only whoever made this code can log in as %s.", who, role, role))

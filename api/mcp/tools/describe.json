@@ -460,7 +460,7 @@
             "type": "null"
           }
         ],
-        "description": "RESOURCE: the write policy as it applies to this resource, when Basalt guards it and you can write it. Null on a read-only resource and on a resource you can write outside the guard."
+        "description": "RESOURCE: the write policy as it applies to this resource, when BasaltDB guards it and you can write it. Null on a read-only resource and on a resource you can write outside the guard."
       },
       "update": {
         "type": "object",
@@ -498,7 +498,7 @@
     "$defs": {
       "actions": {
         "type": "array",
-        "description": "What this agent may do, from its grants, as Basalt's ops: READ (in Postgres the SELECT grant), INSERT, UPDATE, DELETE.",
+        "description": "What this agent may do, from its grants, as BasaltDB's ops: READ (in Postgres the SELECT grant), INSERT, UPDATE, DELETE.",
         "items": {
           "type": "string",
           "enum": [

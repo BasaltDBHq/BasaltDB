@@ -104,7 +104,7 @@ func (s *Service) errorGuidance(te *toolresult.ToolError, f guidance.Failure) ([
 		person = s.steps.UnavailableSteps(b, te, f)
 	case guidance.CodeInternal:
 		b.Stop("Do not retry: the engine failed. Tell the person the error id so they can find it in the engine's log.")
-		person = fmt.Sprintf("Basalt hit an internal error and stopped this action. The engine's log has the details under error id %s.", te.ErrorID)
+		person = fmt.Sprintf("BasaltDB hit an internal error and stopped this action. The engine's log has the details under error id %s.", te.ErrorID)
 	default:
 		return nil, "", fmt.Errorf("no guidance for code %s", te.Code)
 	}
@@ -151,10 +151,10 @@ func (s *Service) refusedSteps(b *guidance.Steps, te *toolresult.ToolError, f gu
 	case string(action.ReasonDDL):
 		b.Stop("Do not retry and do not look for another way to change the schema.")
 		b.AskPerson("Tell the person which schema change you need; they make it themselves.")
-		return "The agent tried to change the database schema (DDL). Basalt never lets an agent do that. Make the change yourself if you want it."
+		return "The agent tried to change the database schema (DDL). BasaltDB never lets an agent do that. Make the change yourself if you want it."
 	case guidance.ReasonNoPrimaryKey:
 		b.Stop("The table has no primary key, so its writes cannot be recorded: do not retry or work around it.")
-		return fmt.Sprintf("%s has no primary key, so Basalt cannot guard writes to it and refuses them. Add a primary key to the table, "+
+		return fmt.Sprintf("%s has no primary key, so BasaltDB cannot guard writes to it and refuses them. Add a primary key to the table, "+
 			"or revoke the agent's write access to it.", guidance.Shown(s.tableFromDetail(te.Message), guidance.MaxTableChars))
 	case guidance.ReasonNotAllowed:
 		b.Stop("The database refused this action for the agent: do not retry or work around it.")

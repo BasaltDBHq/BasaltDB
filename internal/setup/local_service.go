@@ -479,7 +479,7 @@ func (s *LocalService) plan(ctx context.Context, tx Tx, j job, password, databas
 		return planned{}, s.setupFailed("read the guard prefix", err)
 	}
 	if installed != "" && installed != prefix {
-		return planned{}, refuse(CodePrefixMismatch, "This database's Basalt uses the prefix "+installed+", not "+prefix+".")
+		return planned{}, refuse(CodePrefixMismatch, "This database's BasaltDB uses the prefix "+installed+", not "+prefix+".")
 	}
 	var p planned
 	if p.replaced, p.removed, err = s.replaceOld(ctx, tx, j, database, installed == prefix, run); err != nil {
@@ -800,7 +800,7 @@ func (s *LocalService) check(ctx context.Context, req Request) (CheckAnswer, err
 	out := CheckAnswer{
 		Database: database, Lines: append(replacedLines(database, p), s.summary(j, database, p.seeded, needed, p.keep)...),
 		SQL:       RemovedSQL(p.removed) + p.seeded.Shown() + p.script.SQL(),
-		Questions: []Question{}, Notes: s.notes(p.seeded, p.script), PasskeyNeeded: needed, Challenge: &ch, Replace: replace,
+		Questions: []Question{}, Notes: s.notes(p.script), PasskeyNeeded: needed, Challenge: &ch, Replace: replace,
 	}
 	facts.apply(&out)
 	out.Lines = append(out.Lines, rekeyLines(j, p)...)
@@ -833,7 +833,7 @@ func listingAnswer(j job, database string, p planned, needed bool) (CheckAnswer,
 		return CheckAnswer{}, refuse(CodeNoTables, "The database has no table the admin can give the agent in the listed schemas. Create the tables first; nothing changed.")
 	}
 	return CheckAnswer{
-		Database: database, Lines: []string{fmt.Sprintf("This sets up Basalt in the database %s. Pick the tables the agent %s gets.", database, j.req.Agent)},
+		Database: database, Lines: []string{fmt.Sprintf("This sets up BasaltDB in the database %s. Pick the tables the agent %s gets.", database, j.req.Agent)},
 		Questions: []Question{}, Notes: []string{}, PasskeyNeeded: needed,
 		Tables: p.list.tables, Excluded: p.list.excluded, TablesMore: p.list.more,
 	}, nil
@@ -867,7 +867,7 @@ func passkeyNeeded(ctx context.Context, b LocalBackend, tx Tx, origin string) (b
 
 // summary is the fixed account of the install the person reads.
 func (s *LocalService) summary(j job, database string, seeded guardmodel.DemoPlan, passkeyNeeded, keep bool) []string {
-	lines := []string{fmt.Sprintf("This sets up Basalt in the database %s.", database)}
+	lines := []string{fmt.Sprintf("This sets up BasaltDB in the database %s.", database)}
 	if keep {
 		lines = append(lines, fmt.Sprintf("The agent %s (role %s) is already in the database, and this engine holds its password: this finishes its setup, which stopped before the engine wrote its config. Its password stays.", j.req.Agent, j.role))
 	} else {
@@ -875,6 +875,8 @@ func (s *LocalService) summary(j job, database string, seeded guardmodel.DemoPla
 	}
 	if !seeded.Exists() {
 		lines = append(lines, "It creates the sample schema "+s.be.DemoSchema()+" with its tables leads and lead_notes.")
+	} else {
+		lines = append(lines, "The sample schema "+s.be.DemoSchema()+" already exists: its rows stay as they are.")
 	}
 	lines = append(lines, "The agent can read and write "+strings.Join(s.be.DemoTables(), " and ")+", and nothing else. Every write it makes is recorded, and a large one waits for your passkey.")
 	if passkeyNeeded {
@@ -884,12 +886,8 @@ func (s *LocalService) summary(j job, database string, seeded guardmodel.DemoPla
 }
 
 // notes are the lines that depend on what the database holds.
-func (s *LocalService) notes(seeded guardmodel.DemoPlan, script guardmodel.Script) []string {
-	out := []string{}
-	if seeded.Exists() {
-		out = append(out, "sample schema "+s.be.DemoSchema()+" already exists; its rows are left as they are")
-	}
-	return append(out, script.Warnings...)
+func (s *LocalService) notes(script guardmodel.Script) []string {
+	return append([]string{}, script.Warnings...)
 }
 
 // timeLimit is err, or the time-limit refusal when the call ran out of time.

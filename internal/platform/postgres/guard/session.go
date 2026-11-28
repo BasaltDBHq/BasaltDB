@@ -135,7 +135,7 @@ func FinishChange(ctx context.Context, tx pgx.Tx, f Finish) (uuid.UUID, error) {
 // Refusal is an action the engine or the guard refused.
 type Refusal struct {
 	Intent    Intent
-	Op        string // READ, INSERT, UPDATE, DELETE or OTHER (Basalt's op)
+	Op        string // READ, INSERT, UPDATE, DELETE or OTHER (BasaltDB's op)
 	Statement string
 	Params    []any
 	Code      string

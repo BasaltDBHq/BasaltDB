@@ -197,7 +197,7 @@ const codePluginRefused = "PLUGIN_REFUSED"
 func uploadFailed(err error) *toolresult.ToolError {
 	return &toolresult.ToolError{
 		Code: "INTERNAL", Message: "the plugin's files could not be handed to the engine: " + err.Error(),
-		PersonMessage: "Basalt could not hand the plugin's files to its engine, so nothing was changed.",
+		PersonMessage: "BasaltDB could not hand the plugin's files to its engine, so nothing was changed.",
 		NextSteps:     []toolresult.NextStep{{Actor: toolresult.ActorAgent, Action: toolresult.ActionStop, Text: "Stop: the upload failed; do not retry in a loop."}},
 	}
 }
@@ -207,7 +207,7 @@ func uploadFailed(err error) *toolresult.ToolError {
 func refusal(reason, message string) *toolresult.ToolError {
 	return &toolresult.ToolError{
 		Code: codePluginRefused, Reason: reason, Message: message,
-		PersonMessage: "Basalt did not add or change the plugin: " + message,
+		PersonMessage: "BasaltDB did not add or change the plugin: " + message,
 		NextSteps: []toolresult.NextStep{
 			{Actor: toolresult.ActorAgent, Action: toolresult.ActionStop, Text: "Stop: the engine refused this plugin change; do not work around it."},
 			{Actor: toolresult.ActorAgent, Action: toolresult.ActionAskPerson, Text: "Show the person the personMessage; only they can decide about this plugin."},

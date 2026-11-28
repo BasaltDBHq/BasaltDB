@@ -491,7 +491,7 @@ func checkOSUser(users Users, name string) (uint32, error) {
 		return 0, refuse(CodeInvalidArgument, "This setup link names no OS user for the agent. Ask the agent for a new link.")
 	}
 	if strings.HasPrefix(name, "basalt-plugin-") || strings.HasPrefix(name, "_basalt-plugin-") {
-		return 0, bad("Basalt keeps that name for a plugin")
+		return 0, bad("BasaltDB keeps that name for a plugin")
 	}
 	u, err := users.Lookup(name)
 	if err != nil {

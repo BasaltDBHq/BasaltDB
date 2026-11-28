@@ -131,16 +131,16 @@ func (pc *Service) pluginsServed(opens bool) error {
 	case pc.core.Commands.AgentOperated():
 		if why := pc.noPortalLink(); opens && why != "" {
 			return noPortalLinkError("request_plugin is refused: "+why+", so there is no page to approve the plugin on. Nothing was written",
-				"Basalt cannot hand you a link to approve the plugin right now: "+why+". Nothing was changed.")
+				"BasaltDB cannot hand you a link to approve the plugin right now: "+why+". Nothing was changed.")
 		}
 	case pc.status.SameUser() || pc.deps.Requests == nil:
 		return pluginRefused(ReasonPluginSameUserMode,
 			"request_plugin is refused: this engine runs as the person's own OS user and keeps no plugins of its own. Nothing was written",
-			"This Basalt engine runs as your own user, so it keeps no plugins it could add for you. A plugin is added to its engine.json by hand.")
+			"This BasaltDB engine runs as your own user, so it keeps no plugins it could add for you. A plugin is added to its engine.json by hand.")
 	case opens && pc.core.PagesOrigin == "":
 		return pluginRefused(ReasonPluginNoLocalPages,
 			"request_plugin is refused: this engine serves no local pages, so there is no page to approve the plugin on. Nothing was written",
-			"This Basalt engine serves no approval pages on this computer, so you could not approve a plugin. Turn its local pages on first.")
+			"This BasaltDB engine serves no approval pages on this computer, so you could not approve a plugin. Turn its local pages on first.")
 	}
 	return nil
 }
@@ -190,7 +190,7 @@ func (pc *Service) pluginLink(ctx context.Context, o PluginOpened) (string, erro
 	}
 	return "", noPortalLinkError(
 		fmt.Sprintf("request_plugin opened the approval but cannot hand over its link: %s. The plugin %s/%s is written and waits for an approval; call request_plugin with name and instance to open a new one", why, o.Name, o.Instance),
-		fmt.Sprintf("Basalt cannot hand you a link to approve the plugin %s right now: %s. Nothing runs until you approve it.", o.Name, why))
+		fmt.Sprintf("BasaltDB cannot hand you a link to approve the plugin %s right now: %s. Nothing runs until you approve it.", o.Name, why))
 }
 
 // noPortalLinkError is PLUGIN_REFUSED NO_PORTAL_LINK.
@@ -383,7 +383,7 @@ func (pc *Service) pluginError(err error) error {
 	case errors.Is(err, ErrPluginNotFound):
 		return &toolresult.ToolError{Code: guidance.CodeNotFound, Message: err.Error()}
 	case errors.As(err, &r):
-		return pluginRefused(r.Reason, r.Message, "Basalt did not add or change the plugin: "+r.Message)
+		return pluginRefused(r.Reason, r.Message, "BasaltDB did not add or change the plugin: "+r.Message)
 	}
 	return err
 }
@@ -401,7 +401,7 @@ func pluginRefused(reason, message, person string) error {
 		steps.AskPerson("Ask the person to check that the database is up.").
 			CallTool(toolRequestPlugin, nil, "Once it answers, call request_plugin again (with name and instance when the plugin is already installed).")
 	case ReasonPluginNoPortalLink:
-		steps.AskPerson("Show the person the personMessage: it says why Basalt cannot hand over a link; status shows vault.").
+		steps.AskPerson("Show the person the personMessage: it says why BasaltDB cannot hand over a link; status shows vault.").
 			CallTool(toolRequestPlugin, nil, "Once the person says it is fixed, call request_plugin again: the same call when nothing was written, or with name and instance when the plugin is already installed.")
 	default:
 		steps.Stop("Stop: the engine refused this plugin change; do not work around it.").
@@ -425,10 +425,10 @@ const (
 // The page's level lines: personMessage carries the same words, so an
 // honest agent relays the warning; the page is the protection.
 const (
-	pluginLevelKnown       = "Published by Basalt."
+	pluginLevelKnown       = "Published by BasaltDB."
 	pluginLevelUnknown     = "Nobody vouches for this plugin. Add it only if you trust where it came from."
-	pluginLevelUnknownHere = "Nobody vouches for this plugin. It runs a stranger's program on the computer Basalt runs on, with the same " +
-		"access as Basalt itself, so it could read your database password and the key Basalt uses to hide private values."
+	pluginLevelUnknownHere = "Nobody vouches for this plugin. It runs a stranger's program on the computer BasaltDB runs on, with the same " +
+		"access as BasaltDB itself, so it could read your database password and the key BasaltDB uses to hide private values."
 )
 
 // pluginLevel is the page's level of a binding, from signer, endpoint and

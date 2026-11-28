@@ -477,7 +477,7 @@ func TestConnectMessageFitsForTheLongestName(t *testing.T) {
 			name = candidate
 		}
 	}
-	pm, ls := guidance.ConnectMessage("Finish setting up Basalt for "+name+".", links.Portal+"/connect#basalt-setup.1.x.y", "3f9a 21c0 7d44 e1b2 90ac")
+	pm, ls := guidance.ConnectMessage("Finish setting up BasaltDB for "+name+".", links.Portal+"/connect#basalt-setup.1.x.y", "3f9a 21c0 7d44 e1b2 90ac")
 	require.NoError(t, guidance.CheckPersonMessage(pm), pm)
 	mcptest.Require(t, pm, ls)
 }

@@ -147,7 +147,7 @@
               "OTHER",
               "REVERT"
             ],
-            "description": "Basalt's operation (CONTRACT.md, Stores, Operations); the store's own word is store.verb."
+            "description": "BasaltDB's operation (CONTRACT.md, Stores, Operations); the store's own word is store.verb."
           },
           "store": {
             "type": "object",

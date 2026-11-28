@@ -37,7 +37,7 @@ export function fingerprintText(fp) {
 // trustText is the question the page asks about trustRoot for host.
 export function trustText(host, trustRoot) {
   const date = trustRoot.expiresAt.slice(0, 10);
-  return `${host} presents a certificate authority Basalt does not know: ${trustRoot.subject}, SHA-256 ${fingerprintText(trustRoot.sha256)}, valid until ${date}. Check it against your provider's console. Trust it for this host only?`;
+  return `${host} presents a certificate authority BasaltDB does not know: ${trustRoot.subject}, SHA-256 ${fingerprintText(trustRoot.sha256)}, valid until ${date}. Check it against your provider's console. Trust it for this host only?`;
 }
 
 // hostOf is the host a pasted connection string names, or a plain word.

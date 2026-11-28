@@ -67,7 +67,7 @@ func setuprunRefuse(code, message string) *SetuprunRefusalError {
 
 // upgradeLinePrefix starts the summary line of an UPGRADE code, replaced by
 // "No guard change." when the code only records the engine.
-const upgradeLinePrefix = "This upgrades Basalt's guard"
+const upgradeLinePrefix = "This upgrades BasaltDB's guard"
 
 // Setup is one setup code that passed the checks needing no database.
 type Setup struct {

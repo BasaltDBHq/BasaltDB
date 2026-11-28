@@ -15,7 +15,7 @@
         "text": "Show the person the personMessage; only they can decide about this plugin."
       }
     ],
-    "personMessage": "This Basalt engine runs as your own user, so it keeps no plugins it could add for you. A plugin is added to its engine.json by hand.",
+    "personMessage": "This BasaltDB engine runs as your own user, so it keeps no plugins it could add for you. A plugin is added to its engine.json by hand.",
     "reason": "SAME_USER_MODE"
   },
   "isError": true,

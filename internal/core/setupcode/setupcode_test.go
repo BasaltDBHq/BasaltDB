@@ -191,7 +191,7 @@ func withCheck(body string) string {
 func TestDecodeMessages(t *testing.T) {
 	t.Parallel()
 	_, err := setupcode.Decode("hello")
-	require.EqualError(t, err, "This is not a Basalt setup code.")
+	require.EqualError(t, err, "This is not a BasaltDB setup code.")
 	_, err = setupcode.Decode("basalt-setup.1.abc.AAAAAA")
 	require.EqualError(t, err, "This setup code is damaged; copy it again.")
 	_, err = setupcode.Decode("basalt-setup.2.abc.AAAAAA")

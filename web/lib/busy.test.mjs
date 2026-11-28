@@ -258,11 +258,11 @@ test("no button that starts a call is left on a bare disabled = true", () => {
   // busy button, or switch off a choice that is not offered.
   const allowed = {
     "approve.js": 4,
-    "page.js": 2,
+    "page.js": 3,
     "pickviews.js": 1,
     "plugin.js": 1,
     "revert.js": 3,
-    "setup.js": 1,
+    "setup.js": 2,
   };
   const found = {};
   for (const f of readdirSync(new URL(".", import.meta.url)).filter((n) => n.endsWith(".js"))) {

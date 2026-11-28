@@ -196,7 +196,7 @@ func (s statusDeps) ledgerStatus(ctx context.Context, st guardmodel.Status) *gui
 }
 
 // reinstalledAsk is LEDGER_REINSTALLED's ASK_PERSON step.
-const reinstalledAsk = "Show the person this notice and ask whether someone on their team reinstalled Basalt. " +
+const reinstalledAsk = "Show the person this notice and ask whether someone on their team reinstalled BasaltDB. " +
 	"The tools keep working, and the notice stays until an admin acknowledges it."
 
 // addReinstalled is LEDGER_REINSTALLED when the ledger or the engine's kept

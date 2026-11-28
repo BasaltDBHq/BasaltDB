@@ -812,6 +812,8 @@ test("after a removal of the engine's last agent the page ticks this computer wh
   assert.equal(nodes["done-text"].textContent, "From the database app and from this computer. You can close this tab.");
   assert.deepEqual(nodes["removal-steps"].children.map((c) => c.textContent), removalSteps("app", "removed"));
   assert.equal(nodes["removal-mac"].hidden, false, "macOS keeps the engine's account: one line, no command");
+  assert.equal(nodes["removal-command"].hidden, false, "the removed screen says the basalt command stays");
+  assert.match(HTML, /<p id="removal-command" class="muted" hidden>The basalt command stays where you installed it \(brew uninstall basaltdb removes it\)\.<\/p>/);
   assert.doesNotMatch(HTML, /sysadminctl|dscl/, "the page gives no command");
   assert.equal(nodes["done-lines"].hidden, true);
 
@@ -819,6 +821,7 @@ test("after a removal of the engine's last agent the page ticks this computer wh
   await showRemoved({ job: "REMOVE", agent: "demo_bot" }, { ...done, engineRemoved: false, engineRemoving: false }, "app", gone, { navigator: { userAgent: "Macintosh" } });
   assert.deepEqual(other["removal-steps"].children.map((c) => c.textContent), removalSteps("app", "kept"));
   assert.equal(other["removal-mac"].hidden, true, "the engine stays: nothing is kept behind");
+  assert.equal(other["removal-command"].hidden, false);
   const failed = fakePage();
   await showRemoved({ job: "REMOVE", agent: "demo_bot" }, { ...done, engineRemoving: false, warnings: ["this engine could not ask to be removed"] }, "app", gone, {});
   assert.deepEqual(failed["removal-steps"].children.map((c) => c.textContent), removalSteps("app", "notAsked"));
@@ -1373,9 +1376,12 @@ test("the demo, update and removal page's Check and Set up buttons show their wo
   await run;
   rested(nodes.run, "Set up");
   assert.match(nodes.status.textContent, /cancelled or timed out/);
+  for (const id of ["check", "database-url", "confirm-os-user"]) assert.equal(nodes[id].disabled, false, `${id} comes back after the refusal`);
 
   const again = nodes.run.click();
   working(nodes.run, "Waiting for your passkey…");
+  for (const id of ["check", "database-url", "confirm-os-user"]) assert.equal(nodes[id].disabled, true, `${id} is off while the run works`);
+  assert.equal((await nodes.check.click(), g.calls.length), 1, "Check sends nothing mid-run");
   prompt.resolve({ credentialId: "aWQ" });
   await settle();
   await again;

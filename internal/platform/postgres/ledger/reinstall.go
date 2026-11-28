@@ -91,7 +91,7 @@ const (
 	noticeVia       = " (via Vault: %s)"
 	noticeNoRecord  = "This database's ledger was recreated or restored outside basalt init (no install record), first reported %s."
 	noticePrevious  = " Previous ledger ended at entry %d (hash %s), as reported with the credential of %s." +
-		" If nobody on your team reinstalled Basalt, treat this as tampering."
+		" If nobody on your team reinstalled BasaltDB, treat this as tampering."
 	noticeAlso        = "Also reported with the credential of %s: entry %d (hash %s)%s."
 	noticeMoreReports = ", and %d more reports"
 	noticeMoreAgents  = "and %d more agents"

@@ -51,7 +51,7 @@ const PROMPT_TIMEOUT_MS = 120000;
 // whole body at 16 KiB.
 const MAX_URL_CHARS = 4096;
 const POSTGRES_URL = /^postgres(?:ql)?:\/\//i;
-export const NOT_POSTGRES = "Basalt works with Postgres databases; paste a connection string that starts with postgresql://";
+export const NOT_POSTGRES = "BasaltDB works with Postgres databases; paste a connection string that starts with postgresql://";
 
 // The polls (CONTRACT.md, The reach check and The address hand-off): every
 // 5 seconds; the reach check for up to a minute; the pick-up is late after
@@ -259,7 +259,7 @@ const KINDS = new Set(["INSTALL", "AGENT", "UPGRADE"]);
 const WANTS = {
   INSTALL: "wants access to your database",
   AGENT: "wants to change its access to your database",
-  UPGRADE: "wants to upgrade Basalt in your database",
+  UPGRADE: "wants to upgrade BasaltDB in your database",
 };
 
 // ---- What the screens show, from the service's answers ----

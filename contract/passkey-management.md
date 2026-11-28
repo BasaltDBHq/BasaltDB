@@ -1,6 +1,6 @@
 ## Passkey management
 
-M4.1. WebAuthn gives the server no signal when a person deletes a passkey from a device or password manager, so Basalt never learns it on its own. Removal is explicit, on a setup page, and revoked in Postgres. There is no command: `basalt passkey` (`check`, `remove`) is removed, with the `/passkeys/check` and `/passkeys/forget` pages it linked to.
+M4.1. WebAuthn gives the server no signal when a person deletes a passkey from a device or password manager, so BasaltDB never learns it on its own. Removal is explicit, on a setup page, and revoked in Postgres. There is no command: `basalt passkey` (`check`, `remove`) is removed, with the `/passkeys/check` and `/passkeys/forget` pages it linked to.
 
 - **Where.** Persona 1: the local setup page's Update check lists the passkeys and removes or adds one ([`PASSKEY_REMOVE` and `PASSKEY_ADD`](setup-page.md#the-update-check)). Persona 2: the connect page after `basalt init --remote` runs again ([Update on the connect page](connect.md#update-on-the-connect-page)). The agent's `basalt init` (or `basalt init --remote`) prints the link; every hint that named `basalt passkey` names it instead.
 - **The list.** Every active passkey of the database, at most 100, oldest first: its label, when it was added and when it was last used (`last_used_at`, else never). A passkey of another origin than the page's is listed with its site: it signs only on that site's pages.

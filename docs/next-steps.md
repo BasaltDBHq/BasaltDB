@@ -24,7 +24,7 @@ The agent calls the `status` tool at the start of a session, after you say you f
 | `ENGINE_UNREACHABLE` | ERROR | The agent's MCP command cannot reach the engine. Start it. |
 | `REMOVED` | ERROR | You removed BasaltDB from this computer: no engine answers and its folders are gone. The agent removes its own MCP entry for `basalt` and stops. To set BasaltDB up again, ask it to run `basalt init`. |
 | `DATABASE_UNREACHABLE` | ERROR | The engine cannot reach the database. |
-| `TOO_MANY_CONNECTIONS` | ERROR | The agent has used all 8 database connections Basalt allows it. Another engine for the same agent may be running, or a stopped engine left sessions open. Stop any second engine; stale sessions close on their own within a few minutes. See [Connections](install.md#connections). |
+| `TOO_MANY_CONNECTIONS` | ERROR | The agent has used all 8 database connections BasaltDB allows it. Another engine for the same agent may be running, or a stopped engine left sessions open. Stop any second engine; stale sessions close on their own within a few minutes. See [Connections](install.md#connections). |
 | `CREDENTIAL_REJECTED` | ERROR | Postgres refuses the agent's login. |
 | `GUARD_MISSING` | ERROR | The guard is not installed. Run `basalt init`. |
 | `GUARD_OUTDATED` | ERROR | The guard is missing a breaking migration. The agent runs `basalt init` and gives you the update link. A guard from 0.0.1 is not updated: remove it as [Remove an older install](remove-old-install.md) says, then set up again. |

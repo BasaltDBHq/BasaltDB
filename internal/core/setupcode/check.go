@@ -107,7 +107,7 @@ type RecordedSetup struct {
 // the role). record_setup and CREATE ROLE enforce the same in Postgres.
 func CheckDatabase(p Payload, db Database) error {
 	if db.Prefix != "" && db.Prefix != p.Prefix {
-		return refuseWith(RefusalPrefixMismatch, "This setup code is for prefix "+p.Prefix+", but this database's Basalt uses "+db.Prefix+".")
+		return refuseWith(RefusalPrefixMismatch, "This setup code is for prefix "+p.Prefix+", but this database's BasaltDB uses "+db.Prefix+".")
 	}
 	agent, role := p.agentWord(), p.Role()
 	for _, s := range db.Setups {

@@ -2,7 +2,7 @@
 // the engine for a short link /reverts/<id>), check the lines against the
 // binding, show what will be restored and what is left alone, and sign the
 // binding with the person's passkey. From a short link it posts the
-// signature to the engine that served it (its own pages, or through Basalt
+// signature to the engine that served it (its own pages, or through BasaltDB
 // Vault), which relays it to Postgres. A long link has no engine to send a
 // signature to: the page only shows it.
 //

@@ -351,7 +351,7 @@ func (s *LocalService) installedPrefix(ctx context.Context, tx Tx) (string, erro
 		return "", s.setupFailed("read the guard prefix", err)
 	}
 	if prefix != "" && prefix != s.opts.Prefix {
-		return "", refuse(CodePrefixMismatch, "This database's Basalt uses the prefix "+prefix+", not "+s.opts.Prefix+".")
+		return "", refuse(CodePrefixMismatch, "This database's BasaltDB uses the prefix "+prefix+", not "+s.opts.Prefix+".")
 	}
 	return prefix, nil
 }
@@ -369,7 +369,7 @@ func (s *LocalService) installedGuard(ctx context.Context, tx Tx, database, what
 		return 0, s.setupFailed("read the guard version", err)
 	}
 	if prefix == "" || installed == 0 {
-		return 0, refuse(CodeGuardMissing, fmt.Sprintf("The database %s has no Basalt guard %s. Nothing changed.", database, what))
+		return 0, refuse(CodeGuardMissing, fmt.Sprintf("The database %s has no BasaltDB guard %s. Nothing changed.", database, what))
 	}
 	return installed, nil
 }
@@ -413,7 +413,7 @@ func (s *LocalService) planUpdate(ctx context.Context, tx Tx, j agentJob, databa
 	}
 	return agentPlan{
 		lines: []string{
-			fmt.Sprintf("This updates Basalt's guard in the database %s from version %d to %d.", database, installed, latest),
+			fmt.Sprintf("This updates BasaltDB's guard in the database %s from version %d to %d.", database, installed, latest),
 			"It adds only the guard's missing migrations: it changes no password, grant or policy and registers no passkey. The agent " + j.req.Agent + " keeps working and needs no restart.",
 		},
 		notes: append([]string{}, script.Warnings...), script: script, installed: installed, latest: latest,

@@ -29,7 +29,7 @@ A row is restored only if nobody wrote it after the last in-scope change. Otherw
 | `CASCADE` | The inverse write would cascade into a row that is not part of the revert |
 | `CONSTRAINT` | The inverse write fails a constraint on trial; the line carries the store's error code in `store.code` |
 
-`SCHEMA_CHANGED` keeps its name in every store: schema means the structure of the data (Basalt says `namespaces` for Postgres's schemas). A store reports only the reasons that apply to it.
+`SCHEMA_CHANGED` keeps its name in every store: schema means the structure of the data (BasaltDB says `namespaces` for Postgres's schemas). A store reports only the reasons that apply to it.
 
 ### Lines, binding and codes
 

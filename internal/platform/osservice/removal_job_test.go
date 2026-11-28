@@ -83,10 +83,8 @@ func TestRemovalJobGate(t *testing.T) {
 				require.NoError(t, err, "%s %s: %s", goos, v.name, out)
 			}
 			require.Equal(t, v.wentOn, strings.Contains(out, "went-on"), "%s %s: %s", goos, v.name, out)
-			if v.name != "a folder" {
-				_, err := os.Lstat(marker)
-				require.ErrorIs(t, err, os.ErrNotExist, "%s %s: the marker is unlinked", goos, v.name)
-			}
+			_, err = os.Lstat(marker)
+			require.ErrorIs(t, err, os.ErrNotExist, "%s %s: the marker is gone", goos, v.name)
 			if v.name == "a symlink to a file" {
 				require.FileExists(t, filepath.Join(dir, "target"), "%s: the link's target stays", goos)
 			}
@@ -108,7 +106,7 @@ func TestRemovalJobScript(t *testing.T) {
 		remove, err := osservice.RemoveScript(goos)
 		require.NoError(t, err)
 		require.True(t, strings.HasSuffix(script, remove), "%s: the removal script follows the gate", goos)
-		require.Less(t, strings.Index(script, `rm -f "$marker"`), strings.Index(script, "set -eu"), goos)
+		require.Less(t, strings.Index(script, `rm -rf "$marker"`), strings.Index(script, "set -eu"), goos)
 		for _, never := range []string{"$1", "$@", "$*", "read ", "cat \"$marker\"", "$HOME", "$PWD"} {
 			gate, _, _ := strings.Cut(script, "set -eu\n")
 			require.NotContains(t, gate, never, "%s: the gate reads no input", goos)
@@ -144,7 +142,7 @@ func TestInstallScriptWritesTheRemovalJob(t *testing.T) {
 			"put_file /Library/LaunchDaemons/dev.basaltdb.remove.plist <<'END_OF_REMOVAL_UNIT'\n",
 			"<string>/bin/sh</string>\n\t\t<string>/usr/local/libexec/basalt-remove</string>",
 			"<key>WatchPaths</key>\n\t<array>\n\t\t<string>/Library/Application Support/Basalt/state/remove-requested</string>",
-			"launchctl bootout system/dev.basaltdb.remove >/dev/null 2>&1 || true\nlaunchctl bootstrap system /Library/LaunchDaemons/dev.basaltdb.remove.plist\n",
+			"launchctl print system/dev.basaltdb.remove >/dev/null 2>&1 || launchctl bootstrap system /Library/LaunchDaemons/dev.basaltdb.remove.plist\n",
 		},
 	} {
 		script, err := osservice.InstallScript(goos, dialogSource)

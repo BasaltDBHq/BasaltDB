@@ -551,11 +551,8 @@ func (s *LocalService) runAgentJob(ctx context.Context, req Request) (RunAnswer,
 // is there; when it is not, a warning says so and the engine stays,
 // serving no agent.
 func (s *LocalService) askRemoval(answer *RunAnswer) bool {
-	if s.opts.StateDir == "" {
-		return false
-	}
 	marker := filepath.Join(s.opts.StateDir, servicespec.RemovalMarkerName)
-	if err := s.be.WriteFile(marker, nil); err != nil {
+	if err := s.be.CreateMarker(marker); err != nil {
 		answer.Warnings = append(answer.Warnings, "this engine could not ask to be removed from this computer, so it stays, serving no agent: "+err.Error())
 		return false
 	}

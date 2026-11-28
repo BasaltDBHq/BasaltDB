@@ -436,13 +436,16 @@ async function remove() {
   await page.locator("#removal-steps").waitFor({ state: "visible" });
   await until("the page to tick this computer", async () => (await page.locator("#done-title").innerText()).trim() === "BasaltDB is removed", 120000);
   const steps = await page.locator("#removal-steps li").allInnerTexts();
-  assert.deepEqual(steps.map((t) => t.trim()), ["✓ Database e2e: BasaltDB removed", "✓ This computer: engine removed", "Your agent: drops its connection the next time you talk to it."]);
+  assert.deepEqual(steps.map((t) => t.trim()), ["✓ Removed from the database e2e", "✓ Removed from this computer", "Agent connection: your agent drops it the next time you talk to it."]);
   assert.equal(await page.locator("#removal-mac").isVisible(), process.platform === "darwin" && /Macintosh/.test(await page.evaluate(() => navigator.userAgent)));
   assert.equal(await Promise.race([init.exited, sleep(120000).then(() => "timeout")]), 0, `init after the removal: ${init.err()}`);
   assert.match(init.err(), /the engine is removing itself from this computer/);
   assert.ok(!/administrator dialog/.test(init.err()), "no password dialog");
 
-  await until("the removal job to finish", () => !serviceListed() && !jobListed(), 60000);
+  // The job removes its own units before the folders and, on Linux, the
+  // accounts: wait for the last of them.
+  await until("the removal job to finish", () => !serviceListed() && !jobListed() && !fs.existsSync(CONFIG_DIR) && !fs.existsSync(SERVICE_BIN) &&
+    (process.platform === "darwin" || engineAccount() === ""), 60000);
   assert.ok(!fs.existsSync(SERVICE_BIN), `the service's copy ${SERVICE_BIN} is deleted`);
   assert.ok(!fs.existsSync(CONFIG_DIR), `${CONFIG_DIR} is deleted`);
   for (const f of REMOVAL_JOB) assert.ok(!fs.existsSync(f), `the removal job removed itself: ${f}`);

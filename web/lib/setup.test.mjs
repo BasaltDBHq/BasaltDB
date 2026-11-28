@@ -766,8 +766,9 @@ test("a removal is confirmed by its admin string: the button names the database 
 });
 
 test("the removal's checklist: the database, this computer, the agent's connection", () => {
-  assert.deepEqual(removalSteps("app", "removing"), ["✓ Database app: BasaltDB removed", "… This computer: removing the engine", "Your agent: drops its connection the next time you talk to it."]);
-  assert.equal(removalSteps("app", "removed")[1], "✓ This computer: engine removed");
+  assert.deepEqual(removalSteps("app", "removing"), ["✓ Removed from the database app", "Removing from this computer…", "Agent connection: your agent drops it the next time you talk to it."]);
+  assert.equal(removalSteps("app", "removed")[1], "✓ Removed from this computer");
+  assert.match(removalSteps("app", "notAsked")[1], /serving no agent/);
   assert.match(removalSteps("app", "stuck")[1], /still running/);
   assert.match(removalSteps("app", "kept")[1], /serving your other agents/);
   assert.ok(isMac({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" }));
@@ -799,6 +800,7 @@ test("after a removal of the engine's last agent the page ticks this computer wh
   const done = { agent: "demo_bot", lines: ["BasaltDB removed from the database app"], warnings: [], passkeys: [], engineRemoved: true, engineRemoving: true };
   await showRemoved({ job: "REMOVE", agent: "demo_bot" }, done, "app", gone, { sleep: async () => {}, navigator: { userAgent: "Macintosh" } });
   assert.equal(nodes["done-title"].textContent, "BasaltDB is removed");
+  assert.equal(nodes["done-text"].textContent, "From the database app and from this computer. You can close this tab.");
   assert.deepEqual(nodes["removal-steps"].children.map((c) => c.textContent), removalSteps("app", "removed"));
   assert.equal(nodes["removal-mac"].hidden, false, "macOS keeps the engine's account: one line, no command");
   assert.doesNotMatch(HTML, /sysadminctl|dscl/, "the page gives no command");
@@ -808,6 +810,9 @@ test("after a removal of the engine's last agent the page ticks this computer wh
   await showRemoved({ job: "REMOVE", agent: "demo_bot" }, { ...done, engineRemoved: false, engineRemoving: false }, "app", gone, { navigator: { userAgent: "Macintosh" } });
   assert.deepEqual(other["removal-steps"].children.map((c) => c.textContent), removalSteps("app", "kept"));
   assert.equal(other["removal-mac"].hidden, true, "the engine stays: nothing is kept behind");
+  const failed = fakePage();
+  await showRemoved({ job: "REMOVE", agent: "demo_bot" }, { ...done, engineRemoving: false, warnings: ["this engine could not ask to be removed"] }, "app", gone, {});
+  assert.deepEqual(failed["removal-steps"].children.map((c) => c.textContent), removalSteps("app", "notAsked"));
 });
 
 // ---- The Update check: a CHANGE link opens on doctor ----

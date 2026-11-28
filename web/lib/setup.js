@@ -148,16 +148,18 @@ export function removeButtonText(checked) {
 // setup page, Removing the engine service): the database, this computer and
 // the agent's connection.
 export const REMOVAL_TEXT = {
-  database: (db) => `✓ Database ${db}: BasaltDB removed`,
-  removing: "… This computer: removing the engine",
-  removed: "✓ This computer: engine removed",
+  database: (db) => `✓ Removed from the database ${db}`,
+  removing: "Removing from this computer…",
+  removed: "✓ Removed from this computer",
   stuck: "This computer: the engine is still running. Ask your agent to call status: it says what is left.",
   kept: "This computer: the engine stays, serving your other agents.",
-  agent: "Your agent: drops its connection the next time you talk to it.",
+  notAsked: "This computer: the engine stays, serving no agent (the warning below says why).",
+  agent: "Agent connection: your agent drops it the next time you talk to it.",
+  done: (db) => `From the database ${db} and from this computer. You can close this tab.`,
 };
 
 // removalSteps are the checklist's lines; computer is "removing",
-// "removed", "stuck" or "kept".
+// "removed", "stuck", "kept" or "notAsked".
 export function removalSteps(database, computer) {
   return [REMOVAL_TEXT.database(database), REMOVAL_TEXT[computer], REMOVAL_TEXT.agent];
 }
@@ -2069,7 +2071,7 @@ export async function showRemoved(job, done, database, fetchFn, env = {}) {
   list("done-lines", []);
   $("removal-mac").hidden = !(done.engineRemoving && isMac(env.navigator ?? globalThis.navigator));
   if (!done.engineRemoving) {
-    steps("kept");
+    steps(done.engineRemoved ? "notAsked" : "kept");
     $("done-title").textContent = JOB_TEXT.REMOVE.removed;
     return;
   }
@@ -2078,6 +2080,7 @@ export async function showRemoved(job, done, database, fetchFn, env = {}) {
   const gone = await engineGone(fetchFn, env);
   steps(gone ? "removed" : "stuck");
   $("done-title").textContent = gone ? JOB_TEXT.REMOVE.removed : "Removing BasaltDB…";
+  if (gone) $("done-text").textContent = REMOVAL_TEXT.done(database);
 }
 
 if (typeof document !== "undefined") main();

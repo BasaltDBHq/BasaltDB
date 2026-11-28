@@ -291,6 +291,10 @@ type EngineFiles interface {
 	// WriteFile writes data at path as config.WriteFile does.
 	WriteFile(path string, data []byte) error
 	Remove(path string) error
+	// CreateMarker creates an empty file at path in place (no rename),
+	// mode 0600, never through a symlink: the removal job's marker, which
+	// a WatchPaths job and a PathExists unit see as the path appearing.
+	CreateMarker(path string) error
 	UpsertAgentVault(path string, s config.Settings, a config.Agent) (config.VaultWritten, error)
 	RemoveAgents(path string, names []string) (removedFile bool, err error)
 }

@@ -263,7 +263,7 @@ test("no button that starts a call is left on a bare disabled = true", () => {
     "plugin.js": 1,
     "remove.js": 1,
     "revert.js": 3,
-    "setup.js": 3,
+    "setup.js": 1,
   };
   const found = {};
   for (const f of readdirSync(new URL(".", import.meta.url)).filter((n) => n.endsWith(".js"))) {

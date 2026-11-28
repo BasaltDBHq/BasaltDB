@@ -236,10 +236,11 @@ Then the engine removes itself from this computer: the setup put a small removal
 
 The `basalt` binary you installed stays: you need it to set up again. The service stays when the engine still serves an agent of another database: remove that one too, and the service goes with the last. On Linux an OS user that can log in is never deleted.
 
-**macOS keeps the hidden system accounts.** macOS lets a background job delete a user only with Full Disk Access, so the removal keeps `_basalt` (and any `_basalt-plugin-*`) with its group. They cannot log in and own nothing once the folders are gone, and a new setup uses them again. To delete them anyway, in Terminal:
+**macOS keeps the hidden system accounts.** macOS lets a background job delete a user only with Full Disk Access, so the removal keeps `_basalt` (and any `_basalt-plugin-*`) with its group. They cannot log in and own nothing once the folders are gone, and a new setup uses them again. To delete them anyway, in Terminal, the user and then its group (a new setup refuses a `_basalt` group left without its user):
 
 ```sh
 sudo sysadminctl -deleteUser _basalt
+sudo dseditgroup -o delete _basalt
 ```
 
 To set BasaltDB up again, ask your agent to run `basalt init`; your computer asks for your password once, as on the first setup.

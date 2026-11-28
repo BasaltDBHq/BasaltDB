@@ -90,7 +90,9 @@ asked=
 if [ -f "$marker" ] && [ ! -L "$marker" ] && [ "$(%[2]s "$marker")" = "$(id -u %[3]s 2>/dev/null)" ]; then
 	asked=1
 fi
-rm -f "$marker"
+# A folder goes too, or a PathExists unit would fire again on it; rm
+# never follows a symlink, at the marker or inside a folder.
+rm -rf "$marker"
 [ -n "$asked" ] || { echo "basalt: $marker is not a plain file of %[3]s, so nothing was removed" >&2; exit 1; }
 `, scriptWord(RemovalMarker(goos)), owner, DefaultUser(goos))
 }
@@ -164,7 +166,9 @@ func removalJobSteps(goos string) (string, error) {
 		if err := put(darwinRemovalPlist, removalUnitEnd, darwinRemovalDaemon()); err != nil {
 			return "", err
 		}
-		fmt.Fprintf(&b, "launchctl bootout system/%[1]s >/dev/null 2>&1 || true\nlaunchctl bootstrap system %[2]s\n", darwinRemovalLabel, darwinRemovalPlist)
+		// A job already loaded (a restart) keeps its definition, which is
+		// the same text: bootstrap only one that is not.
+		fmt.Fprintf(&b, "launchctl print system/%[1]s >/dev/null 2>&1 || launchctl bootstrap system %[2]s\n", darwinRemovalLabel, darwinRemovalPlist)
 		return b.String(), nil
 	}
 	pathUnit, serviceUnit := linuxRemovalUnits()

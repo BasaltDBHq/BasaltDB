@@ -288,7 +288,8 @@ func installPreflight(goos string, spec servicespec.Spec) string {
 }
 
 // installSteps makes the engine's account and folders, writes the unit and
-// starts it: the install script's steps after its checks.
+// starts it, then writes and loads the removal job (removalJobSteps): the
+// install script's steps after its checks.
 func installSteps(goos string, spec servicespec.Spec) (string, error) {
 	body := linuxScript(spec)
 	unit := SystemdUnit(spec)
@@ -301,7 +302,11 @@ func installSteps(goos string, spec servicespec.Spec) (string, error) {
 	if strings.Contains(unit, "\n"+unitEnd+"\n") {
 		return "", errors.New("the unit holds the script's own end marker")
 	}
-	return body + fmt.Sprintf("put_file %s <<'%s'\n%s%s\n%s", scriptWord(UnitPath(goos)), unitEnd, unit, unitEnd, start), nil
+	job, err := removalJobSteps(goos)
+	if err != nil {
+		return "", err
+	}
+	return body + fmt.Sprintf("put_file %s <<'%s'\n%s%s\n%s", scriptWord(UnitPath(goos)), unitEnd, unit, unitEnd, start) + job, nil
 }
 
 // scriptHelpers are the shell functions the install script uses. stat

@@ -81,20 +81,18 @@ getent() {
 	return fakes, log
 }
 
-// The removal deletes an OS user's group only once the user is gone: a
-// user it cannot delete keeps its group, so the pair an install takes over
-// stays whole, and a group left without its user is named.
+// The Linux removal deletes an OS user's group only once the user is
+// gone: a user it cannot delete keeps its group, so the pair an install
+// takes over stays whole, and a group left without its user is named.
+// macOS deletes no account (TestRemoveScriptKeepsTheMacOSAccounts).
 func TestRemoveScriptDeletesTheGroupOnlyAfterItsUser(t *testing.T) {
 	t.Parallel()
-	for _, goos := range []string{"linux", "darwin"} {
+	for _, goos := range []string{"linux"} {
 		script, err := osservice.RemoveScript(goos)
 		require.NoError(t, err)
 		helpers, _, ok := strings.Cut(script, osservice.ScriptHelpersEnd)
 		require.True(t, ok)
-		deleteUser, deleteGroup := "userdel", "groupdel"
-		if goos == "darwin" {
-			deleteUser, deleteGroup = "dscl . -delete /Users/", "dscl . -delete /Groups/"
-		}
+		deleteUser, deleteGroup := "userdel -f", "groupdel"
 		for _, v := range []struct {
 			name              string
 			groupExists       bool
@@ -129,14 +127,12 @@ func TestRemoveScriptDeletesTheGroupOnlyAfterItsUser(t *testing.T) {
 }
 
 // The service stops before its processes are waited for and its user is
-// deleted. A user kept with its group is said at the end (on macOS on
-// stdout: the dialog drops a script's stderr when it succeeds), and a group
-// left without its user fails the script.
+// deleted. A user kept with its group is said at the end, and a group left
+// without its user fails the script.
 func TestRemoveScriptOrder(t *testing.T) {
 	t.Parallel()
 	for goos, steps := range map[string][]string{
-		"linux":  {"systemctl disable --now basalt-engine.service", "remove_dir /etc/basalt", "delete_account basalt\n", "[ -z \"$kept\" ] ||\n\techo ", "[ -z \"$orphaned\" ] ||\n\tfail "},
-		"darwin": {"launchctl bootout system/dev.basaltdb.engine", "remove_dir '/Library/Application Support/Basalt'", "delete_account _basalt\n", "[ -z \"$kept\" ] ||\n\techo ", "[ -z \"$orphaned\" ] ||\n\tfail "},
+		"linux": {"systemctl disable --now basalt-engine.service", "remove_dir /etc/basalt", "delete_account basalt\n", "[ -z \"$kept\" ] ||\n\techo ", "[ -z \"$orphaned\" ] ||\n\tfail "},
 	} {
 		script, err := osservice.RemoveScript(goos)
 		require.NoError(t, err)
@@ -151,14 +147,11 @@ func TestRemoveScriptOrder(t *testing.T) {
 		_, kept, _ := strings.Cut(body, "[ -z \"$kept\" ] ||\n")
 		kept, _, _ = strings.Cut(kept, "\n")
 		require.Contains(t, kept, "the next install uses it again", goos)
-		require.Equal(t, goos == "linux", strings.HasSuffix(kept, ">&2"), "%s: on macOS the note goes to stdout", goos)
+		require.True(t, strings.HasSuffix(kept, ">&2"), goos)
 		_, fn, ok := strings.Cut(helpers, "delete_account() {")
 		require.True(t, ok, goos)
 		wait := strings.Index(fn, `pgrep -U "$1"`)
-		user, group := strings.Index(fn, `userdel "$1"`), strings.Index(fn, `groupdel "$1"`)
-		if goos == "darwin" {
-			user, group = strings.Index(fn, `dscl . -delete "/Users/$1"`), strings.Index(fn, `dscl . -delete "/Groups/$1"`)
-		}
+		user, group := strings.Index(fn, `userdel -f "$1"`), strings.Index(fn, `groupdel "$1"`)
 		require.True(t, wait >= 0 && wait < user && user < group, "%s: wait, then the user, then the group", goos)
 	}
 }
@@ -347,8 +340,7 @@ chown() { echo "chown $*"; }
 func TestRemoveScriptNamesTheAccountsLeft(t *testing.T) {
 	t.Parallel()
 	for goos, want := range map[string][2]string{
-		"linux":  {"To delete it: userdel basalt; ", "delete it with groupdel basalt; "},
-		"darwin": {"sudo dscl . -delete /Users/_basalt, then sudo dscl . -delete /Groups/_basalt; ", "delete it with sudo dscl . -delete /Groups/_basalt; "},
+		"linux": {"To delete it: userdel -f basalt; ", "delete it with groupdel basalt; "},
 	} {
 		script, err := osservice.RemoveScript(goos)
 		require.NoError(t, err)
@@ -364,4 +356,17 @@ kept=" `+user+`" orphaned=" `+user+`"
 		require.Contains(t, out, want[1], goos)
 		require.NotContains(t, out, "NAME", goos)
 	}
+}
+
+// macOS keeps the engine's and its plugins' OS accounts: a root job cannot
+// delete a user without Full Disk Access, and a new install uses them
+// again. The script deletes no account and says so.
+func TestRemoveScriptKeepsTheMacOSAccounts(t *testing.T) {
+	t.Parallel()
+	script, err := osservice.RemoveScript("darwin")
+	require.NoError(t, err)
+	for _, never := range []string{"dscl . -delete", "sysadminctl", "dseditgroup", "delete_account"} {
+		require.NotContains(t, script, never)
+	}
+	require.Contains(t, script, "macOS keeps its hidden system accounts (_basalt and its plugins' _basalt-plugin-*): a new install uses them again.")
 }

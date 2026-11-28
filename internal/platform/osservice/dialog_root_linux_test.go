@@ -81,7 +81,7 @@ func TestInstallScriptAsRoot(t *testing.T) {
 	sh(t, "mkdir -p /etc/systemd/system /usr/local/bin && install -o root -g root -m 0755 /bin/true "+rootBinary)
 	clean := func() {
 		sh(t, "userdel basalt 2>/dev/null; groupdel basalt 2>/dev/null; rm -rf /etc/basalt /opt/basalt "+osservice.SystemdUnitPath+
-			" "+serviceBinary+" "+serviceBinary+".basalt-new /tmp/evil-basalt"+
+			" "+serviceBinary+" "+serviceBinary+".basalt-new /tmp/evil-basalt /usr/libexec/basalt-remove /etc/systemd/system/basalt-remove.path /etc/systemd/system/basalt-remove.service"+
 			"; mkdir -p /usr/libexec; chown root:root /usr/libexec; chmod 0755 /etc/systemd/system /usr/local/bin /usr/libexec; chown root:root "+rootBinary+"; chmod 0755 "+rootBinary+"; true")
 	}
 	clean()
@@ -222,7 +222,8 @@ func TestInstallScriptAsRoot(t *testing.T) {
 		requireServiceCopy(t, rootBinary)
 		log, err := os.ReadFile("/tmp/systemctl.log")
 		require.NoError(t, err)
-		require.Equal(t, strings.Repeat("daemon-reload\nenable --now basalt-engine.service\n", 2), string(log))
+		require.Equal(t, strings.Repeat("daemon-reload\nenable --now basalt-engine.service\ndaemon-reload\nenable --now basalt-remove.path\n", 2), string(log))
+		require.True(t, exists(`[ "$(stat -c '%U:%G %a' /usr/libexec/basalt-remove /etc/systemd/system/basalt-remove.path /etc/systemd/system/basalt-remove.service | sort -u)" = "root:root 644" ]`), "the removal job, root's")
 	})
 }
 
@@ -243,7 +244,7 @@ func TestRemoveScriptAsRoot(t *testing.T) {
 	sh(t, "mkdir -p /etc/systemd/system /usr/local/bin && install -o root -g root -m 0755 /bin/true "+rootBinary)
 	clean := func() {
 		sh(t, "for u in basalt basalt-plugin-ner-default basalt-plugin-shell-default; do userdel $u 2>/dev/null; done; groupdel basalt 2>/dev/null; "+
-			"rm -rf /etc/basalt /var/lib/basalt /run/basalt /opt/basalt /etc/systemd/system/basalt-*.service /tmp/systemctl.log "+serviceBinary+"; true")
+			"rm -rf /etc/basalt /var/lib/basalt /run/basalt /opt/basalt /etc/systemd/system/basalt-*.service /etc/systemd/system/basalt-*.path /usr/libexec/basalt-remove /tmp/systemctl.log "+serviceBinary+"; true")
 	}
 	clean()
 	t.Cleanup(clean)
@@ -301,6 +302,61 @@ func TestRemoveScriptAsRoot(t *testing.T) {
 		// Run again: nothing is left, and it still succeeds.
 		out, err = runRemove(t)
 		require.NoError(t, err, out)
+	})
+	t.Run("the removal job runs only on the engine's marker", func(t *testing.T) {
+		defer clean()
+		installed(t)
+		runJob := func() (string, error) {
+			script, err := os.ReadFile("/usr/libexec/basalt-remove")
+			require.NoError(t, err)
+			want, err := osservice.RemovalJobScript("linux")
+			require.NoError(t, err)
+			require.Equal(t, want, string(script), "the install wrote the job's script")
+			out, err := exec.Command("/bin/sh", "/usr/libexec/basalt-remove").CombinedOutput()
+			return string(out), err
+		}
+		out, err := runJob()
+		require.NoError(t, err, out)
+		require.FileExists(t, osservice.SystemdUnitPath, "no marker: nothing is removed")
+		require.True(t, exists("getent passwd basalt"))
+
+		sh(t, "ln -s /etc/passwd /var/lib/basalt/remove-requested")
+		out, err = runJob()
+		require.Error(t, err, out)
+		require.Contains(t, out, "so nothing was removed")
+		require.NoFileExists(t, "/var/lib/basalt/remove-requested", "the link is unlinked")
+		require.FileExists(t, "/etc/passwd", "its target stays")
+		require.FileExists(t, osservice.SystemdUnitPath)
+
+		sh(t, "touch /var/lib/basalt/remove-requested")
+		out, err = runJob()
+		require.Error(t, err, out)
+		require.Contains(t, out, "so nothing was removed", "a marker root made is not the engine's")
+		require.FileExists(t, osservice.SystemdUnitPath)
+
+		sh(t, "touch /etc/basalt/engine.json && install -o basalt -g basalt -m 0600 /dev/null /var/lib/basalt/remove-requested")
+		out, err = runJob()
+		require.Error(t, err, out)
+		require.Contains(t, out, "/etc/basalt/engine.json still exists")
+		require.NoFileExists(t, "/var/lib/basalt/remove-requested", "a refused marker is unlinked too")
+		sh(t, "rm -f /etc/basalt/engine.json")
+
+		sh(t, "install -o basalt -g basalt -m 0600 /dev/null /var/lib/basalt/remove-requested")
+		sh(t, "rm -f /tmp/systemctl.log")
+		out, err = runJob()
+		require.NoError(t, err, out)
+		require.NoFileExists(t, osservice.SystemdUnitPath)
+		for _, f := range []string{"/usr/libexec/basalt-remove", "/etc/systemd/system/basalt-remove.path", "/etc/systemd/system/basalt-remove.service", serviceBinary} {
+			require.NoFileExists(t, f, "the job removes itself and the service's basalt")
+		}
+		for _, d := range []string{"/etc/basalt", "/var/lib/basalt", "/opt/basalt"} {
+			require.NoDirExists(t, d)
+		}
+		require.False(t, exists("getent passwd basalt"), out)
+		require.False(t, exists("getent group basalt"), out)
+		log, err := os.ReadFile("/tmp/systemctl.log")
+		require.NoError(t, err)
+		require.Contains(t, string(log), "disable --now basalt-remove.path\n")
 	})
 	t.Run("an engine account that is not the install's stays", func(t *testing.T) {
 		defer clean()

@@ -152,7 +152,13 @@ func RestartScript(goos string, src Source) (string, error) {
 		b.WriteString(copyBinary(goos, src))
 	}
 	b.WriteString(breakingReset(goos))
-	fmt.Fprintf(&b, "if [ -n \"$breaking_reset\" ]; then\n%selse\n%sfi\n", steps, restart)
+	job, err := removalJobSteps(goos)
+	if err != nil {
+		return "", err
+	}
+	// installSteps writes the removal job too; a plain restart writes it
+	// again, so an engine installed before the job has it from now on.
+	fmt.Fprintf(&b, "if [ -n \"$breaking_reset\" ]; then\n%selse\n%s%sfi\n", steps, restart, job)
 	return b.String(), nil
 }
 

@@ -93,7 +93,7 @@ func TestAnOldShimGetsAnActionableErrorFromANewEngine(t *testing.T) {
 	require.Equal(t, mcpserver.ErrCodeVersionMismatch, resp.Error.Code)
 	require.Contains(t, resp.Error.Message, "too old")
 	require.Contains(t, resp.Error.Message, "Reconnect the MCP server")
-	require.Contains(t, resp.Error.Message, "/mcp")
+	require.Contains(t, resp.Error.Message, "reconnect basalt in your client's MCP settings")
 
 	// Every later request gets the same answer, not a silent drop.
 	_, err = conn.Write([]byte(`{"jsonrpc":"2.0","id":8,"method":"tools/list"}` + "\n"))

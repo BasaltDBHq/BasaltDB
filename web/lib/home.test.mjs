@@ -16,7 +16,7 @@ test("a running engine shows counts, the provider kind and three health rows", (
     ["Passkeys", "1 device can approve"],
   ]);
   assert.deepEqual(v.setup.checks.map((c) => c.label), ["Check your Supabase setup"]);
-  assert.match(v.setup.text, /^Opens the check-up: certificate, passkeys and updates\. Changes there need your passkey or the database admin string\.$/);
+  assert.match(v.setup.text, /^Opens the check-up: certificate, passkeys and updates\. Changes there need your passkey or your database's admin connection string\.$/);
   assert.ok(v.changes);
 });
 

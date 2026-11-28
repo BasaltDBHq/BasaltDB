@@ -14,17 +14,17 @@
   <link rel="modulepreload" href="../lib/compact.js" integrity="sha384-fuduyHELZPN04P63QueohM1bUIUVXRfvWGzR9uHrfZbGZbiB5EEmKmZRwailqr0p">
   <link rel="modulepreload" href="../lib/confirm.js" integrity="sha384-JQ0i8CUu2SvFMur5sqfa5/R1g2OUQRN+U1b4YeyIBS+X8MiEn+r5dERYmiP7iQBd">
   <link rel="modulepreload" href="../lib/deflate.js" integrity="sha384-jYvkCzNHlr7rnXMbluHr7+f08Oo3djFPnbjD4hlC5cKer+nCf+uLf2CZYslw19rU">
-  <link rel="modulepreload" href="../lib/doctor.js" integrity="sha384-RG0KwnDmnqhb8/RtXltcdY8yOMU1ZsKS02W8ZeGBDPvwfyh1jZDMgnW3oyZt15Ge">
+  <link rel="modulepreload" href="../lib/doctor.js" integrity="sha384-VvLKwdb/kxs/jh2ekS35H2Px0Z/Pkoc3ipRcPCObewuTV01I+/XPvr0Hx1xPK2N2">
   <link rel="modulepreload" href="../lib/local.js" integrity="sha384-hdqElFsnaTlCN9HGy5Qnv7DsFnQ++ZQUS8JN2hK06TrvY0UXn9snJ6QiExIIAU4j">
-  <link rel="modulepreload" href="../lib/page.js" integrity="sha384-tXQ4EwNnKlP+pkxy45FIl/yrXe0A4nCKDzJfJGg4jd7mbFRIZ25Ga7NCUippyZ2m">
+  <link rel="modulepreload" href="../lib/page.js" integrity="sha384-dncWGw9Ljwk0cXuJxKjYGqdsotqbisEBlLp4ktczz9xGtyM52hJBpAsYdfv9jSOm">
   <link rel="modulepreload" href="../lib/picks.js" integrity="sha384-Lr3kak9YvctWHYkskK/VnVjXzLrCqxE5t70AaJoCNULfOQnRfYwDLG86owrkBa+j">
   <link rel="modulepreload" href="../lib/pickviews.js" integrity="sha384-BytItDacs/UqEsTyea9Pdd56yhISnBMtmq29BahV7Ip57MbFIOlSsp1vHJpFGDcE">
-  <link rel="modulepreload" href="../lib/relay.js" integrity="sha384-KDLPRvSacJM3ys+IpUXe8k7xs3z2VRnhKiIt5v696gbjepw8MFIqB0TuewUOYvnu">
+  <link rel="modulepreload" href="../lib/relay.js" integrity="sha384-S0vG6FymzaG1gP2ZfUDDH6OcyFtgyMKpSjWEd43jqJgkKpI3jPFhLZZpXNfAIoN7">
   <link rel="modulepreload" href="../lib/repair.js" integrity="sha384-HkJl9aDNug2+VopgohfSBPxXO+/AOQLiGndqOl2w/dv8zQ3JJzzjif2AyVXG19tI">
   <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-p6vkHEc71VcwfVRBo8QA9PIZ0Vfi/kGJ/txhor5XxRvZ/WgGSJioTA2bDMRWOtDb">
   <link rel="modulepreload" href="../lib/transport.js" integrity="sha384-fmaF1B7m6aioKcEJxQqfEJUIzbf/1AkZfuiiV/jhdK47t9PoulK6uwbz6ho2AYws">
-  <script type="module" src="../lib/setup.js" integrity="sha384-/4UyJPlarIWmeEB/TQPHTtnV647M1eE+GzO/HChuwWFZVimmbNjZeQFKQeK8h7Gv"></script>
+  <script type="module" src="../lib/setup.js" integrity="sha384-OpJIRLmNAlArNlMnJJSuluU1BjuU53eoF5lIY9g9stORvFlr3kNwz4CrZkYgN8yY"></script>
   <!-- sri:end -->
 </head>
 <body>
@@ -59,7 +59,7 @@
 
     <section id="admin-panel" class="panel">
       <h2>Your database's admin connection string</h2>
-      <p class="muted">Used once, on this computer, to set up the database. It is never stored, and the agent never sees it.</p>
+      <p id="admin-hint" class="muted">Used once, on this computer, for the job you pick. It is never stored, and the agent never sees it.</p>
       <input id="database-url" type="password" autocomplete="off" spellcheck="false" aria-label="Admin connection string" placeholder="postgres://… as your provider shows it">
       <p id="remove-target" class="muted" hidden></p>
       <div class="buttons"><button id="check" type="button" disabled>Check</button></div>
@@ -77,9 +77,9 @@
         <p><label for="confirm-replace">This first removes the old BasaltDB install from this database, and its ledger is deleted for good. To confirm, type the database name <strong id="replace-name"></strong>:</label></p>
         <input id="confirm-replace" class="text" type="text" autocomplete="off" autocapitalize="off" spellcheck="false">
       </div>
-      <p id="remove-note" hidden>This removes BasaltDB from this database, and its ledger is deleted for good, then removes the engine from this computer. The admin connection string you typed is the confirmation.</p>
+      <p id="remove-note" hidden>This removes BasaltDB from this database, and its ledger is deleted for good. When no other agent uses this computer's engine, it removes the engine from this computer too. The admin connection string you typed is the confirmation.</p>
       <div class="buttons"><button id="run" type="button">Set up</button></div>
-      <p class="muted">Your fingerprint, face or device password never leaves this device; Basalt only receives a signature.</p>
+      <p id="run-passkey-note" class="muted" hidden>Your fingerprint, face or device password never leaves this device; Basalt only receives a signature.</p>
     </section>
 
     <p id="status" class="muted" role="status"></p>
@@ -111,7 +111,7 @@
       <p class="strip warn">Never paste this into the chat. Used once, never stored.</p>
       <p id="paste-error" class="strip bad" role="alert" hidden></p>
       <button id="paste-next" type="button">Continue</button>
-      <p class="muted small">Your database password goes to the BasaltDB engine on this computer for this one setup and is never stored. The agent never sees it.</p>
+      <p class="muted small">Your database password goes to the BasaltDB engine on this computer for this one job and is never stored. The agent never sees it.</p>
     </section>
 
     <section id="s-confirm" class="screen" hidden>
@@ -199,7 +199,7 @@
       </div>
       <button id="approve" type="button">Set up with passkey</button>
       <p id="approve-status" class="muted" role="status"></p>
-      <p class="muted">Your fingerprint, face or device password never leaves this device; Basalt only receives a signature.</p>
+      <p id="ap-passkey-note" class="muted">Your fingerprint, face or device password never leaves this device; Basalt only receives a signature.</p>
     </section>
 
     <section id="u-check" class="screen" hidden>

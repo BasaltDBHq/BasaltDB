@@ -84,3 +84,36 @@ func TestTheProbeAnswersAnUpdateOnlyAfterTheLinkOpened(t *testing.T) {
 	require.NoError(t, os.Remove(path))
 	require.Equal(t, CodeEngineRemoved, code(probe("demo_bot", opened)))
 }
+
+// A fix the page finished (a certificate, labels, a passkey, the agent's
+// login) ends basalt init's wait like an Update: CHANGED_ and the fix's
+// job, for a fix after the link opened, to every such probe, and never for
+// one before it or for another agent.
+func TestTheProbeAnswersAFixOnlyAfterTheLinkOpened(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "engine.json")
+	require.NoError(t, os.WriteFile(path, []byte("{}"), 0o600))
+	now := time.Date(2026, 11, 26, 10, 0, 0, 0, time.UTC)
+	s, err := NewLocal(LocalOptions{
+		Backend: probeBackend{}, ConfigPath: path, Origin: "http://localhost:8787", Configured: true,
+		Now:      func() time.Time { return now },
+		Profiles: func() *trustprofile.Set { return trustprofile.NewSet(nil, nil, nil) },
+	})
+	require.NoError(t, err)
+	code := func(agent string, since time.Time) string {
+		t.Helper()
+		_, err := s.Check(context.Background(), Request{Agent: agent, Since: &since})
+		require.Error(t, err)
+		return AsRefusal(err).Code
+	}
+	s.markFixed("demo_bot", JobTrust)
+	opened := now.Add(time.Second)
+	require.Equal(t, CodeJobUnavailable, code("demo_bot", opened), "a fix before the link opened ends no init")
+	require.Equal(t, CodeJobUnavailable, code("demo_bot", now), "a fix at the same instant is not after")
+
+	now = now.Add(5 * time.Second)
+	s.markFixed("demo_bot", JobTrust)
+	require.Equal(t, CodeChangedPrefix+JobTrust, code("demo_bot", opened))
+	require.Equal(t, CodeChangedPrefix+JobTrust, code("demo_bot", opened), "not read once")
+	require.Equal(t, CodeJobUnavailable, code("sales_bot", opened), "another agent's init keeps waiting")
+}

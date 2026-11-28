@@ -66,7 +66,7 @@ export function homeView(h) {
   ];
   const checks = checkLabels(h.checks ?? []);
   const setup = checks.length
-    ? { text: "Opens the check-up: certificate, passkeys and updates. Changes there need your passkey or the database admin string.", checks }
+    ? { text: "Opens the check-up: certificate, passkeys and updates. Changes there need your passkey or your database's admin connection string.", checks }
     : { text: "Ask your agent to run basalt init. It opens the check-up: certificate, passkeys and updates.", checks };
   return { title: "BasaltDB is running", dot: true, sub, rows, setup, changes: true };
 }

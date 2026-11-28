@@ -28,4 +28,5 @@ const (
 	EngineResetAsked                            // the person said the database is not theirs
 	EngineUpdated                               // the page's Update for the agent finished
 	EngineAgentRemoved                          // the page removed the agent; other agents stay
+	EngineChanged                               // the page finished a fix for the agent
 )

@@ -105,7 +105,7 @@ func TestInstallScriptAsRoot(t *testing.T) {
 		requireServiceCopy(t, bin)
 		unit, err := os.ReadFile(osservice.SystemdUnitPath)
 		require.NoError(t, err)
-		require.Contains(t, string(unit), "ExecStart="+serviceBinary+" engine --config /etc/basalt/engine.json --supervise\n")
+		require.Contains(t, string(unit), "ExecStart="+serviceBinary+" engine --config /etc/basalt/engine.json --supervise --started-by service\n")
 		require.NotContains(t, string(unit), bin)
 	})
 	t.Run("an older copy is replaced whole", func(t *testing.T) {
@@ -218,7 +218,7 @@ func TestInstallScriptAsRoot(t *testing.T) {
 		require.True(t, exists(`[ "$(stat -c '%U:%G %a' `+osservice.SystemdUnitPath+`)" = "root:root 644" ]`))
 		unit, err := os.ReadFile(osservice.SystemdUnitPath)
 		require.NoError(t, err)
-		require.Contains(t, string(unit), "ExecStart="+serviceBinary+" engine --config /etc/basalt/engine.json --supervise\n")
+		require.Contains(t, string(unit), "ExecStart="+serviceBinary+" engine --config /etc/basalt/engine.json --supervise --started-by service\n")
 		requireServiceCopy(t, rootBinary)
 		log, err := os.ReadFile("/tmp/systemctl.log")
 		require.NoError(t, err)

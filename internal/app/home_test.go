@@ -249,7 +249,7 @@ func checkFragmentHoldsOnlyTheLink(t *testing.T, href string) {
 	require.NoError(t, err)
 	var fields map[string]any
 	require.NoError(t, json.Unmarshal(raw, &fields))
-	require.Equal(t, map[string]any{"job": "UPDATE", "agent": "zebra_ledger_bot", "osUser": "quokka_os_user", "demo": false}, fields)
+	require.Equal(t, map[string]any{"job": "UPDATE", "agent": "zebra_ledger_bot", "osUser": "quokka_os_user"}, fields)
 	for _, secret := range []string{"kumquat", "walrus", "narwhal", "pangolin", "basalt_agent_zebra", "ocelot", "axolotl"} {
 		require.NotContains(t, string(raw), secret)
 	}

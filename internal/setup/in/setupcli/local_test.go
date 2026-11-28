@@ -502,7 +502,7 @@ func TestInitOnASetUpEngineOpensTheChangeLink(t *testing.T) {
 		h.setupCodes = []string{setup.CodeJobUnavailable}
 		r, read := localInitWithin(t, 2*time.Second, h, args...)
 		require.Equal(t, cli.ExitOK, r.code, "%v: %s", args, r.stderr)
-		require.Contains(t, r.stderr, "this init stops waiting. The page needs nothing more from the agent.", "no Remove within the wait: init returns, and removes nothing")
+		require.Contains(t, r.stderr, "this init stops waiting. Run status to see what the page changed; show the person the link above again only if they ask.", "no Remove within the wait: init returns, and removes nothing")
 		require.Empty(t, h.dialogs, "no password: the service is there")
 		lines := strings.Split(strings.TrimSuffix(r.stdout, "\n"), "\n")
 		require.Len(t, lines, 1, "stdout is the link only: the agent is registered already")
@@ -512,8 +512,8 @@ func TestInitOnASetUpEngineOpensTheChangeLink(t *testing.T) {
 		}
 		require.Equal(t, localsetup.Job{Job: setup.JobChange, Agent: agent, OSUser: me752(t)}, linkJob(t, lines[0]), "%v", args)
 		require.Equal(t, []string{lines[0]}, h.opened, "init opens its own link")
-		require.Contains(t, r.stderr, "update the guard or remove BasaltDB")
-		const demoLine = "basalt: --demo starts a fresh demo, and BasaltDB is already set up on this computer. To start over with the demo: on the page that opened, press Remove, then run basalt init --demo again.\n"
+		require.Contains(t, r.stderr, "fix what it shows, or update or remove BasaltDB")
+		const demoLine = "basalt: --demo starts a fresh demo, and BasaltDB is already set up on this computer. To start over with the demo: on the page that opened, choose Update or remove BasaltDB, then Remove, then run basalt init --demo again.\n"
 		if len(args) == 1 && args[0] == "--demo" {
 			require.Contains(t, r.stderr, demoLine)
 		} else {
@@ -740,6 +740,41 @@ func TestInitEndsAsSoonAsThePageUpdatedTheGuard(t *testing.T) {
 			require.Equal(t, h.probes[1].since, p.since, "one since for the whole wait")
 		}
 	}
+}
+
+// A fix the page finished within the wait (the certificate's Check it, for
+// one) ends the init at once with one line naming the change and saying
+// the agent can go on.
+func TestInitEndsAsSoonAsThePageFinishedAFix(t *testing.T) {
+	t.Parallel()
+	for job, what := range map[string]string{
+		setup.JobTrust:         "the database's certificate is checked",
+		setup.JobLabels:        "columns are labeled",
+		setup.JobPasskeyAdd:    "a passkey is added",
+		setup.JobPasskeyRemove: "a passkey is removed",
+		setup.JobRepair:        "the agent's login is fixed",
+	} {
+		h := newFakeHost()
+		h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+		h.setupCodes = []string{setup.CodeJobUnavailable, setup.CodeJobUnavailable, setup.CodeChangedPrefix + job, setup.CodeEngineRemoved}
+		start := time.Now()
+		r, _ := localInit(t, h)
+		require.Less(t, time.Since(start), 10*time.Second, "%s: init ends within a poll step", job)
+		require.Equal(t, cli.ExitOK, r.code, r.stderr)
+		require.Contains(t, r.stderr, "basalt: the setup page finished a change for the agent demo_bot: "+what+". The agent can go on; it needs no restart.\n")
+		require.Empty(t, h.dialogs)
+		require.Equal(t, 3, h.setupCalls, "%s: nothing is asked after it", job)
+	}
+}
+
+// Without a fix after the link opened, the wait goes on to its end.
+func TestInitKeepsWaitingWhenNoFixFinished(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost()
+	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+	h.setupCodes = []string{setup.CodeJobUnavailable}
+	r, _ := localInitWithin(t, 3*time.Second, h)
+	require.NotContains(t, r.stderr, "finished a change")
 }
 
 func TestInitWaitsAsLongAsAnApprovalWait(t *testing.T) {

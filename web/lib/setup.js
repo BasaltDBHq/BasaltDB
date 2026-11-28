@@ -40,29 +40,35 @@ export function pickJob(link, picked) {
   return { ...link, job: picked };
 }
 
-// JOB_TEXT is each job's fixed words on the page.
+// JOB_TEXT is each job's fixed words on the page. hint is the note under
+// the admin connection string box: what the string is used for in this job.
+const KEPT = " It is never stored, and the agent never sees it.";
 export const JOB_TEXT = {
   INSTALL: {
     title: "Set up BasaltDB for your agent",
     intro: (agent) => `Your agent ${agent} asked to connect to a database. This page sets it up on this computer.`,
+    hint: "Used once, on this computer, to set up the database."+KEPT,
     run: "Set up",
     done: (agent) => `The agent ${agent} is set up. Tell it to go on; it connects with:`,
   },
   UPDATE: {
     title: "Update BasaltDB's guard",
     intro: (agent) => `Your agent ${agent} found that the guard in its database is older than BasaltDB on this computer. This page adds the guard's missing migrations, and nothing else.`,
+    hint: "Used once, on this computer, to update the guard in the database."+KEPT,
     run: "Update the guard",
     done: (agent) => `The guard is updated. Tell the agent ${agent} to go on; it needs no restart.`,
   },
   CHANGE: {
     title: "Change BasaltDB on this computer",
     intro: (agent) => `BasaltDB is already set up for your agent ${agent}. Pick what to do: update the guard in its database, or remove BasaltDB.`,
+    hint: "Used once, on this computer, for the job you pick."+KEPT,
     run: "",
     done: () => "",
   },
   REMOVE: {
     title: "Remove BasaltDB",
     intro: (agent) => `This page removes BasaltDB from the database of your agent ${agent}: the guard, the ledger of every action and the agents' roles. Nothing can undo it.`,
+    hint: "Used once, on this computer, to remove BasaltDB from the database."+KEPT,
     run: "Remove BasaltDB",
     done: (agent) => `BasaltDB is removed from the database, and this computer's engine no longer serves ${agent}.`,
     removed: "BasaltDB is removed",
@@ -97,12 +103,14 @@ export function parseSetupLink(hash) {
     throw new CodeError("This setup link is damaged. Ask the agent for a new one.");
   }
   const keys = job && typeof job === "object" && !Array.isArray(job) ? Object.keys(job).sort().join(",") : "";
-  if (keys !== "agent,demo,job,osUser") {
+  // demo is in the link only when it is true: a missing one is false.
+  if (keys !== "agent,job,osUser" && keys !== "agent,demo,job,osUser") {
     throw new CodeError("This setup link is damaged. Ask the agent for a new one.");
   }
   if (!JOBS.includes(job.job)) throw new CodeError("This setup link names a job this page does not run.");
   if (typeof job.agent !== "string" || !AGENT_NAME.test(job.agent)) throw new CodeError("This setup link names an agent whose name cannot be used.");
   if (typeof job.osUser !== "string" || !OS_USER.test(job.osUser)) throw new CodeError("This setup link names an OS user that cannot be used.");
+  if (job.demo === undefined) job.demo = false;
   if (typeof job.demo !== "boolean") throw new CodeError("This setup link is damaged. Ask the agent for a new one.");
   if (job.demo && job.job !== "INSTALL") throw new CodeError("This setup link is damaged. Ask the agent for a new one.");
   return { job: job.job, agent: job.agent, osUser: job.osUser, demo: job.demo };
@@ -736,6 +744,7 @@ export async function startJob(link, preset, env = {}) {
     document.title = text.title;
     $("title").textContent = text.title;
     $("intro").textContent = JOB_TEXT[link.job].intro(link.agent);
+    $("admin-hint").textContent = text.hint;
     // A removal is one box and one press: its admin string is the
     // confirmation, the check runs once the string is pasted, and it asks
     // nothing about the OS user.
@@ -878,6 +887,9 @@ export async function startJob(link, preset, env = {}) {
     list("notes", checked.notes);
     $("sql").textContent = checked.sql;
     $("run").textContent = replace ? REPLACE_RUN : checked.passkeyNeeded ? "Create passkey and set up" : asked.job === "REMOVE" ? removeButtonText(checked) : text.run;
+    // The passkey note shows only under a button that asks for a passkey:
+    // a removal and an update ask for none.
+    $("run-passkey-note").hidden = !checked.passkeyNeeded;
     $("review").hidden = false;
     $("run").disabled = !runnable();
     sync();
@@ -1321,6 +1333,7 @@ export function startReal(link, env) {
     $("ap-confirm").value = "";
     $("approve").disabled = v.replace !== null;
     setText("approve-status", "");
+    show("ap-passkey-note", v.passkeyNeeded);
     go("s-approve");
   };
   $("ap-confirm").addEventListener("input", () => {
@@ -1784,7 +1797,7 @@ export function startUpdate(link, env) {
         checking("Adding the passkey");
         const done = await fix.run("PASSKEY_ADD", { challenge: a.challenge, passkey });
         const codes = (done.passkeys || []).map((p) => `${p.label || "Passkey"}: ${p.checkCode}`);
-        showDone("Passkey added", "This device can now approve your agents' writes and undos. Its check code; the agent's status names the same code:", codes, afterFix);
+        showDone("Passkey added", "This device can now approve your agents' writes and undos. This is its check code; the agent's status names the same code:", codes, afterFix);
       } catch (err) {
         failed(err, FIXES.PASSKEY_ADD);
       }
@@ -2018,7 +2031,7 @@ export function startUpdate(link, env) {
       const done = await fix.run("PASSKEY_REMOVE", { credentialId: k.credentialId });
       if (k.rpId === "localhost") await signalRemoved(env.pkc, k.rpId, k.credentialId);
       if (done.remaining === 0) {
-        return showDone("Passkey removed", "Add a passkey so your agents can be approved again.", [], () => startFix("PASSKEY_ADD"), "Add a passkey");
+        return showDone("Passkey removed", "Add a passkey so your agents' writes and undos can be approved again.", [], () => startFix("PASSKEY_ADD"), "Add a passkey");
       }
       await fix.doctor();
       showPasskeys("");

@@ -140,6 +140,14 @@ test("the agent is checked before the admin string is asked for", async () => {
 
 // ---- The install of a real database ----
 
+
+test("a link with no demo field is a link with demo false, and one with demo false still reads", () => {
+  const frag = (o) => "#1." + Buffer.from(JSON.stringify(o)).toString("base64url");
+  assert.deepEqual(parseSetupLink(frag({ job: "CHANGE", agent: "bot", osUser: "alice" })), { job: "CHANGE", agent: "bot", osUser: "alice", demo: false });
+  assert.deepEqual(parseSetupLink(frag({ job: "REMOVE", agent: "bot", osUser: "alice", demo: false })), { job: "REMOVE", agent: "bot", osUser: "alice", demo: false });
+  assert.throws(() => parseSetupLink(frag({ job: "CHANGE", agent: "bot", osUser: "alice", extra: 1 })));
+});
+
 const real = { job: "INSTALL", agent: "bot", osUser: "alice", demo: false };
 // Split so no whole admin string with a password sits in the source.
 const ADMIN = "postgres://admin" + ":" + "pw@db.example.com/app";
@@ -963,7 +971,7 @@ test("the Update check shows what needs the person, each critical row fixes itse
   assert.equal(nodes["u-allset-title"].textContent, "All set");
   assert.equal(nodes["u-allset-text"].textContent, "Close this tab and go back to your agent. It can work now.");
   assert.match(nodes["u-allset-lines"].textContent, /✓ Passkeys: 1 device can approve/);
-  assert.equal(nodes["u-allset-later"].textContent, "Left for later: 1 column has no label. Run `basalt init` to change it.");
+  assert.equal(nodes["u-allset-later"].textContent, "Left for later: 1 column has no label. To change this, ask your agent to run basalt init.");
 });
 
 test("a certificate from a new issuer: the cautious words, Trust it anyway the weaker button, Stop here trusts nothing", async () => {
@@ -1022,7 +1030,7 @@ test("Manage lists the passkeys, and removing the last one asks for a new one", 
   await nodes["u-confirm-go"].click();
   assert.deepEqual(signals, [{ rpId: "localhost", credentialId: "a2V5MQ" }], "the browser is told the passkey is gone");
   assert.deepEqual(shown(nodes), ["u-done"]);
-  assert.equal(nodes["u-done-text"].textContent, "Add a passkey so your agents can be approved again.");
+  assert.equal(nodes["u-done-text"].textContent, "Add a passkey so your agents' writes and undos can be approved again.");
 });
 
 test("a ledger that names another certificate is recorded with the pin the check showed", async () => {
@@ -1354,6 +1362,8 @@ test("the demo, update and removal page's Check and Set up buttons show their wo
   await press;
   rested(nodes.check, "Check");
   assert.equal(nodes.review.hidden, false);
+  assert.equal(nodes["run-passkey-note"].hidden, false, "the demo's button asks for a passkey, so the footnote shows");
+  assert.equal(nodes["admin-hint"].textContent, "Used once, on this computer, to set up the database. It is never stored, and the agent never sees it.");
 
   nodes.run.textContent = "Set up";
   const run = nodes.run.click();
@@ -1501,6 +1511,7 @@ test("a removal is one press: Removing BasaltDB… on the button, no name sent, 
   nodes["database-url"].value = "";
   await startJob({ job: "REMOVE", agent: "bot", osUser: "alice", demo: false }, "", { fetchFn: g.fetchFn, checkDelayMs: 0 });
   assert.equal(nodes["remove-note"].hidden, false);
+  assert.equal(nodes["admin-hint"].textContent, "Used once, on this computer, to remove BasaltDB from the database. It is never stored, and the agent never sees it.", "the box hint names the removal, not a setup");
   assert.equal(nodes["os-user-panel"].hidden, true, "no OS-user question on a removal");
   assert.equal(nodes.check.hidden, true, "no Check button: the check runs by itself");
   nodes["database-url"].value = ADMIN;
@@ -1510,6 +1521,7 @@ test("a removal is one press: Removing BasaltDB… on the button, no name sent, 
   assert.equal(nodes["remove-target"].textContent, "It opens app on db.example.com:5432.");
   assert.equal(nodes.run.textContent, "Remove BasaltDB from app on db.example.com:5432");
   assert.equal(nodes.run.disabled, false, "no name to type: the admin string is the confirmation");
+  assert.equal(nodes["run-passkey-note"].hidden, true, "no passkey footnote under Remove: it asks for no passkey");
   const release = g.hold();
   const press = nodes.run.click();
   working(nodes.run, "Removing BasaltDB…");

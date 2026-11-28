@@ -30,7 +30,7 @@ type ConnectOnly struct {
 	Commands   guidance.Commands
 	OperatedBy string
 	SameUser   bool
-	// StartedBy is why this engine started (hand, mcp or crash).
+	// StartedBy is why this engine started (hand, mcp, crash or service).
 	StartedBy string
 	PagesBase string
 	// PagesOrigin is the origin of the local pages when served.

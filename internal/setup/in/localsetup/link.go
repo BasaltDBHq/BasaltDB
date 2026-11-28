@@ -17,7 +17,9 @@ type Job struct {
 	Job    string `json:"job"`
 	Agent  string `json:"agent"`
 	OSUser string `json:"osUser"`
-	Demo   bool   `json:"demo"`
+	// Demo is in the link only when it is true: a CHANGE, REMOVE or UPDATE
+	// link never names it, and the page reads a missing one as false.
+	Demo bool `json:"demo,omitempty"`
 }
 
 // SetupPath is the setup page's path, and linkPrefix its fragment's.

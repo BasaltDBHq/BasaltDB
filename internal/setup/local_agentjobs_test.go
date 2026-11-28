@@ -14,6 +14,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
@@ -168,6 +169,37 @@ func TestTheProbeSeesAnUpdateThatRanAfterInitOpenedTheLink(t *testing.T) {
 	}
 	_, err = svc.Run(ctx, setup.Request{Agent: "demo_bot", Since: &opened})
 	refusal(t, err, setup.CodeInvalidArgument)
+}
+
+// A fix the page ran for the agent after init opened the link answers
+// CHANGED_<job> to every such probe; a refused fix run, a fix before the
+// link opened and another agent's probe do not.
+func TestTheProbeSeesAFixThatRanAfterInitOpenedTheLink(t *testing.T) {
+	f, svc := installed(t)
+	ctx := context.Background()
+	probe := func(agent string, since time.Time) error {
+		_, err := svc.Check(ctx, setup.Request{Agent: agent, Since: &since})
+		return err
+	}
+	f.db.Exec(t, `ALTER TABLE basalt_demo.leads ADD COLUMN mobile text`)
+	opened := f.now.Add(-time.Second)
+
+	// A refused fix (a label the page never showed: CLASSES_CHANGED) marks
+	// nothing.
+	bad := f.fix(setup.JobLabels)
+	bad.ColumnClasses = []setup.ColumnClass{{Table: "public.hidden", Column: "secret", Class: guardmodel.ClassSecret, Was: setup.Label{Class: guardmodel.ClassUnclassified}}}
+	_, err := svc.Run(ctx, bad)
+	refusal(t, err, setup.CodeClassesChanged)
+	refusal(t, probe("demo_bot", opened), setup.CodeJobUnavailable)
+
+	rest := f.fix(setup.JobLabels)
+	rest.RestPublic = true
+	_, err = svc.Run(ctx, rest)
+	require.NoError(t, err)
+	refusal(t, probe("demo_bot", opened), setup.CodeChangedPrefix+setup.JobLabels)
+	refusal(t, probe("demo_bot", opened), setup.CodeChangedPrefix+setup.JobLabels)
+	refusal(t, probe("demo_bot", f.now), setup.CodeJobUnavailable)
+	refusal(t, probe("other_bot", opened), setup.CodeJobUnavailable)
 }
 
 func TestAgentJobsRefuseWhatIsNotTheAgentsBeforeConnecting(t *testing.T) {

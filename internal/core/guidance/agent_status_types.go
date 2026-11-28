@@ -59,7 +59,7 @@ type StatusReport struct {
 type EngineStatus struct {
 	Reachable bool   `json:"reachable"`
 	Build     string `json:"build,omitempty"`
-	// StartedBy is why this engine started: HAND, MCP or CRASH.
+	// StartedBy is why this engine started: HAND, MCP, CRASH or SERVICE.
 	StartedBy string `json:"startedBy,omitempty"`
 	// LastStop is why a supervisor gave up on the engine, from an engine
 	// that does not answer; the engine itself never reports it.

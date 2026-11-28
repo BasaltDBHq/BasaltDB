@@ -8,9 +8,12 @@ import (
 // engineCommand is the command that runs the engine.
 const engineCommand = "engine"
 
+// startedByFlag is the engine's --started-by flag.
+const startedByFlag = "--started-by"
+
 // DialogEngineArgs is the command the first install's unit runs.
 func DialogEngineArgs(goos, bin string) []string {
-	return []string{bin, engineCommand, configFlag, config.DefaultPath(goos), "--supervise"}
+	return []string{bin, engineCommand, configFlag, config.DefaultPath(goos), "--supervise", startedByFlag, StartedByService}
 }
 
 // DarwinEngineLog is the engine service's log on macOS (the unit's

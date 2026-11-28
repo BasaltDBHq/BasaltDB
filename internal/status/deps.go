@@ -45,7 +45,7 @@ type Deps struct {
 	ConnectBudget int
 	Setup         *config.Setup
 	Build         string
-	// StartedBy is why this engine started: hand, mcp or crash (status
+	// StartedBy is why this engine started: hand, mcp, crash or service (status
 	// engine.startedBy); empty reports nothing.
 	StartedBy string
 	// Probe reads the guard's state and the agent's setups on its

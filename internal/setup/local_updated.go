@@ -23,12 +23,48 @@ const CodeGuardUpdated = "GUARD_UPDATED"
 // no ENGINE_REMOVED comes, and the waiting init ends at once.
 const CodeAgentRemoved = "AGENT_REMOVED"
 
+// CodeChangedPrefix starts the answer to that probe once a fix (a
+// certificate, labels, a passkey added or removed, the agent's login)
+// finished for that agent after since: CHANGED_ and the fix's job, as in
+// FixJobs. Like GUARD_UPDATED it ends the waiting init at once, and every
+// init waiting for that agent.
+const CodeChangedPrefix = "CHANGED_"
+
 // updateMarks are when each agent's last UPDATE finished, and when a
 // REMOVE removed it, in the engine's memory only.
 type updateMarks struct {
 	mu      sync.Mutex
 	at      map[string]time.Time
 	removed map[string]time.Time
+	fixed   map[string]fixMark
+}
+
+// fixMark is a fix that finished for an agent: its job and when.
+type fixMark struct {
+	job string
+	at  time.Time
+}
+
+// markFixed records that agent's fix job finished now.
+func (s *LocalService) markFixed(agent, job string) {
+	s.updated.mu.Lock()
+	defer s.updated.mu.Unlock()
+	if s.updated.fixed == nil {
+		s.updated.fixed = map[string]fixMark{}
+	}
+	s.updated.fixed[agent] = fixMark{job: job, at: s.opts.Now()}
+}
+
+// fixedSince is the job of agent's last fix when it finished after since,
+// else "".
+func (s *LocalService) fixedSince(agent string, since time.Time) string {
+	s.updated.mu.Lock()
+	defer s.updated.mu.Unlock()
+	m, ok := s.updated.fixed[agent]
+	if !ok || !m.at.After(since) {
+		return ""
+	}
+	return m.job
 }
 
 // markRemoved records that a REMOVE removed agents now.

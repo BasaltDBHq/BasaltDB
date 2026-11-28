@@ -85,7 +85,7 @@ export const REMOVAL_TEXT = {
     SERVICE: "The bot's computer: BasaltDB runs there as a service, which this page cannot remove. Ask your bot to call status.",
     DELETE_FAILED: "The bot's computer: some of BasaltDB's files could not be deleted. Ask your bot to call status.",
   },
-  agent: "Agent connection: your bot drops it the next time you talk to it.",
+  agent: "The bot's connection: your bot drops it the next time you talk to it.",
 };
 
 // computerLine is the checklist's line for the bot's computer: "removing",

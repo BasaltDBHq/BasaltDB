@@ -35,7 +35,7 @@ import {
   expiryCountdown,
   openLinkMessage,
 } from "./connect.js";
-import { RemoveFlow, removalItems, removeConfirmed } from "./remove.js";
+import { RemoveFlow, WAIT_MS, computerLine, removalCode, removalItems, removeButtonText } from "./remove.js";
 
 const PORTAL = "https://portal.basaltvault.app";
 // Built in parts so no whole credential-shaped URL sits in the source.
@@ -1499,7 +1499,7 @@ test("the page has two tabs, Connect a bot first", async () => {
   assert.equal(shown(nodes), "s-bot", "the connect steps are kept");
 });
 
-test("Remove BasaltDB: string, what goes, the typed name, done", async () => {
+test("Remove BasaltDB: string, what goes, one press, done", async () => {
   guardStorage();
   const nodes = fakeDocument();
   const { calls, fetchFn, methods } = service({
@@ -1525,23 +1525,78 @@ test("Remove BasaltDB: string, what goes, the typed name, done", async () => {
   assert.match(items, /Your own tables and their rows stay/);
   assert.match(nodes["r-sql"].textContent, /DROP SCHEMA IF EXISTS basalt_meta CASCADE/);
 
-  // Remove waits for the exact name.
-  assert.equal(nodes["r-remove"].disabled, true);
-  for (const typed of ["sho", "Shop", "shop "]) {
-    nodes["r-confirm"].value = typed;
-    nodes["r-confirm"].fire("input");
-    assert.equal(nodes["r-remove"].disabled, true, typed);
-  }
-  nodes["r-confirm"].value = "shop";
-  nodes["r-confirm"].fire("input");
+  // One button names the database and its host; no typed name.
   assert.equal(nodes["r-remove"].disabled, false);
+  assert.equal(nodes["r-remove"].textContent, "Remove BasaltDB from shop on db.example.com");
   await nodes["r-remove"].click();
   assert.deepEqual(methods(), ["CheckRemove", "RunRemove"]);
-  assert.deepEqual(calls[1].body, { databaseUrl: REMOVE_URL, confirmName: "shop" });
+  assert.deepEqual(calls[1].body, { databaseUrl: REMOVE_URL }, "no typed name and, without a removal link, no code");
   assert.equal(shownRemove(nodes), "r-done");
-  assert.equal(nodes["r-done-db"].textContent, "shop");
+  assert.equal(nodes["r-done-title"].textContent, "BasaltDB is removed from shop");
+  const steps = nodes["r-steps"].textContent;
+  assert.match(steps, /✓ Removed from the database shop/);
+  assert.match(steps, /not opened from your bot's removal link/);
+  assert.match(steps, /Agent connection/);
   assert.match(nodes["r-done-bots"].textContent, /ops_bot, sales_bot/);
   assert.ok(!everything(nodes).includes("s3cret-pw"), "the string is on the page nowhere");
+});
+
+// A bot's removal link (#remove=<code>): the page names the code's
+// database, sends the code with RunRemove, and ticks the bot's computer
+// once the engine reports that it removed itself.
+test("Remove BasaltDB from a bot's removal link: the bot's computer is ticked on its report", async () => {
+  guardStorage();
+  const nodes = fakeDocument();
+  let polls = 0;
+  const { calls, fetchFn, methods } = service({
+    DescribeSetup: () => ({ body: { summary: { setupId: "s1", kind: "AGENT", target: { host: "db.example.com", port: 5432, database: "shop" } } } }),
+    CheckRemove: () => ({ body: removeCheck() }),
+    RunRemove: () => ({ body: { database: "shop", bots: ["sales_bot"], lines: [], ticket: "t1" } }),
+    HandoffStatus: () => {
+      polls++;
+      if (polls === 1) return { body: { state: "UNKNOWN" } };
+      if (polls === 2) return { body: { state: "COLLECTED", ticket: "t2", phase: "REMOVED" } };
+      return { body: { state: "COLLECTED", ticket: "t3", phase: "REMOVED", removed: { result: "REMOVED", reportedAt: "2026-11-28T10:00:00Z" } } };
+    },
+    OfferAddress: () => ({ body: { state: "HELD" } }),
+  });
+  const { ready } = start(env(fetchFn, credentials(), `#remove=${CODE}`));
+  await ready;
+  assert.equal(nodes.remove.hidden, false, "a removal link opens the Remove tab");
+  assert.deepEqual(calls[0].body, { code: CODE });
+  assert.equal(nodes["r-title"].textContent, "Remove BasaltDB from shop on db.example.com");
+  assert.equal(nodes["r-link"].hidden, false);
+
+  nodes["r-database-url"].value = REMOVE_URL;
+  await nodes["r-check"].click();
+  assert.equal(shownRemove(nodes), "r-review");
+  await nodes["r-remove"].click();
+  const run = calls.find((c) => c.method === "RunRemove");
+  assert.deepEqual(run.body, { databaseUrl: REMOVE_URL, code: CODE });
+  assert.equal(shownRemove(nodes), "r-done");
+  assert.deepEqual(methods().slice(-4), ["HandoffStatus", "OfferAddress", "HandoffStatus", "HandoffStatus"], "UNKNOWN offers the ticket back once");
+  assert.equal(calls.at(-1).body.ticket, "t2", "each poll uses the newest ticket");
+  assert.equal(nodes["r-done-title"].textContent, "BasaltDB is removed");
+  assert.match(nodes["r-steps"].textContent, /✓ Removed from the bot's computer/);
+  assert.ok(!everything(nodes).includes("s3cret-pw"));
+});
+
+test("RemoveFlow.waitComputer: a KEPT report names its reason, and no report in time says so", async () => {
+  const rpc = { call, Refusal, notPostgres: NOT_POSTGRES };
+  const kept = service({ HandoffStatus: () => ({ body: { state: "COLLECTED", removed: { result: "KEPT", reason: "OTHER_AGENTS" } } }) });
+  const c = clock();
+  let flow = new RemoveFlow({ fetch: kept.fetchFn, rpc, sleep: c.sleep, now: c.now });
+  flow.done = { ticket: "t1" };
+  assert.equal(await flow.waitComputer(), "OTHER_AGENTS");
+  assert.match(computerLine("OTHER_AGENTS"), /serving your other bots/);
+  const silent = service({ HandoffStatus: () => ({ body: { state: "HELD", phase: "REMOVED" } }) });
+  flow = new RemoveFlow({ fetch: silent.fetchFn, rpc, sleep: c.sleep, now: c.now });
+  flow.done = { ticket: "t1" };
+  assert.equal(await flow.waitComputer(), "noAnswer");
+  assert.ok(c.t >= WAIT_MS, "it waits the whole time");
+  assert.equal(removalCode("#remove=" + CODE), CODE);
+  assert.equal(removalCode("#remove"), "");
+  assert.equal(removeButtonText("shop", ""), "Remove BasaltDB from shop");
 });
 
 test("Remove BasaltDB: a refusal drops the string, and the trust step keeps it until answered", async () => {
@@ -1568,8 +1623,6 @@ test("Remove BasaltDB: a refusal drops the string, and the trust step keeps it u
   assert.equal(shownRemove(nodes), "r-review");
 
   // A refused run goes back to the paste step with the message.
-  nodes["r-confirm"].value = "shop";
-  nodes["r-confirm"].fire("input");
   await nodes["r-remove"].click();
   assert.equal(shownRemove(nodes), "r-paste");
   assert.equal(nodes["r-paste-error"].textContent, "Type the database's name exactly.");
@@ -1582,15 +1635,14 @@ test("Remove BasaltDB: a refusal drops the string, and the trust step keeps it u
   assert.ok(!everything(nodes).includes("s3cret-pw"));
 });
 
-test("RemoveFlow refuses a name that is not the database's without a call", async () => {
+test("RemoveFlow refuses a string that is not Postgres without a call, and removes only from the review step", async () => {
   const { fetchFn, methods } = service({ CheckRemove: () => ({ body: removeCheck() }) });
   const flow = new RemoveFlow({ fetch: fetchFn, rpc: { call, Refusal, notPostgres: NOT_POSTGRES } });
   await assert.rejects(flow.checkRemove("mysql://x"), (e) => e.reason === "NOT_POSTGRES");
+  await assert.rejects(flow.remove(), /not at the review step/);
   await flow.checkRemove(REMOVE_URL);
-  await assert.rejects(flow.remove("shop2"), (e) => e.reason === "ANSWERS_INVALID");
+  assert.equal(flow.check.host, "db.example.com");
   assert.deepEqual(methods(), ["CheckRemove"]);
-  assert.equal(removeConfirmed("shop", "shop"), true);
-  assert.equal(removeConfirmed("", ""), false);
   assert.deepEqual(removalItems(removeCheck({ bots: [] })).map((i) => i.kind), ["gone", "gone", "gone", "stays"]);
 });
 
@@ -2005,8 +2057,6 @@ test("the Remove tab's Continue and Remove buttons show their working labels and
   await nodes["r-check"].click();
   assert.equal(shownRemove(nodes), "r-review");
   nodes["r-remove"].textContent = "Remove BasaltDB";
-  nodes["r-confirm"].value = "shop";
-  nodes["r-confirm"].fire("input");
   release = h.hold();
   const remove = nodes["r-remove"].click();
   working(nodes["r-remove"], "Removing BasaltDB…");

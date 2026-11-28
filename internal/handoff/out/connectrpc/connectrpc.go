@@ -78,6 +78,21 @@ func (c *Client) ReportReach(ctx context.Context, req connecthandoff.ReachReport
 	return nil
 }
 
+// ReportRemoved tells the service that the engine removed itself. A
+// service that does not serve the call yet (an older deploy) answers
+// unimplemented, which maps to an error that is no refusal: the engine
+// exits all the same, and the page waits as it did before.
+func (c *Client) ReportRemoved(ctx context.Context, req connecthandoff.RemovedReport) error {
+	_, err := c.rpc.ReportRemoved(ctx, connect.NewRequest(&connectv1.ReportRemovedRequest{
+		SetupId: req.SetupID, EnginePublicKey: req.EnginePublicKey, Time: req.Time,
+		Result: req.Result, Reason: req.Reason, Signature: req.Signature,
+	}))
+	if err != nil {
+		return refusal(err)
+	}
+	return nil
+}
+
 // refusal maps the service's refusal to the engine's errors. The service's
 // message is never passed on: it is not the engine's to trust.
 func refusal(err error) error {

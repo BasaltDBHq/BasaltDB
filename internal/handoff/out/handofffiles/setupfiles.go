@@ -63,6 +63,21 @@ func (f SetupFiles) PendingSetup() (config.Setup, bool, error) {
 	return config.Setup{}, false, nil
 }
 
+// PendingRemoval is the agent's pending removal in engine.json now; false
+// when none.
+func (f SetupFiles) PendingRemoval() (config.Removal, bool, error) {
+	c, err := config.LoadNoFollow(f.ConfigPath)
+	if err != nil {
+		return config.Removal{}, false, err
+	}
+	for _, a := range c.Agents {
+		if a.Name == f.Agent && a.Removal != nil {
+			return *a.Removal, true, nil
+		}
+	}
+	return config.Removal{}, false, nil
+}
+
 // ReadSecret reads .secret with the credential file's rules: a regular
 // file this user owns, mode 0600, not through a link.
 func (f SetupFiles) ReadSecret() (string, error) {

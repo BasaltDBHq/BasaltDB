@@ -10,7 +10,9 @@ import (
 // never reads the admin connection string. h is what init reaches outside
 // the CLI.
 func runInit(c *cli.IO, h initHost, args []string) int {
-	if setupcli.IsRemote(args) {
+	// --remove on an agent-operated engine (the bot's own computer) prints
+	// the connect page's removal link, as --remote does for a setup.
+	if setupcli.IsRemote(args) || setupcli.RemovesRemote(c, args) {
 		return setupcli.RunRemote(c, h, args)
 	}
 	return setupcli.RunLocal(c, h, args)

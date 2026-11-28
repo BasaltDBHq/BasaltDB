@@ -61,10 +61,19 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 		return fail(io.Err, "engine", err)
 	}
 	run := func(ctx context.Context, r engine.Restart) error {
-		o := restartOptions{Restart: r}
+		o := restartOptions{Restart: r, Removal: &selfRemoval{}}
 		o.StartedBy = *startedBy
 		o.PagesListener, handed = handed, nil
-		return runWith(ctx, cfg, engine.EnginePath(*configPath), log, o)
+		err := runWith(ctx, cfg, engine.EnginePath(*configPath), log, o)
+		if rm := o.Removal.taken(); rm != nil {
+			// BasaltDB was removed from the agent's database on the connect
+			// page: everything runWith opened is closed, so the engine
+			// deletes its folders, reports and exits cleanly (a supervisor
+			// then stops too).
+			finishSelfRemoval(cfg, engine.EnginePath(*configPath), rm, log)
+			return nil
+		}
+		return err
 	}
 	// A reload (a connect-only agent's setup changed) serves the config as
 	// it is now.

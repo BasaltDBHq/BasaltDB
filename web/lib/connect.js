@@ -17,7 +17,7 @@ import { ALG_ES256, PORTAL, PROD_RP_ID, b64urlDecode, b64urlEncode, hex, sha256,
 import { busy } from "./page.js";
 import { labelRow as sharedLabelRow } from "./pickviews.js";
 import { browserFetch } from "./transport.js";
-import { startTabs } from "./remove.js";
+import { removalCode, startTabs } from "./remove.js";
 import { ENTITY_WORDS, Labels, MAX_LABELS, answersFor, fingerprintText, hostOf, labelOf, restNote, tableName, trustRootFrom, trustText } from "./picks.js";
 import { ADD_AGAIN, activePasskeys, checkView, passkeyLabel, passkeyLine, revokeLines, signalRemoved, unlabeledColumns } from "./connectupdate.js";
 import { confirmView, factsDiffer, paintConfirm, stringFacts } from "./confirm.js";
@@ -876,8 +876,10 @@ export function start(env) {
   setText("host", PAGE_HOST);
   show("main");
   // Two tabs: Connect a bot (the default) and Remove BasaltDB, which needs
-  // no setup code (#remove opens it).
-  startTabs(env, { removeOnly: location.hash === "#remove", rpc: { call, Refusal, notPostgres: NOT_POSTGRES } });
+  // no setup code (#remove opens it; a bot's removal link, #remove=<code>,
+  // opens it with the code, so the bot's engine removes itself too).
+  const removal = removalCode(location.hash);
+  const removeTab = startTabs(env, { removeOnly: location.hash === "#remove", code: removal, rpc: { call, Refusal, notPostgres: NOT_POSTGRES } });
 
   // loop is the poll that runs now; a new one, Back and every way to
   // another screen cancel it.
@@ -1672,9 +1674,10 @@ export function start(env) {
     }
   });
 
-  const code = readCode(location.hash.replace(/^#/, ""));
+  const code = removal === "" ? readCode(location.hash.replace(/^#/, "")) : "";
   if (code) return { flow, ready: describe(code), paintExpiry };
   go("s-code");
+  if (removal !== "") return { flow, ready: removeTab.ready, remove: removeTab.flow, paintExpiry };
   return { flow, ready: Promise.resolve(), paintExpiry };
 }
 

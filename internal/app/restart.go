@@ -27,6 +27,10 @@ type restartOptions struct {
 	// StableAfter is how long the engine serves before it removes the
 	// supervisor's record of giving up; zero means defaultStableAfter.
 	StableAfter time.Duration
+	// Removal, when set, is where an agent's collect loop records a removal
+	// on the connect page (selfremove.go): runWith then stops, and the
+	// caller deletes the engine's folders (finishSelfRemoval).
+	Removal *selfRemoval
 }
 
 // defaultStableAfter is how long an engine serves before an earlier

@@ -211,7 +211,26 @@ type Agent struct {
 	// Setup is the pending setup code basalt init --remote made for this
 	// agent; nil when none is pending.
 	Setup *Setup `json:"setup,omitempty"`
+	// Removal is the pending removal link basalt init --remove made for this
+	// agent on an agent-operated engine (CONTRACT.md, Connect, The removal
+	// hand-off); nil when none is pending. The engine collects its REMOVED
+	// hold and removes itself from this machine.
+	Removal *Removal `json:"removal,omitempty"`
 }
+
+// Removal is an agent's pending removal link: the setup code it carries
+// (an AGENT code with no change, a target and the engine's key), kept so a
+// re-run hands out the same link and the engine collects for its setupId.
+type Removal struct {
+	SetupID string `json:"setupId" validate:"required,uuid"`
+	// ExpiresAt is RFC 3339 UTC, whole seconds: the code's expiry.
+	ExpiresAt   string `json:"expiresAt" validate:"required"`
+	Code        string `json:"code" validate:"required"`
+	Fingerprint string `json:"fingerprint" validate:"required"`
+}
+
+// Expires is when r's code expires.
+func (r Removal) Expires() (time.Time, error) { return time.Parse(time.RFC3339, r.ExpiresAt) }
 
 // StorePostgres is the store kind the engine serves (CONTRACT.md, Stores).
 const StorePostgres = "POSTGRES"

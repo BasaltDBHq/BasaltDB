@@ -25,6 +25,8 @@ func (ds *Service) DescribeOverview(ctx context.Context) (Overview, error) {
 		return Overview{}, err
 	}
 	notGranted := ungranted.Total()
+	namespaces := namespaceCounts(visible)
+	split := splitNotGranted(namespaces, ungranted)
 	pii, err := ds.store.Classes.CatalogFingerprint(ctx)
 	if err != nil {
 		return Overview{}, err
@@ -32,16 +34,14 @@ func (ds *Service) DescribeOverview(ctx context.Context) (Overview, error) {
 	limits := ds.store.Data.Limits()
 	o := Overview{
 		Store:       StoreInfo{Kind: string(ds.store.Kind), Database: ds.store.Catalog.Database(), Host: ds.store.Catalog.Host()},
-		Fingerprint: catalogFingerprint(lines, notGranted, pii),
+		Fingerprint: catalogFingerprint(lines, split.key(notGranted), pii),
 		Counts:      Counts{Resources: len(visible), NotGranted: notGranted},
 		Update:      ds.update(),
 		Limits: OverviewLimits{
 			ReadRowLimit: limits.ReadRowLimit, StatementTimeoutMs: limits.StatementTimeout.Milliseconds(), WritePolicy: writePolicy,
 		},
 	}
-	namespaces := namespaceCounts(visible)
 	o.Counts.Namespaces = len(namespaces)
-	split := splitNotGranted(namespaces, ungranted)
 	o.Counts.NotGrantedInGrantedNamespaces = split.inGranted
 	o.Counts.NotGrantedInOtherNamespaces = split.other
 	o.Counts.NotGrantedNamespaces = split.otherNamespaces
@@ -128,6 +128,12 @@ type notGrantedSplit struct {
 	noun              agentstore.Noun
 }
 
+// key is the split as the catalog fingerprint hashes it: a grant that moves
+// resources between the two kinds of namespace changes it.
+func (s notGrantedSplit) key(total int) string {
+	return fmt.Sprintf("%d:%d:%d:%d", total, s.inGranted, s.other, s.otherNamespaces)
+}
+
 func splitNotGranted(visible []NamespaceCount, ungranted agentstore.NotGranted) notGrantedSplit {
 	s := notGrantedSplit{noun: ungranted.Namespace}
 	if s.noun.One == "" {
@@ -154,15 +160,26 @@ func splitNotGranted(visible []NamespaceCount, ungranted agentstore.NotGranted) 
 // namedNamespacesMax is how many namespaces a not-granted message names.
 const namedNamespacesMax = 3
 
-// namespaceList names up to three namespaces, or counts them.
+// namedNamespaceChars is the most of a namespace name the message quotes.
+const namedNamespaceChars = 60
+
+// namespaceList names up to three namespaces, each cut to a name's length
+// limit so the message stays short for any store, or counts them: all of the
+// namespaces the agent can see, or some of them.
 func (s notGrantedSplit) namespaceList(names []string) string {
 	switch {
 	case len(names) == 1:
-		return names[0]
+		return firstRunes(names[0], namedNamespaceChars)
 	case len(names) <= namedNamespacesMax:
-		return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+		cut := make([]string, len(names))
+		for i, n := range names {
+			cut[i] = firstRunes(n, namedNamespaceChars)
+		}
+		return strings.Join(cut[:len(cut)-1], ", ") + " and " + cut[len(cut)-1]
+	case len(names) == len(s.granted):
+		return fmt.Sprintf("the %d %s it can see", len(names), s.noun.Many)
 	}
-	return fmt.Sprintf("the %d %s it can see", len(names), s.noun.Many)
+	return fmt.Sprintf("%d of the %d %s it can see", len(names), len(s.granted), s.noun.Many)
 }
 
 // notGrantedSteps (NOT_GRANTED): the person tells the agent when it needs

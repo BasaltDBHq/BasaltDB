@@ -49,6 +49,11 @@ func TestNotGrantedMessageSplitsByNamespace(t *testing.T) {
 			notGranted: map[string]int{"x": 2},
 			want:       "Everything in the 4 schemas it can see is granted. 2 resources in 1 other schema are not granted to the agent." + pickLink,
 		},
+		"held back in many of many namespaces": {
+			visible:    []NamespaceCount{{Namespace: "a"}, {Namespace: "b"}, {Namespace: "c"}, {Namespace: "d"}, {Namespace: "e"}},
+			notGranted: map[string]int{"a": 1, "b": 1, "c": 1, "d": 1},
+			want:       "4 resources in 4 of the 5 schemas it can see are not granted to the agent." + pickLink,
+		},
 		"no grant at all": {
 			notGranted: other,
 			want:       "204 resources in 3 schemas are not granted to the agent." + pickLink,

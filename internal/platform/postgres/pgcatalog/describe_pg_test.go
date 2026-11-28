@@ -123,7 +123,7 @@ func TestRelationsHidesUngranted(t *testing.T) {
 		total += n
 	}
 	require.GreaterOrEqual(t, total, 1)
-	require.Positive(t, notGranted[describeSchema], "counted under its schema")
+	require.Equal(t, 1, notGranted[describeSchema], "only hidden, counted under its schema (partitions are not relations of their own)")
 	require.Equal(t, "  Accounts, zqxpadded  ", relByName(t, rels, "a").Comment)
 }
 

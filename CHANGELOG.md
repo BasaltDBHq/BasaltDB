@@ -91,9 +91,9 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 
 ### Fixed
 
-- The setup page turns off every other control while a setup, update, removal or fix runs: the Check button, the connection string box and the OS-user box stay off until the run ends and come back if it is refused.
+- The setup page turns off every other control while a setup, update, removal or fix runs: the Check button, the connection string box, the OS-user box and the replace box stay off until the run ends and come back if it is refused.
 - Every message, page and tool description now calls the product BasaltDB, not Basalt; the sample-schema note on the setup page is one sentence in the same list (The sample schema basalt_demo already exists: its rows stay as they are.).
-- The removed screen says the basalt command stays where you installed it (brew uninstall basaltdb removes it).
+- When the engine has left the computer, the removed screen says the basalt command stays where you installed it, and that Homebrew's brew uninstall basaltdb removes it.
 - `basalt init --demo` on an engine that is already set up says that the flag was ignored. It opens the page that updates or removes BasaltDB, as before, and now prints that a fresh demo needs a removal first: press Remove on the page, then run `basalt init --demo` again. Plain `basalt init` prints nothing new.
 - The agent now knows `basalt init` also removes BasaltDB. Asked to remove it, an agent used to inspect the service and the system user and offer a sudo script; the MCP instructions and `basalt --help` now say to run `basalt init` and show the link, and never to remove BasaltDB by hand.
 - A write held for approval that uses `now()`, `current_timestamp` or one of the other time functions is no longer refused. The engine has Postgres evaluate the time once, when it holds the write, and holds the statement with that value, so the approval page, the preview and the applied rows all show the same time. The agent sends its own statement again with the approval id and it applies. Before, the agent had to retry with a literal timestamp. `random()`, `gen_random_uuid()` and other values that change on every run are still refused, and the message names the function.

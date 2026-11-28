@@ -75,11 +75,11 @@
           "pattern": "^(?:https://portal\\.basaltvault\\.app|http://localhost:[0-9]{1,5})/(?:approvals|reverts)/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}#(?:s=[A-Za-z0-9_-]{22}|2\\.[A-Za-z0-9_.-]+)$"
         },
         "linkOpens": {
-          "description": "Where the link opens, from its origin: ANYWHERE (the portal) or ENGINE_COMPUTER (http://localhost: only on the computer BasaltDB runs on). Present exactly with link.",
+          "description": "Where the link opens, from its origin: ANYWHERE (the portal) or ENGINE_COMPUTER (http://localhost: only on the computer BasaltDB runs on). Present exactly with link. The enum sentences below still say "Basalt" until the plugin SDK changes them.",
           "enum": ["ANYWHERE", "ENGINE_COMPUTER"]
         },
         "instruction": {
-          "description": "What the person does, one of six fixed sentences chosen by the item (held write or revert) and the link (opens anywhere, only on the computer BasaltDB runs on, or none).",
+          "description": "What the person does, one of six fixed sentences chosen by the item (held write or revert) and the link (opens anywhere, only on the computer BasaltDB runs on, or none). The enum sentences below still say "Basalt" until the plugin SDK changes them.",
           "enum": [
             "Open the link to review the held write and approve it with your passkey.",
             "Open the link on the computer Basalt runs on to review the held write and approve it with your passkey.",

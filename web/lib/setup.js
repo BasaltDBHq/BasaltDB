@@ -1654,7 +1654,7 @@ export function startUpdate(link, env) {
       b.type = "button";
       b.addEventListener("click", async () => {
         if (r.job === "MANAGE" || r.job === "UPDATE") return act(r.job);
-        const stop = working(b, FIX_WORK[r.job] ?? "Checking…", controlsOf("#u-check", "#u-passkeys"));
+        const stop = working(b, FIX_WORK[r.job] ?? "Checking…", controlsOf("#u-check"));
         if (!stop) return;
         try {
           await act(r.job);
@@ -2158,12 +2158,12 @@ export async function showRemoved(job, done, database, fetchFn, env = {}) {
   list("done-lines", []);
   $("removal-mac").hidden = !(done.engineRemoving && isMac(env.navigator ?? globalThis.navigator));
   // The command is the person's own install: the removal leaves it, and the
-  // screen says so once it says BasaltDB is removed.
+  // screen says so only when the engine left this computer. While other agents
+  // stay, or the engine still runs, they still need the command.
   $("removal-command").hidden = true;
   if (!done.engineRemoving) {
     steps(done.engineRemoved ? "notAsked" : "kept");
     $("done-title").textContent = JOB_TEXT.REMOVE.removed;
-    $("removal-command").hidden = false;
     return;
   }
   steps("removing");

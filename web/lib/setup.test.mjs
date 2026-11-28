@@ -495,6 +495,11 @@ function fakePage() {
       return nodes[id];
     },
     createElement: (tag) => new Node(tag),
+    // Only the form busy()'s lock list uses: "#id button, #id input, ...".
+    querySelectorAll: (selector) => selector.split(",").flatMap((part) => {
+      const [id, tag] = part.trim().split(" ");
+      return [...nodes[id.slice(1)].walk()].filter((n) => n.tagName === tag.toUpperCase());
+    }),
   };
   return nodes;
 }
@@ -813,7 +818,7 @@ test("after a removal of the engine's last agent the page ticks this computer wh
   assert.deepEqual(nodes["removal-steps"].children.map((c) => c.textContent), removalSteps("app", "removed"));
   assert.equal(nodes["removal-mac"].hidden, false, "macOS keeps the engine's account: one line, no command");
   assert.equal(nodes["removal-command"].hidden, false, "the removed screen says the basalt command stays");
-  assert.match(HTML, /<p id="removal-command" class="muted" hidden>The basalt command stays where you installed it \(brew uninstall basaltdb removes it\)\.<\/p>/);
+  assert.match(HTML, /<p id="removal-command" class="muted" hidden>The basalt command stays where you installed it\. If you installed it with Homebrew, brew uninstall basaltdb removes it\.<\/p>/);
   assert.doesNotMatch(HTML, /sysadminctl|dscl/, "the page gives no command");
   assert.equal(nodes["done-lines"].hidden, true);
 
@@ -821,10 +826,11 @@ test("after a removal of the engine's last agent the page ticks this computer wh
   await showRemoved({ job: "REMOVE", agent: "demo_bot" }, { ...done, engineRemoved: false, engineRemoving: false }, "app", gone, { navigator: { userAgent: "Macintosh" } });
   assert.deepEqual(other["removal-steps"].children.map((c) => c.textContent), removalSteps("app", "kept"));
   assert.equal(other["removal-mac"].hidden, true, "the engine stays: nothing is kept behind");
-  assert.equal(other["removal-command"].hidden, false);
+  assert.equal(other["removal-command"].hidden, true, "other agents stay: they still need the command");
   const failed = fakePage();
   await showRemoved({ job: "REMOVE", agent: "demo_bot" }, { ...done, engineRemoving: false, warnings: ["this engine could not ask to be removed"] }, "app", gone, {});
   assert.deepEqual(failed["removal-steps"].children.map((c) => c.textContent), removalSteps("app", "notAsked"));
+  assert.equal(failed["removal-command"].hidden, true, "the warning says to run basalt init --remove, which needs the command");
 });
 
 // ---- The Update check: a CHANGE link opens on doctor ----
@@ -1376,11 +1382,11 @@ test("the demo, update and removal page's Check and Set up buttons show their wo
   await run;
   rested(nodes.run, "Set up");
   assert.match(nodes.status.textContent, /cancelled or timed out/);
-  for (const id of ["check", "database-url", "confirm-os-user"]) assert.equal(nodes[id].disabled, false, `${id} comes back after the refusal`);
+  for (const id of ["check", "database-url", "confirm-os-user", "confirm-replace"]) assert.equal(nodes[id].disabled, false, `${id} comes back after the refusal`);
 
   const again = nodes.run.click();
   working(nodes.run, "Waiting for your passkey…");
-  for (const id of ["check", "database-url", "confirm-os-user"]) assert.equal(nodes[id].disabled, true, `${id} is off while the run works`);
+  for (const id of ["check", "database-url", "confirm-os-user", "confirm-replace"]) assert.equal(nodes[id].disabled, true, `${id} is off while the run works`);
   assert.equal((await nodes.check.click(), g.calls.length), 1, "Check sends nothing mid-run");
   prompt.resolve({ credentialId: "aWQ" });
   await settle();
@@ -1402,10 +1408,13 @@ test("the Update check's fix, paste and confirm buttons show their working label
   startUpdate(change, { fetchFn: g.fetchFn, origin: ORIGIN, makePasskey: async () => ({}), pkc: null, now: () => new Date("2026-11-22T12:00:00Z"), onPick: () => {} });
   await settle();
   const fix = find(nodes["u-rows"], (n) => n.tagName === "BUTTON" && n.textContent === "Check");
+  const peer = find(nodes["u-rows"], (n) => n.tagName === "BUTTON" && n !== fix) ?? nodes["u-pick"];
   const press = fix.click();
   working(fix, "Checking the certificate…");
+  if (peer !== nodes["u-pick"]) assert.equal(peer.disabled, true, "another fix is off while this one works");
   await press;
   rested(fix, "Check");
+  if (peer !== nodes["u-pick"]) assert.equal(peer.disabled, false, "and back after it");
   assert.deepEqual(shown(nodes), ["s-paste"]);
 
   nodes["paste-next"].textContent = "Continue";
@@ -1539,4 +1548,31 @@ test("a removal is one press: Removing BasaltDB… on the button, no name sent, 
   for (let n = 0; n < 5 && nodes["done-title"].textContent !== "BasaltDB is removed"; n++) await settle();
   assert.equal(nodes["done-title"].textContent, "BasaltDB is removed");
   assert.deepEqual(nodes["removal-steps"].children.map((c) => c.textContent), removalSteps("app", "removed"));
+});
+
+test("a removal check that is due is dropped when Remove is pressed", async () => {
+  const nodes = fakePage();
+  const check = { database: "app", host: "db.example.com:5432", lines: ["a line"], notes: [], sql: "SELECT 1", passkeyNeeded: false };
+  let checks = 0;
+  const g = gated(async (path) => {
+    if (path === HEALTHZ_PATH) throw new TypeError("Failed to fetch");
+    if (path === CHECK_PATH) {
+      checks++;
+      return new Response(JSON.stringify(check), { status: 200 });
+    }
+    return new Response(JSON.stringify({ agent: "bot", lines: [], warnings: [], passkeys: [], mcpCommand: "", engineRemoved: false, engineRemoving: false }), { status: 200 });
+  });
+  await startJob({ job: "REMOVE", agent: "bot", osUser: "alice", demo: false }, "", { fetchFn: g.fetchFn, checkDelayMs: 0 });
+  nodes["database-url"].value = ADMIN;
+  nodes["database-url"].fire("input");
+  for (let n = 0; n < 5 && nodes.review.hidden; n++) await new Promise((r) => setTimeout(r, 1));
+  const before = checks;
+  assert.ok(before >= 1);
+  const release = g.hold();
+  const press = nodes.run.click();
+  assert.equal(nodes["database-url"].disabled, true);
+  release();
+  await press;
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(checks, before, "no check starts under the run");
 });

@@ -66,6 +66,7 @@ Neither reveals `s`, and neither gives the other. The page derives both from the
 | `basalt-engine-rotate.1\n` | Reserved: a key rotation statement. No shipped command signs it; the rotation command is removed |
 | `basalt-connect-collect.1\n` | A request to a separate setup service, not this channel; listed so the full set of contexts is visible |
 | `basalt-connect-reach.1\n` | A report to the same setup service; listed for the same reason |
+| `basalt-connect-removed.1\n` | A report to the same setup service that the engine removed itself; listed for the same reason |
 
 Pinned by `signature.json`.
 
@@ -96,6 +97,7 @@ context-box-key = basalt-engine-box-key.1\n
 context-rotate = basalt-engine-rotate.1\n
 context-connect-collect = basalt-connect-collect.1\n
 context-connect-reach = basalt-connect-reach.1\n
+context-connect-removed = basalt-connect-removed.1\n
 padding-min = 1024
 padding-max = 32768
 padding-length-prefix = 4

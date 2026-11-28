@@ -619,19 +619,41 @@ func (s *Server) CheckRemove(ctx context.Context, r *connect.Request[connectv1.C
 	}), nil
 }
 
-// RunRemove connects and removes BasaltDB in one transaction once
-// confirm_name is the database's name.
+// RunRemove connects and removes BasaltDB in one transaction; the admin
+// login is the confirmation. With a removal link's code it checks the code
+// first (live, a target and an engine key, the pasted string names the
+// target) and, after the removal, keeps a REMOVED hold and returns its
+// ticket (CONTRACT.md, Connect, The removal hand-off).
 func (s *Server) RunRemove(ctx context.Context, r *connect.Request[connectv1.RunRemoveRequest]) (*connect.Response[connectv1.RunRemoveResponse], error) {
+	code := r.Msg.GetCode()
+	var d setup.Description
+	if code != "" {
+		var err error
+		if d, err = setup.Describe(s.afterOpen(code)); err != nil {
+			return nil, refuse(err)
+		}
+	}
 	conn, err := s.dial(ctx, r.Msg.GetDatabaseUrl())
 	if err != nil {
 		return nil, refuse(err)
 	}
 	defer conn.Close(ctx)
-	done, err := setup.RunRemove(ctx, conn, r.Msg.GetConfirmName())
+	var done setup.Removed
+	if code == "" {
+		done, err = setup.RunRemove(ctx, conn)
+	} else {
+		done, err = setup.RunRemoveCode(ctx, conn, s.afterOpen(code))
+	}
 	if err != nil {
 		return nil, refuse(err)
 	}
-	return connect.NewResponse(&connectv1.RunRemoveResponse{Database: done.Database, Bots: done.Bots, Lines: done.Lines, Warnings: done.Warnings}), nil
+	out := &connectv1.RunRemoveResponse{Database: done.Database, Bots: done.Bots, Lines: done.Lines, Warnings: done.Warnings}
+	if code != "" {
+		if out.Ticket, err = s.removedFor(d); err != nil {
+			return nil, err
+		}
+	}
+	return connect.NewResponse(out), nil
 }
 
 // RevokePasskey removes a passkey with the admin connection alone, for a

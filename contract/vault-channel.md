@@ -28,6 +28,7 @@ Planned (M3.5, Vault channel Phase 1a; owner decisions VC-1 to VC-42). An engine
 | `basalt-engine-rotate.1\n` | The previous signing key | Reserved for a later key rotation's statement over the new keys (`rotatedFrom` in the [key file](../api/mcp/vault/channel-key-file.schema.json)); nothing signs it today |
 | `basalt-connect-collect.1\n` | Engine signing key | The audience `connect.basaltvault.app`, the `setupId`, the setup fingerprint and the time of a request for a connect-only setup's address ([The address hand-off](connect.md#the-address-hand-off)) |
 | `basalt-connect-reach.1\n` | Engine signing key | The same four lines as `basalt-connect-collect.1`, then the address the engine probed (host, port, database, Supabase ref) and its result and reason: a report of whether it can reach a connect-only setup's database ([The reach check](connect.md#the-reach-check)) |
+| `basalt-connect-removed.1\n` | Engine signing key | The same four lines as `basalt-connect-collect.1`, then the result and reason of the engine removing itself from the bot's machine after a removal on the connect page ([The removal hand-off](connect.md#the-removal-hand-off)) |
 
 ### Engine keys
 

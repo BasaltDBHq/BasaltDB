@@ -49,12 +49,12 @@ func TestRemoveThroughTheService(t *testing.T) {
 	require.Contains(t, checked.Msg.GetSql(), "DROP SCHEMA IF EXISTS basalt_meta CASCADE;")
 	require.False(t, checked.Msg.GetSampleSchema())
 
-	_, err = client.RunRemove(ctx, connect.NewRequest(&connectv1.RunRemoveRequest{DatabaseUrl: d.URL, ConfirmName: database + "x"}))
-	require.Equal(t, "ANSWERS_INVALID", refusalReason(t, err))
-
-	done, err := client.RunRemove(ctx, connect.NewRequest(&connectv1.RunRemoveRequest{DatabaseUrl: d.URL, ConfirmName: database}))
+	// The admin login is the confirmation: no typed name, and no hold
+	// without a removal link's code.
+	done, err := client.RunRemove(ctx, connect.NewRequest(&connectv1.RunRemoveRequest{DatabaseUrl: d.URL}))
 	require.NoError(t, err)
 	require.Equal(t, []string{"sales_bot"}, done.Msg.GetBots())
+	require.Empty(t, done.Msg.GetTicket())
 	var left bool
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'basalt_meta')`).Scan(&left))
 	require.False(t, left)

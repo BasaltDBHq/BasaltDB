@@ -69,15 +69,8 @@ func TestRemoveWithTheAdminConnectionOnly(t *testing.T) {
 	require.Contains(t, r.Lines[1], "ops_bot, sales_bot")
 	require.True(t, schemaExists(t, d, "basalt_meta"), "check changes nothing")
 
-	// A typed name that is not the database's changes nothing.
-	for _, typed := range []string{"", database + "x", "postgres", string(make([]byte, 64))} {
-		_, err = setup.RunRemove(ctx, d.Admin, typed)
-		require.Equal(t, setup.CodeAnswersInvalid, removeCode(t, err), "%q", typed)
-	}
-	require.True(t, schemaExists(t, d, "basalt_meta"))
-	require.Positive(t, prefixRoles(t, d))
-
-	done, err := setup.RunRemove(ctx, d.Admin, database)
+	// The admin login is the confirmation: no typed name.
+	done, err := setup.RunRemove(ctx, d.Admin)
 	require.NoError(t, err)
 	require.Equal(t, database, done.Database)
 	require.Equal(t, []string{"ops_bot", "sales_bot"}, done.Bots)
@@ -156,14 +149,10 @@ func TestRemoveRefusesABasaltMetaNotOwnedByAGuard(t *testing.T) {
 		}
 	})
 	d.Exec(t, "CREATE SCHEMA basalt_meta AUTHORIZATION "+app)
-	var database string
-	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT current_database()`).Scan(&database))
 
 	_, err := setup.CheckRemove(ctx, d.Admin)
 	require.Equal(t, "PREFIX_MISMATCH", removeCode(t, err))
-	_, err = setup.RunRemove(ctx, d.Admin, database+"x")
-	require.Equal(t, setup.CodeAnswersInvalid, removeCode(t, err), "the typed name is checked before the guard's owner")
-	_, err = setup.RunRemove(ctx, d.Admin, database)
+	_, err = setup.RunRemove(ctx, d.Admin)
 	require.Equal(t, "PREFIX_MISMATCH", removeCode(t, err))
 	require.True(t, schemaExists(t, d, "basalt_meta"), "nothing dropped")
 	var roles int

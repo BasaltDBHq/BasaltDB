@@ -35,6 +35,10 @@ const (
 	// ContextConnectReach signs the engine's report on whether it reached a
 	// collected address (CONTRACT.md, Connect, The reach check).
 	ContextConnectReach SigningContext = "basalt-connect-reach.1\n"
+	// ContextConnectRemoved signs the engine's report that it removed
+	// itself from the bot's machine after a removal on the connect page
+	// (CONTRACT.md, Connect, The removal hand-off).
+	ContextConnectRemoved SigningContext = "basalt-connect-removed.1\n"
 )
 
 // ConnectAudience is the connect service's host, the audience every
@@ -59,9 +63,17 @@ func ConnectReachBody(setupID, fingerprint, at, host string, port int, database,
 		database + "\n" + ref + "\n" + result + "\n" + reason)
 }
 
+// ConnectRemovedBody is what follows the basalt-connect-removed.1 line:
+// the collect body's lines, then the result and the reason, one per line,
+// with nothing after the reason. The reason of a REMOVED report is an
+// empty line.
+func ConnectRemovedBody(setupID, fingerprint, at, result, reason string) []byte {
+	return []byte(string(ConnectCollectBody(setupID, fingerprint, at)) + "\n" + result + "\n" + reason)
+}
+
 func (c SigningContext) valid() bool {
 	switch c {
-	case ContextVaultAuth, ContextSession, ContextReceipt, ContextBoxKey, ContextRotate, ContextConnectCollect, ContextConnectReach:
+	case ContextVaultAuth, ContextSession, ContextReceipt, ContextBoxKey, ContextRotate, ContextConnectCollect, ContextConnectReach, ContextConnectRemoved:
 		return true
 	default:
 		return false

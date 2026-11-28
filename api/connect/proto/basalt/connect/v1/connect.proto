@@ -59,8 +59,14 @@ service SetupService {
   // drops. No setup code. Changes nothing.
   rpc CheckRemove(CheckRemoveRequest) returns (CheckRemoveResponse);
   // The Remove BasaltDB tab: removes BasaltDB from the database in one
-  // transaction, once confirm_name is the database's name.
+  // transaction; the admin login is the confirmation. With a removal link's
+  // code, then holds a REMOVED hold for the bot's engine and returns a
+  // hand-off ticket.
   rpc RunRemove(RunRemoveRequest) returns (RunRemoveResponse);
+  // The engine: that it removed itself from the bot's machine after it
+  // collected a REMOVED hold, signed with the code's engine key. No
+  // database access.
+  rpc ReportRemoved(ReportRemovedRequest) returns (ReportRemovedResponse);
   // The Update check: revokes one passkey with the admin connection, for a
   // code with a target, in one transaction. The last one may go.
   rpc RevokePasskey(RevokePasskeyRequest) returns (RevokePasskeyResponse);
@@ -367,8 +373,10 @@ message CollectAddressResponse {
   // The database the setup ran in. Never a password. Sensitive: it names
   // the person's database, which a log must not keep.
   Target address = 1 [(sensitive) = true];
-  // PREVIEW (CheckSetup's hold: probe and report only) or SET_UP (RunSetup's
-  // hold: probe, ask the person, log in after yes).
+  // PREVIEW (CheckSetup's hold: probe and report only), SET_UP (RunSetup's
+  // hold: probe, ask the person, log in after yes) or REMOVED (RunRemove's
+  // hold for a removal link's code: BasaltDB was removed from the address,
+  // and the engine removes itself from the bot's machine).
   string phase = 2;
   // The SHA-256 of the certificate authority the person trusted on the page
   // for this host, 64 lowercase hex digits; empty when the server's
@@ -411,11 +419,26 @@ message HandoffStatusResponse {
   // HELD and COLLECTED: a new ticket that records the state, for the page
   // to use from now on.
   string ticket = 3 [(sensitive) = true];
-  // HELD and COLLECTED: PREVIEW or SET_UP, the hold's phase.
+  // HELD and COLLECTED: PREVIEW, SET_UP or REMOVED, the hold's phase.
   string phase = 4;
   // The newest reach report the engine made for the ticket's address;
   // absent before the first.
   Reach reach = 5;
+  // REMOVED holds only: the engine's report that it removed itself from
+  // the bot's machine; absent before it.
+  Removed removed = 6;
+}
+
+// What the engine reported about removing itself from the bot's machine.
+message Removed {
+  // REMOVED (nothing of BasaltDB is left but the binary) or KEPT (something
+  // stays; reason says what).
+  string result = 1;
+  // KEPT only: OTHER_AGENTS, CREDENTIAL_FILE_KEPT, SERVICE or
+  // DELETE_FAILED.
+  string reason = 2;
+  // RFC 3339 UTC: the report's time.
+  string reported_at = 3;
 }
 
 // What the engine reported about reaching an address.
@@ -446,7 +469,7 @@ message CheckRemoveRequest {
 }
 
 message CheckRemoveResponse {
-  // current_database(): the name the person types to confirm.
+  // current_database(): the database the page names on the Remove button.
   string database = 1;
   // The bots that lose their access, by name, sorted.
   repeated string bots = 2;
@@ -465,9 +488,16 @@ message RunRemoveRequest {
   string database_url = 1 [(sensitive) = true];
   // As in CheckRemoveRequest.
   string trust_root = 2;
-  // The database name the person typed. It must equal current_database(),
-  // checked in the removal's transaction (ANSWERS_INVALID otherwise).
-  string confirm_name = 3;
+  // The typed database name of earlier pages; the admin login is the
+  // confirmation now, and the service ignores a name sent here.
+  reserved 3;
+  reserved "confirm_name";
+  // The setup code of a removal link (basalt init --remove on the bot's
+  // machine), or empty. With one, the code must be live, carry a target
+  // and an engine key, and the pasted string must name its target
+  // (TARGET_MISMATCH); after the removal commits, the service holds a
+  // REMOVED hold for its setupId that the bot's engine collects.
+  string code = 4;
 }
 
 message RunRemoveResponse {
@@ -477,7 +507,28 @@ message RunRemoveResponse {
   // What was removed.
   repeated string lines = 3;
   repeated string warnings = 4;
+  // With a code: the hand-off ticket of the REMOVED hold, for
+  // HandoffStatus. Empty without a code.
+  string ticket = 5 [(sensitive) = true];
 }
+
+message ReportRemovedRequest {
+  // As in CollectAddressRequest: the removal code's setupId and engine key.
+  string setup_id = 1;
+  string engine_public_key = 2;
+  // RFC 3339 UTC, whole seconds: when the engine signed.
+  string time = 3;
+  // REMOVED or KEPT.
+  string result = 4;
+  // KEPT only: OTHER_AGENTS, CREDENTIAL_FILE_KEPT, SERVICE or
+  // DELETE_FAILED.
+  string reason = 5;
+  // ECDSA P-256 over the basalt-connect-removed.1 context (CONTRACT.md,
+  // Connect, The removal hand-off), 64 bytes r and s, base64url.
+  string signature = 6;
+}
+
+message ReportRemovedResponse {}
 
 // The error detail of every refusal, attached to the ConnectRPC error.
 message Refusal {

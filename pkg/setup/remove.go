@@ -63,14 +63,23 @@ func removal(r setuprun.ContractRemoval, err error) (Removal, error) {
 	return Removal(r), asError(err)
 }
 
-// RunRemove removes BasaltDB from conn's database in one transaction:
-// confirmName must equal current_database(), checked in that transaction
-// before anything is planned or dropped (ANSWERS_INVALID otherwise). It
-// plans again from the catalog, so it drops what is there now, which may
-// differ from what CheckRemove showed. A failed drop is SETUP_FAILED and
-// changes nothing.
-func RunRemove(ctx context.Context, conn *pgx.Conn, confirmName string) (Removed, error) {
-	return removed(contract.RunRemove(ctx, setupstore.Port(conn), confirmName))
+// RunRemove removes BasaltDB from conn's database in one transaction. The
+// admin login is the confirmation: there is no typed name. It plans again
+// from the catalog, so it drops what is there now, which may differ from
+// what CheckRemove showed. A failed drop is SETUP_FAILED and changes
+// nothing.
+func RunRemove(ctx context.Context, conn *pgx.Conn) (Removed, error) {
+	return removed(contract.RunRemove(ctx, setupstore.Port(conn)))
+}
+
+// RunRemoveCode is RunRemove with a removal link's code (req.Code, checked
+// at req.Now): the code must be live and carry a target and an engine key,
+// and conn must be its target (TARGET_MISMATCH), all before anything is
+// dropped. After it returns without an error the connect service keeps a
+// REMOVED hold for the code's setupId, engine key and fingerprint
+// (Describe), which the bot's engine collects.
+func RunRemoveCode(ctx context.Context, conn *pgx.Conn, req Request) (Removed, error) {
+	return removed(contract.RunRemoveCode(ctx, setupstore.Port(conn), adminAt(conn), contractRequest(req)))
 }
 
 // removed is the service's finished removal, or its refusal.

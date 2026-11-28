@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
 // Removing BasaltDB from a database (CONTRACT.md, Setup jobs, Remove Basalt)
@@ -51,24 +52,17 @@ func (c Contract) CheckRemove(ctx context.Context, conn Querier) (ContractRemova
 	return ContractRemoval{Database: p.Database, Bots: slices.Clone(p.Agents), Lines: p.Lines(), SQL: p.SQL(), NothingToRemove: p.Nothing(), SampleSchema: len(p.DemoDrops) > 0}, nil
 }
 
-// RunRemove removes BasaltDB from conn's database in one transaction:
-// confirmName must equal current_database(), checked in that transaction
-// before anything is planned or dropped. It plans again from the catalog.
-func (c Contract) RunRemove(ctx context.Context, conn Querier, confirmName string) (ContractRemoved, error) {
-	if err := CheckDatabaseName(confirmName); err != nil {
-		return ContractRemoved{}, err
-	}
+// RunRemove removes BasaltDB from conn's database in one transaction. The
+// admin login is the confirmation: there is no typed name. It plans again
+// from the catalog.
+func (c Contract) RunRemove(ctx context.Context, conn Querier) (ContractRemoved, error) {
 	var out ContractRemoved
 	err := c.be.BeginFunc(ctx, conn, func(tx Querier) error {
-		// The typed name first: a wrong one learns nothing of the guard.
-		if err := CheckTypedName(ctx, c.be, tx, confirmName); err != nil {
-			return err
-		}
 		prefix, err := c.removalPrefix(ctx, tx)
 		if err != nil {
 			return err
 		}
-		p, kept, err := RunRemove(ctx, c.be, tx, prefix, confirmName)
+		p, kept, err := RunRemove(ctx, c.be, tx, prefix, "")
 		if err != nil {
 			return err
 		}
@@ -87,6 +81,30 @@ func (c Contract) RunRemove(ctx context.Context, conn Querier, confirmName strin
 	}
 	return out, nil
 }
+
+// RunRemoveCode is RunRemove for a removal link's code (basalt init
+// --remove on an agent-operated engine; CONTRACT.md, Connect, The removal
+// hand-off): before anything is planned or dropped, the code must decode
+// and be live, carry a target and an engine key, and conn must be the
+// code's target (TARGET_MISMATCH). The hold the caller keeps afterwards is
+// for the code's setupId and engine key only.
+func (c Contract) RunRemoveCode(ctx context.Context, conn Querier, at ConnConfig, req ContractRequest) (ContractRemoved, error) {
+	s, err := NewSetuprun(c.be, req.Code, req.Now)
+	if err != nil {
+		return ContractRemoved{}, err
+	}
+	if s.P.Target == nil || s.P.Engine == nil {
+		return ContractRemoved{}, &SetuprunRefusalError{Code: string(setupcode.RefusalInvalid), Message: msgNotARemovalCode}
+	}
+	if err := CheckConnTarget(s.P, at); err != nil {
+		return ContractRemoved{}, err
+	}
+	return c.RunRemove(ctx, conn)
+}
+
+// msgNotARemovalCode refuses a code with no target or no engine key on the
+// Remove tab: it is not one basalt init --remove makes.
+const msgNotARemovalCode = "This link is not a removal link of a bot's computer. Ask your bot for a new one."
 
 // removalPrefix is the installed guard's prefix, or the default; a
 // basalt_meta whose owner is not a guard role is refused PREFIX_MISMATCH.

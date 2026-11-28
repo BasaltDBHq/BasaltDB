@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -56,4 +57,27 @@ type connectSignatureCase struct {
 	Message   string `json:"message"`
 	Sig       string `json:"sig"`
 	Expect    string `json:"expect"`
+}
+
+// The removed body is the collect body's five lines, then the result and
+// the reason; a signature over it verifies only under its own context, so
+// a collect or reach signature never passes as a removal report.
+func TestConnectRemovedBody(t *testing.T) {
+	t.Parallel()
+	const id, fp, at = "01a1f78c-52b8-7c3a-9f00-0000000000e1", "734b aaea 804e 1065 4148", "2026-11-20T06:20:00Z"
+	want := "basalt-connect-removed.1\nconnect.basaltvault.app\n" + id + "\n" + fp + "\n" + at + "\nREMOVED\n"
+	require.Equal(t, want, string(ContextConnectRemoved)+string(ConnectRemovedBody(id, fp, at, "REMOVED", "")))
+	require.True(t, strings.HasSuffix(string(ConnectRemovedBody(id, fp, at, "KEPT", "OTHER_AGENTS")), "\n"+at+"\nKEPT\nOTHER_AGENTS"))
+
+	keys, err := GenerateEngineKeys(time.Now)
+	require.NoError(t, err)
+	body := ConnectRemovedBody(id, fp, at, "REMOVED", "")
+	sig, err := keys.Sign(ContextConnectRemoved, body)
+	require.NoError(t, err)
+	require.NoError(t, VerifyKeySignature(keys.PublicKeySPKI(), ContextConnectRemoved, body, sig))
+	require.Error(t, VerifyKeySignature(keys.PublicKeySPKI(), ContextConnectReach, body, sig), "another context")
+	require.Error(t, VerifyKeySignature(keys.PublicKeySPKI(), ContextConnectRemoved, ConnectRemovedBody("01a1f78c-52b8-7c3a-9f00-0000000000e2", fp, at, "REMOVED", ""), sig), "another setupId")
+	collect, err := keys.Sign(ContextConnectCollect, ConnectCollectBody(id, fp, at))
+	require.NoError(t, err)
+	require.Error(t, VerifyKeySignature(keys.PublicKeySPKI(), ContextConnectRemoved, body, collect), "a collect signature")
 }

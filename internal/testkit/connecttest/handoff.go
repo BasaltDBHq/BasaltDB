@@ -45,7 +45,15 @@ const (
 const (
 	PhasePreview = "PREVIEW"
 	PhaseSetUp   = "SET_UP"
+	// PhaseRemoved is RunRemove's hold for a removal link's code: the
+	// engine that collects it removes itself (The removal hand-off).
+	PhaseRemoved = "REMOVED"
 )
+
+// The results and reasons of ReportRemoved.
+const resultRemoved, resultKept = "REMOVED", "KEPT"
+
+var keptReasons = map[string]bool{"OTHER_AGENTS": true, "CREDENTIAL_FILE_KEPT": true, "SERVICE": true, "DELETE_FAILED": true}
 
 // The results and reasons of ReportReach.
 const (
@@ -73,6 +81,7 @@ type hold struct {
 	TrustRoot   string     `json:"trustRoot,omitempty"`
 	CollectedAt *time.Time `json:"collectedAt,omitempty"`
 	Reach       *Reach     `json:"-"`
+	Removed     *Reach     `json:"-"`
 }
 
 // Reach is the newest report the engine made for a hold's address.
@@ -157,12 +166,37 @@ func (s *Server) holdFor(d setup.Description, at setup.Target, trustRoot string)
 	return s.ticket(h)
 }
 
+// removedFor holds the removal of d's target as a REMOVED hold for 30
+// minutes from now, replacing any hold, and returns its ticket.
+func (s *Server) removedFor(d setup.Description) (string, error) {
+	h := hold{Address: *d.Target, EngineKey: d.EngineKey, SetupID: d.SetupID, Fingerprint: d.Fingerprint, Expires: s.Now().Add(HoldLife).UTC().Truncate(time.Second), Phase: PhaseRemoved}
+	s.put(h)
+	return s.ticket(h)
+}
+
+// RemovedReport is the removal report the service kept for setupID's
+// hold.
+func (s *Server) RemovedReport(setupID string) (Reach, bool) {
+	h, ok := s.live(setupID)
+	if !ok || h.Removed == nil {
+		return Reach{}, false
+	}
+	return *h.Removed, true
+}
+
+// ForgeRemoved puts a REMOVED hold for setupID with engineKey and
+// fingerprint at address, as a service that never ran a removal would, for
+// tests of the engine's own checks.
+func (s *Server) ForgeRemoved(setupID, engineKey, fingerprint string, address setup.Target) {
+	s.put(hold{Address: address, EngineKey: engineKey, SetupID: setupID, Fingerprint: fingerprint, Expires: s.Now().Add(HoldLife).UTC().Truncate(time.Second), Phase: PhaseRemoved})
+}
+
 // previewFor makes a PREVIEW hold for at and returns its ticket, replacing
 // a PREVIEW hold, never a SET_UP one: then it makes none and returns "".
 func (s *Server) previewFor(d setup.Description, at setup.Target, trustRoot string) (string, error) {
 	h := hold{Address: at, EngineKey: d.EngineKey, SetupID: d.SetupID, Fingerprint: d.Fingerprint, Expires: s.Now().Add(HoldLife).UTC().Truncate(time.Second), Phase: PhasePreview, TrustRoot: trustRoot}
 	s.holds.mu.Lock()
-	if old, ok := s.holds.m[d.SetupID]; ok && s.Now().Before(old.Expires) && old.Phase == PhaseSetUp {
+	if old, ok := s.holds.m[d.SetupID]; ok && s.Now().Before(old.Expires) && (old.Phase == PhaseSetUp || old.Phase == PhaseRemoved) {
 		s.holds.mu.Unlock()
 		return "", nil
 	}
@@ -303,8 +337,39 @@ func (s *Server) ReportReach(_ context.Context, r *connect.Request[connectv1.Rep
 	return connect.NewResponse(&connectv1.ReportReachResponse{}), nil
 }
 
-// ReportsRefused is how many ReportReach calls were answered
-// HANDOFF_UNKNOWN.
+// ReportRemoved is the engine's report that it removed itself, checked in
+// ReportReach's order: the time, the hold (a REMOVED one), its key, the
+// signature, then the result and reason. The hold keeps the newest report
+// by time.
+func (s *Server) ReportRemoved(_ context.Context, r *connect.Request[connectv1.ReportRemovedRequest]) (*connect.Response[connectv1.ReportRemovedResponse], error) {
+	m := r.Msg
+	at, err := time.Parse(time.RFC3339, m.GetTime())
+	if err != nil || at.Sub(s.Now()).Abs() > clockSkew {
+		return nil, refusal(connect.CodeInvalidArgument, "CLOCK_SKEW", "The engine's clock is more than 5 minutes off.")
+	}
+	h, ok := s.live(m.GetSetupId())
+	if !ok || h.Phase != PhaseRemoved || h.EngineKey != m.GetEnginePublicKey() {
+		s.reportsRefused.Add(1)
+		return nil, handoffUnknown()
+	}
+	body := channel.ConnectRemovedBody(h.SetupID, h.Fingerprint, m.GetTime(), m.GetResult(), m.GetReason())
+	valid := (m.GetResult() == resultRemoved && m.GetReason() == "") || (m.GetResult() == resultKept && keptReasons[m.GetReason()])
+	if !verifySigned(h, channel.ContextConnectRemoved, body, m.GetSignature()) || !valid {
+		s.reportsRefused.Add(1)
+		return nil, handoffUnknown()
+	}
+	s.holds.mu.Lock()
+	defer s.holds.mu.Unlock()
+	cur, ok := s.holds.m[h.SetupID]
+	if ok && cur.Phase == PhaseRemoved && (cur.Removed == nil || !at.Before(cur.Removed.At)) {
+		cur.Removed = &Reach{Result: m.GetResult(), Reason: m.GetReason(), At: at}
+		s.holds.m[h.SetupID] = cur
+	}
+	return connect.NewResponse(&connectv1.ReportRemovedResponse{}), nil
+}
+
+// ReportsRefused is how many ReportReach and ReportRemoved calls were
+// answered HANDOFF_UNKNOWN.
 func (s *Server) ReportsRefused() int64 { return s.reportsRefused.Load() }
 
 // HandoffStatus is the page's poll: UNKNOWN without a hold for the
@@ -330,6 +395,9 @@ func (s *Server) HandoffStatus(_ context.Context, r *connect.Request[connectv1.H
 	}
 	if h.Reach != nil {
 		out.Reach = &connectv1.Reach{Result: h.Reach.Result, Reason: h.Reach.Reason, ReportedAt: h.Reach.At.UTC().Format(time.RFC3339)}
+	}
+	if h.Removed != nil {
+		out.Removed = &connectv1.Removed{Result: h.Removed.Result, Reason: h.Removed.Reason, ReportedAt: h.Removed.At.UTC().Format(time.RFC3339)}
 	}
 	return connect.NewResponse(out), nil
 }

@@ -8,6 +8,47 @@ import { BlockAssembler, HASH_PREFIX, MAX_REQUEST_FILE_BYTES, readRequestFile } 
 
 export const $ = (id) => document.getElementById(id);
 
+// busy marks a pressed button as working, at once and before any await: it
+// disables the button, sets aria-busy="true" (the stylesheet draws the
+// spinner from it) and swaps the label for the working one. It returns done,
+// which gives the button back as it was; done.label(text) changes the
+// working label while the button stays busy ("Waiting for your passkey…",
+// then "Setting up…"). It returns null while the button is already busy, so a
+// second press sends nothing: `const done = busy(b, "Checking…"); if (!done) return;`.
+// Every way out of the handler calls done(), also when the view moves on, so
+// a screen shown again does not come back stuck. done() puts the label and
+// the disabled state back, so paint the same button's disabled state after
+// it; a label the page painted meanwhile is left alone.
+export function busy(button, label) {
+  if (!button || button.getAttribute("aria-busy") === "true") return null;
+  // A button with an icon keeps it: its child nodes come back, not its text.
+  const kept = button.childNodes && button.replaceChildren ? [...button.childNodes] : null;
+  const label0 = button.textContent;
+  const disabled0 = button.disabled === true;
+  button.setAttribute("aria-busy", "true");
+  button.disabled = true;
+  button.textContent = label;
+  let shown = label;
+  let over = false;
+  const done = () => {
+    if (over) return;
+    over = true;
+    button.setAttribute("aria-busy", "false");
+    // A page that painted the button's label meanwhile keeps its own.
+    if (button.textContent === shown) {
+      if (kept) button.replaceChildren(...kept);
+      else button.textContent = label0;
+    }
+    button.disabled = disabled0;
+  };
+  done.label = (text) => {
+    if (over) return;
+    shown = text;
+    button.textContent = text;
+  };
+  return done;
+}
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // whenText is a moment in local time for a pill: "17:37" today, else with
@@ -154,15 +195,17 @@ function askForPaste(err, load, describe) {
         $("paste-status").textContent = NO_LINK_IN_PASTE;
         return;
       }
-      $("paste-read").disabled = true;
+      const done = busy($("paste-read"), "Checking…");
+      if (!done) return;
       try {
         resolve(await load(`#${fragment}`));
         $("paste-box").hidden = true;
         $("error").hidden = true;
       } catch (e) {
         $("paste-status").textContent = describe(e);
+      } finally {
+        done();
       }
-      $("paste-read").disabled = false;
     });
   });
 }
@@ -217,6 +260,15 @@ function askForRequest(h, load, describe) {
       await tryText(got.text);
     });
     $("request-read").addEventListener("click", async () => {
+      const done = busy($("request-read"), "Checking…");
+      if (!done) return;
+      try {
+        await readBlocks();
+      } finally {
+        done();
+      }
+    });
+    const readBlocks = async () => {
       const refused = assembler.add($("request-paste").value);
       $("request-paste").value = "";
       const progress = requestProgress(assembler);
@@ -228,7 +280,7 @@ function askForRequest(h, load, describe) {
         return;
       }
       if (got.text) await tryText(got.text);
-    });
+    };
   });
 }
 

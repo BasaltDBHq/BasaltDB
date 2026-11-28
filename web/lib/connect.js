@@ -14,6 +14,7 @@
 // after RunSetup whatever its answer, and on every way back to the paste
 // step. The hand-off ticket is kept the same way and never shown.
 import { ALG_ES256, PORTAL, PROD_RP_ID, b64urlDecode, b64urlEncode, hex, sha256, utf8 } from "./codec.js";
+import { busy } from "./page.js";
 import { labelRow as sharedLabelRow } from "./pickviews.js";
 import { browserFetch } from "./transport.js";
 import { startTabs } from "./remove.js";
@@ -956,14 +957,20 @@ export function start(env) {
     }
   };
 
-  $("code-read").addEventListener("click", () => {
+  $("code-read").addEventListener("click", async () => {
     const code = readCode($("code-paste").value);
     if (!code) {
       setText("code-status", "No setup code found in that text. Paste the code your bot sent; it starts with basalt-setup.1.");
       return;
     }
+    const done = busy($("code-read"), "Checking…");
+    if (!done) return;
     $("code-paste").value = "";
-    return describe(code);
+    try {
+      await describe(code);
+    } finally {
+      done();
+    }
   });
 
   $("same-code").addEventListener("click", () => {
@@ -1012,7 +1019,8 @@ export function start(env) {
       showPaste("");
       return;
     }
-    $("passkey-go").disabled = true;
+    const done = busy($("passkey-go"), "Waiting for your passkey…");
+    if (!done) return;
     setText("passkey-status", "");
     try {
       if (flow.needsNewPasskey) await flow.createPasskey();
@@ -1024,12 +1032,13 @@ export function start(env) {
       // passkey, new or the one the database has.
       if (!flow.needsNewPasskey) show("passkey-skip");
     } finally {
-      $("passkey-go").disabled = false;
+      done();
     }
   });
 
   $("passkey-use").addEventListener("click", async () => {
-    $("passkey-use").disabled = true;
+    const done = busy($("passkey-use"), "Waiting for your passkey…");
+    if (!done) return;
     setText("passkey-status", "");
     try {
       await flow.signExisting();
@@ -1037,7 +1046,7 @@ export function start(env) {
     } catch (err) {
       setText("passkey-status", `${passkeyError(err)} Create a new passkey instead.`);
     } finally {
-      $("passkey-use").disabled = false;
+      done();
     }
   });
 
@@ -1078,7 +1087,8 @@ export function start(env) {
     const typed = input.value;
     input.value = "";
     hideString();
-    $("check").disabled = true;
+    const done = busy($("check"), "Checking…");
+    if (!done) return;
     setText("checking-title", "Checking your database…");
     mark("chk-login", "wait", "Signing in to the database");
     mark("chk-tables", "hidden", "");
@@ -1093,7 +1103,7 @@ export function start(env) {
       else showPaste(err instanceof Refusal && err.reason === "NOT_POSTGRES" ? NOT_POSTGRES : refusalText(err));
       return;
     } finally {
-      $("check").disabled = false;
+      done();
     }
     showConfirm("");
   });
@@ -1114,31 +1124,36 @@ export function start(env) {
   };
   $("confirm-go").addEventListener("click", async () => {
     if (screen !== "s-confirm") return;
-    if (flow.step !== "trust") {
-      await checked();
-      return;
-    }
-    $("confirm-go").disabled = true;
-    setText("checking-title", "Checking your database…");
-    mark("chk-login", "wait", "Signing in to the database");
-    mark("chk-tables", "hidden", "");
-    mark("chk-reach", "hidden", "");
-    show("checking-note", false);
-    show("nocheck", false);
-    go("s-checking");
+    const done = busy($("confirm-go"), "Checking…");
+    if (!done) return;
     try {
-      await flow.trust();
-    } catch (err) {
-      if (flow.step === "trust") showConfirm(err.message);
-      else showPaste(refusalText(err));
-      return;
+      if (flow.step === "trust") {
+        setText("checking-title", "Checking your database…");
+        mark("chk-login", "wait", "Signing in to the database");
+        mark("chk-tables", "hidden", "");
+        mark("chk-reach", "hidden", "");
+        show("checking-note", false);
+        show("nocheck", false);
+        go("s-checking");
+        try {
+          await flow.trust();
+        } catch (err) {
+          done();
+          if (flow.step === "trust") showConfirm(err.message);
+          else showPaste(refusalText(err));
+          return;
+        }
+        // The step showed what the string names; once signed in, the service
+        // says what it reached. Anything else is asked again.
+        if (factsDiffer(shownFacts, flow.confirm().facts)) {
+          done();
+          return showConfirm("");
+        }
+      }
+      await checked();
     } finally {
-      $("confirm-go").disabled = false;
+      done();
     }
-    // The step showed what the string names; once signed in, the service
-    // says what it reached. Anything else is asked again.
-    if (factsDiffer(shownFacts, flow.confirm().facts)) return showConfirm("");
-    await checked();
   });
   $("confirm-back").addEventListener("click", () => {
     if (screen !== "s-confirm") return;
@@ -1192,18 +1207,24 @@ export function start(env) {
   };
 
   $("retry-reach").addEventListener("click", async () => {
-    if (!flow.hasTicket) {
-      const mine = newLoop();
-      try {
-        await flow.recheck(mine);
-      } catch (err) {
-        if (!mine.cancelled) showPaste(refusalText(err));
-        return;
+    const done = busy($("retry-reach"), "Checking…");
+    if (!done) return;
+    try {
+      if (!flow.hasTicket) {
+        const mine = newLoop();
+        try {
+          await flow.recheck(mine);
+        } catch (err) {
+          if (!mine.cancelled) showPaste(refusalText(err));
+          return;
+        }
+        // The person went back while CheckSetup ran: stay where they are.
+        if (mine.cancelled) return;
       }
-      // The person went back while CheckSetup ran: stay where they are.
-      if (mine.cancelled) return;
+      await checkReach();
+    } finally {
+      done();
     }
-    await checkReach();
   });
 
   $("go-on").addEventListener("click", () => {
@@ -1318,7 +1339,8 @@ export function start(env) {
   };
 
   $("revoke-go").addEventListener("click", async () => {
-    $("revoke-go").disabled = true;
+    const done = busy($("revoke-go"), "Removing…");
+    if (!done) return;
     try {
       const out = await flow.revokePasskey(revoking.credentialId);
       await signalRemoved(env.PublicKeyCredential ?? globalThis.PublicKeyCredential, out.removed);
@@ -1332,7 +1354,7 @@ export function start(env) {
         show("revoke-error");
       }
     } finally {
-      $("revoke-go").disabled = false;
+      done();
     }
   });
 
@@ -1352,15 +1374,17 @@ export function start(env) {
       showDoctor();
       return;
     }
-    $("addpk-go").disabled = true;
+    const done = busy($("addpk-go"), "Waiting for your passkey…");
+    if (!done) return;
     setText("addpk-status", "");
     try {
       await flow.createPasskey();
+      done();
       showDoctor();
     } catch (err) {
       setText("addpk-status", passkeyError(err));
     } finally {
-      $("addpk-go").disabled = false;
+      done();
     }
   });
 
@@ -1516,8 +1540,9 @@ export function start(env) {
   };
 
   $("approve").addEventListener("click", async () => {
+    const done = busy($("approve"), flow.passkeyMissing ? "Waiting for your passkey…" : flow.updateCheck ? "Updating…" : "Setting up…");
+    if (!done) return;
     newLoop();
-    $("approve").disabled = true;
     // No way back while the setup runs.
     show("back", false);
     try {
@@ -1530,6 +1555,7 @@ export function start(env) {
           show("back");
           return;
         }
+        done.label(flow.updateCheck ? "Updating…" : "Setting up…");
       }
       const choices = {};
       if (included) choices.includedTables = included;
@@ -1544,9 +1570,10 @@ export function start(env) {
       }
       // The setup ran: show it, outside the try, so a display error is
       // never reported as a refusal.
+      done();
       await showDone(result);
     } finally {
-      $("approve").disabled = false;
+      done();
     }
   });
 

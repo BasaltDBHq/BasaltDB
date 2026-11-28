@@ -264,6 +264,10 @@ button {
   cursor: pointer;
 }
 button:disabled { opacity: 0.5; cursor: default; }
+/* A pressed button says it is working: a spinner in the text colour (so it shows on primary, secondary, danger and reject buttons, light and dark) and the working label, set by busy() in lib/page.js. */
+button[aria-busy="true"] { display: inline-flex; align-items: center; justify-content: center; gap: 10px; opacity: 0.85; cursor: progress; }
+button[aria-busy="true"]::before { content: ""; flex: none; width: 16px; height: 16px; box-sizing: border-box; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.9s linear infinite; }
+@media (prefers-reduced-motion: reduce) { button[aria-busy="true"]::before { animation-duration: 2.5s; } }
 button.danger { background: var(--diff-del-fg); color: var(--on-danger); }
 button.secondary { background: var(--ui-panel); color: var(--ui-text); border: 1px solid var(--ui-border-strong); font-weight: 500; }
 button.reject { color: var(--diff-del-fg); }

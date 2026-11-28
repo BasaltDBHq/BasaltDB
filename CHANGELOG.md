@@ -126,6 +126,7 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 - `basalt init --demo` on sample tables an earlier demo left behind, with row-level security turned on (for example in Supabase's table editor), now gives the agent its policy on them. Before, the agent saw no lead and its writes were refused, while the page said `demo ready: leads 30, lead_notes 20`. A `basalt_demo` schema that BasaltDB did not make still gets no policy.
 - An install from the local setup page records the engine's key in the database, as a setup code's install does, so `status` reports `engineRecord.state` `RECORDED`. It reported `NOT_RECORDED`.
 - A statement with no placeholders sent with parameters is `INVALID_ARGUMENT` `the statement uses no parameters but N were given`, instead of `uses 0 parameters ($1..$0)`.
+- A button that starts a check, a job or a passkey prompt shows that it was pressed: a spinner and a working label in the button ("Checking the certificate…", "Waiting for your passkey…", "Setting up…", "Removing BasaltDB…"), on the setup, connect, approval, revert, plugin and registration pages. A second press sends nothing, and a refusal or a cancelled passkey prompt puts the button back with the reason shown. With reduced motion the spinner turns slowly and the label still changes.
 
 ### Security
 

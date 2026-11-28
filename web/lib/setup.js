@@ -4,7 +4,7 @@
 // install. The string stays in a variable of this page only: never in
 // storage, never in the URL, and cleared after the run.
 import { ALG_ES256, b64urlDecode, CodeError, registrationResponseJson } from "./codec.js";
-import { $, el, webauthnError } from "./page.js";
+import { $, busy as working, el, webauthnError } from "./page.js";
 import { answersFor, ENTITY_WORDS, fingerprintText, Labels, MAX_LABELS, restNote, tableName, trustRootFrom } from "./picks.js";
 import { labelRow } from "./pickviews.js";
 import { confirmView, factsDiffer, paintConfirm, sslModeOf, stringFacts, withVerifyFull } from "./confirm.js";
@@ -661,7 +661,8 @@ function main() {
 // startJob is the page of an UPDATE, REMOVE or demo INSTALL link, and the
 // pick of Update the guard and Remove BasaltDB that the Update check opens
 // for a CHANGE link (preset picks one).
-async function startJob(link, preset) {
+// env (tests) hands in the fetch and the passkey prompt.
+export async function startJob(link, preset, env = {}) {
   $("flow").hidden = true;
   let job = pickJob(link, preset);
   let text = JOB_TEXT[link.job];
@@ -678,7 +679,7 @@ async function startJob(link, preset) {
   $("choice").hidden = link.job !== "CHANGE";
   if (job && link.job === "CHANGE") $("choice-" + job.job.toLowerCase()).checked = true;
   $("main").hidden = false;
-  const fetchFn = browserFetch;
+  const fetchFn = env.fetchFn ?? browserFetch;
   $("admin-panel").hidden = true;
   const refused = await agentProbe(fetchFn, link);
   if (refused !== null) {
@@ -726,7 +727,8 @@ async function startJob(link, preset) {
     sync();
   });
   $("check").addEventListener("click", async () => {
-    $("check").disabled = true;
+    const done = working($("check"), "Checking…");
+    if (!done) return;
     $("status").textContent = "Checking your database…";
     databaseUrl = $("database-url").value;
     const asked = job;
@@ -736,11 +738,13 @@ async function startJob(link, preset) {
       answer = await postSetup(fetchFn, CHECK_PATH, setupRequest(asked, databaseUrl));
     } catch (err) {
       setChoices(false);
+      done();
       showError(err);
       sync();
       return;
     }
     setChoices(false);
+    done();
     if (!answerFits(asked, job)) {
       $("status").textContent = "";
       sync();
@@ -767,30 +771,35 @@ async function startJob(link, preset) {
   $("run").addEventListener("click", async () => {
     if (!checked || !runnable() || !answerFits(checkedFor, job)) return;
     const running = checkedFor;
-    $("run").disabled = true;
+    const workText = running.job === "REMOVE" ? "Removing BasaltDB…" : running.job === "UPDATE" ? "Updating…" : "Setting up…";
+    const stop = working($("run"), checked.passkeyNeeded ? "Waiting for your passkey…" : workText);
+    if (!stop) return;
     setChoices(true);
     let extra = running.job === "REMOVE" || replaceOf(checked.replace) ? { confirmName: typedName() } : {};
     try {
       if (checked.passkeyNeeded) {
         $("status").textContent = "Create the passkey in your browser's prompt.";
-        extra = { ...extra, challenge: checked.challenge, passkey: await createPasskey(checked.challenge, "localhost") };
+        extra = { ...extra, challenge: checked.challenge, passkey: await (env.makePasskey ?? ((c) => createPasskey(c, "localhost")))(checked.challenge) };
       }
     } catch (err) {
       $("status").textContent = webauthnError(err);
-      $("run").disabled = false;
+      stop();
       setChoices(false);
       return;
     }
+    stop.label(workText);
     $("status").textContent = "Setting up…";
     try {
       const done = await postSetup(fetchFn, RUN_PATH, setupRequest(running, databaseUrl, extra));
       databaseUrl = "";
       $("database-url").value = "";
       $("status").textContent = "";
+      stop();
+      $("run").disabled = true;
       showDone(running, done);
     } catch (err) {
+      stop();
       showError(err);
-      $("run").disabled = false;
       setChoices(false);
     }
   });
@@ -896,6 +905,8 @@ export function startReal(link, env) {
   $("paste-next").addEventListener("click", async () => {
     const typed = $("paste-url").value;
     if (typed.trim() === "") return;
+    const done = working($("paste-next"), "Checking…");
+    if (!done) return;
     $("paste-url").value = "";
     hideString();
     mismatch = "";
@@ -904,9 +915,11 @@ export function startReal(link, env) {
     try {
       answer = await install.list(typed);
     } catch (err) {
+      done();
       listFailed(err);
       return;
     }
+    done();
     listed(answer, false);
   });
 
@@ -933,11 +946,14 @@ export function startReal(link, env) {
   $("confirm-check").addEventListener("click", async () => {
     if (screen !== "s-confirm" || install.asking || !install.listing) return;
     const provider = String(install.listing.certificate?.provider ?? "");
+    const done = working($("confirm-check"), "Checking the certificate…");
+    if (!done) return;
     checking();
     let answer;
     try {
       answer = await install.checkCertificate();
     } catch (err) {
+      done();
       if (err instanceof SetupError && err.code === "CERTIFICATE_NOT_VERIFIED" && provider !== "") {
         mismatch = provider;
         return showConfirm();
@@ -947,6 +963,7 @@ export function startReal(link, env) {
       return;
     }
     // Verified now: the step again, with the provider's check mark.
+    done();
     if (answer !== null) showConfirm();
   });
   $("confirm-go").addEventListener("click", async () => {
@@ -958,17 +975,21 @@ export function startReal(link, env) {
       return showPaste("");
     }
     if (!install.asking) return listed(install.listing);
+    const done = working($("confirm-go"), "Checking…");
+    if (!done) return;
     checking();
     let answer;
     try {
       answer = await install.trust();
     } catch (err) {
+      done();
       install.forget();
       showPaste(err.message);
       return;
     }
     // The step showed what the string names; once signed in, the engine
     // says what it reached. Anything else is asked again.
+    done();
     if (answer !== null && factsDiffer(shownFacts, install.listing.facts)) return showConfirm();
     listed(answer);
   });
@@ -1082,8 +1103,10 @@ export function startReal(link, env) {
   const labelsApply = () => install.labels !== null && install.labels.of(install.picked()).length > 0;
 
   $("tables-next").addEventListener("click", async () => {
-    $("tables-next").disabled = true;
+    const done = working($("tables-next"), "Checking…");
+    if (!done) return;
     const ok = await recheck("tables-error");
+    done();
     $("tables-next").disabled = install.picked().length === 0;
     if (!ok) return;
     if (labelsApply()) showLabels();
@@ -1188,8 +1211,9 @@ export function startReal(link, env) {
 
   $("approve").addEventListener("click", async () => {
     if (!install.view()) return showTables();
+    const stop = working($("approve"), install.view().passkeyNeeded ? "Waiting for your passkey…" : "Setting up…");
+    if (!stop) return;
     busy = true;
-    $("approve").disabled = true;
     show("back", false);
     if (install.view().passkeyNeeded) setText("approve-status", "Create the passkey in your browser's prompt.");
     try {
@@ -1197,18 +1221,21 @@ export function startReal(link, env) {
       try {
         done = await install.run(async (c) => {
           const passkey = await env.makePasskey(c);
+          stop.label("Setting up…");
           setText("approve-status", "Setting up…");
           return passkey;
         }, $("ap-confirm").value);
       } catch (err) {
         busy = false;
+        stop();
         ranRefused(err);
         return;
       }
+      stop();
       showDone(link, done);
     } finally {
       busy = false;
-      $("approve").disabled = false;
+      stop();
       if (screen === "s-approve") show("back");
     }
   });
@@ -1371,6 +1398,9 @@ const RELOAD_TRIES = 6;
 const RELOAD_WAIT_MS = 1000;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// FIX_WORK is what a fix button says while its fix runs.
+const FIX_WORK = { TRUST: "Checking the certificate…", LABELS: "Checking…", PASSKEY_ADD: "Waiting for your passkey…", REPAIR: "Checking…" };
+
 const UPDATE_SCREENS = ["u-check", "u-passkeys", "s-confirm", "u-mismatch", "u-confirm", "u-done", "u-allset", "s-paste", "s-labels", "s-checking"];
 
 // startUpdate runs the Update check for a CHANGE link. env has fetchFn,
@@ -1483,7 +1513,16 @@ export function startUpdate(link, env) {
     if (r.action) {
       const b = el("button", r.tone === "critical" ? "fix" : "", r.action);
       b.type = "button";
-      b.addEventListener("click", () => act(r.job));
+      b.addEventListener("click", async () => {
+        if (r.job === "MANAGE" || r.job === "UPDATE") return act(r.job);
+        const stop = working(b, FIX_WORK[r.job] ?? "Checking…");
+        if (!stop) return;
+        try {
+          await act(r.job);
+        } finally {
+          stop();
+        }
+      });
       li.appendChild(b);
     }
     return li;
@@ -1554,14 +1593,20 @@ export function startUpdate(link, env) {
     problem("paste-error", text);
     go("s-paste");
   };
-  $("paste-next").addEventListener("click", () => {
+  $("paste-next").addEventListener("click", async () => {
     const typed = $("paste-url").value;
     if (typed.trim() === "" || !pending) return;
+    const stop = working($("paste-next"), "Checking…");
+    if (!stop) return;
     $("paste-url").value = "";
     fix.setString(typed);
     const run = pending;
     pending = null;
-    run();
+    try {
+      await run();
+    } finally {
+      stop();
+    }
   });
   $("reveal").addEventListener("click", () => {
     const shown = $("paste-url").type === "password";
@@ -1660,12 +1705,20 @@ export function startUpdate(link, env) {
   };
   $("confirm-go").addEventListener("click", async () => {
     if (screen === "s-confirm" && target) {
+      const stop = working($("confirm-go"), "Checking…");
+      if (!stop) return;
       target = null;
-      return refresh();
+      try {
+        await refresh();
+      } finally {
+        stop();
+      }
+      return;
     }
     if (screen !== "s-confirm" || !trusting) return;
     const trustRoot = trusting.sha256;
-    $("confirm-go").disabled = true;
+    const stop = working($("confirm-go"), "Updating…");
+    if (!stop) return;
     try {
       await fix.check("TRUST", { trustRoot });
       await fix.run("TRUST", { trustRoot });
@@ -1675,12 +1728,21 @@ export function startUpdate(link, env) {
       if (err instanceof SetupError && STRING_REFUSED.has(err.code)) return failed(err, FIXES.TRUST);
       problem("confirm-error", err.message);
     } finally {
-      $("confirm-go").disabled = false;
+      stop();
     }
   });
-  $("confirm-back").addEventListener("click", () => {
+  $("confirm-back").addEventListener("click", async () => {
     if (screen !== "s-confirm") return;
-    if (target) return notMine();
+    if (target) {
+      const stop = working($("confirm-back"), "Sending…");
+      if (!stop) return;
+      try {
+        await notMine();
+      } finally {
+        stop();
+      }
+      return;
+    }
     trusting = null;
     cancel();
   });
@@ -1717,7 +1779,8 @@ export function startUpdate(link, env) {
     go("u-mismatch");
   };
   $("u-mm-go").addEventListener("click", async () => {
-    $("u-mm-go").disabled = true;
+    const stop = working($("u-mm-go"), "Updating…");
+    if (!stop) return;
     try {
       await fix.run("TRUST", { pinned: mismatchPinned });
       afterFix();
@@ -1725,7 +1788,7 @@ export function startUpdate(link, env) {
       if (err instanceof SetupError && STRING_REFUSED.has(err.code)) return failed(err, FIXES.TRUST);
       problem("u-mm-error", err.message);
     } finally {
-      $("u-mm-go").disabled = false;
+      stop();
     }
   });
   $("u-mm-cancel").addEventListener("click", cancel);
@@ -1780,7 +1843,8 @@ export function startUpdate(link, env) {
       leave();
       return afterFix(); // left unlabeled for now: no run
     }
-    $("labels-next").disabled = true;
+    const wait = working($("labels-next"), "Updating…");
+    if (!wait) return;
     try {
       await fix.run("LABELS", fields);
       if (!fields.restPublic) leave();
@@ -1789,7 +1853,7 @@ export function startUpdate(link, env) {
       if (err instanceof SetupError && err.code === "CLASSES_CHANGED") return FIXES.LABELS();
       failed(err, FIXES.LABELS, "labels-error");
     } finally {
-      $("labels-next").disabled = false;
+      wait();
     }
   });
 
@@ -1810,7 +1874,15 @@ export function startUpdate(link, env) {
     const b = el("button", "remove", "Remove");
     b.type = "button";
     b.setAttribute("aria-label", `Remove ${k.label}`);
-    b.addEventListener("click", () => withString(() => removeKey(k)));
+    b.addEventListener("click", async () => {
+      const stop = working(b, "Checking…");
+      if (!stop) return;
+      try {
+        await withString(() => removeKey(k));
+      } finally {
+        stop();
+      }
+    });
     li.appendChild(b);
     return li;
   };
@@ -1833,7 +1905,15 @@ export function startUpdate(link, env) {
       showPasskeys("");
     });
   };
-  $("u-add").addEventListener("click", () => startFix("PASSKEY_ADD"));
+  $("u-add").addEventListener("click", async () => {
+    const stop = working($("u-add"), "Waiting for your passkey…");
+    if (!stop) return;
+    try {
+      await startFix("PASSKEY_ADD");
+    } finally {
+      stop();
+    }
+  });
 
   // ---- the confirmation and the done screen ----
   const showConfirm = (title, answer, action, run) => {
@@ -1847,7 +1927,9 @@ export function startUpdate(link, env) {
   };
   $("u-confirm-go").addEventListener("click", async () => {
     if (!confirmGo) return;
-    $("u-confirm-go").disabled = true;
+    const action = $("u-confirm-go").textContent;
+    const stop = working($("u-confirm-go"), action === "Remove passkey" ? "Removing…" : action === "Check it" ? "Checking the certificate…" : "Updating…");
+    if (!stop) return;
     try {
       await confirmGo();
     } catch (err) {
@@ -1857,7 +1939,7 @@ export function startUpdate(link, env) {
       }
       problem("u-confirm-error", err.message);
     } finally {
-      $("u-confirm-go").disabled = false;
+      stop();
     }
   });
   $("u-confirm-cancel").addEventListener("click", cancel);
@@ -1871,7 +1953,15 @@ export function startUpdate(link, env) {
     doneNext = then;
     go("u-done");
   };
-  $("u-done-next").addEventListener("click", () => doneNext?.());
+  $("u-done-next").addEventListener("click", async () => {
+    const stop = working($("u-done-next"), "Checking…");
+    if (!stop) return;
+    try {
+      await doneNext?.();
+    } finally {
+      stop();
+    }
+  });
 
   // ---- Back: to the check, or to the list ----
   $("back").addEventListener("click", () => {
@@ -1927,17 +2017,20 @@ export function startRemoved(link, env) {
     env.onSetUp({ ...link, job: "INSTALL", demo: false });
   });
   remove.addEventListener("click", async () => {
+    const stop = working(remove, "Sending…");
+    if (!stop) return;
     again.disabled = true;
-    remove.disabled = true;
     $("removed-status").textContent = "";
     try {
       await postSetup(env.fetchFn, REMOVE_ENGINE_PATH, {});
     } catch (err) {
       $("removed-status").textContent = err.message;
       again.disabled = false;
-      remove.disabled = false;
+      stop();
       return;
     }
+    stop();
+    remove.disabled = true;
     $("removed-status").textContent = REMOVED_TEXT.asked;
   });
 }

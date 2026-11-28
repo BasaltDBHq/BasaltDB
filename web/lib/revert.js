@@ -27,7 +27,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, rejectRevert, revertDone, revertPaths } from "./local.js";
-import { $, NO_CARRIER, REVERT_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, personText, relayFailure, setPill, showDone, showEngine, showReceipt, showRelayFailed, showWithdrawn, webauthnError, withdrawnText } from "./page.js";
+import { $, NO_CARRIER, busy, REVERT_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, personText, relayFailure, setPill, showDone, showEngine, showReceipt, showRelayFailed, showWithdrawn, webauthnError, withdrawnText } from "./page.js";
 import { canWiden, narrow, widen } from "./rescope.js";
 import { applyReveal, canReveal, clearReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { changeGroups, countText, rawText, rowKeyText } from "./changes.js";
@@ -259,9 +259,10 @@ async function finish(response, relay, binding) {
   }
 }
 
-async function sign(rp, state) {
+export async function sign(rp, state) {
   const { req, relay } = state;
-  $("sign").disabled = true;
+  const done = busy($("sign"), "Waiting for your passkey…");
+  if (!done) return;
   try {
     const cred = await navigator.credentials.get({
       publicKey: {
@@ -273,6 +274,7 @@ async function sign(rp, state) {
       },
     });
     const r = cred.response;
+    done.label("Sending…");
     await finish(
       {
         revertId: req.revertId,
@@ -284,7 +286,11 @@ async function sign(rp, state) {
       relay,
       state.req.binding,
     );
+    // Signed, and the page says how it went: the button stays off.
+    done();
+    $("sign").disabled = true;
   } catch (err) {
+    done();
     $("sign").disabled = blocked(state.req) !== null || state.expired;
     $("status").textContent = webauthnError(err, state.req.credentialIds.length);
   }
@@ -309,22 +315,25 @@ function noteChanged() {
 
 // reject posts the person's Reject with their note. No passkey: rejecting
 // can only stop a revert (CONTRACT.md, Rescope, widen and reject).
-async function reject(state) {
+export async function reject(state) {
   const { req, relay } = state;
   const note = $("note").value;
-  $("reject-send").disabled = true;
+  const done = busy($("reject-send"), "Sending…");
+  if (!done) return;
   $("reject-cancel").disabled = true;
   $("reject-status").textContent = "";
   try {
     await rejectRevert(relay.session, relay.id, relay.secret, note);
   } catch (err) {
+    done();
     if (withdrawnNow(relay, err)) return;
-    $("reject-send").disabled = false;
     $("reject-cancel").disabled = false;
     $("reject-status").textContent = err?.reason === "LINK_RESET" ? RESET_MESSAGE : personText(err) || `The engine did not take the reject: ${err.message}`;
     return;
   }
   // The engine revoked the link with the reject: the session is done.
+  done();
+  $("reject-send").disabled = true;
   endSession(relay.session, ENGINE_BUTTONS);
   $("reject-note").hidden = true;
   $("sheet-dim").hidden = true;
@@ -374,8 +383,11 @@ function render(state) {
   // on a revert that had expired when the page loaded.
   const nothing = blocked(req);
   // N is the rows the revert writes.
-  $("sign").textContent = `Sign with your passkey: ${plural(req.binding.rows, "row")}`;
-  $("sign").disabled = nothing !== null || state.busy || state.expired || longLink;
+  // Not while Sign is working: its own label and state come back with done().
+  if ($("sign").getAttribute("aria-busy") !== "true") {
+    $("sign").textContent = `Sign with your passkey: ${plural(req.binding.rows, "row")}`;
+    $("sign").disabled = nothing !== null || state.busy || state.expired || longLink;
+  }
   $("reject").disabled = state.busy || state.expired;
   $("status").textContent = state.expired ? EXPIRED : longLink ? NO_CARRIER : (nothing ?? "");
 }
@@ -448,7 +460,7 @@ function applyScope(state, out) {
   if (out.secret) state.relay.secret = out.secret;
 }
 
-async function changeScope(state, run) {
+async function changeScope(state, run, done = () => {}) {
   state.busy = true;
   $("scope-status").textContent = "Updating the rows…";
   render(state);
@@ -456,10 +468,12 @@ async function changeScope(state, run) {
     applyScope(state, await run());
     $("scope-status").textContent = "";
   } catch (err) {
+    done();
     if (withdrawnNow(state.relay, err)) return;
     $("scope-status").textContent = err?.name === "NotAllowedError" || err?.name === "SecurityError" ? webauthnError(err, state.req.credentialIds.length) : scopeFailure(err);
   }
   state.busy = false;
+  done();
   render(state);
 }
 
@@ -476,15 +490,20 @@ function rescope(state, kind, key) {
 
 // includeOthers widens to every agent's changes in the task: the passkey
 // signs the widen proof first, and nothing is sent without it.
-function includeOthers(state) {
-  return changeScope(state, () =>
-    widen({
-      req: state.req,
-      rpId: state.rp.rpId,
-      secret: state.relay.secret,
-      session: state.relay.session,
-      getAssertion: (options) => navigator.credentials.get(options),
-    }),
+export function includeOthers(state) {
+  const done = busy($("widen"), "Waiting for your passkey…");
+  if (!done) return;
+  return changeScope(
+    state,
+    () =>
+      widen({
+        req: state.req,
+        rpId: state.rp.rpId,
+        secret: state.relay.secret,
+        session: state.relay.session,
+        getAssertion: (options) => navigator.credentials.get(options),
+      }),
+    done,
   );
 }
 
@@ -514,8 +533,10 @@ function toggleValues(state) {
 
 // showValues asks the passkey once and shows every hidden row. Signing
 // still asks for the passkey again; nothing shown goes into the signature.
-async function showValues(state) {
+export async function showValues(state) {
   const { req, relay } = state;
+  const done = busy($("reveal"), "Waiting for your passkey…");
+  if (!done) return;
   // Busy: the scope chips, Sign and Reject wait for the reveal.
   state.busy = true;
   $("reveal-status").textContent = "";
@@ -534,12 +555,14 @@ async function showValues(state) {
       getAssertion: (options) => navigator.credentials.get(options),
     });
   } catch (err) {
+    done();
     if (withdrawnNow(relay, err)) return;
     const failure = revealFailure(err, KIND_REVERT);
     status = failure?.text ?? (err?.name === "NotAllowedError" ? webauthnError(err, req.credentialIds.length) : personText(err) || err.message);
     if (failure?.final) state.revealFinal = req;
   }
   state.busy = false;
+  done();
   // Rows of an older request never land on the lines shown now.
   if (shown !== null) applyReveal(state, req, shown);
   if (state.req === req) $("reveal-status").textContent = status;

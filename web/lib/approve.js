@@ -20,7 +20,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
-import { $, APPROVE_REOPEN, NO_CARRIER, el, fail, linkFailure, endSession, loadOrPaste, openSession, personText, relayFailure, setPill, showDone, showEngine, showReceipt, showRelayFailed, showWithdrawn, webauthnError, whenText, withdrawnText } from "./page.js";
+import { $, APPROVE_REOPEN, busy, NO_CARRIER, el, fail, linkFailure, endSession, loadOrPaste, openSession, personText, relayFailure, setPill, showDone, showEngine, showReceipt, showRelayFailed, showWithdrawn, webauthnError, whenText, withdrawnText } from "./page.js";
 import { applyReveal, canReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { agentName } from "./scope.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
@@ -196,9 +196,10 @@ async function finish(response, relay, binding) {
   }
 }
 
-async function approve(rp, req, summary, relay) {
+export async function approve(rp, req, summary, relay) {
   if (!gate(req, summary)) return;
-  $("approve").disabled = true;
+  const done = busy($("approve"), "Waiting for your passkey…");
+  if (!done) return;
   try {
     const cred = await navigator.credentials.get({
       publicKey: {
@@ -210,6 +211,7 @@ async function approve(rp, req, summary, relay) {
       },
     });
     const r = cred.response;
+    done.label("Sending…");
     await finish(
       {
         approvalId: req.approvalId,
@@ -221,7 +223,11 @@ async function approve(rp, req, summary, relay) {
       relay,
       req.binding,
     );
+    // Signed, and the page says how it went: the button stays off.
+    done();
+    $("approve").disabled = true;
   } catch (err) {
+    done();
     gate(req, summary);
     $("status").textContent = webauthnError(err, req.credentialIds.length);
   }
@@ -252,7 +258,8 @@ function wireReveal(rp, state) {
   $("reveal-text").textContent = `${hiddenLines(req)} of these rows are in resources the agent cannot read. You can see their values with your passkey; the agent still cannot.`;
   $("reveal-box").hidden = false;
   $("reveal").addEventListener("click", async () => {
-    $("reveal").disabled = true;
+    const done = busy($("reveal"), "Waiting for your passkey…");
+    if (!done) return;
     $("reveal-status").textContent = "";
     try {
       const shown = await reveal({
@@ -265,12 +272,14 @@ function wireReveal(rp, state) {
         session: relay.session,
         getAssertion: (options) => navigator.credentials.get(options),
       });
+      done();
       applyReveal(state, req, shown);
       renderLines(state);
       $("reveal").hidden = true;
       $("reveal-text").textContent = SHOWN_TO_YOU;
       $("hide-values").hidden = false;
     } catch (err) {
+      done();
       if (withdrawnNow(relay, err)) return;
       const failure = revealFailure(err, KIND_APPROVE);
       $("reveal-status").textContent = failure?.text ?? (err?.name === "NotAllowedError" ? webauthnError(err, req.credentialIds.length) : personText(err) || err.message);

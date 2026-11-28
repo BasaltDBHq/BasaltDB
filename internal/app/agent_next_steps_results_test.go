@@ -54,7 +54,7 @@ func resultCases() map[string]resultCase {
 		resultKey("describe", "NOT_GRANTED"): {
 			tool: "describe", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				o, err := describeUseCase(guidance.Commands{}, &fakeCatalog{notGranted: 3}).DescribeOverview(context.Background())
+				o, err := describeUseCase(guidance.Commands{}, &fakeCatalog{notGranted: map[string]int{"auth": 3}}).DescribeOverview(context.Background())
 				require.NoError(t, err)
 				return o.PersonMessage, nil, o.NextSteps
 			},

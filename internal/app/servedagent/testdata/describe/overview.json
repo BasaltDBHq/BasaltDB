@@ -2,6 +2,7 @@
   "counts": {
     "namespaces": 2,
     "notGranted": 1,
+    "notGrantedInGrantedNamespaces": 1,
     "resources": 3
   },
   "fingerprint": "<fingerprint>",
@@ -24,7 +25,7 @@
       "text": "Tell the agent when it needs one of these resources: it gives you a link where you pick them."
     }
   ],
-  "personMessage": "1 resource in this database is not granted to the agent, so it cannot see it. To give it one, tell the agent: it gives you a link where you pick the resources.",
+  "personMessage": "1 resource in shop is not granted to the agent. To give it one, tell the agent: it gives you a link where you pick the resources.",
   "resources": [
     {
       "access": [

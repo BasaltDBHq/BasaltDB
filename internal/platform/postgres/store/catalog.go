@@ -53,7 +53,7 @@ func (c *Catalog) read(ctx context.Context, fn func(pgx.Tx) error) error {
 }
 
 // relationsRaw is Relations before MapError.
-func (c *Catalog) relationsRaw(ctx context.Context) (visible []pgcatalog.Relation, notGranted int, err error) {
+func (c *Catalog) relationsRaw(ctx context.Context) (visible []pgcatalog.Relation, notGranted map[string]int, err error) {
 	err = c.read(ctx, func(tx pgx.Tx) error {
 		visible, notGranted, err = pgcatalog.Relations(ctx, tx)
 		return err

@@ -118,7 +118,12 @@ func TestRelationsHidesUngranted(t *testing.T) {
 	require.Equal(t, "PARTITIONED_TABLE", relByName(t, rels, "p").Kind)
 	require.Equal(t, "VIEW", relByName(t, rels, "v").Kind)
 	require.Equal(t, "TABLE", relByName(t, rels, "a").Kind)
-	require.GreaterOrEqual(t, notGranted, 1)
+	total := 0
+	for _, n := range notGranted {
+		total += n
+	}
+	require.GreaterOrEqual(t, total, 1)
+	require.Equal(t, 1, notGranted[describeSchema], "only hidden, counted under its schema (partitions are not relations of their own)")
 	require.Equal(t, "  Accounts, zqxpadded  ", relByName(t, rels, "a").Comment)
 }
 

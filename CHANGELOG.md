@@ -128,6 +128,7 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 - `basalt init --demo` on sample tables an earlier demo left behind, with row-level security turned on (for example in Supabase's table editor), now gives the agent its policy on them. Before, the agent saw no lead and its writes were refused, while the page said `demo ready: leads 30, lead_notes 20`. A `basalt_demo` schema that BasaltDB did not make still gets no policy.
 - An install from the local setup page records the engine's key in the database, as a setup code's install does, so `status` reports `engineRecord.state` `RECORDED`. It reported `NOT_RECORDED`.
 - A statement with no placeholders sent with parameters is `INVALID_ARGUMENT` `the statement uses no parameters but N were given`, instead of `uses 0 parameters ($1..$0)`.
+- `describe` no longer says that hundreds of resources "cannot be seen" when they belong to the host's own schemas (Supabase's `auth`, `storage`, `realtime`). The message now splits the count: what is held back in the schemas the agent can read from ("3 resources in public"), and a count of the other schemas the agent has no grant in ("204 in 11 other schemas"), which are never named. `counts` carries the split as `notGrantedInGrantedNamespaces`, `notGrantedInOtherNamespaces` and `notGrantedNamespaces`.
 
 ### Security
 

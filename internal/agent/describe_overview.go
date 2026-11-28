@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -15,7 +16,7 @@ import (
 // resources) or its namespaces, and tells the person how to see what it
 // cannot.
 func (ds *Service) DescribeOverview(ctx context.Context) (Overview, error) {
-	visible, notGranted, err := ds.store.Catalog.Resources(ctx)
+	visible, ungranted, err := ds.store.Catalog.Resources(ctx)
 	if err != nil {
 		return Overview{}, err
 	}
@@ -23,6 +24,9 @@ func (ds *Service) DescribeOverview(ctx context.Context) (Overview, error) {
 	if err != nil {
 		return Overview{}, err
 	}
+	notGranted := ungranted.Total()
+	namespaces := namespaceCounts(visible)
+	split := splitNotGranted(namespaces, ungranted)
 	pii, err := ds.store.Classes.CatalogFingerprint(ctx)
 	if err != nil {
 		return Overview{}, err
@@ -30,15 +34,17 @@ func (ds *Service) DescribeOverview(ctx context.Context) (Overview, error) {
 	limits := ds.store.Data.Limits()
 	o := Overview{
 		Store:       StoreInfo{Kind: string(ds.store.Kind), Database: ds.store.Catalog.Database(), Host: ds.store.Catalog.Host()},
-		Fingerprint: catalogFingerprint(lines, notGranted, pii),
+		Fingerprint: catalogFingerprint(lines, split.key(notGranted), pii),
 		Counts:      Counts{Resources: len(visible), NotGranted: notGranted},
 		Update:      ds.update(),
 		Limits: OverviewLimits{
 			ReadRowLimit: limits.ReadRowLimit, StatementTimeoutMs: limits.StatementTimeout.Milliseconds(), WritePolicy: writePolicy,
 		},
 	}
-	namespaces := namespaceCounts(visible)
 	o.Counts.Namespaces = len(namespaces)
+	o.Counts.NotGrantedInGrantedNamespaces = split.inGranted
+	o.Counts.NotGrantedInOtherNamespaces = split.other
+	o.Counts.NotGrantedNamespaces = split.otherNamespaces
 	b := guidance.NewSteps()
 	switch {
 	case len(visible) > overviewInlineMax:
@@ -51,7 +57,7 @@ func (ds *Service) DescribeOverview(ctx context.Context) (Overview, error) {
 		}
 	}
 	if notGranted > 0 {
-		o.PersonMessage = ds.notGrantedSteps(b, notGranted)
+		o.PersonMessage = ds.notGrantedSteps(b, split)
 	}
 	if o.Namespaces == nil && notGranted == 0 {
 		return o, nil
@@ -108,15 +114,104 @@ func overviewLargeSteps(b *guidance.Steps, namespaces []NamespaceCount) {
 		"Find resources with describe and a query: a word of a resource, field or namespace name. These arguments list the largest namespace.")
 }
 
+// notGrantedSplit is the not-granted resources split by where they are: in
+// the namespaces where the agent can read a resource (named, since it sees
+// them) and in the others (only counted, never named).
+type notGrantedSplit struct {
+	inGranted int
+	other     int
+	// otherNamespaces is how many namespaces the agent has no grant in.
+	otherNamespaces int
+	// heldBack are the granted namespaces with something not granted, and
+	// granted all of them, by name.
+	heldBack, granted []string
+	noun              agentstore.Noun
+}
+
+// key is the split as the catalog fingerprint hashes it: a grant that moves
+// resources between the two kinds of namespace changes it.
+func (s notGrantedSplit) key(total int) string {
+	return fmt.Sprintf("%d:%d:%d:%d", total, s.inGranted, s.other, s.otherNamespaces)
+}
+
+func splitNotGranted(visible []NamespaceCount, ungranted agentstore.NotGranted) notGrantedSplit {
+	s := notGrantedSplit{noun: ungranted.Namespace}
+	if s.noun.One == "" {
+		s.noun = agentstore.Noun{One: "namespace", Many: "namespaces"}
+	}
+	seen := make(map[string]bool, len(visible))
+	for _, nc := range visible {
+		seen[nc.Namespace] = true
+		s.granted = append(s.granted, nc.Namespace)
+		if n := ungranted.Namespaces[nc.Namespace]; n > 0 {
+			s.inGranted += n
+			s.heldBack = append(s.heldBack, nc.Namespace)
+		}
+	}
+	for ns, n := range ungranted.Namespaces {
+		if n > 0 && !seen[ns] {
+			s.other += n
+			s.otherNamespaces++
+		}
+	}
+	return s
+}
+
+// namedNamespacesMax is how many namespaces a not-granted message names.
+const namedNamespacesMax = 3
+
+// namedNamespaceChars is the most of a namespace name the message quotes.
+const namedNamespaceChars = 60
+
+// namespaceList names up to three namespaces, each cut to a name's length
+// limit so the message stays short for any store, or counts them: all of the
+// namespaces the agent can see, or some of them.
+func (s notGrantedSplit) namespaceList(names []string) string {
+	switch {
+	case len(names) == 1:
+		return firstRunes(names[0], namedNamespaceChars)
+	case len(names) <= namedNamespacesMax:
+		cut := make([]string, len(names))
+		for i, n := range names {
+			cut[i] = firstRunes(n, namedNamespaceChars)
+		}
+		return strings.Join(cut[:len(cut)-1], ", ") + " and " + cut[len(cut)-1]
+	case len(names) == len(s.granted):
+		return fmt.Sprintf("the %d %s it can see", len(names), s.noun.Many)
+	}
+	return fmt.Sprintf("%d of the %d %s it can see", len(names), len(s.granted), s.noun.Many)
+}
+
 // notGrantedSteps (NOT_GRANTED): the person tells the agent when it needs
 // one of the resources; the setup page that basalt init links to lists them, so
-// the agent never sees their names (D-1, D-7). No ASK_PERSON: platform
-// namespaces are ungranted on every Supabase project.
-func (ds *Service) notGrantedSteps(b *guidance.Steps, notGranted int) string {
+// the agent never sees their names (D-1, D-7). The message names only
+// namespaces the agent has a grant in, and counts the rest. No ASK_PERSON:
+// platform namespaces are ungranted on every Supabase project.
+func (ds *Service) notGrantedSteps(b *guidance.Steps, s notGrantedSplit) string {
 	b.TellAgent("Tell the agent when it needs one of these resources: it gives you a link where you pick them.")
-	return fmt.Sprintf("%d %s in this database %s not granted to the agent, so it cannot see %s. "+
-		"To give it one, tell the agent: it gives you a link where you pick the resources.",
-		notGranted, plural(notGranted, "resource", "resources"), plural(notGranted, "is", "are"), plural(notGranted, "it", "them"))
+	where := func(other bool) string {
+		w := fmt.Sprintf("%d %s", s.otherNamespaces, plural(s.otherNamespaces, s.noun.One, s.noun.Many))
+		if other && len(s.granted) > 0 {
+			w = fmt.Sprintf("%d other %s", s.otherNamespaces, plural(s.otherNamespaces, s.noun.One, s.noun.Many))
+		}
+		return w
+	}
+	resources := func(n int) string { return fmt.Sprintf("%d %s", n, plural(n, "resource", "resources")) }
+	var msg string
+	switch {
+	case s.inGranted == 0:
+		if len(s.granted) > 0 {
+			msg = fmt.Sprintf("Everything in %s is granted. ", s.namespaceList(s.granted))
+		}
+		msg += fmt.Sprintf("%s in %s %s not granted to the agent.", resources(s.other), where(true), plural(s.other, "is", "are"))
+	case s.other == 0:
+		msg = fmt.Sprintf("%s in %s %s not granted to the agent.",
+			resources(s.inGranted), s.namespaceList(s.heldBack), plural(s.inGranted, "is", "are"))
+	default:
+		msg = fmt.Sprintf("%s in %s and %d in %s are not granted to the agent.",
+			resources(s.inGranted), s.namespaceList(s.heldBack), s.other, where(true))
+	}
+	return msg + " To give it one, tell the agent: it gives you a link where you pick the resources."
 }
 
 func plural(n int, one, many string) string {

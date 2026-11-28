@@ -17,7 +17,7 @@ require (
 	github.com/pganalyze/pg_query_go/v6 v6.2.5
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/stretchr/testify v1.12.1
-	github.com/wasilibs/go-pgquery v0.0.0-20261106060434-4301e51f8dbf
+	github.com/wasilibs/go-pgquery v0.0.0-20261127020734-be0bec80c2a1
 	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20261123192653-4dc4fb521066
 	golang.org/x/mod v0.43.0
@@ -34,13 +34,13 @@ require (
 	github.com/go-playground/universal-translator v0.18.2 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/puddle/v2 v2.2.3 // indirect
+	github.com/jackc/puddle/v2 v2.2.4 // indirect
 	github.com/lann/builder v0.0.0-20180802200727-47ae307949d0 // indirect
 	github.com/lann/ps v0.0.0-20150810152359-62de8c46ede0 // indirect
 	github.com/leodido/go-urn v1.5.0 // indirect
 	github.com/tetratelabs/wazero v1.12.0 // indirect
 	github.com/wasilibs/wazero-helpers v0.0.0-20250123031827-cd30c44769bb // indirect
-	go.yaml.in/yaml/v3 v3.0.5 // indirect
+	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect
 )

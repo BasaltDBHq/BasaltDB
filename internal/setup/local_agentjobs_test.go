@@ -46,8 +46,10 @@ func installed(t *testing.T) (*fixture, *setup.LocalService) {
 // of its last agent creates the removal job's marker.
 func stateDirOf(f *fixture) string { return filepath.Join(filepath.Dir(f.config), "state") }
 
-// markerOf is that marker's path.
-func markerOf(f *fixture) string { return filepath.Join(stateDirOf(f), servicespec.RemovalMarkerName) }
+// markerOf is that marker's path, in the config folder.
+func markerOf(f *fixture) string {
+	return filepath.Join(filepath.Dir(f.config), servicespec.RemovalMarkerName)
+}
 
 func (f *fixture) agentJob(job string) setup.Request {
 	return setup.Request{Job: job, Agent: "demo_bot", OSUser: "alice", DatabaseURL: f.db.URL}
@@ -261,6 +263,17 @@ func TestRemoveDropsBasaltAndForgetsTheAgent(t *testing.T) {
 		_, err = svc.Run(ctx, req)
 		refusal(t, err, setup.CodeEngineRemoved)
 	}
+	// The page of a REMOVE link on that engine asks the job again with a run
+	// that carries no admin string; a check never does.
+	require.NoError(t, os.Remove(markerOf(f)))
+	probe := setup.Request{Job: setup.JobRemove, Agent: "demo_bot", OSUser: "alice"}
+	_, err = svc.Check(ctx, probe)
+	refusal(t, err, setup.CodeEngineRemoved)
+	require.NoFileExists(t, markerOf(f), "a check changes nothing")
+	_, err = svc.Run(ctx, probe)
+	refusal(t, err, setup.CodeEngineRemoved)
+	require.FileExists(t, markerOf(f), "the page's run asks the removal job again")
+
 	// basalt init on an engine its removal job did not remove yet: an
 	// INSTALL runs as a first install on the same engine, writes its config
 	// again and has the engine serve it.
@@ -305,6 +318,11 @@ func TestRemoveKeepsOtherAgentsOfTheEngine(t *testing.T) {
 	require.False(t, kept.EngineRemoved, "another agent is left: the service stays")
 	require.False(t, kept.EngineRemoving)
 	require.NoFileExists(t, markerOf(f), "no removal job is asked")
+	// basalt init's probe for that agent, from before the Remove, ends its
+	// wait: AGENT_REMOVED.
+	since := f.now.Add(-time.Minute)
+	_, err = svc.Check(ctx, setup.Request{Agent: "demo_bot", Since: &since})
+	refusal(t, err, setup.CodeAgentRemoved)
 	cfg, err = config.Load(f.config)
 	require.NoError(t, err)
 	require.Len(t, cfg.Agents, 1)

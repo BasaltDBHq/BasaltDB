@@ -51,7 +51,7 @@ func TestRemoveScriptIsBuiltFromConstants(t *testing.T) {
 			"remove_dir '/Library/Application Support/Basalt'", "remove_dir /Library/Logs/Basalt", "remove_dir /Library/Basalt",
 			"for old in /Library/Logs/Basalt.old-*; do",
 			"macOS keeps its hidden system accounts",
-			"rm -f /Library/LaunchDaemons/dev.basaltdb.remove.plist /usr/local/libexec/basalt-remove\nlaunchctl bootout system/dev.basaltdb.remove >/dev/null 2>&1 || true\n",
+			"rm -f /Library/LaunchDaemons/dev.basaltdb.remove.plist /usr/local/libexec/basalt-remove /var/log/basalt-remove.log\nlaunchctl bootout system/dev.basaltdb.remove >/dev/null 2>&1 || true\n",
 		}},
 	} {
 		t.Run(v.goos, func(t *testing.T) {

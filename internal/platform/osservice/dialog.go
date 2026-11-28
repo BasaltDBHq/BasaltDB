@@ -258,6 +258,9 @@ func InstallScript(goos string, src Source) (string, error) {
 	b.WriteString(scriptHelpers(goos))
 	b.WriteString(breakingHelpers)
 	b.WriteString(ScriptHelpersEnd)
+	// First, before any check reads an account or a folder: a removal job
+	// still at work may be deleting them.
+	b.WriteString(RemovalJobWait(goos))
 	// Every check runs before anything is created: a refused folder never
 	// leaves a new OS user or folder behind.
 	if src.copies(goos) {

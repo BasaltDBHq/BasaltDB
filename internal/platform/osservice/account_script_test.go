@@ -92,7 +92,7 @@ func TestRemoveScriptDeletesTheGroupOnlyAfterItsUser(t *testing.T) {
 		require.NoError(t, err)
 		helpers, _, ok := strings.Cut(script, osservice.ScriptHelpersEnd)
 		require.True(t, ok)
-		deleteUser, deleteGroup := "userdel -f", "groupdel"
+		deleteUser, deleteGroup := "userdel", "groupdel"
 		for _, v := range []struct {
 			name              string
 			groupExists       bool
@@ -151,7 +151,7 @@ func TestRemoveScriptOrder(t *testing.T) {
 		_, fn, ok := strings.Cut(helpers, "delete_account() {")
 		require.True(t, ok, goos)
 		wait := strings.Index(fn, `pgrep -U "$1"`)
-		user, group := strings.Index(fn, `userdel -f "$1"`), strings.Index(fn, `groupdel "$1"`)
+		user, group := strings.Index(fn, `userdel "$1"`), strings.Index(fn, `groupdel "$1"`)
 		require.True(t, wait >= 0 && wait < user && user < group, "%s: wait, then the user, then the group", goos)
 	}
 }
@@ -340,7 +340,7 @@ chown() { echo "chown $*"; }
 func TestRemoveScriptNamesTheAccountsLeft(t *testing.T) {
 	t.Parallel()
 	for goos, want := range map[string][2]string{
-		"linux": {"To delete it: userdel -f basalt; ", "delete it with groupdel basalt; "},
+		"linux": {"To delete it: userdel basalt; ", "delete it with groupdel basalt; "},
 	} {
 		script, err := osservice.RemoveScript(goos)
 		require.NoError(t, err)

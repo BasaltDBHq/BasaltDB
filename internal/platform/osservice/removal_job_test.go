@@ -133,7 +133,7 @@ func TestInstallScriptWritesTheRemovalJob(t *testing.T) {
 			"put_file /etc/systemd/system/basalt-remove.service <<'END_OF_REMOVAL_UNIT'\n",
 			"Type=oneshot\nExecStart=/bin/sh /usr/libexec/basalt-remove\n",
 			"put_file /etc/systemd/system/basalt-remove.path <<'END_OF_REMOVAL_UNIT'\n",
-			"PathExists=/var/lib/basalt/remove-requested\nUnit=basalt-remove.service\n",
+			"PathExists=/etc/basalt/remove-requested\nUnit=basalt-remove.service\n",
 			"systemctl daemon-reload\nsystemctl enable --now basalt-remove.path\n",
 		},
 		"darwin": {
@@ -141,7 +141,7 @@ func TestInstallScriptWritesTheRemovalJob(t *testing.T) {
 			"put_file /usr/local/libexec/basalt-remove <<'END_OF_REMOVAL_JOB'\n#!/bin/sh\n",
 			"put_file /Library/LaunchDaemons/dev.basaltdb.remove.plist <<'END_OF_REMOVAL_UNIT'\n",
 			"<string>/bin/sh</string>\n\t\t<string>/usr/local/libexec/basalt-remove</string>",
-			"<key>WatchPaths</key>\n\t<array>\n\t\t<string>/Library/Application Support/Basalt/state/remove-requested</string>",
+			"<key>WatchPaths</key>\n\t<array>\n\t\t<string>/Library/Application Support/Basalt/remove-requested</string>",
 			"launchctl print system/dev.basaltdb.remove >/dev/null 2>&1 || launchctl bootstrap system /Library/LaunchDaemons/dev.basaltdb.remove.plist\n",
 		},
 	} {
@@ -157,4 +157,25 @@ func TestInstallScriptWritesTheRemovalJob(t *testing.T) {
 		}
 		require.NotContains(t, body, "RunAtLoad</key>\n\t<true/>\n\t<key>WatchPaths", goos)
 	}
+}
+
+// The install and the restart wait for a removal job still at work before
+// anything else, right after their helpers: a check that read the engine's
+// account while the job deletes it would go on with an account that is gone.
+func TestInstallAndRestartWaitForTheRemovalJobFirst(t *testing.T) {
+	t.Parallel()
+	for _, goos := range []string{"linux", "darwin"} {
+		install, err := osservice.InstallScript(goos, dialogSource)
+		require.NoError(t, err)
+		restart, err := osservice.RestartScript(goos, dialogSource)
+		require.NoError(t, err)
+		for name, script := range map[string]string{"install": install, "restart": restart} {
+			_, rest, ok := strings.Cut(script, osservice.ScriptHelpersEnd)
+			require.True(t, ok, "%s %s", goos, name)
+			require.True(t, strings.HasPrefix(rest, osservice.RemovalJobWait(goos)), "%s %s: the wait is the first thing after the helpers", goos, name)
+			require.Equal(t, 1, strings.Count(script, osservice.RemovalJobWait(goos)), "%s %s: once", goos, name)
+		}
+	}
+	require.Contains(t, osservice.RemovalJobWait("linux"), "systemctl is-active --quiet basalt-remove.service")
+	require.Contains(t, osservice.RemovalJobWait("darwin"), "launchctl print system/dev.basaltdb.remove")
 }

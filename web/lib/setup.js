@@ -120,10 +120,16 @@ export async function agentProbe(fetchFn, link) {
     await postSetup(fetchFn, CHECK_PATH, setupRequest(job, ""));
   } catch (err) {
     if (err.code === "CONNECTION_STRING_REFUSED") return null;
+    // A REMOVE link on an engine the page removed: the engine asked its
+    // removal job again, and the page watches it stop.
+    if (link.job === "REMOVE" && err.code === ENGINE_REMOVED) return ENGINE_REMOVED;
     return err.message;
   }
   return null;
 }
+
+// ENGINE_REMOVED is the engine's answer once a removal took its last agent.
+export const ENGINE_REMOVED = "ENGINE_REMOVED";
 
 // answerFits reports whether a check's answer, asked for job asked, is
 // still the one to run: a pick changed during the check makes it stale.
@@ -148,20 +154,21 @@ export function removeButtonText(checked) {
 // setup page, Removing the engine service): the database, this computer and
 // the agent's connection.
 export const REMOVAL_TEXT = {
-  database: (db) => `✓ Removed from the database ${db}`,
+  database: (db) => (db ? `✓ Removed from the database ${db}` : "✓ Removed from the database"),
   removing: "Removing from this computer…",
   removed: "✓ Removed from this computer",
-  stuck: "This computer: the engine is still running. Ask your agent to call status: it says what is left.",
+  stuck: "This computer: the engine is still running. Ask your agent to run basalt init --remove: your computer asks for your password once and removes the rest.",
   kept: "This computer: the engine stays, serving your other agents.",
   notAsked: "This computer: the engine stays, serving no agent (the warning below says why).",
   agent: "Agent connection: your agent drops it the next time you talk to it.",
-  done: (db) => `From the database ${db} and from this computer. You can close this tab.`,
+  agentKept: "Agent connection: this agent's calls to that database now fail; your other agents go on.",
+  done: (db) => (db ? `From the database ${db} and from this computer. You can close this tab.` : "From the database and from this computer. You can close this tab."),
 };
 
 // removalSteps are the checklist's lines; computer is "removing",
 // "removed", "stuck", "kept" or "notAsked".
 export function removalSteps(database, computer) {
-  return [REMOVAL_TEXT.database(database), REMOVAL_TEXT[computer], REMOVAL_TEXT.agent];
+  return [REMOVAL_TEXT.database(database), REMOVAL_TEXT[computer], computer === "kept" ? REMOVAL_TEXT.agentKept : REMOVAL_TEXT.agent];
 }
 
 // REMOVAL_WAIT_MS bounds the wait for the engine to stop after a removal,
@@ -746,6 +753,17 @@ export async function startJob(link, preset, env = {}) {
   const fetchFn = env.fetchFn ?? browserFetch;
   $("admin-panel").hidden = true;
   const refused = await agentProbe(fetchFn, link);
+  if (refused === ENGINE_REMOVED) {
+    // Ask the engine to ask its removal job again: a run with no admin
+    // string, which it answers ENGINE_REMOVED.
+    try {
+      await postSetup(fetchFn, RUN_PATH, setupRequest(link, ""));
+    } catch {
+      // ENGINE_REMOVED, or no engine any more: the checklist shows which.
+    }
+    await showRemoved(link, { agent: link.agent, lines: [], warnings: [], passkeys: [], engineRemoved: true, engineRemoving: true }, "", fetchFn, env);
+    return;
+  }
   if (refused !== null) {
     $("main").hidden = true;
     $("error-text").textContent = refused;
@@ -782,42 +800,66 @@ export async function startJob(link, preset, env = {}) {
     if (checked) $("run").disabled = !runnable();
   });
   let autoCheck = null;
+  // checkSeq numbers the checks: only the newest one's answer or refusal
+  // is shown. A removal checks by itself on every change of the box, so a
+  // check for an older string may still run when the next one starts.
+  let checkSeq = 0;
+  // checking counts the checks in flight: a stale one gives the choices
+  // back only when no newer check still holds them.
+  let checking = 0;
   $("database-url").addEventListener("input", () => {
     checked = null;
     $("review").hidden = true;
     $("remove-target").hidden = true;
+    // A check still running is for an older string: its answer is dropped.
+    checkSeq++;
+    $("status").textContent = "";
     sync();
     clearTimeout(autoCheck);
     if (job?.job === "REMOVE" && $("database-url").value !== "") autoCheck = setTimeout(runCheck, env.checkDelayMs ?? CHECK_DELAY_MS);
   });
   const runCheck = async () => {
     if ($("database-url").value === "") return;
-    const done = working($("check"), "Checking…");
+    const auto = job?.job === "REMOVE";
+    const done = auto ? () => {} : working($("check"), "Checking…");
     if (!done) return;
+    const seq = ++checkSeq;
+    checking++;
     $("status").textContent = "Checking your database…";
-    databaseUrl = $("database-url").value;
+    const url = $("database-url").value;
+    databaseUrl = url;
     const asked = job;
     setChoices(true);
     let answer;
     try {
-      answer = await postSetup(fetchFn, CHECK_PATH, setupRequest(asked, databaseUrl));
+      answer = await postSetup(fetchFn, CHECK_PATH, setupRequest(asked, url));
     } catch (err) {
-      setChoices(false);
       done();
+      checking--;
+      if (seq !== checkSeq) {
+        if (checking === 0) setChoices(false);
+        return;
+      }
+      setChoices(false);
+      if (auto && err.code === "BUSY") {
+        // The engine still runs the check of an earlier string.
+        autoCheck = setTimeout(runCheck, env.checkDelayMs ?? CHECK_DELAY_MS);
+        return;
+      }
       showError(err);
       sync();
       return;
     }
-    setChoices(false);
     done();
+    checking--;
+    if (seq !== checkSeq) {
+      if (checking === 0) setChoices(false);
+      return;
+    }
+    setChoices(false);
     if (!answerFits(asked, job)) {
       $("status").textContent = "";
       sync();
-      return;
-    }
-    if (asked.job === "REMOVE" && $("database-url").value !== databaseUrl) {
-      // The string changed during the check: its own check comes next.
-      $("status").textContent = "";
       return;
     }
     checked = answer;

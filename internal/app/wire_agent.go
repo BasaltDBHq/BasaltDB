@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
@@ -134,9 +135,15 @@ func NewAgentCatalog(c *postgres.Catalog) agentsvc.Catalog { return agentcatalog
 // NewAgentProbe is the store's probe as the agent reads it.
 func NewAgentProbe(p postgres.Probe) status.Probe { return agentProbe{p} }
 
-// configDirGone reports whether the folder of configPath does not exist:
-// the removal deleted it (status REMOVED). Any other error is not a removal.
+// configDirGone reports whether BasaltDB is gone from this computer: the
+// folder of configPath does not exist, and neither do the engine service's
+// unit and its removal job (status REMOVED). A service still installed is
+// not removed. Any other error is not a removal.
 func configDirGone(configPath string) bool {
-	_, err := os.Lstat(filepath.Dir(configPath))
-	return errors.Is(err, fs.ErrNotExist)
+	for _, p := range []string{filepath.Dir(configPath), osservice.UnitPath(runtime.GOOS), osservice.RemovalJobUnit(runtime.GOOS)} {
+		if _, err := os.Lstat(p); !errors.Is(err, fs.ErrNotExist) {
+			return false
+		}
+	}
+	return true
 }

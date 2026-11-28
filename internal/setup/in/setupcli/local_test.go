@@ -207,6 +207,8 @@ func (localHost) OSRestartScript(goos, binary string) (string, error) {
 
 func (localHost) OSServiceBinary(goos string) string { return osservice.ServiceBinary(goos) }
 
+func (localHost) OSRemoveScript(goos string) (string, error) { return osservice.RemoveScript(goos) }
+
 func (localHost) OSResetScript(goos string) (string, error) { return osservice.ResetScript(goos) }
 func (localHost) OSDefaultUser(goos string) string          { return osservice.DefaultUser(goos) }
 func (localHost) OSUnitPath(goos string) string             { return osservice.UnitPath(goos) }
@@ -811,15 +813,38 @@ func TestInitRemoveWithNothingToRemove(t *testing.T) {
 	require.Empty(t, h.dialogs, "a removal never installs the engine service")
 	require.Empty(t, h.opened)
 
-	h = newFakeHost()
-	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
-	h.setupCodes = []string{"INVALID_ARGUMENT"}
-	r, _ = localInit(t, h, "--remove")
-	require.Equal(t, cli.ExitOK, r.code, r.stderr)
-	require.Contains(t, r.stderr, "nothing to remove", "an engine waiting for a first install serves no agent")
-	require.Empty(t, h.opened)
+	// An engine that serves no agent (a removal its job did not finish, or
+	// one never set up) is removed through the administrator dialog.
+	script, err := osservice.RemoveScript("linux")
+	require.NoError(t, err)
+	for _, code := range []string{setup.CodeEngineRemoved, "INVALID_ARGUMENT"} {
+		h = newFakeHost()
+		h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+		h.setupCodes = []string{code}
+		r, _ = localInit(t, h, "--remove")
+		require.Equal(t, cli.ExitOK, r.code, r.stderr)
+		require.Equal(t, []string{script}, h.dialogs, "%s: one password, the fixed removal script", code)
+		require.Equal(t, []string{servicespec.RemovePrompt}, h.prompts)
+		require.Contains(t, r.stderr, "the engine service is removed from this computer")
+		require.Empty(t, h.opened)
+	}
 
 	r, _ = localInit(t, newFakeHost(), "--remove", "--demo")
 	require.Equal(t, cli.ExitUsage, r.code)
 	require.Contains(t, r.stderr, "--remove and --demo do not go together")
+}
+
+// A Remove that leaves the engine other agents ends the wait at once
+// (AGENT_REMOVED): no ENGINE_REMOVED comes, and init does not wait the
+// full 90 seconds.
+func TestInitEndsWhenThePageRemovesOneAgentOfMany(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost()
+	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true, "/etc/basalt": true}
+	h.setupCodes = []string{setup.CodeJobUnavailable, setup.CodeJobUnavailable, setup.CodeAgentRemoved}
+	r, _ := localInit(t, h, "--remove")
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
+	require.Equal(t, 3, h.setupCalls)
+	require.Contains(t, r.stderr, "The engine stays on this computer for its other agents.")
+	require.Empty(t, h.dialogs)
 }

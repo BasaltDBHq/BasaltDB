@@ -14,7 +14,7 @@ import (
 // job): the install also writes a small root job that removes the engine
 // service when the engine asks for it, so removing BasaltDB on the setup
 // page needs no second password and no terminal. The engine asks by
-// creating one marker file in its state folder after the page's removal
+// creating one marker file in its config folder after the page's removal
 // committed and engine.json is gone. The job reads nothing from the
 // marker: its existence is the whole request. It runs fixed paths with a
 // fixed argv (/bin/sh and its own root-owned script), and removes itself
@@ -22,12 +22,16 @@ import (
 // BasaltDB from this computer, which that account can already make useless
 // by stopping the engine.
 const (
-	// RemovalMarkerName is the marker's name in the engine's state folder.
+	// RemovalMarkerName is the marker's name in the engine's config folder.
 	RemovalMarkerName = servicespec.RemovalMarkerName
 
 	darwinRemovalLabel  = "dev.basaltdb.remove"
 	darwinRemovalPlist  = launchDaemonsDir + darwinRemovalLabel + ".plist"
 	darwinRemovalScript = "/usr/local/libexec/basalt-remove"
+	// darwinRemovalLog is the job's output: root's, in /var/log, outside
+	// every folder the engine's account owns. A removal that finished
+	// deletes it; one that stopped keeps it.
+	darwinRemovalLog = "/var/log/basalt-remove.log"
 
 	linuxRemovalPathUnit    = "basalt-remove.path"
 	linuxRemovalServiceUnit = "basalt-remove.service"
@@ -39,10 +43,21 @@ const (
 	removalUnitEnd = "END_OF_REMOVAL_UNIT"
 )
 
-// RemovalMarker is the marker's path on goos: in the engine's state
-// folder, which only root and the engine's account can write.
+// RemovalMarker is the marker's path on goos: in the engine's config
+// folder, which only root and the engine's account can write, and whose
+// own parent (/Library/Application Support, /etc) is root's, so the
+// engine's account cannot put a symlink above the marker.
 func RemovalMarker(goos string) string {
-	return filepath.Join(config.DefaultStateDir(goos), RemovalMarkerName)
+	return filepath.Join(filepath.Dir(config.DefaultPath(goos)), RemovalMarkerName)
+}
+
+// RemovalJobUnit is the unit that loads the job on goos: the LaunchDaemon
+// plist on macOS, the .path unit on Linux.
+func RemovalJobUnit(goos string) string {
+	if goos == goosDarwin {
+		return darwinRemovalPlist
+	}
+	return systemdUnitDir + linuxRemovalPathUnit
 }
 
 // removalScriptPath is the job's own script on goos, next to the service's
@@ -87,7 +102,10 @@ cd /
 marker=%[1]s
 [ -e "$marker" ] || [ -L "$marker" ] || exit 0
 asked=
-if [ -f "$marker" ] && [ ! -L "$marker" ] && [ "$(%[2]s "$marker")" = "$(id -u %[3]s 2>/dev/null)" ]; then
+# Fails closed: no engine account, or an owner stat cannot read, is no.
+engine=$(id -u %[3]s 2>/dev/null) || engine=
+owner=$(%[2]s "$marker" 2>/dev/null) || owner=
+if [ -n "$engine" ] && [ -n "$owner" ] && [ "$owner" = "$engine" ] && [ -f "$marker" ] && [ ! -L "$marker" ]; then
 	asked=1
 fi
 # A folder goes too, or a PathExists unit would fire again on it; rm
@@ -115,9 +133,13 @@ func darwinRemovalDaemon() string {
 	<array>
 		<string>%[4]s</string>
 	</array>
+	<key>StandardOutPath</key>
+	<string>%[5]s</string>
+	<key>StandardErrorPath</key>
+	<string>%[5]s</string>
 </dict>
 </plist>
-`, darwinRemovalLabel, shPath, darwinRemovalScript, xmlEscape(RemovalMarker(goosDarwin)))
+`, darwinRemovalLabel, shPath, darwinRemovalScript, xmlEscape(RemovalMarker(goosDarwin)), darwinRemovalLog)
 }
 
 // linuxRemovalUnits are the job's systemd units: a .path unit that starts
@@ -195,7 +217,25 @@ rm -f %[2]s%[1]s %[2]s%[3]s %[4]s
 // job: the last command, because inside the job launchctl bootout of its
 // own label ends it.
 func darwinRemoveJob() string {
-	return fmt.Sprintf(`rm -f %[1]s %[2]s
+	return fmt.Sprintf(`rm -f %[1]s %[2]s %[4]s
 launchctl bootout system/%[3]s >/dev/null 2>&1 || true
-`, darwinRemovalPlist, darwinRemovalScript, darwinRemovalLabel)
+`, darwinRemovalPlist, darwinRemovalScript, darwinRemovalLabel, darwinRemovalLog)
+}
+
+// RemovalJobWait is the first check of the install and restart
+// scripts, right after their helpers: a removal job still running (it may
+// be deleting the account and folders the checks read) is waited for, up
+// to 60 seconds, then refused. It changes nothing.
+func RemovalJobWait(goos string) string {
+	running := "systemctl is-active --quiet " + linuxRemovalServiceUnit
+	if goos == goosDarwin {
+		running = "launchctl print system/" + darwinRemovalLabel + " 2>/dev/null | grep -q 'state = running'"
+	}
+	return fmt.Sprintf(`n=0
+while %s; do
+	[ "$n" -lt 60 ] || fail "BasaltDB's removal is still running on this computer; run basalt init again once it is done"
+	sleep 1
+	n=$((n + 1))
+done
+`, running)
 }

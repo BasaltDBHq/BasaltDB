@@ -74,16 +74,19 @@ remove_dir() {
 	}
 	return helpers + `kept=
 orphaned=
-# delete_account NAME: wait up to 10 seconds for NAME's processes to end
-# (its service is stopped above), delete the user even when one is left
-# (userdel -f), and its group only once the user is gone.
+# delete_account NAME: end NAME's processes (its service is stopped above;
+# a process it left is killed, up to 10 tries a second apart), then delete
+# the user, and its group only once the user is gone. A user with a process
+# still alive is kept: deleting it would leave that process on a uid a new
+# account can get.
 delete_account() {
 	n=0
 	while [ "$n" -lt 10 ] && pgrep -U "$1" >/dev/null 2>&1; do
+		pkill -KILL -U "$1" >/dev/null 2>&1 || true
 		sleep 1
 		n=$((n + 1))
 	done
-	userdel -f "$1" || true
+	pgrep -U "$1" >/dev/null 2>&1 || userdel "$1" || true
 	if ! getent passwd "$1" >/dev/null 2>&1; then
 		! getent group "$1" >/dev/null 2>&1 || groupdel "$1" >/dev/null 2>&1 || true
 		! getent group "$1" >/dev/null 2>&1 || orphaned="$orphaned $1"
@@ -173,7 +176,7 @@ elif id -u %[9]s >/dev/null 2>&1; then
 	echo "basalt: the OS user %[9]s is not the system account the install made, so it was left in place" >&2
 fi
 [ -z "$kept" ] ||
-	echo "basalt: the engine service is removed, but the OS user${kept} could not be deleted, so it stays with its group: the next install uses it again. To delete it: $(for k in $kept; do printf 'userdel -f %%s; ' "$k"; done)" >&2
+	echo "basalt: the engine service is removed, but the OS user${kept} could not be deleted, so it stays with its group: the next install uses it again. To delete it: $(for k in $kept; do printf 'userdel %%s; ' "$k"; done)" >&2
 [ -z "$orphaned" ] ||
 	fail "the engine service is removed, but the group${orphaned} stays without its user, and an install refuses that group: delete it with $(for g in $orphaned; do printf 'groupdel %%s; ' "$g"; done)"
 `, servicespec.SystemdUnitName, systemdUnitDir, pluginUnitPrefix, SystemdUnitPath,
@@ -222,6 +225,12 @@ for unit in %[2]s%[3]s*.plist; do
 done
 rm -f %[4]s
 rm -f %[5]s%[6]s*.conf
+# The accounts stay: end every process they still run (one that left its
+# session would outlive the bootouts), so none survives into a reinstall
+# that takes the account over.
+for u in %[10]s $(dscl . -list /Users | grep '^%[11]s' || true); do
+	pkill -KILL -U "$u" >/dev/null 2>&1 || true
+done
 `+removeServiceBinary(goosDarwin)+`remove_dir %[7]s
 remove_dir %[8]s
 for old in %[8]s.old-*; do

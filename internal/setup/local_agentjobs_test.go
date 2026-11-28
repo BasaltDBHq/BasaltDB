@@ -184,11 +184,12 @@ func TestTheProbeSeesAFixThatRanAfterInitOpenedTheLink(t *testing.T) {
 	f.db.Exec(t, `ALTER TABLE basalt_demo.leads ADD COLUMN mobile text`)
 	opened := f.now.Add(-time.Second)
 
-	// A refused fix marks nothing.
+	// A refused fix (a label the page never showed: CLASSES_CHANGED) marks
+	// nothing.
 	bad := f.fix(setup.JobLabels)
 	bad.ColumnClasses = []setup.ColumnClass{{Table: "public.hidden", Column: "secret", Class: guardmodel.ClassSecret, Was: setup.Label{Class: guardmodel.ClassUnclassified}}}
 	_, err := svc.Run(ctx, bad)
-	refusal(t, err, setup.CodeAnswersInvalid)
+	refusal(t, err, setup.CodeClassesChanged)
 	refusal(t, probe("demo_bot", opened), setup.CodeJobUnavailable)
 
 	rest := f.fix(setup.JobLabels)

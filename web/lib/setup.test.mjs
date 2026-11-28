@@ -1454,6 +1454,32 @@ test("a removal's check follows the box: a string changed while an older check r
   }
 });
 
+test("a check left stale by a cleared box gives the Update and Remove choices back", async () => {
+  const nodes = fakePage();
+  nodes["database-url"].value = "";
+  let release;
+  const held = new Promise((r) => { release = r; });
+  const fetchFn = async (path, init) => {
+    const body = JSON.parse(init.body);
+    if (!body.databaseUrl) return new Response(JSON.stringify({ code: "CONNECTION_STRING_REFUSED", message: "x" }), { status: 400 });
+    await held;
+    return new Response(JSON.stringify({ database: "a_db", host: "a:5432", lines: [], notes: [], sql: "", passkeyNeeded: false }), { status: 200 });
+  };
+  await startJob({ job: "CHANGE", agent: "bot", osUser: "alice", demo: false }, "REMOVE", { fetchFn, checkDelayMs: 0 });
+  const tick = () => new Promise((r) => setTimeout(r, 1));
+  nodes["database-url"].value = "postgres://a";
+  nodes["database-url"].fire("input");
+  for (let n = 0; n < 5 && !nodes["choice-update"].disabled; n++) await tick();
+  assert.equal(nodes["choice-update"].disabled, true, "locked while the check runs");
+  nodes["database-url"].value = "";
+  nodes["database-url"].fire("input");
+  release();
+  for (let n = 0; n < 5 && nodes["choice-update"].disabled; n++) await tick();
+  assert.equal(nodes["choice-update"].disabled, false);
+  assert.equal(nodes["choice-remove"].disabled, false);
+  assert.equal(nodes.review.hidden, true, "the stale answer is dropped");
+});
+
 test("a removal is one press: Removing BasaltDB… on the button, no name sent, then the checklist ticks this computer once the engine stops", async () => {
   const nodes = fakePage();
   nodes["database-url"].value = ADMIN;

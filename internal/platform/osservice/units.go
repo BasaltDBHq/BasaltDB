@@ -137,6 +137,9 @@ func RestartScript(goos string, src Source) (string, error) {
 	}
 	var b strings.Builder
 	b.WriteString(scriptHelpers(goos) + breakingHelpers + ScriptHelpersEnd)
+	// First, before any check reads an account or a folder: a removal job
+	// still at work may be deleting them.
+	b.WriteString(RemovalJobWait(goos))
 	if src.copies(goos) {
 		if err := src.validate(); err != nil {
 			return "", err
@@ -148,8 +151,6 @@ func RestartScript(goos string, src Source) (string, error) {
 	b.WriteString(breakingVerdict(goos))
 	fmt.Fprintf(&b, "if [ -n \"$breaking_reset\" ]; then\n%sfi\n", installPreflight(goos, spec))
 	b.WriteString(ScriptPreflightEnd)
-	// First, before anything changes: a removal job still at work.
-	b.WriteString(waitForRemovalJob(goos))
 	if src.copies(goos) {
 		b.WriteString(copyBinary(goos, src))
 	}

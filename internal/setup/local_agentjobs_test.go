@@ -263,6 +263,17 @@ func TestRemoveDropsBasaltAndForgetsTheAgent(t *testing.T) {
 		_, err = svc.Run(ctx, req)
 		refusal(t, err, setup.CodeEngineRemoved)
 	}
+	// The page of a REMOVE link on that engine asks the job again with a run
+	// that carries no admin string; a check never does.
+	require.NoError(t, os.Remove(markerOf(f)))
+	probe := setup.Request{Job: setup.JobRemove, Agent: "demo_bot", OSUser: "alice"}
+	_, err = svc.Check(ctx, probe)
+	refusal(t, err, setup.CodeEngineRemoved)
+	require.NoFileExists(t, markerOf(f), "a check changes nothing")
+	_, err = svc.Run(ctx, probe)
+	refusal(t, err, setup.CodeEngineRemoved)
+	require.FileExists(t, markerOf(f), "the page's run asks the removal job again")
+
 	// basalt init on an engine its removal job did not remove yet: an
 	// INSTALL runs as a first install on the same engine, writes its config
 	// again and has the engine serve it.

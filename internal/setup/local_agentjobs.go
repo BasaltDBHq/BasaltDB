@@ -120,9 +120,10 @@ func (s *LocalService) engineRemoved() error {
 // what its check does not.
 func (s *LocalService) validateAgentJob(req Request, run bool) (agentJob, error) {
 	if err := s.engineRemoved(); err != nil {
-		if req.Job == JobRemove {
-			// The page of basalt init --remove on an engine its removal job
-			// did not remove: ask the job again (the marker is all it reads).
+		if run && req.Job == JobRemove && req.DatabaseURL == "" && req.Agent != "" {
+			// The run a REMOVE link's page sends when it finds the engine
+			// removed: ask the job again (the marker is all it reads). A
+			// check never does: it changes nothing.
 			var answer RunAnswer
 			s.askRemoval(&answer)
 		}

@@ -222,11 +222,11 @@ launchctl bootout system/%[3]s >/dev/null 2>&1 || true
 `, darwinRemovalPlist, darwinRemovalScript, darwinRemovalLabel, darwinRemovalLog)
 }
 
-// waitForRemovalJob is a check of the install and restart scripts: a
-// removal job still running (it may be removing the service this script
-// installs) is waited for, up to 60 seconds, then refused. It changes
-// nothing.
-func waitForRemovalJob(goos string) string {
+// RemovalJobWait is the first check of the install and restart
+// scripts, right after their helpers: a removal job still running (it may
+// be deleting the account and folders the checks read) is waited for, up
+// to 60 seconds, then refused. It changes nothing.
+func RemovalJobWait(goos string) string {
 	running := "systemctl is-active --quiet " + linuxRemovalServiceUnit
 	if goos == goosDarwin {
 		running = "launchctl print system/" + darwinRemovalLabel + " 2>/dev/null | grep -q 'state = running'"

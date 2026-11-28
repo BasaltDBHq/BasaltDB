@@ -98,6 +98,10 @@ func TestInstallScriptChecksBeforeItCreates(t *testing.T) {
 		require.NoError(t, err)
 		_, rest, ok := strings.Cut(script, osservice.ScriptHelpersEnd)
 		require.True(t, ok)
+		// The wait for a removal job comes first, before any check reads an
+		// account or a folder; it only reads the service manager.
+		require.True(t, strings.HasPrefix(rest, osservice.RemovalJobWait(v.goos)), v.goos)
+		rest = strings.TrimPrefix(rest, osservice.RemovalJobWait(v.goos))
 		checks, _, ok := strings.Cut(rest, osservice.ScriptPreflightEnd)
 		require.True(t, ok)
 		dest := osservice.ServiceBinary(v.goos)
@@ -164,6 +168,7 @@ func TestInstallScriptQuotesTheSourcePath(t *testing.T) {
 		require.NoError(t, err, bin)
 		_, rest, ok := strings.Cut(script, osservice.ScriptHelpersEnd)
 		require.True(t, ok)
+		rest = strings.TrimPrefix(rest, osservice.RemovalJobWait("linux"))
 		line, _, _ := strings.Cut(rest, "\n")
 		out, err := exec.Command("/bin/sh", "-c", line+"\nprintf %s \"$src\"").Output()
 		require.NoError(t, err, bin)

@@ -754,6 +754,13 @@ export async function startJob(link, preset, env = {}) {
   $("admin-panel").hidden = true;
   const refused = await agentProbe(fetchFn, link);
   if (refused === ENGINE_REMOVED) {
+    // Ask the engine to ask its removal job again: a run with no admin
+    // string, which it answers ENGINE_REMOVED.
+    try {
+      await postSetup(fetchFn, RUN_PATH, setupRequest(link, ""));
+    } catch {
+      // ENGINE_REMOVED, or no engine any more: the checklist shows which.
+    }
     await showRemoved(link, { agent: link.agent, lines: [], warnings: [], passkeys: [], engineRemoved: true, engineRemoving: true }, "", fetchFn, env);
     return;
   }
@@ -797,6 +804,9 @@ export async function startJob(link, preset, env = {}) {
   // is shown. A removal checks by itself on every change of the box, so a
   // check for an older string may still run when the next one starts.
   let checkSeq = 0;
+  // checking counts the checks in flight: a stale one gives the choices
+  // back only when no newer check still holds them.
+  let checking = 0;
   $("database-url").addEventListener("input", () => {
     checked = null;
     $("review").hidden = true;
@@ -814,6 +824,7 @@ export async function startJob(link, preset, env = {}) {
     const done = auto ? () => {} : working($("check"), "Checking…");
     if (!done) return;
     const seq = ++checkSeq;
+    checking++;
     $("status").textContent = "Checking your database…";
     const url = $("database-url").value;
     databaseUrl = url;
@@ -824,7 +835,11 @@ export async function startJob(link, preset, env = {}) {
       answer = await postSetup(fetchFn, CHECK_PATH, setupRequest(asked, url));
     } catch (err) {
       done();
-      if (seq !== checkSeq) return;
+      checking--;
+      if (seq !== checkSeq) {
+        if (checking === 0) setChoices(false);
+        return;
+      }
       setChoices(false);
       if (auto && err.code === "BUSY") {
         // The engine still runs the check of an earlier string.
@@ -836,7 +851,11 @@ export async function startJob(link, preset, env = {}) {
       return;
     }
     done();
-    if (seq !== checkSeq) return;
+    checking--;
+    if (seq !== checkSeq) {
+      if (checking === 0) setChoices(false);
+      return;
+    }
     setChoices(false);
     if (!answerFits(asked, job)) {
       $("status").textContent = "";

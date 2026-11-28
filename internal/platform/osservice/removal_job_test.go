@@ -158,3 +158,24 @@ func TestInstallScriptWritesTheRemovalJob(t *testing.T) {
 		require.NotContains(t, body, "RunAtLoad</key>\n\t<true/>\n\t<key>WatchPaths", goos)
 	}
 }
+
+// The install and the restart wait for a removal job still at work before
+// anything else, right after their helpers: a check that read the engine's
+// account while the job deletes it would go on with an account that is gone.
+func TestInstallAndRestartWaitForTheRemovalJobFirst(t *testing.T) {
+	t.Parallel()
+	for _, goos := range []string{"linux", "darwin"} {
+		install, err := osservice.InstallScript(goos, dialogSource)
+		require.NoError(t, err)
+		restart, err := osservice.RestartScript(goos, dialogSource)
+		require.NoError(t, err)
+		for name, script := range map[string]string{"install": install, "restart": restart} {
+			_, rest, ok := strings.Cut(script, osservice.ScriptHelpersEnd)
+			require.True(t, ok, "%s %s", goos, name)
+			require.True(t, strings.HasPrefix(rest, osservice.RemovalJobWait(goos)), "%s %s: the wait is the first thing after the helpers", goos, name)
+			require.Equal(t, 1, strings.Count(script, osservice.RemovalJobWait(goos)), "%s %s: once", goos, name)
+		}
+	}
+	require.Contains(t, osservice.RemovalJobWait("linux"), "systemctl is-active --quiet basalt-remove.service")
+	require.Contains(t, osservice.RemovalJobWait("darwin"), "launchctl print system/dev.basaltdb.remove")
+}

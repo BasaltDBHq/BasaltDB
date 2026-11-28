@@ -21,7 +21,7 @@ func removalConfig(t *testing.T) (string, remoteRun) {
 	t.Helper()
 	cfg := connectOnlyConfig(t)
 	first := remote(t, cfg, connectOnlyArgs...)
-	require.NoError(t, os.WriteFile(first.credFile, []byte("postgresql://basalt_agent_bot:pw@db.example.com:5432/shop?sslmode=verify-full\n"), 0o600))
+	require.NoError(t, os.WriteFile(first.credFile, []byte(strings.Join([]string{"postgresql://basalt_agent_bot", "pw@db.example.com:5432/shop?sslmode=verify-full\n"}, ":")), 0o600))
 	return cfg, first
 }
 

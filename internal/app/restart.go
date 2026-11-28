@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // restartOptions turn on the restart onto a new binary.
@@ -24,6 +25,9 @@ type restartOptions struct {
 	// empty), "mcp" (basalt mcp found it down) or "crash" (the supervisor
 	// restarted it). It is carried here for the status report.
 	StartedBy string
+	// SetupMarks are the setup page's finished jobs, created once by the
+	// caller and kept across the engine's reloads; nil gives each run its own.
+	SetupMarks *setup.Marks
 	// StableAfter is how long the engine serves before it removes the
 	// supervisor's record of giving up; zero means defaultStableAfter.
 	StableAfter time.Duration

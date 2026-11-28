@@ -174,7 +174,7 @@ func runWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		}
 	}
 	if pagesCfg.Addr != "" {
-		jobs = setupJobs(cfg, configPath, pagesCfg.Origin, log, rotated.Changed, askReload)
+		jobs = setupJobs(cfg, configPath, pagesCfg.Origin, log, rotated.Changed, askReload, restart.SetupMarks)
 		site, err = listenPages(pagesCfg, pagesLn, jobs, log)
 		if err != nil {
 			return err
@@ -488,12 +488,13 @@ func listenPages(p config.Pages, handed net.Listener, setup setuppage.SetupJobs,
 // its agents' files by other rules.
 // reload has the running engine serve its config again: after a first
 // install on an engine the page removed, and after the TRUST fix rewrote an
-// agent's connection string.
-func setupJobs(cfg config.Config, configPath, origin string, log *slog.Logger, rotated func(agent, password string), reload func()) setuppage.SetupJobs {
+// agent's connection string. marks are the engine's own, the same across
+// those reloads, so basalt init still sees a fix the page finished.
+func setupJobs(cfg config.Config, configPath, origin string, log *slog.Logger, rotated func(agent, password string), reload func(), marks *setup.Marks) setuppage.SetupJobs {
 	if cfg.AgentOperated() || os.Geteuid() == 0 || origin != setup.PageOrigin {
 		return nil
 	}
-	jobs, err := newLocalSetup(setup.LocalOptions{ConfigPath: configPath, Origin: origin, Configured: true, CredentialChanged: rotated, Reinstalled: reload, Reload: reload})
+	jobs, err := newLocalSetup(setup.LocalOptions{ConfigPath: configPath, Origin: origin, Configured: true, CredentialChanged: rotated, Reinstalled: reload, Reload: reload, Marks: marks})
 	if err != nil {
 		log.Warn("the setup page cannot update or remove agents", "err", err)
 		return nil

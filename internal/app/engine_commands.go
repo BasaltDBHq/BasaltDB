@@ -60,8 +60,12 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	if err != nil {
 		return fail(io.Err, "engine", err)
 	}
+	// One store for the whole process, outside run: a config reload (the
+	// certificate fix, a reinstall) calls run again and builds a new setup
+	// service, and basalt init's wait must still see what the old one marked.
+	marks := setup.NewMarks()
 	run := func(ctx context.Context, r engine.Restart) error {
-		o := restartOptions{Restart: r, Removal: &selfRemoval{}}
+		o := restartOptions{Restart: r, Removal: &selfRemoval{}, SetupMarks: marks}
 		o.StartedBy = *startedBy
 		o.PagesListener, handed = handed, nil
 		err := runWith(ctx, cfg, engine.EnginePath(*configPath), log, o)

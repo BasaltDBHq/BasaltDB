@@ -66,8 +66,12 @@ func RemovalJobScript(goos string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return removalGate(goos) + body, nil
+	return removalGate(goos) + removalGrace + body, nil
 }
+
+// removalGrace lets the engine finish answering the page's removal, which
+// created the marker just before it answered, before the job stops it.
+const removalGrace = "# The engine answers the page's removal before it is stopped.\nsleep 2\n"
 
 func removalGate(goos string) string {
 	owner := "stat -c %u"

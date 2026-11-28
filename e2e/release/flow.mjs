@@ -360,7 +360,9 @@ function collectEngineLog() {
   }
 }
 
-// removeOnPage opens init's CHANGE link and removes BasaltDB on its page.
+// removeOnPage opens init's CHANGE link and removes BasaltDB on its page:
+// one box (the admin string), one press. The button names the database and
+// its host; no name is typed.
 async function removeOnPage(init) {
   const link = await initLink(init);
   await open(link);
@@ -379,10 +381,10 @@ async function removeOnPage(init) {
   await page.locator("#confirm-os-user").check();
   await page.locator("#database-url").fill(ADMIN_URL);
   await page.locator("#check").click();
-  await page.locator("#remove-name").waitFor({ state: "visible" });
-  await page.locator("#confirm-remove").fill((await page.locator("#remove-name").innerText()).trim());
+  await page.locator("#remove-note").waitFor({ state: "visible" });
+  assert.match((await page.locator("#run").innerText()).trim(), /^Remove BasaltDB from e2e on \S+$/, "the button names the database and its host");
+  assert.equal(await page.locator("#confirm-remove").count(), 0, "no name to type");
   await page.locator("#run").click();
-  await until("the removal to finish", () => visible("#done"));
 }
 
 // linkJob is the job a setup link carries.
@@ -391,64 +393,92 @@ function linkJob(link) {
   return JSON.parse(Buffer.from(frag, "base64url").toString("utf8"));
 }
 
-// toDialog: init went on to the administrator dialog for the engine
-// service (a runner may not show it); the fixed script then runs under sudo.
-const toDialog = /administrator dialog/;
+// jobListed reports whether the removal job is still loaded.
+function jobListed() {
+  try {
+    if (process.platform === "darwin") run("sudo", ["launchctl", "print", "system/dev.basaltdb.remove"], { stdio: "ignore" });
+    else run("systemctl", ["is-enabled", "--quiet", "basalt-remove.path"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
+// engineAccount is the engine's OS user's uid, or "" when there is none.
+function engineAccount() {
+  try {
+    return run("id", ["-u", process.platform === "darwin" ? "_basalt" : "basalt"]).trim();
+  } catch {
+    return "";
+  }
+}
+
+const REMOVAL_JOB = process.platform === "darwin"
+  ? ["/Library/LaunchDaemons/dev.basaltdb.remove.plist", "/usr/local/libexec/basalt-remove"]
+  : ["/etc/systemd/system/basalt-remove.path", "/etc/systemd/system/basalt-remove.service", "/usr/libexec/basalt-remove"];
+const CONFIG_DIR = process.platform === "darwin" ? "/Library/Application Support/Basalt" : "/etc/basalt";
+
+let removedUid = "";
+
+// remove: from the agent's basalt init to "BasaltDB is removed" on one page,
+// with one press and no password: the removal job removes the engine from
+// this computer, and the agent's status then answers REMOVED.
 async function remove() {
   collectEngineLog();
+  fs.writeFileSync(path.join(OUT, "mcp-stderr.txt"), scrub(mcp.stderr));
   mcp.close();
+  mcp = null;
+  assert.ok(jobListed(), "the install loaded the removal job");
+  removedUid = engineAccount();
+  assert.ok(removedUid, "the install made the engine's OS user");
   const init = basaltInit(["--agent", AGENT]);
   await removeOnPage(init);
-  // Within the wait, the init that opened the link goes on to the dialog.
-  await until("init to go on to the dialog", () => toDialog.test(init.err()), 120000);
-  await Promise.race([init.exited, sleep(5000)]);
-  init.child.kill();
+  await page.locator("#removal-steps").waitFor({ state: "visible" });
+  await until("the page to tick this computer", async () => (await page.locator("#done-title").innerText()).trim() === "BasaltDB is removed", 120000);
+  const steps = await page.locator("#removal-steps li").allInnerTexts();
+  assert.deepEqual(steps.map((t) => t.trim()), ["✓ Database e2e: BasaltDB removed", "✓ This computer: engine removed", "Your agent: drops its connection the next time you talk to it."]);
+  assert.equal(await page.locator("#removal-mac").isVisible(), process.platform === "darwin" && /Macintosh/.test(await page.evaluate(() => navigator.userAgent)));
+  assert.equal(await Promise.race([init.exited, sleep(120000).then(() => "timeout")]), 0, `init after the removal: ${init.err()}`);
+  assert.match(init.err(), /the engine is removing itself from this computer/);
+  assert.ok(!/administrator dialog/.test(init.err()), "no password dialog");
+
+  await until("the removal job to finish", () => !serviceListed() && !jobListed(), 60000);
+  assert.ok(!fs.existsSync(SERVICE_BIN), `the service's copy ${SERVICE_BIN} is deleted`);
+  assert.ok(!fs.existsSync(CONFIG_DIR), `${CONFIG_DIR} is deleted`);
+  for (const f of REMOVAL_JOB) assert.ok(!fs.existsSync(f), `the removal job removed itself: ${f}`);
+  assert.ok(fs.existsSync(BIN), "the person's own basalt stays");
+  if (process.platform === "darwin") assert.equal(engineAccount(), removedUid, "macOS keeps the hidden _basalt account");
+  else assert.equal(engineAccount(), "", "Linux deletes the engine's OS user");
+
+  // The agent's next status: no engine, no config folder, REMOVED.
+  const args = mcpLine.split(/\s+/).slice(2);
+  const after = new McpClient(BIN, args, { ...process.env, BASALT_UPDATE_CHECK: "0" });
+  try {
+    await after.initialize();
+    const s = await after.call("status");
+    const codes = (s.data.problems ?? []).map((p) => p.code);
+    assert.deepEqual(codes, ["REMOVED"], `status after the removal: ${s.text}`);
+    assert.match(JSON.stringify(s.data.problems[0].nextSteps), /Remove this MCP server/);
+  } finally {
+    after.close();
+  }
   ok("remove");
 }
 
-// After a Remove, the next basalt init asks on the page. --demo sets up
-// again on the same engine with no removal; "Set up BasaltDB again" runs
-// the install on the same engine, which then serves the agent again; only
-// "Remove it from this computer too" has init remove the service.
-async function removedPage() {
-  const demo = basaltInit(["--agent", AGENT, "--demo"]);
-  const demoLink = await initLink(demo);
-  assert.equal(await demo.exited, 0, `init --demo on a removed engine: ${demo.err()}`);
-  assert.match(demo.err(), /BasaltDB was removed from your database earlier\. Setting up again on this computer's engine\./);
-  assert.ok(!toDialog.test(demo.err()), "init --demo never removes the engine service");
-  assert.equal(linkJob(demoLink).job, "INSTALL");
-  assert.equal(linkJob(demoLink).demo, true);
-
-  const again = basaltInit(["--agent", AGENT]);
-  await open(await initLink(again));
-  assert.match(again.err(), /BasaltDB was removed from your database\. Open this link to choose/);
-  await page.locator("#removed").waitFor({ state: "visible" });
-  await page.locator("#removed-again").click();
-  await realInstall();
-  // init ends once the engine serves the new config, or when its wait is up.
-  assert.equal(await Promise.race([again.exited, sleep(120000).then(() => "timeout")]), 0, `init after Set up again: ${again.err()}`);
-  assert.match(again.err(), /set up again on this computer/, "init saw Set up again finish, not its wait run out");
-
-  // The engine serves the agent again: init opens the Update or Remove link.
-  const change = basaltInit(["--agent", AGENT]);
-  await removeOnPage(change);
-  await until("init to go on to the dialog", () => toDialog.test(change.err()), 120000);
-  await Promise.race([change.exited, sleep(5000)]);
-  change.child.kill();
-
-  const last = basaltInit(["--agent", AGENT]);
-  await open(await initLink(last));
-  await page.locator("#removed").waitFor({ state: "visible" });
-  await page.locator("#removed-remove").click();
-  await page.getByText("Your computer asks for your password").waitFor({ state: "visible" });
-  await until("init to go on to the dialog", () => toDialog.test(last.err()), 120000);
-  await Promise.race([last.exited, sleep(5000)]);
-  last.child.kill();
-  run("sh", [path.join(DIR, "service.sh"), "remove"], { stdio: "inherit" });
-  assert.ok(!serviceListed(), "the engine service is gone");
-  assert.ok(!fs.existsSync(SERVICE_BIN), `the service's copy ${SERVICE_BIN} is deleted`);
-  ok("removed page");
+// installAgain: the next setup after a removal is a first install. On
+// macOS it takes over the _basalt account the removal kept; on Linux it
+// makes a new one.
+async function installAgain() {
+  run("sh", [path.join(DIR, "service.sh"), "install", BIN], { stdio: "inherit" });
+  assert.ok(jobListed(), "the new install loaded the removal job again");
+  if (process.platform === "darwin") assert.equal(engineAccount(), removedUid, "the install reused _basalt");
+  else assert.ok(engineAccount(), "the install made the engine's OS user again");
+  const init = basaltInit(["--agent", AGENT, "--demo"]);
+  const link = await initLink(init);
+  assert.equal(await init.exited, 0, `init after the removal: ${init.err()}`);
+  assert.equal(linkJob(link).job, "INSTALL");
+  assert.equal(linkJob(link).demo, true);
+  ok("install again");
 }
 
 function serviceListed() {
@@ -470,7 +500,7 @@ const steps = [
   ["withdraw", withdraw],
   ["revert", revert],
   ["remove", remove],
-  ["removed-page", removedPage],
+  ["install-again", installAgain],
 ];
 
 let failed = null;

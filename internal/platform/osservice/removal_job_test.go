@@ -22,6 +22,8 @@ func gateOf(t *testing.T, goos, marker string, uid int) string {
 	require.NoError(t, err)
 	gate, _, ok := strings.Cut(script, "set -eu\n")
 	require.True(t, ok)
+	require.Contains(t, gate, "\nsleep 2\n", "the job waits for the engine's answer before it stops it")
+	gate = strings.Replace(gate, "\nsleep 2\n", "\n", 1)
 	fixed := osservice.RemovalMarker(goos)
 	word := fixed
 	if strings.Contains(fixed, " ") {

@@ -92,7 +92,7 @@ const updateInstructions = "When a result carries a WARNING: or SECURITY UPDATE:
 // credential, What the agent is told) puts in the initialize instructions,
 // unchanged: the admin credential never reaches the agent.
 const adminInstructions = "Never ask the person for, or accept, their database admin connection string or password: " +
-	"to set up, repair or change your access, follow nextSteps or run basalt init (basalt init --remote on a computer the person cannot reach); to remove BasaltDB from the person's own computer, run basalt init --remove; show the person the one link it prints; " +
+	"to set up, repair or change your access, follow nextSteps or run basalt init (basalt init --remote on a computer the person cannot reach); to remove BasaltDB (from the person's own computer, or from this one through the connect page), run basalt init --remove; show the person the one link it prints; " +
 	"they finish on that page. Never remove BasaltDB by hand (its service, files or system user): the page does it, and afterwards status answers REMOVED and says to drop your MCP entry. If the person pastes an admin password, tell them to change it now."
 
 // docsInstructions is the one sentence that points an agent to the public
@@ -260,6 +260,15 @@ func runWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	}
 	env.handoff = wireHandoff(restart.Handoff)
 	env.reload = askReload
+	if restart.Removal != nil {
+		// A removal on the connect page stops the engine: Serve returns,
+		// everything opened here closes, and the caller deletes the folders.
+		var stopForRemoval context.CancelFunc
+		ctx, stopForRemoval = context.WithCancel(ctx)
+		defer stopForRemoval()
+		restart.Removal.setStop(stopForRemoval)
+		env.removal = restart.Removal
+	}
 	restart.Upgrade = engine.UpgradeOrReload(restart.Upgrade, reload, reloading)
 	if ev.Client != nil {
 		env.relay, env.relayLinks = ev.Client, relay
@@ -576,6 +585,9 @@ type agentEnv struct {
 	handoff handoffOptions
 	// reload has the engine serve its config again.
 	reload func()
+	// removal takes a removal on the connect page that an agent's collect
+	// loop confirmed, and stops the engine for it; nil turns it off.
+	removal *selfRemoval
 }
 
 // commands are agent a's next-step commands: a foreground engine's when it
@@ -732,10 +744,10 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	// credential, as the approval routes do.
 	deps.Plugin.Approvals, deps.Plugin.Requests = store, requests
 	svc := NewService(deps)
-	repin := newRepin(env, a, pool.Config().ConnConfig, log)
+	runs := bothRuns(newRepin(env, a, pool.Config().ConnConfig, log), newSelfRemove(env, a, pool.Config().ConnConfig, files.ReadCredential, log))
 	return agentRuntime{
 		svc:  svc,
-		run:  repin,
+		run:  runs,
 		home: homeDBOf(cc),
 		upkeep: ledger.New(a.Name, buildinfo.Version, ledger.StoreSet{Store: postgres.NewUpkeep(pool)}, log, time.Now).WithPins(env.pins).WithRLSCache(blind).
 			WithOperatedBy(env.cfg.OperatedBy).WithGate(svc.AdmitTick).

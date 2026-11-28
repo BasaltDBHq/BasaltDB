@@ -231,7 +231,7 @@ func personTimeFindings(pkgs map[string]*goPkg) ([]string, int) {
 
 var personTimeAllowed = map[string]string{
 	`internal/core/setupcode/check.go: layout "2006-01-02 15:04"`:               "setupcode keeps its own timeLayout",
-	`internal/setup/in/setupcli/remote.go: layout "2006-01-02 15:04" (2 times)`: "the remote setup's two messages format the expiry themselves",
+	`internal/setup/in/setupcli/remote.go: layout "2006-01-02 15:04" (3 times)`: "the remote setup's three messages (connect-only, with a target, removal) format the expiry themselves",
 	`internal/setup/setuprun.go: layout "2006-01-02 15:04"`:                     "the expired-code refusal formats the expiry itself",
 	`internal/setup/engine.go: layout "2006-01-02 15:04"`:                       "UTCMinute, a copy of guidance.PersonTime",
 	`internal/plugin/approvals.go: layout "2006-01-02 15:04" (2 times)`:         "the plugin approval messages format the deadline themselves",

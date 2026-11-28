@@ -38,8 +38,24 @@ type ReachReport struct {
 	Signature       string
 }
 
+// RemovedReport is a signed ReportRemoved call: Result is REMOVED or KEPT,
+// and Reason is empty with REMOVED. EnginePublicKey, Time and Signature are
+// as in CollectRequest.
+type RemovedReport struct {
+	SetupID         string
+	EnginePublicKey string
+	Time            string
+	Result          string
+	Reason          string
+	Signature       string
+}
+
 // The phases of a hold (CONTRACT.md, Connect, The reach check).
 const (
+	// HoldRemoved is RunRemove's hold for a removal link's code: BasaltDB
+	// was removed from the address (CONTRACT.md, Connect, The removal
+	// hand-off).
+	HoldRemoved = "REMOVED"
 	// HoldPreview is CheckSetup's hold: the person has not approved yet,
 	// so the engine only checks, probes and reports.
 	HoldPreview = "PREVIEW"
@@ -64,6 +80,10 @@ type Collected struct {
 // SetUp reports whether the address is the setup's own: only then may the
 // engine ask the person about it. Any phase but SET_UP is a preview.
 func (c Collected) SetUp() bool { return c.Phase == HoldSetUp }
+
+// Removed reports whether the hold is a removal's: BasaltDB was removed
+// from the address. It is never a setup's, and a setup never reads it.
+func (c Collected) Removed() bool { return c.Phase == HoldRemoved }
 
 var (
 	// ErrNotHeld is HANDOFF_UNKNOWN: no hold for this setup and key (the

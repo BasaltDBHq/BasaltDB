@@ -675,6 +675,11 @@ func (r *remoteInit) writeCredential(p Plan) error {
 // writeConfig upserts the agent and prints the vault value it wrote.
 func (r *remoteInit) writeConfig(s *config.Setup) error {
 	a := config.Agent{Name: r.f.Agent, OSUser: r.osUser, Store: config.PostgresStore(r.credFile), Setup: s}
+	if r.entry != nil {
+		// A pending removal link stays: a setup run meanwhile does not
+		// cancel it.
+		a.Removal = r.entry.Removal
+	}
 	var v config.VaultWritten
 	var err error
 	if r.configDir != nil {

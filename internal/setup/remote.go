@@ -30,6 +30,9 @@ type RemoteFlags struct {
 	OperatedBy                OperatedBy
 	// Vault is what init asks the config's vault to be (ChooseVault).
 	Vault VaultChoice
+	// Remove is basalt init --remove on an agent-operated engine: a
+	// removal link, not a setup code (InitRemoteRemoval).
+	Remove bool
 }
 
 // RemoteInitResult is what basalt init --remote prints.
@@ -56,6 +59,9 @@ type RemoteInitResult struct {
 	PasteAtPortal bool
 	// OSUser is the OS user the MCP command runs as, for the text output.
 	OSUser string
+	// Removal is a removal link (basalt init --remove): ConnectURL is the
+	// link to the connect page's removal, and nothing is set up.
+	Removal bool
 }
 
 // Credential is a credential file as read: its connection string, the

@@ -163,6 +163,7 @@ func main() {
 	fmt.Println(ip, setup.AddressRefused(err), setup.AddressAllowed(netip.Addr{}), setup.RefusedPrefixes(), setup.CheckCode(nil, nil), setup.PasskeyRegistrationPrefix)
 	fmt.Println(setup.SupabaseRef("h", "u"), setup.Target{}.Canonical(), setup.ConnectCollectContext, setup.ConnectReachContext, setup.ConnectAudience)
 	fmt.Println(setup.VerifyConnectCollect(nil, nil, "", "", ""), setup.VerifyConnectReach(nil, nil, "", "", "", setup.Target{}, "", ""), setup.ConnectCollectBody("", "", ""), setup.ConnectReachBody("", "", "", setup.Target{}, "", ""))
+	fmt.Println(setup.ConnectRemovedContext, setup.ConnectRemovedBody("", "", "", "", ""), setup.VerifyConnectRemoved(nil, nil, "", "", "", "", ""))
 	var conn *pgx.Conn
 	if conn == nil {
 		return

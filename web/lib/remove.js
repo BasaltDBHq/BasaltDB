@@ -1,8 +1,16 @@
 // The connect page's Remove BasaltDB tab (CONTRACT.md, Connect, Removal on
 // the connect page): remove BasaltDB from a database with only its admin
-// connection string, no setup code and no bot. The person pastes the
-// string, sees what goes (the ledger, the guard, the bots by name; their
-// tables stay) with the SQL, types the database's name, and removes.
+// connection string. One box and one press: the person pastes the string,
+// the page checks it by itself and shows what goes (the ledger, the guard,
+// the bots by name; their tables stay) with the SQL, and one button,
+// "Remove BasaltDB from <db> on <host>", removes it. The admin string is the
+// confirmation: there is no typed name.
+//
+// Opened from a bot's removal link (#remove=<code>, basalt init --remove on
+// the bot's computer; CONTRACT.md, Connect, The removal hand-off), RunRemove
+// sends the code too, and the page then waits for the bot's engine to
+// remove itself (HandoffStatus), ticking a checklist: the database, the
+// bot's computer, the agent's connection.
 //
 // As on the Connect a bot tab, the admin connection string lives only in
 // one private field of RemoveFlow: never in storage, the address, a log or
@@ -17,17 +25,33 @@ import { hostOf, trustText } from "./picks.js";
 // MAX_URL_CHARS and POSTGRES_URL are the Connect a bot tab's.
 const MAX_URL_CHARS = 4096;
 const POSTGRES_URL = /^postgres(?:ql)?:\/\//i;
-// MAX_DATABASE_NAME: Postgres names are at most 63 bytes.
-const MAX_DATABASE_NAME = 63;
+
+// REMOVAL_FRAGMENT starts a removal link's fragment: #remove=<code>.
+export const REMOVAL_FRAGMENT = "#remove=";
+
+// CHECK_DELAY_MS is how long the page waits after the admin string changed
+// before it checks it by itself: a paste is one change.
+export const CHECK_DELAY_MS = 400;
+
+// The wait for the bot's engine after the removal (CONTRACT.md, Connect,
+// The removal hand-off): HandoffStatus every POLL_MS for up to WAIT_MS. The
+// engine collects every 15 seconds.
+export const POLL_MS = 5000;
+export const WAIT_MS = 120000;
 
 const UNREADABLE = "The connect service sent an answer this page cannot read.";
 
 const strings = (v) => (Array.isArray(v) ? v.filter((s) => typeof s === "string") : []);
 
-// removeConfirmed reports whether the typed text is the database's name,
-// exactly: the Remove button waits for it.
-export function removeConfirmed(typed, database) {
-  return typeof typed === "string" && typeof database === "string" && database !== "" && typed === database;
+// removalCode is the code of a removal link's fragment, or "".
+export function removalCode(hash) {
+  return typeof hash === "string" && hash.startsWith(REMOVAL_FRAGMENT) ? hash.slice(REMOVAL_FRAGMENT.length).trim() : "";
+}
+
+// removeButtonText is the Remove button: it names the database and its
+// host, which the admin string opens.
+export function removeButtonText(database, host) {
+  return host ? `Remove BasaltDB from ${database} on ${host}` : `Remove BasaltDB from ${database}`;
 }
 
 // removalItems are what the review screen lists: what goes, and that the
@@ -47,20 +71,75 @@ export function removalItems(check) {
   return items;
 }
 
-// RemoveFlow is the tab's steps: paste, trust (only when the database's
-// certificate authority is unknown), review, done.
+// REMOVAL_TEXT is the checklist after a removal: the database, the bot's
+// computer and the agent's connection.
+export const REMOVAL_TEXT = {
+  database: (db) => `✓ Removed from the database ${db}`,
+  removing: "Removing from the bot's computer…",
+  removed: "✓ Removed from the bot's computer",
+  noAnswer: "The bot's computer: no answer yet. Tell your bot \"check your status\" in the chat: it says what is left.",
+  noLink: "The bot's computer: this page was not opened from your bot's removal link, so BasaltDB stays there. Ask your bot to remove BasaltDB: its link removes both.",
+  kept: {
+    OTHER_AGENTS: "The bot's computer: BasaltDB stays there, serving your other bots.",
+    CREDENTIAL_FILE_KEPT: "The bot's computer: BasaltDB is removed, except the bot's connection file outside its folder, which it may not delete.",
+    SERVICE: "The bot's computer: BasaltDB runs there as a service, which this page cannot remove. Ask your bot to call status.",
+    DELETE_FAILED: "The bot's computer: some of BasaltDB's files could not be deleted. Ask your bot to call status.",
+  },
+  agent: "Agent connection: your bot drops it the next time you talk to it.",
+};
+
+// computerLine is the checklist's line for the bot's computer: "removing",
+// "removed", "noAnswer", "noLink", or a KEPT reason.
+export function computerLine(computer) {
+  if (typeof REMOVAL_TEXT[computer] === "string") return REMOVAL_TEXT[computer];
+  return REMOVAL_TEXT.kept[computer] ?? REMOVAL_TEXT.kept.DELETE_FAILED;
+}
+
+// removalSteps are the checklist's lines.
+export function removalSteps(database, computer) {
+  return [REMOVAL_TEXT.database(database), computerLine(computer), REMOVAL_TEXT.agent];
+}
+
+function defaultSleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// RemoveFlow is the tab's steps: paste (checked by itself), trust (only
+// when the database's certificate authority is unknown), review, done.
 export class RemoveFlow {
   #databaseUrl = "";
   #trustRoot = "";
 
-  // rpc is { call, Refusal, notPostgres } from connect.js.
-  constructor({ fetch: fetchFn, rpc }) {
+  // rpc is { call, Refusal, notPostgres } from connect.js; code is a
+  // removal link's code, or "".
+  constructor({ fetch: fetchFn, rpc, code = "", sleep = defaultSleep, now = () => Date.now() }) {
     this.fetch = fetchFn;
     this.rpc = rpc;
+    this.code = code;
+    this.sleep = sleep;
+    this.now = now;
     this.step = "paste";
     this.check = null;
     this.asking = null;
     this.done = null;
+    this.link = null;
+  }
+
+  // describeLink reads a removal link's code: the database it names, for
+  // the page's heading. A refused code (expired, damaged) is dropped: the
+  // page then removes BasaltDB from the database only.
+  async describeLink() {
+    if (this.code === "") return null;
+    try {
+      const out = await this.rpc.call(this.fetch, "DescribeSetup", { code: this.code });
+      const t = out?.summary?.target;
+      if (!t || typeof t.database !== "string" || typeof t.host !== "string") throw new this.rpc.Refusal("UNKNOWN", UNREADABLE);
+      this.link = { database: t.database, host: t.host };
+      return this.link;
+    } catch (err) {
+      this.code = "";
+      throw err;
+    }
   }
 
   // checkRemove takes the string the person pasted. On a refusal the string
@@ -97,6 +176,7 @@ export class RemoveFlow {
     }
     this.check = {
       database: out.database,
+      host: hostOf(this.#databaseUrl),
       bots: strings(out.bots),
       lines: strings(out.lines),
       sql: typeof out.sql === "string" ? out.sql : "",
@@ -140,17 +220,16 @@ export class RemoveFlow {
     this.step = "paste";
   }
 
-  // remove is RunRemove with the name the person typed. The string is
-  // dropped whatever the answer.
-  async remove(typed) {
+  // remove is RunRemove, with the removal link's code when there is one.
+  // The string is dropped whatever the answer.
+  async remove() {
     if (this.step !== "review" || !this.check) throw new Error("not at the review step");
-    if (!removeConfirmed(typed, this.check.database) || typed.length > MAX_DATABASE_NAME) {
-      throw new this.rpc.Refusal("ANSWERS_INVALID", "Type the database's name exactly as the page shows it to remove BasaltDB from it. Nothing changed.");
-    }
     this.step = "running";
+    const req = this.#request();
+    if (this.code !== "") req.code = this.code;
     let out;
     try {
-      out = await this.rpc.call(this.fetch, "RunRemove", { ...this.#request(), confirmName: typed });
+      out = await this.rpc.call(this.fetch, "RunRemove", req);
     } catch (err) {
       this.#forget();
       this.check = null;
@@ -163,9 +242,38 @@ export class RemoveFlow {
       bots: strings(out.bots),
       lines: strings(out.lines),
       warnings: strings(out.warnings),
+      ticket: typeof out.ticket === "string" ? out.ticket : "",
     };
     this.step = "done";
     return this.done;
+  }
+
+  // waitComputer waits for the bot's engine after a removal with a code:
+  // "removed", a KEPT reason, or "noAnswer" when WAIT_MS pass without its
+  // report. On UNKNOWN (the service lost the hold) it offers the ticket
+  // back once.
+  async waitComputer() {
+    let ticket = this.done?.ticket ?? "";
+    if (ticket === "") return "noLink";
+    const until = this.now() + WAIT_MS;
+    let offered = false;
+    for (;;) {
+      try {
+        const st = await this.rpc.call(this.fetch, "HandoffStatus", { ticket });
+        if (typeof st.ticket === "string" && st.ticket !== "") ticket = st.ticket;
+        const r = st.removed;
+        if (r?.result === "REMOVED") return "removed";
+        if (r?.result === "KEPT") return typeof r.reason === "string" && r.reason !== "" ? r.reason : "DELETE_FAILED";
+        if (st.state === "UNKNOWN" && !offered) {
+          offered = true;
+          await this.rpc.call(this.fetch, "OfferAddress", { ticket });
+        }
+      } catch {
+        // A call that failed is tried again at the next poll.
+      }
+      if (this.now() >= until) return "noAnswer";
+      await this.sleep(POLL_MS);
+    }
   }
 }
 
@@ -196,11 +304,26 @@ function showError(id, err, rpc) {
   node.hidden = false;
 }
 
-// startRemove wires the Remove BasaltDB tab.
+// startRemove wires the Remove BasaltDB tab. It returns the flow and a
+// promise of the link's description (resolved at once without a link).
 export function startRemove(env) {
   const flow = new RemoveFlow(env);
   showScreen("r-paste");
   $("r-back").hidden = true;
+  let ready = Promise.resolve();
+  if (flow.code !== "") {
+    $("r-link").hidden = false;
+    ready = flow.describeLink().then(
+      (link) => {
+        $("r-title").textContent = `Remove BasaltDB from ${link.database} on ${link.host}`;
+        $("r-link").textContent = "From your bot's removal link: once the database is done, your bot removes BasaltDB from its computer too.";
+      },
+      (err) => {
+        $("r-link").hidden = true;
+        showError("r-paste-error", err, env.rpc);
+      },
+    );
+  }
 
   const toPaste = () => {
     flow.back();
@@ -215,9 +338,8 @@ export function startRemove(env) {
     $("r-nothing").hidden = !check.nothingToRemove;
     $("r-sql").textContent = check.sql;
     fill($("r-lines"), check.lines.map((l) => el("li", "", l)));
-    $("r-confirm-name").textContent = check.database;
-    $("r-confirm").value = "";
-    $("r-remove").disabled = true;
+    $("r-remove").textContent = removeButtonText(check.database, check.host);
+    $("r-remove").disabled = false;
     $("r-review-error").hidden = true;
     $("r-back").hidden = false;
     showScreen("r-review");
@@ -245,57 +367,84 @@ export function startRemove(env) {
     }
   };
 
+  const checkPasted = () => {
+    const url = $("r-database-url").value;
+    if (String(url).trim() === "" || flow.step !== "paste") return undefined;
+    $("r-database-url").value = "";
+    return checked(() => flow.checkRemove(url), "r-check", "Checking…");
+  };
   $("r-check").addEventListener("click", () => {
     const url = $("r-database-url").value;
     $("r-database-url").value = "";
     return checked(() => flow.checkRemove(url), "r-check", "Checking…");
   });
+  // One box, one press: a pasted string is checked by itself, after a
+  // short pause so a paste is one change; Continue stays for typing.
+  let pending = null;
+  $("r-database-url").addEventListener("input", () => {
+    if (pending !== null) clearTimeout(pending);
+    pending = setTimeout(() => {
+      pending = null;
+      checkPasted();
+    }, CHECK_DELAY_MS);
+  });
   $("r-trust-go").addEventListener("click", () => checked(() => flow.trust(), "r-trust-go", "Checking…"));
   $("r-trust-cancel").addEventListener("click", toPaste);
   $("r-back").addEventListener("click", toPaste);
-  $("r-confirm").addEventListener("input", () => {
-    $("r-remove").disabled = !removeConfirmed($("r-confirm").value, flow.check?.database);
-  });
   $("r-remove").addEventListener("click", async () => {
+    const label = $("r-remove").textContent;
     const done = busy($("r-remove"), "Removing BasaltDB…");
     if (!done) return;
     $("r-back").hidden = true;
+    let result;
     try {
-      const result = await flow.remove($("r-confirm").value);
-      done();
-      $("r-done-db").textContent = result.database;
-      $("r-done-bots").textContent = result.bots.length > 0 ? `Bots that lost their access: ${result.bots.join(", ")}.` : "";
-      fill($("r-done-warnings"), result.warnings.map((w) => el("li", "", w)));
-      $("r-done-warnings").hidden = result.warnings.length === 0;
-      showScreen("r-done");
+      result = await flow.remove();
     } catch (err) {
       done();
+      $("r-remove").textContent = label;
       showScreen("r-paste");
       showError("r-paste-error", err, env.rpc);
+      return;
     }
+    done();
+    const steps = (computer) => fill($("r-steps"), removalSteps(result.database, computer).map((l) => el("li", "", l)));
+    $("r-done-bots").textContent = result.bots.length > 0 ? `Bots that lost their access: ${result.bots.join(", ")}.` : "";
+    fill($("r-done-warnings"), result.warnings.map((w) => el("li", "", w)));
+    $("r-done-warnings").hidden = result.warnings.length === 0;
+    if (result.ticket === "") {
+      steps("noLink");
+      $("r-done-title").textContent = `BasaltDB is removed from ${result.database}`;
+      showScreen("r-done");
+      return;
+    }
+    steps("removing");
+    $("r-done-title").textContent = "Removing BasaltDB…";
+    showScreen("r-done");
+    const computer = await flow.waitComputer();
+    steps(computer);
+    $("r-done-title").textContent = computer === "removed" ? "BasaltDB is removed" : `BasaltDB is removed from ${result.database}`;
   });
-  return flow;
+  return { flow, ready };
 }
 
 // startTabs wires the two tabs: Connect a bot (the default) and Remove
 // BasaltDB. Each tab keeps its own steps; switching shows the other.
-// rpc is { call, Refusal, notPostgres } from connect.js.
-export function startTabs(env, { removeOnly = false, rpc }) {
-  env = { ...env, rpc };
-  let removeStarted = false;
+// rpc is { call, Refusal, notPostgres } from connect.js; code is a removal
+// link's code (#remove=<code>), which opens the Remove tab.
+export function startTabs(env, { removeOnly = false, code = "", rpc }) {
+  env = { ...env, rpc, code };
+  let removeStarted = null;
   const pick = (tab) => {
     const remove = tab === "remove";
     $("tab-connect").setAttribute("aria-selected", String(!remove));
     $("tab-remove").setAttribute("aria-selected", String(remove));
     $("main").hidden = remove;
     $("remove").hidden = !remove;
-    if (remove && !removeStarted) {
-      removeStarted = true;
-      startRemove(env);
-    }
+    if (remove && removeStarted === null) removeStarted = startRemove(env);
   };
   $("tab-connect").addEventListener("click", () => pick("connect"));
   $("tab-remove").addEventListener("click", () => pick("remove"));
   $("tabs").hidden = false;
-  pick(removeOnly ? "remove" : "connect");
+  pick(removeOnly || code !== "" ? "remove" : "connect");
+  return removeStarted;
 }

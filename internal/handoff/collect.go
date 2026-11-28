@@ -57,6 +57,9 @@ const (
 	// HoldSetUp is RunSetup's hold: the setup ran, and the engine asks the
 	// person about the database after a probe that passed.
 	HoldSetUp = connecthandoff.HoldSetUp
+	// HoldRemoved is RunRemove's hold for a removal link's code: the
+	// engine removes itself (SelfRemove).
+	HoldRemoved = connecthandoff.HoldRemoved
 )
 
 // Collected is an address the connect service handed over, unchecked (see
@@ -82,6 +85,41 @@ func (c *Client) Collect(ctx context.Context, setupID, fingerprint string) (Coll
 }
 
 func (c *Client) at() string { return c.now().UTC().Truncate(time.Second).Format(time.RFC3339) }
+
+// The results of ReportRemoved (CONTRACT.md, Connect, The removal
+// hand-off): REMOVED, or KEPT with one of the Kept reasons.
+const (
+	RemovedAll  = "REMOVED"
+	RemovedKept = "KEPT"
+	// KeptOtherAgents: the engine serves other agents, so it stays.
+	KeptOtherAgents = "OTHER_AGENTS"
+	// KeptCredentialFile: the agent's credential file is outside the
+	// engine's folders and not a plain file of the engine's user.
+	KeptCredentialFile = "CREDENTIAL_FILE_KEPT" //nolint:gosec // a report reason, not a credential
+	// KeptService: a service engine, which its removal job removes.
+	KeptService = "SERVICE"
+	// KeptDeleteFailed: a folder or file of the engine could not be
+	// deleted.
+	KeptDeleteFailed = "DELETE_FAILED"
+)
+
+// ReportRemoved tells the service that the engine removed itself after it
+// collected the REMOVED hold of setupID: reason is empty for RemovedAll.
+// It signs with the key in memory, so it works after the key file is gone.
+// The refusals are Collect's.
+func (c *Client) ReportRemoved(ctx context.Context, setupID, fingerprint, result, reason string) error {
+	at := c.at()
+	sig, err := c.signer.Sign(channel.ContextConnectRemoved, channel.ConnectRemovedBody(setupID, fingerprint, at, result, reason))
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, collectTimeout)
+	defer cancel()
+	return c.rpc.ReportRemoved(ctx, connecthandoff.RemovedReport{
+		SetupID: setupID, EnginePublicKey: b64.EncodeToString(c.signer.PublicKeySPKI()), Time: at,
+		Result: result, Reason: reason, Signature: b64.EncodeToString(sig),
+	})
+}
 
 // Report tells the service whether the engine reached a, which passed the
 // shape rules (CONTRACT.md, Connect, The reach check): r.Reason is empty

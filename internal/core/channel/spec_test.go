@@ -125,6 +125,7 @@ func TestChannelSpecMatchesContract(t *testing.T) {
 		"context-vault-auth": ContextVaultAuth, "context-session": ContextSession, "context-receipt": ContextReceipt,
 		"context-box-key": ContextBoxKey, "context-rotate": ContextRotate,
 		"context-connect-collect": ContextConnectCollect, "context-connect-reach": ContextConnectReach,
+		"context-connect-removed": ContextConnectRemoved,
 	}
 	for key, want := range contexts {
 		require.Equal(t, string(want), unescapeNL(get(key)), key)

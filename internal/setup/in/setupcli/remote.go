@@ -36,20 +36,7 @@ const (
 )
 
 // IsRemote reports whether args ask for basalt init --remote.
-func IsRemote(args []string) bool {
-	for _, a := range args {
-		if a == "--" {
-			return false
-		}
-		name, value, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
-		if !strings.HasPrefix(a, "-") || name != flagRemote {
-			continue
-		}
-		on, err := strconv.ParseBool(value)
-		return !hasValue || (err == nil && on)
-	}
-	return false
-}
+func IsRemote(args []string) bool { return hasFlag(args, flagRemote) }
 
 // RunRemote is basalt init --remote: it makes a setup code for an
 // agent-operated engine and prints it. h is what it reaches outside the CLI.
@@ -88,8 +75,67 @@ func InitRemote(c *cli.IO, h Host, args []string) (setup.RemoteInitResult, error
 	if err := moveBreakingConfig(c, path); err != nil {
 		return setup.RemoteInitResult{}, err
 	}
+	if f.Remove {
+		res, err := setup.InitRemoteRemoval(c.Ctx, remoteEnv{c}, h, f)
+		return res, cliUsage(err)
+	}
 	res, err := setup.InitRemote(c.Ctx, remoteEnv{c}, h, f)
 	return res, cliUsage(err)
+}
+
+// flagRemove is basalt init --remove: the person asked to remove BasaltDB.
+const flagRemove = "remove"
+
+// RemovesRemote reports whether args are basalt init --remove for an
+// agent-operated engine: with --remote, or for a config this user finds
+// whose operatedBy is AGENT (the bot's own computer, which the connect
+// page removes BasaltDB from). Any other --remove is the local page's.
+func RemovesRemote(c *cli.IO, args []string) bool {
+	if !hasFlag(args, flagRemove) {
+		return false
+	}
+	if IsRemote(args) {
+		return true
+	}
+	path, err := c.FindConfig(agentFlag(args))
+	if err != nil || path == "" {
+		return false
+	}
+	cfg, err := cli.LoadEngineConfig(c, path)
+	return err == nil && cfg.AgentOperated()
+}
+
+// hasFlag reports whether args set the bool flag name on.
+func hasFlag(args []string, name string) bool {
+	for _, a := range args {
+		if a == "--" {
+			return false
+		}
+		n, value, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
+		if !strings.HasPrefix(a, "-") || n != name {
+			continue
+		}
+		on, err := strconv.ParseBool(value)
+		return !hasValue || (err == nil && on)
+	}
+	return false
+}
+
+// agentFlag is the value args give --agent, or "".
+func agentFlag(args []string) string {
+	for i, a := range args {
+		n, value, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
+		if !strings.HasPrefix(a, "-") || n != "agent" {
+			continue
+		}
+		if hasValue {
+			return value
+		}
+		if i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 // parseInitRemote reads basalt init --remote's flags: --remote and
@@ -101,8 +147,9 @@ func parseInitRemote(c *cli.IO, args []string) (setup.RemoteFlags, error) {
 	fs := c.Flags("init --remote")
 	fs.BoolVar(&remote, flagRemote, false, "set up an agent on a bot's machine: prints the connect link the person opens")
 	fs.StringVar(&f.Agent, "agent", "", "the agent's name (lowercase letters, digits, _); needed only when the engine serves more than one agent")
+	fs.BoolVar(&f.Remove, flagRemove, false, "the person asked to remove BasaltDB: prints the connect page's removal link")
 	if err := cli.Parse(fs, args); err != nil {
-		return f, fmt.Errorf("%w (basalt init --remote takes only --agent; the connect page asks for the rest)", err)
+		return f, fmt.Errorf("%w (basalt init --remote takes only --agent and --remove; the connect page asks for the rest)", err)
 	}
 	f.ConfigPath = cmp.Or(c.Paths.Config, c.SystemConfig())
 	return f, nil
@@ -115,12 +162,15 @@ type Host = setup.RemoteHost
 // PrintRemoteResult prints the result: the connect link or the code in a
 // block of its own, its fingerprint and what the person does.
 func PrintRemoteResult(c *cli.IO, res setup.RemoteInitResult) error {
-	if res.Reused {
-		fmt.Fprintln(c.Stderr, "basalt: a setup code is pending for this agent; here it is again")
-	}
 	expires, err := time.Parse(time.RFC3339, res.ExpiresAt)
 	if err != nil {
 		return err
+	}
+	if res.Removal {
+		return printRemoval(c, res, expires)
+	}
+	if res.Reused {
+		fmt.Fprintln(c.Stderr, "basalt: a setup code is pending for this agent; here it is again")
 	}
 	if res.ConnectOnly {
 		if err := printConnectOnly(c, res, expires); err != nil {
@@ -139,6 +189,22 @@ func PrintRemoteResult(c *cli.IO, res setup.RemoteInitResult) error {
 		return err
 	}
 	return printRemoteMCP(c, res)
+}
+
+// printRemoval prints a removal link (basalt init --remove on an
+// agent-operated engine): the link, or over the link budget the code to
+// paste on the connect page's Remove tab, and what the person does.
+func printRemoval(c *cli.IO, res setup.RemoteInitResult, expires time.Time) error {
+	until := expires.UTC().Format("2006-01-02 15:04 UTC")
+	if res.Reused {
+		fmt.Fprintln(c.Stderr, "basalt: a removal link is pending for this agent; here it is again")
+	}
+	if res.ConnectURL == "" {
+		_, err := fmt.Fprintf(c.Stdout, "Removal code for %s, valid until %s:\n\n%s\n\n%s\n", res.Agent, until, res.Code, res.PersonMessage)
+		return err
+	}
+	_, err := fmt.Fprintf(c.Stdout, "Removal link for %s, valid until %s:\n\n%s\n\n%s\n", res.Agent, until, res.ConnectURL, res.PersonMessage)
+	return err
 }
 
 // printRemoteMCP prints the basalt mcp command the agent registers.

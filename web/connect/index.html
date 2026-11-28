@@ -21,12 +21,12 @@
   <link rel="modulepreload" href="../lib/picks.js" integrity="sha384-Lr3kak9YvctWHYkskK/VnVjXzLrCqxE5t70AaJoCNULfOQnRfYwDLG86owrkBa+j">
   <link rel="modulepreload" href="../lib/pickviews.js" integrity="sha384-BytItDacs/UqEsTyea9Pdd56yhISnBMtmq29BahV7Ip57MbFIOlSsp1vHJpFGDcE">
   <link rel="modulepreload" href="../lib/relay.js" integrity="sha384-KDLPRvSacJM3ys+IpUXe8k7xs3z2VRnhKiIt5v696gbjepw8MFIqB0TuewUOYvnu">
-  <link rel="modulepreload" href="../lib/remove.js" integrity="sha384-wMhpo5pAIszkxg84GTl6+v0DW/aQ8UgvyWOizcBI6IAR6OMdoxXYyczl0DxnOcAI">
+  <link rel="modulepreload" href="../lib/remove.js" integrity="sha384-hT6dEoMxduiidob/YrrSWHru+hlb+qtwJK1m5Ri0rrFZszeR/sHNvdoQx7g5+ACZ">
   <link rel="modulepreload" href="../lib/repair.js" integrity="sha384-HkJl9aDNug2+VopgohfSBPxXO+/AOQLiGndqOl2w/dv8zQ3JJzzjif2AyVXG19tI">
   <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-p6vkHEc71VcwfVRBo8QA9PIZ0Vfi/kGJ/txhor5XxRvZ/WgGSJioTA2bDMRWOtDb">
   <link rel="modulepreload" href="../lib/transport.js" integrity="sha384-fmaF1B7m6aioKcEJxQqfEJUIzbf/1AkZfuiiV/jhdK47t9PoulK6uwbz6ho2AYws">
-  <script type="module" src="../lib/connect.js" integrity="sha384-TuTePUjK6Q1wXotnNXP1SVVK/QsnK3t9vwAlEBDJMSjPkhrg5W8e01PKxdBkGIch"></script>
+  <script type="module" src="../lib/connect.js" integrity="sha384-Yl9EM48aRxu1ZqI7HXJT4++3jCdbei8QpOGx2EfgEU26KBSoFkqTDYeLaf1paO/o"></script>
   <!-- sri:end -->
 </head>
 <body class="connect-page">
@@ -263,8 +263,9 @@
     </div>
 
     <section id="r-paste" class="screen" hidden>
-      <h1><label for="r-database-url">Remove BasaltDB from a database</label></h1>
-      <p class="muted">Paste the database's admin connection string. Nothing is removed until you confirm on the next screen. You need no bot and no setup code.</p>
+      <h1><label id="r-title" for="r-database-url">Remove BasaltDB from a database</label></h1>
+      <p id="r-link" class="muted" hidden></p>
+      <p class="muted">Paste the database's admin connection string: it is the confirmation. Nothing is removed until you press Remove on the next screen.</p>
       <input id="r-database-url" class="text" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="postgresql://…">
       <p class="strip warn">Never paste this into the chat. Used once, never stored.</p>
       <p id="r-paste-error" class="strip bad" role="alert" hidden></p>
@@ -297,17 +298,17 @@
         <pre id="r-sql" class="mono sql"></pre>
         <ul id="r-lines" class="muted"></ul>
       </details>
-      <p><label for="r-confirm">This cannot be undone. To confirm, type the database name <strong id="r-confirm-name"></strong>:</label></p>
-      <input id="r-confirm" class="text" type="text" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <p class="muted">This cannot be undone.</p>
       <p id="r-review-error" class="strip bad" role="alert" hidden></p>
-      <button id="r-remove" type="button" class="danger" disabled>Remove BasaltDB</button>
+      <button id="r-remove" type="button" class="danger">Remove BasaltDB</button>
     </section>
 
-    <section id="r-done" class="screen" hidden>
-      <p class="strip ok done-title">BasaltDB is removed from <strong id="r-done-db"></strong>.</p>
+    <section id="r-done" class="screen" role="status" hidden>
+      <h1 id="r-done-title">BasaltDB is removed</h1>
+      <ul id="r-steps" class="box checks"></ul>
       <p id="r-done-bots" class="muted"></p>
       <ul id="r-done-warnings" hidden></ul>
-      <p class="muted">Your tables and their rows are still there. The bots' engines can no longer log in; you can uninstall them when you like.</p>
+      <p class="muted">Your tables and their rows are still there.</p>
     </section>
   </main>
   </div>

@@ -96,6 +96,7 @@ type Collector interface {
 type SetupService interface {
 	CollectAddress(ctx context.Context, req connecthandoff.CollectRequest) (connecthandoff.Collected, error)
 	ReportReach(ctx context.Context, req connecthandoff.ReachReport) error
+	ReportRemoved(ctx context.Context, req connecthandoff.RemovedReport) error
 }
 
 // AddressProber probes an address with logins bound to fail: Prober.

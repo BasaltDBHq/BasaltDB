@@ -62,7 +62,23 @@ const (
 	ConnectAudience       = channel.ConnectAudience
 	ConnectCollectContext = string(channel.ContextConnectCollect)
 	ConnectReachContext   = string(channel.ContextConnectReach)
+	ConnectRemovedContext = string(channel.ContextConnectRemoved)
 )
+
+// ConnectRemovedBody is what follows ConnectRemovedContext in a
+// ReportRemoved signature: the collect body's lines, then the result and
+// the reason. The reason of a REMOVED report is an empty line.
+func ConnectRemovedBody(setupID, fingerprint, at, result, reason string) []byte {
+	return channel.ConnectRemovedBody(setupID, fingerprint, at, result, reason)
+}
+
+// VerifyConnectRemoved checks a ReportRemoved signature as
+// VerifyConnectCollect checks a CollectAddress one, over
+// ConnectRemovedBody. It returns nil for a valid signature.
+func VerifyConnectRemoved(engineKey, signature []byte, setupID, fingerprint, at, result, reason string) error {
+	return channel.VerifyKeySignature(engineKey, channel.ContextConnectRemoved,
+		channel.ConnectRemovedBody(setupID, fingerprint, at, result, reason), signature)
+}
 
 // ConnectCollectBody is what follows ConnectCollectContext in a
 // CollectAddress signature: the audience, the setupId, the setup

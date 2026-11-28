@@ -261,7 +261,6 @@ test("no button that starts a call is left on a bare disabled = true", () => {
     "page.js": 2,
     "pickviews.js": 1,
     "plugin.js": 1,
-    "remove.js": 1,
     "revert.js": 3,
     "setup.js": 1,
   };

@@ -69,8 +69,12 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 			// BasaltDB was removed from the agent's database on the connect
 			// page: everything runWith opened is closed, so the engine
 			// deletes its folders, reports and exits cleanly (a supervisor
-			// then stops too).
-			finishSelfRemoval(ctx, engine.EnginePath(*configPath), rm, log)
+			// then stops too). When engine.json changed since the
+			// confirmation (another agent, a newer link), nothing is deleted
+			// and the engine serves its config again, as for a reload.
+			if !finishSelfRemoval(ctx, engine.EnginePath(*configPath), rm, log) {
+				return engine.ErrReload
+			}
 			return nil
 		}
 		return err

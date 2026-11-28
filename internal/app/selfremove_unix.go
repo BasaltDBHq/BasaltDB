@@ -9,8 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
+
+	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
@@ -29,10 +32,13 @@ var (
 		handofffiles.ProbeCacheName, engine.LastStopFile, "engine.log", "start.lock",
 		"update-check.json", "portal-check.json", "plugins.json",
 	}
-	stateSuffixes = []string{".head.json"}
-	socketFiles   = []string{"engine.lock", "start.lock", engine.SuperviseLock}
-	socketSuffix  = []string{".sock"}
+	socketFiles = []string{"engine.lock", "start.lock", engine.SuperviseLock}
 )
+
+// agentStateFiles and agentSocketFiles are the removed agent's own files
+// there, by its exact name: never another agent's.
+func agentStateFiles(agent string) []string  { return []string{agent + ".head.json"} }
+func agentSocketFiles(agent string) []string { return []string{agent + ".sock"} }
 
 // removeEngineFiles deletes what an agent-operated engine keeps on the
 // bot's machine (CONTRACT.md, Connect, The removal hand-off), never as
@@ -97,8 +103,8 @@ func removeEngineFilesIn(cfg config.Config, configPath, agent, defaultPath strin
 		errs = append(errs, removeIfEmpty(agentsDir))
 	}
 	errs = append(errs,
-		emptyFolder(cfg.StateDirFor(runtime.GOOS), stateFiles, stateSuffixes, gone),
-		emptyFolder(cfg.SocketDir, socketFiles, socketSuffix, gone))
+		emptyFolder(cfg.StateDirFor(runtime.GOOS), append(slices.Clone(stateFiles), agentStateFiles(agent)...), true, gone),
+		emptyFolder(cfg.SocketDir, append(slices.Clone(socketFiles), agentSocketFiles(agent)...), false, gone))
 	if ownFolder {
 		errs = append(errs, os.RemoveAll(dir))
 	} else {
@@ -107,12 +113,13 @@ func removeEngineFilesIn(cfg config.Config, configPath, agent, defaultPath strin
 	return errors.Join(errs...)
 }
 
-// emptyFolder deletes, in folder d of this user, the files named in names
-// or ending in one of suffixes, and the crash folder's files, then removes
-// d when it is empty. A folder that goes with the config folder (gone) is
-// left to that; one that is missing is nothing to do. A folder that is not
-// empty afterwards stays and is an error.
-func emptyFolder(d string, names, suffixes []string, gone func(string) bool) error {
+// emptyFolder deletes, in folder d of this user, the files named exactly
+// in names and, with crash, the engine's crash reports in its crash folder
+// (crashReport), then removes d when it is empty. No wildcard: a folder
+// shared with anything else keeps all of it. A folder that goes with the
+// config folder (gone) is left to that; one that is missing is nothing to
+// do. A folder that is not empty afterwards stays and is an error.
+func emptyFolder(d string, names []string, crash bool, gone func(string) bool) error {
 	if d == "" || gone(d) {
 		return nil
 	}
@@ -130,9 +137,9 @@ func emptyFolder(d string, names, suffixes []string, gone func(string) bool) err
 	for _, e := range entries {
 		name := e.Name()
 		switch {
-		case name == servicespec.CrashDirName && e.IsDir():
-			errs = append(errs, emptyFolder(filepath.Join(d, name), nil, []string{""}, func(string) bool { return false }))
-		case matches(name, names, suffixes):
+		case crash && name == servicespec.CrashDirName && e.IsDir():
+			errs = append(errs, emptyCrashFolder(filepath.Join(d, name)))
+		case slices.Contains(names, name):
 			errs = append(errs, removeOwn(filepath.Join(d, name)))
 		}
 	}
@@ -140,18 +147,35 @@ func emptyFolder(d string, names, suffixes []string, gone func(string) bool) err
 	return errors.Join(errs...)
 }
 
-func matches(name string, names, suffixes []string) bool {
-	for _, n := range names {
-		if name == n {
-			return true
+// emptyCrashFolder deletes the engine's crash reports in d (crashReport)
+// and removes d when nothing else is left in it.
+func emptyCrashFolder(d string) error {
+	if err := ownDir(d); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(d)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, e := range entries {
+		if !e.IsDir() && crashReport(e.Name()) {
+			errs = append(errs, removeOwn(filepath.Join(d, e.Name())))
 		}
 	}
-	for _, s := range suffixes {
-		if strings.HasSuffix(name, s) {
-			return true
-		}
+	errs = append(errs, removeIfEmpty(d))
+	return errors.Join(errs...)
+}
+
+// crashReport reports whether name is a crash report's file as the engine
+// names it: <uuid>.json (internal/engine/out/crash).
+func crashReport(name string) bool {
+	id, ok := strings.CutSuffix(name, ".json")
+	if !ok {
+		return false
 	}
-	return false
+	u, err := uuid.Parse(id)
+	return err == nil && u.String() == id
 }
 
 // removeIfEmpty removes folder d when it is empty; a folder with anything

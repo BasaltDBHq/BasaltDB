@@ -61,7 +61,7 @@ func TestRemoveEngineFiles(t *testing.T) {
 		state := filepath.Join(base, "state")
 		mine := filepath.Join(state, "notes.txt")
 		writeFiles(t, configPath, filepath.Join(state, "engine.log"), filepath.Join(state, "channel.json"), filepath.Join(state, "bot.head.json"),
-			filepath.Join(state, "crash", "1.txt"), mine)
+			filepath.Join(state, "crash", "01a1f78c-52b8-7c3a-9f00-0000000000e1.json"), mine)
 		cfg := config.Config{StateDir: state}
 		err := removeEngineFilesIn(cfg, configPath, "bot", configPath)
 		require.Error(t, err)
@@ -71,6 +71,27 @@ func TestRemoveEngineFiles(t *testing.T) {
 		requireGone(t, filepath.Join(state, "bot.head.json"))
 		requireGone(t, filepath.Join(state, "crash"))
 		requireThere(t, mine)
+	})
+
+	t.Run("a shared folder keeps another agent's socket and head, and files the engine did not name", func(t *testing.T) {
+		base := t.TempDir()
+		dir := filepath.Join(base, config.UserDirName)
+		configPath := filepath.Join(dir, "engine.json")
+		shared := filepath.Join(base, "shared")
+		foreign := []string{filepath.Join(shared, "x.sock"), filepath.Join(shared, "x.head.json"), filepath.Join(shared, "crash", "notes.txt")}
+		own := []string{filepath.Join(shared, "bot.sock"), filepath.Join(shared, "bot.head.json"), filepath.Join(shared, "crash", "01a1f78c-52b8-7c3a-9f00-0000000000e1.json")}
+		writeFiles(t, configPath)
+		writeFiles(t, foreign...)
+		writeFiles(t, own...)
+		cfg := config.Config{StateDir: shared, SocketDir: shared}
+		err := removeEngineFilesIn(cfg, configPath, "bot", configPath)
+		require.Error(t, err, "the shared folder is not empty, so it stays")
+		for _, p := range foreign {
+			requireThere(t, p)
+		}
+		for _, p := range own {
+			requireGone(t, p)
+		}
 	})
 
 	t.Run("a credential file basalt did not write stays", func(t *testing.T) {
@@ -126,9 +147,10 @@ func TestTakeRemovalReadsTheConfigAgain(t *testing.T) {
 	require.Nil(t, s.taken(), "the engine stays for the other agent")
 	require.Equal(t, []string{"KEPT OTHER_AGENTS"}, reports)
 
-	// The same at the end of runWith: nothing is deleted.
+	// The same at the end of runWith: nothing is deleted, and the caller
+	// serves the config again (engine.ErrReload) for the agents it has now.
 	reports = nil
-	finishSelfRemoval(context.Background(), cfg, &removed, log)
+	require.False(t, finishSelfRemoval(context.Background(), cfg, &removed, log), "nothing deleted: the engine serves its config again")
 	require.Equal(t, []string{"KEPT OTHER_AGENTS"}, reports)
 	requireThere(t, cfg)
 

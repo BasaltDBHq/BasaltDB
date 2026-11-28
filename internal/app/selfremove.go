@@ -195,17 +195,22 @@ func reportRemoved(ctx context.Context, rm handoff.Removed, result, reason strin
 // the removal rm and reports the result. Nothing of the engine runs any
 // more, so nothing writes a file again. engine.json is read once more:
 // the folders and files come from it as it is now, and an agent added or a
-// removal replaced since the confirmation deletes nothing.
-func finishSelfRemoval(ctx context.Context, configPath string, rm *handoff.Removed, log *slog.Logger) {
+// removal replaced since the confirmation deletes nothing: it reports
+// false, and the caller serves the config again (the engine restarts in
+// place, for the agents engine.json has now).
+func finishSelfRemoval(ctx context.Context, configPath string, rm *handoff.Removed, log *slog.Logger) (deleted bool) {
 	cfg, kept, err := currentRemoval(configPath, *rm)
 	switch {
+	case errors.Is(err, errRemovalGone):
+		log.Warn("the removal was replaced since it was confirmed; nothing is removed, the engine serves its config again", "setupId", rm.SetupID)
+		return false
 	case err != nil:
 		log.Warn("BasaltDB did not remove itself from this machine", "err", err)
 		reportRemoved(ctx, *rm, handoff.RemovedKept, handoff.KeptDeleteFailed, log)
-		return
+		return false
 	case kept != "":
 		reportRemoved(ctx, *rm, handoff.RemovedKept, kept, log)
-		return
+		return false
 	}
 	result, reason := handoff.RemovedAll, ""
 	if err := removeEngineFiles(cfg, configPath, rm.Agent); err != nil {
@@ -215,6 +220,7 @@ func finishSelfRemoval(ctx context.Context, configPath string, rm *handoff.Remov
 		log.Info("BasaltDB removed itself from this machine; only the basalt binary stays")
 	}
 	reportRemoved(ctx, *rm, result, reason, log)
+	return true
 }
 
 // errCredentialKept is a credential file outside the engine's folders that

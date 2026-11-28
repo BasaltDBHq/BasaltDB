@@ -18,8 +18,10 @@ import (
 // carries the engine's key, and engine.json records it as the agent's
 // pending removal. The person removes BasaltDB from that database on the
 // connect page, whose service then keeps a REMOVED hold for the code's
-// setupId. SelfRemove collects that hold through the collect window and
-// asks the engine to remove itself only when all of these hold:
+// setupId. SelfRemove reads engine.json at every tick, so a removal link
+// made while the engine runs is collected without a restart, and collects
+// the pending removal's hold through its collect window. It asks the
+// engine to remove itself only when all of these hold:
 //
 //   - the hold is for the removal engine.json records now (its setupId,
 //     signed for with the engine's key), so a hold of an older link or of
@@ -34,8 +36,7 @@ import (
 
 // SelfRemoveOptions build a SelfRemove.
 type SelfRemoveOptions struct {
-	Agent   string
-	Removal config.Removal
+	Agent string
 	// Credential is the database the agent's credential file names.
 	Credential setupcode.Address
 	Collector  Collector
@@ -60,39 +61,45 @@ type Removed struct {
 	Report func(ctx context.Context, result, reason string) error
 }
 
-// SelfRemove is one agent's pending removal on the engine.
+// SelfRemove is one agent's removal watch on the engine.
 type SelfRemove struct {
 	o    SelfRemoveOptions
-	made time.Time
 	mu   sync.Mutex
 	done bool
+	// checked is the last pending removal read, by setupId: when its code
+	// was made, or why it is not collected for.
+	checked struct {
+		id   string
+		made time.Time
+		err  error
+	}
 }
 
 // ErrNotARemoval is a pending removal whose code SelfRemove does not
-// collect for: not an AGENT code with a target and an engine key, or not
-// the setupId engine.json records.
+// collect for: not an AGENT code with a target and an engine key, not the
+// setupId engine.json records, or another database than the credential's.
 var ErrNotARemoval = errors.New("the pending removal in engine.json is not a removal link of this agent")
 
-// NewSelfRemove is the pending removal of o.
-func NewSelfRemove(o SelfRemoveOptions) (*SelfRemove, error) {
+// NewSelfRemove is the removal watch of o.
+func NewSelfRemove(o SelfRemoveOptions) *SelfRemove {
 	if o.Collector == nil || o.Login == nil || o.Pending == nil || o.Confirmed == nil || o.Log == nil || o.Now == nil {
 		panic("handoff: a self-removal needs a collector, a login, its pending removal, a confirm, a logger and a clock")
 	}
-	p, err := setupcode.Decode(o.Removal.Code)
+	return &SelfRemove{o: o}
+}
+
+// CheckRemoval is when rm's code was made, or ErrNotARemoval when it is not
+// a removal link for credential.
+func CheckRemoval(rm config.Removal, credential setupcode.Address) (time.Time, error) {
+	p, err := setupcode.Decode(rm.Code)
 	if err != nil {
-		return nil, fmt.Errorf("the pending removal code in engine.json cannot be read: %w", err)
+		return time.Time{}, fmt.Errorf("%w: its code cannot be read: %w", ErrNotARemoval, err)
 	}
-	if p.ConnectOnly() || p.SetupID != o.Removal.SetupID || p.Engine == nil || p.Kind != setupcode.KindAgent {
-		return nil, ErrNotARemoval
+	if p.ConnectOnly() || p.SetupID != rm.SetupID || p.Engine == nil || p.Kind != setupcode.KindAgent ||
+		setupcode.Address(*p.Target).Canonical() != credential.Canonical() {
+		return time.Time{}, ErrNotARemoval
 	}
-	if setupcode.Address(*p.Target).Canonical() != o.Credential.Canonical() {
-		return nil, ErrNotARemoval
-	}
-	made, err := p.CreatedAt()
-	if err != nil {
-		return nil, err
-	}
-	return &SelfRemove{o: o, made: made}, nil
+	return p.CreatedAt()
 }
 
 // Done reports whether the removal was confirmed.
@@ -102,8 +109,8 @@ func (r *SelfRemove) Done() bool {
 	return r.done
 }
 
-// Run collects every 15 seconds until ctx ends, the removal is confirmed,
-// the collect window ends or engine.json no longer records this removal.
+// Run reads engine.json and collects every 15 seconds until ctx ends or a
+// removal is confirmed.
 func (r *SelfRemove) Run(ctx context.Context) {
 	for {
 		if !r.Step(ctx) {
@@ -119,13 +126,42 @@ func (r *SelfRemove) Run(ctx context.Context) {
 	}
 }
 
-// Step is one collect and check. It reports whether to go on collecting.
+// pending is the removal to collect for now, or false: none recorded, its
+// code refused, or its collect window over.
+func (r *SelfRemove) pending() (config.Removal, bool) {
+	rm, ok, err := r.o.Pending()
+	if err != nil {
+		r.o.Log.Warn("read the agent's pending removal in engine.json", "err", err)
+		return config.Removal{}, false
+	}
+	if !ok {
+		return config.Removal{}, false
+	}
+	if r.checked.id != rm.SetupID {
+		r.checked.id = rm.SetupID
+		r.checked.made, r.checked.err = CheckRemoval(rm, r.o.Credential)
+		if r.checked.err != nil {
+			r.o.Log.Warn("the pending removal is not collected", "setupId", rm.SetupID, "err", r.checked.err)
+		}
+	}
+	if r.checked.err != nil || !r.o.Now().Before(r.checked.made.Add(setupcode.CollectWindow)) {
+		return config.Removal{}, false
+	}
+	return rm, true
+}
+
+// Step is one read of engine.json and, with a removal pending, one collect
+// and check. It reports whether to go on.
 func (r *SelfRemove) Step(ctx context.Context) bool {
-	if r.Done() || !r.o.Now().Before(r.made.Add(setupcode.CollectWindow)) || !r.stillPending() {
+	if r.Done() {
 		return false
 	}
-	id := r.o.Removal.SetupID
-	got, err := r.o.Collector.Collect(ctx, id, r.o.Removal.Fingerprint)
+	rm, ok := r.pending()
+	if !ok {
+		return true
+	}
+	id := rm.SetupID
+	got, err := r.o.Collector.Collect(ctx, id, rm.Fingerprint)
 	var rl *RateLimitedError
 	switch {
 	case errors.Is(err, ErrNotHeld):
@@ -160,26 +196,16 @@ func (r *SelfRemove) Step(ctx context.Context) bool {
 	report := func(context.Context, string, string) error { return nil }
 	if ok {
 		report = func(ctx context.Context, result, reason string) error {
-			return c.ReportRemoved(ctx, id, r.o.Removal.Fingerprint, result, reason)
+			return c.ReportRemoved(ctx, id, rm.Fingerprint, result, reason)
 		}
 	}
-	r.o.Confirmed(ctx, Removed{Agent: r.o.Agent, SetupID: id, Fingerprint: r.o.Removal.Fingerprint, Report: report})
+	r.o.Confirmed(ctx, Removed{Agent: r.o.Agent, SetupID: id, Fingerprint: rm.Fingerprint, Report: report})
 	return false
 }
 
 // RemovedReporter sends ReportRemoved: *Client.
 type RemovedReporter interface {
 	ReportRemoved(ctx context.Context, setupID, fingerprint, result, reason string) error
-}
-
-// stillPending reports whether engine.json still records this removal.
-func (r *SelfRemove) stillPending() bool {
-	now, ok, err := r.o.Pending()
-	if err != nil {
-		r.o.Log.Warn("read the agent's pending removal in engine.json", "err", err)
-		return true
-	}
-	return ok && now.SetupID == r.o.Removal.SetupID
 }
 
 func (r *SelfRemove) wait(ctx context.Context, d time.Duration) {

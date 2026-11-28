@@ -32,6 +32,16 @@ import (
 //
 // The basalt binary stays. Every failure is returned after the rest ran.
 func removeEngineFiles(cfg config.Config, configPath, agent string) error {
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return err
+	}
+	return removeEngineFilesIn(cfg, configPath, agent, config.UserPath(base))
+}
+
+// removeEngineFilesIn is removeEngineFiles with the default config path
+// given: only a config at exactly that path has its whole folder removed.
+func removeEngineFilesIn(cfg config.Config, configPath, agent, defaultPath string) error {
 	if os.Geteuid() == 0 {
 		return errors.New("an engine started as root never removes itself")
 	}
@@ -43,7 +53,7 @@ func removeEngineFiles(cfg config.Config, configPath, agent string) error {
 	if err := ownDir(dir); err != nil {
 		return err
 	}
-	ownFolder := filepath.Base(dir) == config.UserDirName
+	ownFolder := abs == filepath.Clean(defaultPath)
 	var errs []error
 	for _, a := range cfg.Agents {
 		if a.Name != agent {

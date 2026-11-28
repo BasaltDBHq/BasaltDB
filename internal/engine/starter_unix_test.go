@@ -120,6 +120,30 @@ func (r *starterRig) deps(owner int, launchErr error) engine.StarterDeps {
 	}
 }
 
+// A shim that started while the config existed starts nothing once the
+// config is gone (the engine removed itself), and makes no folder again.
+func TestEngineStarterStartsNothingAfterTheConfigWentAway(t *testing.T) {
+	t.Parallel()
+	r := newStarterRig(t)
+	d := r.deps(testEuid, nil)
+	gone := false
+	d.Owner = func(string) (int, error) {
+		if gone {
+			return 0, os.ErrNotExist
+		}
+		return testEuid, nil
+	}
+	start, _ := engine.NewStarter(holdOff{}, d, "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	require.NotNil(t, start)
+	gone = true
+	require.ErrorIs(t, start(context.Background()), os.ErrNotExist)
+	require.Zero(t, r.launches.Load())
+	_, err := os.Lstat(r.cfg.StateDir)
+	require.ErrorIs(t, err, os.ErrNotExist, "no state folder is made again")
+	_, err = os.Lstat(r.cfg.SocketDir)
+	require.ErrorIs(t, err, os.ErrNotExist, "no socket folder is made again")
+}
+
 // A starter without the machine's files is refused when it is built.
 func TestEngineStarterRefusesNoOS(t *testing.T) {
 	t.Parallel()

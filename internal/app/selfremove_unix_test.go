@@ -36,7 +36,7 @@ func TestRemoveEngineFiles(t *testing.T) {
 		Agents: []config.Agent{{Name: "bot", Store: config.PostgresStore(cred)}},
 	}
 
-	require.NoError(t, removeEngineFiles(cfg, configPath, "bot"))
+	require.NoError(t, removeEngineFilesIn(cfg, configPath, "bot", configPath))
 	_, err := os.Lstat(dir)
 	require.ErrorIs(t, err, os.ErrNotExist, "the config folder is gone")
 	_, err = os.Lstat(cred)
@@ -55,20 +55,21 @@ func TestRemoveEngineFiles(t *testing.T) {
 		link := filepath.Join(base, "bot.url")
 		require.NoError(t, os.Symlink(target, link))
 		cfg := config.Config{Agents: []config.Agent{{Name: "bot", Store: config.PostgresStore(link)}}}
-		err := removeEngineFiles(cfg, configPath, "bot")
+		err := removeEngineFilesIn(cfg, configPath, "bot", configPath)
 		require.ErrorIs(t, err, errCredentialKept)
 		require.Equal(t, "CREDENTIAL_FILE_KEPT", keptReason(err))
 		_, err = os.Stat(target)
 		require.NoError(t, err, "a link's target is never touched")
 	})
 
-	t.Run("a config elsewhere: only engine.json goes", func(t *testing.T) {
-		dir := t.TempDir()
+	t.Run("a basalt folder that is not the default: only engine.json goes", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), config.UserDirName)
+		require.NoError(t, os.MkdirAll(dir, 0o700))
 		configPath := filepath.Join(dir, "engine.json")
 		require.NoError(t, os.WriteFile(configPath, []byte("{}"), 0o600))
 		other := filepath.Join(dir, "notes.txt")
 		require.NoError(t, os.WriteFile(other, []byte("mine"), 0o600))
-		require.NoError(t, removeEngineFiles(config.Config{}, configPath, "bot"))
+		require.NoError(t, removeEngineFilesIn(config.Config{}, configPath, "bot", filepath.Join(t.TempDir(), "basalt", "engine.json")))
 		_, err := os.Lstat(configPath)
 		require.ErrorIs(t, err, os.ErrNotExist)
 		_, err = os.Lstat(other)

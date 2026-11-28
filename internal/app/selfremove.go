@@ -65,20 +65,22 @@ func (s *selfRemoval) taken() *handoff.Removed {
 // a service that does not answer never keeps it running.
 const reportTimeout = 20 * time.Second
 
-// newSelfRemove is the collect loop of agent a's pending removal, or nil
-// when it has none, the engine runs as root, its key is refused or the
-// removal is not this agent's (logged). dsn is the agent's credential, as
-// the engine read it, for the fresh login that shows its role is gone.
+// newSelfRemove is agent a's removal watch on an agent-operated engine:
+// it reads engine.json at every tick, so a removal link basalt init
+// --remove writes while the engine runs is collected without a restart.
+// nil when the engine is person-operated, runs as root or its key is
+// refused. dsn is the agent's credential, as the engine read it, for the
+// fresh login that shows its role is gone.
 func newSelfRemove(env agentEnv, a config.Agent, cc *pgx.ConnConfig, dsn string, log *slog.Logger) func(context.Context) {
-	if a.Removal == nil || env.asRoot || env.keys == nil {
+	if !env.cfg.AgentOperated() || env.asRoot || env.keys == nil {
 		return nil
 	}
 	files := handofffiles.SetupFiles{ConfigPath: env.configPath, Agent: a.Name, CredFile: a.Store.CredentialFile, Pins: trustPins{}}
 	t := setupcode.ConnTarget(cc.Host, int(cc.Port), cc.Database, cc.User)
 	agents := len(env.cfg.Agents)
 	service := env.cfg.Service()
-	r, err := handoff.NewSelfRemove(handoff.SelfRemoveOptions{
-		Agent: a.Name, Removal: *a.Removal, Credential: setupcode.Address(t),
+	r := handoff.NewSelfRemove(handoff.SelfRemoveOptions{
+		Agent: a.Name, Credential: setupcode.Address(t),
 		Collector: handoff.NewClient(connectrpc.New(env.handoff.HTTP, env.handoff.serviceURL()), env.keys, env.handoff.now()),
 		Login:     func(ctx context.Context) error { return freshLogin(ctx, dsn) },
 		Pending:   files.PendingRemoval,
@@ -96,11 +98,6 @@ func newSelfRemove(env agentEnv, a config.Agent, cc *pgx.ConnConfig, dsn string,
 		},
 		Log: log.With("component", "connect"), Now: env.handoff.now(),
 	})
-	if err != nil {
-		log.Warn("the pending removal is not collected", "err", err)
-		return nil
-	}
-	log.Info("a removal link is pending for the agent; collecting its removal from the connect page", "setupId", a.Removal.SetupID)
 	return r.Run
 }
 

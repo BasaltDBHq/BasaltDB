@@ -147,6 +147,12 @@ func (s *starter) record(err error) error {
 // this socket (then the next calls look once and do not wait again until
 // that engine is gone).
 func (s *starter) start(ctx context.Context) error {
+	// A config that is gone (the engine removed itself after a removal on
+	// the connect page) starts nothing and makes no folder: the removed
+	// tree never comes back, and status answers REMOVED.
+	if _, err := s.deps.Owner(s.configPath); err != nil {
+		return s.record(err)
+	}
 	// An update drops empty folders and resets modes; these are ours.
 	if err := s.deps.OS.MakeDirs(s.cfg.SocketDir, PrivateDirMode); err != nil {
 		return s.record(err)

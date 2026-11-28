@@ -150,8 +150,8 @@ func (r *remoteInit) removalResult(rm config.Removal, reused bool) RemoteInitRes
 		return res
 	}
 	res.PasteAtPortal = true
-	res.PersonMessage = fmt.Sprintf("%s The removal link is too long for this chat. Open %s, choose Remove BasaltDB, and paste the admin connection string there, never into this chat. The link expires at %s.",
-		lead, links.Portal+links.ConnectPath, expiresText(rm.ExpiresAt))
+	res.PersonMessage = fmt.Sprintf("%s The removal link is too long for this chat (its code expires at %s), so the page can remove BasaltDB from the database only: open %s, choose Remove BasaltDB, and paste the admin connection string there, never into this chat.",
+		lead, expiresText(rm.ExpiresAt), links.Portal+links.ConnectPath)
 	return res
 }
 

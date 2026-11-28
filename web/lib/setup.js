@@ -167,6 +167,10 @@ export function removalSteps(database, computer) {
 // REMOVAL_WAIT_MS bounds the wait for the engine to stop after a removal,
 // and REMOVAL_POLL_MS is how often the page asks.
 export const REMOVAL_WAIT_MS = 60000;
+
+// CHECK_DELAY_MS is how long a removal's page waits after the admin string
+// changed before it checks it by itself: a paste is one change.
+export const CHECK_DELAY_MS = 400;
 export const REMOVAL_POLL_MS = 1000;
 
 // engineGone waits, up to REMOVAL_WAIT_MS, for the engine's health route
@@ -725,7 +729,13 @@ export async function startJob(link, preset, env = {}) {
     document.title = text.title;
     $("title").textContent = text.title;
     $("intro").textContent = JOB_TEXT[link.job].intro(link.agent);
-    $("remove-note").hidden = !job || job.job !== "REMOVE";
+    // A removal is one box and one press: its admin string is the
+    // confirmation, the check runs once the string is pasted, and it asks
+    // nothing about the OS user.
+    const removing = job?.job === "REMOVE";
+    $("remove-note").hidden = !removing;
+    $("os-user-panel").hidden = removing;
+    $("check").hidden = removing;
   };
   showJob();
   $("job-os-user").textContent = link.osUser;
@@ -749,7 +759,7 @@ export async function startJob(link, preset, env = {}) {
   const setChoices = (disabled) => {
     for (const name of CHOICES) $("choice-" + name.toLowerCase()).disabled = disabled;
   };
-  const confirmed = () => job !== null && $("confirm-os-user").checked;
+  const confirmed = () => job !== null && (job.job === "REMOVE" || $("confirm-os-user").checked);
   // An install that replaces an old one also needs the database's name
   // typed as the check named it; a removal is confirmed by its admin string.
   const typedName = () => $("confirm-replace").value;
@@ -771,12 +781,17 @@ export async function startJob(link, preset, env = {}) {
   $("confirm-replace").addEventListener("input", () => {
     if (checked) $("run").disabled = !runnable();
   });
+  let autoCheck = null;
   $("database-url").addEventListener("input", () => {
     checked = null;
     $("review").hidden = true;
+    $("remove-target").hidden = true;
     sync();
+    clearTimeout(autoCheck);
+    if (job?.job === "REMOVE" && $("database-url").value !== "") autoCheck = setTimeout(runCheck, env.checkDelayMs ?? CHECK_DELAY_MS);
   });
-  $("check").addEventListener("click", async () => {
+  const runCheck = async () => {
+    if ($("database-url").value === "") return;
     const done = working($("check"), "Checking…");
     if (!done) return;
     $("status").textContent = "Checking your database…";
@@ -800,10 +815,19 @@ export async function startJob(link, preset, env = {}) {
       sync();
       return;
     }
+    if (asked.job === "REMOVE" && $("database-url").value !== databaseUrl) {
+      // The string changed during the check: its own check comes next.
+      $("status").textContent = "";
+      return;
+    }
     checked = answer;
     checkedFor = asked;
     $("status").textContent = "";
     $("database").textContent = checked.database;
+    if (asked.job === "REMOVE") {
+      $("remove-target").textContent = checked.host ? `It opens ${checked.database} on ${checked.host}.` : `It opens ${checked.database}.`;
+      $("remove-target").hidden = false;
+    }
     const replace = replaceOf(checked.replace);
     $("replace-confirm").hidden = replace === null;
     $("replace-name").textContent = checked.database;
@@ -815,7 +839,8 @@ export async function startJob(link, preset, env = {}) {
     $("review").hidden = false;
     $("run").disabled = !runnable();
     sync();
-  });
+  };
+  $("check").addEventListener("click", runCheck);
   $("run").addEventListener("click", async () => {
     if (!checked || !runnable() || !answerFits(checkedFor, job)) return;
     const running = checkedFor;

@@ -530,8 +530,8 @@ func TestInitStopsBeforeTheDialog(t *testing.T) {
 		code int
 		want string
 	}{
-		{"an admin-flow flag", []string{"--demo", "--write", "public.leads"}, nil, cli.ExitUsage, "takes only --agent and --demo"},
-		{"the old --yes", []string{"--demo", "--yes"}, nil, cli.ExitUsage, "takes only --agent and --demo"},
+		{"an admin-flow flag", []string{"--demo", "--write", "public.leads"}, nil, cli.ExitUsage, "takes only --agent, --demo and --remove"},
+		{"the old --yes", []string{"--demo", "--yes"}, nil, cli.ExitUsage, "takes only --agent, --demo and --remove"},
 		{"a bad agent name", []string{"--demo", "--agent", "Bad-Name"}, nil, cli.ExitUsage, "is not a name an agent can have"},
 		{"root", []string{"--demo"}, func(h *fakeHost) { h.euid = 0 }, cli.ExitUsage, "not root"},
 		{"no dialog", []string{"--demo"}, func(h *fakeHost) { h.noDialog = fmt.Errorf("%w (/usr/bin/pkexec is missing)", servicespec.ErrNoDialog) }, cli.ExitError, "cannot be shown here"},
@@ -779,4 +779,47 @@ func TestPlainInitNeverReadsTheAdminEnv(t *testing.T) {
 		require.NotContains(t, read, envAdminURL, tc.name)
 		require.NotContains(t, stdout.String()+stderr.String(), "pw@db.example", tc.name)
 	}
+}
+
+// basalt init --remove: the person asked to remove BasaltDB. On an engine
+// set up it opens the removal's own link (job REMOVE, no pick first) and
+// waits as the change link does; a Remove on the page ends the wait.
+func TestInitRemoveOpensTheRemovalLink(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost()
+	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true, "/etc/basalt": true}
+	h.setupCodes = []string{setup.CodeJobUnavailable, setup.CodeJobUnavailable, setup.CodeEngineRemoved}
+	r, read := localInit(t, h, "--remove", "--agent", "sales_bot")
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
+	require.Len(t, h.opened, 1)
+	require.Equal(t, localsetup.Job{Job: setup.JobRemove, Agent: "sales_bot", OSUser: me752(t)}, linkJob(t, h.opened[0]))
+	require.Equal(t, h.opened[0]+"\n", r.stdout, "no basalt mcp line: the agent is registered already")
+	require.Contains(t, r.stderr, "paste your database's admin connection string and press Remove")
+	require.Contains(t, r.stderr, "the engine is removing itself from this computer")
+	require.Empty(t, h.dialogs)
+	require.NotContains(t, read, envAdminURL)
+}
+
+// Where nothing is set up, --remove installs nothing and says so; it
+// never goes with --demo.
+func TestInitRemoveWithNothingToRemove(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost()
+	r, _ := localInit(t, h, "--remove")
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
+	require.Contains(t, r.stderr, "BasaltDB is not set up on this computer, so there is nothing to remove.")
+	require.Empty(t, h.dialogs, "a removal never installs the engine service")
+	require.Empty(t, h.opened)
+
+	h = newFakeHost()
+	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+	h.setupCodes = []string{"INVALID_ARGUMENT"}
+	r, _ = localInit(t, h, "--remove")
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
+	require.Contains(t, r.stderr, "nothing to remove", "an engine waiting for a first install serves no agent")
+	require.Empty(t, h.opened)
+
+	r, _ = localInit(t, newFakeHost(), "--remove", "--demo")
+	require.Equal(t, cli.ExitUsage, r.code)
+	require.Contains(t, r.stderr, "--remove and --demo do not go together")
 }

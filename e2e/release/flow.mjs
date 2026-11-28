@@ -360,28 +360,19 @@ function collectEngineLog() {
   }
 }
 
-// removeOnPage opens init's CHANGE link and removes BasaltDB on its page:
-// one box (the admin string), one press. The button names the database and
-// its host; no name is typed.
+// removeOnPage opens init --remove's link and removes BasaltDB on its page:
+// open the link, paste the admin string (the page checks it by itself),
+// press the one button, which names the database and its host.
 async function removeOnPage(init) {
   const link = await initLink(init);
+  assert.equal(linkJob(link).job, "REMOVE", "init --remove prints the removal's own link");
   await open(link);
-  // The change link first asks whose database the engine serves, then runs the check.
-  const first = await until("the confirm step or the check", async () => {
-    if (await visible("#confirm-go")) return "confirm";
-    if (await visible("#u-pick")) return "check";
-    return "";
-  });
-  if (first === "confirm") {
-    await page.locator("#confirm-go").click();
-    await page.locator("#u-pick").waitFor({ state: "visible" });
-  }
-  await page.locator("#u-pick").click();
-  await page.locator("#choice-remove").check();
-  await page.locator("#confirm-os-user").check();
+  await page.locator("#database-url").waitFor({ state: "visible" });
+  assert.equal(await page.locator("#confirm-os-user").isVisible(), false, "no OS-user question");
+  assert.equal(await page.locator("#check").isVisible(), false, "no Check button");
   await page.locator("#database-url").fill(ADMIN_URL);
-  await page.locator("#check").click();
-  await page.locator("#remove-note").waitFor({ state: "visible" });
+  await page.locator("#run").waitFor({ state: "visible" });
+  assert.match(await page.locator("#remove-target").innerText(), /^It opens e2e on \S+\.$/);
   assert.match((await page.locator("#run").innerText()).trim(), /^Remove BasaltDB from e2e on \S+$/, "the button names the database and its host");
   assert.equal(await page.locator("#confirm-remove").count(), 0, "no name to type");
   await page.locator("#run").click();
@@ -431,7 +422,7 @@ async function remove() {
   assert.ok(jobListed(), "the install loaded the removal job");
   removedUid = engineAccount();
   assert.ok(removedUid, "the install made the engine's OS user");
-  const init = basaltInit(["--agent", AGENT]);
+  const init = basaltInit(["--agent", AGENT, "--remove"]);
   await removeOnPage(init);
   await page.locator("#removal-steps").waitFor({ state: "visible" });
   await until("the page to tick this computer", async () => (await page.locator("#done-title").innerText()).trim() === "BasaltDB is removed", 120000);

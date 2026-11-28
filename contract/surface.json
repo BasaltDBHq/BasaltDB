@@ -13,6 +13,7 @@
     {"kind": "flag", "name": "engine --supervise"},
     {"kind": "flag", "name": "init --agent"},
     {"kind": "flag", "name": "init --demo"},
+    {"kind": "flag", "name": "init --remove"},
     {"kind": "flag", "name": "init --remote"},
     {"kind": "flag", "name": "mcp --agent"},
     {"kind": "flag", "name": "service install --agent", "status": "removing", "epic": "one-setup-flow"},

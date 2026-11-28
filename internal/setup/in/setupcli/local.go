@@ -31,7 +31,7 @@ import (
 // nothing in the terminal and never reads the admin connection string.
 // The service's fixed scripts and paths come from h.
 func RunLocal(c *cli.IO, h LocalHost, args []string) int {
-	job, err := parseInitLocal(c, args)
+	job, remove, err := parseInitLocal(c, args)
 	if errors.Is(err, flag.ErrHelp) {
 		return cli.ExitOK
 	}
@@ -47,6 +47,11 @@ func RunLocal(c *cli.IO, h LocalHost, args []string) int {
 	}
 	job.OSUser = me.Username
 	installed := c.Host.System(io.Discard, io.Discard).Exists(h.OSUnitPath(c.Goos))
+	if remove && !installed {
+		// Nothing to remove, and a removal never installs anything.
+		fmt.Fprintln(c.Stderr, nothingToRemoveLine)
+		return cli.ExitOK
+	}
 	if err := enginecli.EnsureService(c, h); err != nil {
 		return c.Fail(err)
 	}
@@ -65,6 +70,15 @@ func RunLocal(c *cli.IO, h LocalHost, args []string) int {
 	state, err := waitForSetupPage(c)
 	if err != nil {
 		return c.Fail(err)
+	}
+	if remove {
+		if state != setup.EngineSetUp {
+			fmt.Fprintln(c.Stderr, nothingToRemoveLine)
+			return cli.ExitOK
+		}
+		job.Job = setup.JobRemove
+		code, _ := changeLink(c, h, job)
+		return code
 	}
 	switch state {
 	case setup.EngineSetUp:
@@ -240,9 +254,14 @@ func waitForEngineBuild(c *cli.IO) (string, error) {
 // the administrator dialog (Not your database), and init goes on to the
 // install. The page's Update for the agent ends the wait at once: the
 // agent goes on.
+// With job.Job JobRemove (basalt init --remove) it opens the removal's own
+// link instead, the same wait after it.
 func changeLink(c *cli.IO, h LocalHost, job localsetup.Job) (code int, reset bool) {
 	demoAsked := job.Demo
-	job.Job, job.Demo = setup.JobChange, false
+	if job.Job != setup.JobRemove {
+		job.Job = setup.JobChange
+	}
+	job.Demo = false
 	link, err := localsetup.Link(links.DefaultLocal, job)
 	if err != nil {
 		return c.Fail(err), false
@@ -254,7 +273,11 @@ func changeLink(c *cli.IO, h LocalHost, job localsetup.Job) (code int, reset boo
 	if err := c.Host.OpenURL(c.Ctx, link); err != nil {
 		fmt.Fprintln(c.Stderr, "basalt: the browser did not open; open the link above by hand")
 	}
-	fmt.Fprintln(c.Stderr, "basalt: the engine on this computer is already set up. On the page that opened, update the guard or remove BasaltDB: type your database's admin connection string there, never here.")
+	if job.Job == setup.JobRemove {
+		fmt.Fprintln(c.Stderr, "basalt: on the page that opened, paste your database's admin connection string and press Remove: it removes BasaltDB from the database and this computer. Type the string there, never here.")
+	} else {
+		fmt.Fprintln(c.Stderr, "basalt: the engine on this computer is already set up. On the page that opened, update the guard or remove BasaltDB: type your database's admin connection string there, never here.")
+	}
 	if demoAsked {
 		fmt.Fprintln(c.Stderr, "basalt: --demo starts a fresh demo, and BasaltDB is already set up on this computer. To start over with the demo: on the page that opened, press Remove, then run basalt init --demo again.")
 	}
@@ -281,6 +304,9 @@ func changeLink(c *cli.IO, h LocalHost, job localsetup.Job) (code int, reset boo
 const (
 	removedLine      = "basalt: BasaltDB is removed from your database, and the engine is removing itself from this computer. The page shows when it is done; nothing more is needed here."
 	removedAgainLine = "basalt: BasaltDB was removed from your database earlier. Setting up again on this computer's engine."
+	// nothingToRemoveLine: basalt init --remove where no engine serves an
+	// agent.
+	nothingToRemoveLine = "basalt: BasaltDB is not set up on this computer, so there is nothing to remove."
 )
 
 // waitForRemoval asks the engine, for up to setup.RemovalWait (as long as an
@@ -373,34 +399,39 @@ func runServiceDialog(c *cli.IO, d serviceDialog) int {
 
 // parseInitLocal reads basalt init's flags on a person-operated engine:
 // --agent and --demo only. Any other flag is a usage error.
-func parseInitLocal(c *cli.IO, args []string) (localsetup.Job, error) {
+func parseInitLocal(c *cli.IO, args []string) (job localsetup.Job, remove bool, err error) {
 	fs := cli.NewFlagSet("init")
 	fs.SetOutput(c.Stderr)
 	agent := fs.String("agent", "", "the agent's name (default: "+setupcode.DemoAgent+")")
 	demoFlag := fs.Bool("demo", false, "set up the sample database instead of your own tables")
+	removeFlag := fs.Bool("remove", false, "the person asked to remove BasaltDB: open the removal's page")
 	fs.Usage = func() {
-		fmt.Fprintln(c.Stderr, "usage: basalt init [--agent NAME] [--remote] [--demo]\n\n"+
+		fmt.Fprintln(c.Stderr, "usage: basalt init [--agent NAME] [--remote] [--demo | --remove]\n\n"+
 			"Installs the engine service when needed, then prints and opens the setup link. Finish the setup on that page:\n"+
 			"the admin connection string is typed there, never here.\n\n"+
-			"  --agent NAME  the agent's name\n  --remote      on a bot's machine: make a setup code for the connect page\n  --demo        set up the sample database instead of your own tables\n\n"+cli.ManyAgentsHelp)
+			"  --agent NAME  the agent's name\n  --remote      on a bot's machine: make a setup code for the connect page\n  --demo        set up the sample database instead of your own tables\n"+
+			"  --remove      the person asked to remove BasaltDB: open the page that removes it from the database and this computer\n\n"+cli.ManyAgentsHelp)
 	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return localsetup.Job{}, err
+			return localsetup.Job{}, false, err
 		}
-		return localsetup.Job{}, fmt.Errorf("%w: basalt init on this computer takes only --agent and --demo; the setup page asks for the rest", cli.ErrUsage)
+		return localsetup.Job{}, false, fmt.Errorf("%w: basalt init on this computer takes only --agent, --demo and --remove; the setup page asks for the rest", cli.ErrUsage)
 	}
 	if fs.NArg() > 0 {
-		return localsetup.Job{}, fmt.Errorf("%w: basalt init takes no arguments", cli.ErrUsage)
+		return localsetup.Job{}, false, fmt.Errorf("%w: basalt init takes no arguments", cli.ErrUsage)
+	}
+	if *removeFlag && *demoFlag {
+		return localsetup.Job{}, false, fmt.Errorf("%w: --remove and --demo do not go together", cli.ErrUsage)
 	}
 	name := *agent
 	if name == "" {
 		name = setupcode.DemoAgent
 	}
 	if !guardmodel.ValidAgentName(name) {
-		return localsetup.Job{}, fmt.Errorf("%w: --agent %q is not a name an agent can have (lowercase letters, digits and _)", cli.ErrUsage, name)
+		return localsetup.Job{}, false, fmt.Errorf("%w: --agent %q is not a name an agent can have (lowercase letters, digits and _)", cli.ErrUsage, name)
 	}
-	return localsetup.Job{Job: setup.JobInstall, Agent: name, Demo: *demoFlag}, nil
+	return localsetup.Job{Job: setup.JobInstall, Agent: name, Demo: *demoFlag}, *removeFlag, nil
 }
 
 // waitForSetupPage waits until the engine answers its setup routes, and

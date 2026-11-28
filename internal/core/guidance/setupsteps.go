@@ -57,13 +57,10 @@ func FixSteps(b *Steps, cmds Commands, reason string) string {
 	}
 	if cmds.EngineRemoved() {
 		// The setup page removed BasaltDB and the engine's last agent: its
-		// role is gone, so every call fails. basalt init opens the page
-		// that asks the person to set it up again or finish the removal
-		// (CONTRACT.md, The local setup page, Removing the engine service).
-		b.AgentRunCommand(cmds.Init(), removedInitText)
-		b.TellAgent("Tell the agent when it is done.")
-		b.Stop("Do not retry: BasaltDB is removed from this database.")
-		return removedPersonText
+		// role is gone, so every call fails, and the engine removes itself
+		// from this computer (CONTRACT.md, The local setup page, Removing
+		// the engine service).
+		return RemovedSteps(b, cmds)
 	}
 	if reason == ReasonGuardOutdated && cmds.UpdateLinkURL() != "" {
 		b.OpenLink(cmds.UpdateLinkURL(), "Show the person this link: its page updates the guard once they type the admin connection string there.")
@@ -96,12 +93,17 @@ func GuardBelowFloorSteps(b *Steps, cmds Commands, doc string) (string, []toolre
 	return m.Text("Then open the link the agent gives you to set up again, and tell the agent when it is done.").Build()
 }
 
-// removedInitText and removedPersonText are the fix steps' texts on an
-// engine the setup page removed.
-const (
-	removedInitText   = "BasaltDB was removed from this database. Run this once and show the person the link it prints: its page lets them set BasaltDB up again or remove it from this computer too."
-	removedPersonText = "BasaltDB was removed from this database. Next: the agent runs basalt init once and gives you a link. On that page, set BasaltDB up again, or remove it from this computer too (your computer asks for your password once)."
-)
+// RemovedSteps are the steps after the person removed BasaltDB (the
+// problem REMOVED, and the failing calls of an engine the setup page
+// removed): the agent removes its own MCP entry for basalt and stops. It
+// returns the personMessage.
+func RemovedSteps(b *Steps, cmds Commands) string {
+	b.Stop(fmt.Sprintf("BasaltDB is removed. Remove this MCP server (basalt mcp --agent %s) from your own MCP configuration, then stop: do not call its tools again.", cmds.AgentName()))
+	return RemovedPersonText
+}
+
+// RemovedPersonText is what the person reads after a removal.
+const RemovedPersonText = "BasaltDB is removed. Your agent drops its connection to it now. To set BasaltDB up again, ask the agent to run basalt init."
 
 // initStepText is the text of the agent's basalt init step: it prints the
 // one link the person opens (CONTRACT.md, basalt init).

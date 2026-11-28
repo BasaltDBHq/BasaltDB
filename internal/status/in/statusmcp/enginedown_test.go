@@ -225,3 +225,37 @@ func downTools(down EngineDown) []mcpserver.Tool {
 	}
 	return out
 }
+
+// After a removal (no engine, no config, and the config's folder gone),
+// status answers the one problem REMOVED, whose step has the agent remove
+// its own MCP entry and stop; a config folder that is there keeps
+// ENGINE_UNREACHABLE.
+func TestEngineDownStatusSaysRemovedWhenTheConfigFolderIsGone(t *testing.T) {
+	t.Parallel()
+	for _, gone := range []bool{true, false} {
+		host := testEngineHost()
+		host.ConfigDirGone = func(string) bool { return gone }
+		cmds := newCommands(t, "/srv/basalt/engine.json")
+		down := EngineDown{Host: host, Name: "bot", Commands: cmds, ConfigErr: os.ErrNotExist, ConfigPath: "/srv/basalt/engine.json",
+			Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
+		srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, downTools(down)...)
+		body, isError := serveCall(t, srv, guidance.ToolStatus, map[string]any{})
+		require.False(t, isError)
+		problems, ok := body["problems"].([]any)
+		require.True(t, ok)
+		first, ok := problems[0].(map[string]any)
+		require.True(t, ok)
+		if !gone {
+			require.Equal(t, "ENGINE_UNREACHABLE", first["code"])
+			continue
+		}
+		require.Len(t, problems, 1)
+		require.Equal(t, "REMOVED", first["code"])
+		require.Equal(t, []mcpcontract.StepKind{{Actor: "AGENT", Action: "STOP"}}, steps(t, first))
+		raw, err := json.Marshal(first["nextSteps"])
+		require.NoError(t, err)
+		require.Contains(t, string(raw), "Remove this MCP server (basalt mcp --agent bot) from your own MCP configuration")
+		require.Contains(t, first["personMessage"], "To set BasaltDB up again, ask the agent to run basalt init.")
+		require.Equal(t, false, body["ready"])
+	}
+}

@@ -2,6 +2,10 @@ package app
 
 import (
 	"context"
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"time"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
@@ -62,7 +66,10 @@ func AgentErrors() guidance.ErrorMap { return pgerrors.Map() }
 // agentEngineHost is what the status of an engine that is down reads from
 // the host.
 func agentEngineHost() status.EngineHost {
-	return status.EngineHost{LatestGuardVersion: guard.LatestVersion, ReadLastStop: engine.LastStopReader(engineos.OS{}), StartHoldOffUntil: agentStartHoldOffUntil}
+	return status.EngineHost{
+		LatestGuardVersion: guard.LatestVersion, ReadLastStop: engine.LastStopReader(engineos.OS{}), StartHoldOffUntil: agentStartHoldOffUntil,
+		ConfigDirGone: configDirGone,
+	}
 }
 
 func agentStartHoldOffUntil(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool) {
@@ -126,3 +133,10 @@ func NewAgentCatalog(c *postgres.Catalog) agentsvc.Catalog { return agentcatalog
 
 // NewAgentProbe is the store's probe as the agent reads it.
 func NewAgentProbe(p postgres.Probe) status.Probe { return agentProbe{p} }
+
+// configDirGone reports whether the folder of configPath does not exist:
+// the removal deleted it (status REMOVED). Any other error is not a removal.
+func configDirGone(configPath string) bool {
+	_, err := os.Lstat(filepath.Dir(configPath))
+	return errors.Is(err, fs.ErrNotExist)
+}

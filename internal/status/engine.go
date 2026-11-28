@@ -34,6 +34,12 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Comm
 		cmds = cmds.OperatedBy(cfg.OperatedBy)
 	}
 	ps := guidance.Problems{Cmds: cmds}
+	if cfg == nil && host.ConfigDirGone != nil && host.ConfigDirGone(configPath) {
+		// No engine and no config folder: the removal took it all.
+		ps.Add(problemRemoved, "BasaltDB is removed from this computer: no engine answers and its config folder is gone",
+			func(b *guidance.Steps) string { return guidance.RemovedSteps(b, cmds) })
+		return finish(r, ps)
+	}
 	msg := "the engine does not answer, so no tool but status works"
 	if config.IsBreaking(cfgErr) {
 		// The engine cannot start on this config: say what fixes it.
@@ -123,10 +129,12 @@ func EngineGaveUpMessage(host EngineHost, stop guidance.LastStop, configPath str
 
 // EngineHost is what the status of an engine that is down reads from the
 // host: the guard version this build installs, why the supervisor gave up
-// (last-stop.json in the state directory), and when it tries the engine
-// again after that.
+// (last-stop.json in the state directory), when it tries the engine again
+// after that, and whether the config's folder is gone (a removal; nil
+// reads as no).
 type EngineHost struct {
 	LatestGuardVersion func() int
 	ReadLastStop       func(stateDir string) (guidance.LastStop, bool)
 	StartHoldOffUntil  func(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool)
+	ConfigDirGone      func(configPath string) bool
 }

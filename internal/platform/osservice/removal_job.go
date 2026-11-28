@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
 // The removal job (CONTRACT.md, The administrator dialog, The removal
@@ -22,7 +23,7 @@ import (
 // by stopping the engine.
 const (
 	// RemovalMarkerName is the marker's name in the engine's state folder.
-	RemovalMarkerName = "remove-requested"
+	RemovalMarkerName = servicespec.RemovalMarkerName
 
 	darwinRemovalLabel  = "dev.basaltdb.remove"
 	darwinRemovalPlist  = launchDaemonsDir + darwinRemovalLabel + ".plist"

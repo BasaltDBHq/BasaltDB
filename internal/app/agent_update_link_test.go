@@ -73,7 +73,7 @@ func TestGuardStepsHandThePersonTheUpdateLink(t *testing.T) {
 // On an engine the setup page removed, every fix is the same: the agent
 // runs basalt init once, whose page asks the person to set BasaltDB up
 // again or finish the removal.
-func TestRemovedEngineStepsFinishTheRemoval(t *testing.T) {
+func TestRemovedEngineStepsDropTheConnection(t *testing.T) {
 	t.Parallel()
 	cmds, err := newCommands("bot", "", "darwin", osservice.Manager())
 	require.NoError(t, err)
@@ -88,10 +88,10 @@ func TestRemovedEngineStepsFinishTheRemoval(t *testing.T) {
 		b = guidance.NewSteps()
 		person = guidance.FixSteps(b, removed, reason)
 		steps := actions(t, b)
-		require.True(t, hasStep(steps, toolresult.ActorAgent, toolresult.ActionRunCommand, "basalt init --agent bot"), "%s: %+v", reason, steps)
+		require.Len(t, steps, 1, "%s: %+v", reason, steps)
 		require.True(t, hasStep(steps, toolresult.ActorAgent, toolresult.ActionStop, ""), reason)
 		require.False(t, hasStep(steps, toolresult.ActorPerson, toolresult.ActionOpenLink, ""), "no update link on a removed engine")
-		require.Contains(t, person, "Next: the agent runs basalt init once and gives you a link")
+		require.Contains(t, person, "Your agent drops its connection to it now")
 		gone = false
 	}
 }

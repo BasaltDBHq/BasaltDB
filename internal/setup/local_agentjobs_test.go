@@ -14,6 +14,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
@@ -34,46 +35,55 @@ func installed(t *testing.T) (*fixture, *setup.LocalService) {
 	svc, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix, Configured: true,
-		Now: func() time.Time { return f.now },
+		StateDir: stateDirOf(f),
+		Now:      func() time.Time { return f.now },
 	})
 	require.NoError(t, err)
 	return f, svc
 }
 
+// stateDirOf is the state folder of f's installed engine, where a REMOVE
+// of its last agent creates the removal job's marker.
+func stateDirOf(f *fixture) string { return filepath.Join(filepath.Dir(f.config), "state") }
+
+// markerOf is that marker's path.
+func markerOf(f *fixture) string { return filepath.Join(stateDirOf(f), servicespec.RemovalMarkerName) }
+
 func (f *fixture) agentJob(job string) setup.Request {
 	return setup.Request{Job: job, Agent: "demo_bot", OSUser: "alice", DatabaseURL: f.db.URL}
 }
 
-// removeRun is a REMOVE run with the database's name typed, as the page
-// sends it.
+// removeRun is a REMOVE run as the page sends it: the admin string is the
+// confirmation, with no typed name.
 func (f *fixture) removeRun(t *testing.T) setup.Request {
 	t.Helper()
-	req := f.agentJob(setup.JobRemove)
-	require.NoError(t, f.db.Admin.QueryRow(context.Background(), `SELECT pg_catalog.current_database()::text`).Scan(&req.ConfirmName))
-	return req
+	return f.agentJob(setup.JobRemove)
 }
 
-func TestRemoveRunsOnlyWithTheDatabaseNameTyped(t *testing.T) {
+// A removal is confirmed by the admin connection string alone: the check
+// names the database and its host for the button, and a typed name is
+// refused on every UPDATE and REMOVE request.
+func TestRemoveIsConfirmedByTheAdminString(t *testing.T) {
 	t.Parallel()
 	f, svc := installed(t)
 	ctx := context.Background()
-	right := f.removeRun(t)
-	for _, typed := range []string{"", "not_it", strings.ToUpper(right.ConfirmName), right.ConfirmName + " ", strings.Repeat("a", 64)} {
-		req := f.agentJob(setup.JobRemove)
-		req.ConfirmName = typed
-		_, err := svc.Run(ctx, req)
-		require.Error(t, err, "typed %q", typed)
+	var database string
+	require.NoError(t, f.db.Admin.QueryRow(ctx, `SELECT pg_catalog.current_database()::text`).Scan(&database))
+	checked, err := svc.Check(ctx, f.removeRun(t))
+	require.NoError(t, err)
+	require.Equal(t, database, checked.Database)
+	require.NotEmpty(t, checked.Host, "the button names the database's host")
+	for _, job := range []string{setup.JobRemove, setup.JobUpdate} {
+		req := f.agentJob(job)
+		req.ConfirmName = database
+		_, err := svc.Check(ctx, req)
+		refusal(t, err, setup.CodeAnswersInvalid)
+		_, err = svc.Run(ctx, req)
 		refusal(t, err, setup.CodeAnswersInvalid)
 	}
 	require.True(t, exists(t, f.db, "basalt_meta"), "nothing was removed")
-	_, err := svc.Check(ctx, right)
-	refusal(t, err, setup.CodeAnswersInvalid)
-	update := f.agentJob(setup.JobUpdate)
-	update.ConfirmName = right.ConfirmName
-	_, err = svc.Run(ctx, update)
-	refusal(t, err, setup.CodeAnswersInvalid)
 
-	_, err = svc.Run(ctx, right)
+	_, err = svc.Run(ctx, f.removeRun(t))
 	require.NoError(t, err)
 	require.False(t, exists(t, f.db, "basalt_meta"))
 }
@@ -225,7 +235,11 @@ func TestRemoveDropsBasaltAndForgetsTheAgent(t *testing.T) {
 	done, err := svc.Run(ctx, f.removeRun(t))
 	require.NoError(t, err)
 	require.Contains(t, done.Lines, "removed from this engine: demo_bot")
-	require.True(t, done.EngineRemoved, "the engine's last agent went: init asks the person what is next")
+	require.True(t, done.EngineRemoved, "the engine's last agent went")
+	require.True(t, done.EngineRemoving, "the engine asked its removal job to remove it")
+	marker, err := os.ReadFile(markerOf(f))
+	require.NoError(t, err, "the removal job's marker is in the state folder")
+	require.Empty(t, marker, "the marker carries nothing")
 	require.Empty(t, done.MCPCommand)
 	require.False(t, exists(t, f.db, "basalt_meta"))
 	require.False(t, exists(t, f.db, "basalt_demo"))
@@ -240,16 +254,16 @@ func TestRemoveDropsBasaltAndForgetsTheAgent(t *testing.T) {
 
 	// The engine that ran with that config answers every request but an
 	// INSTALL, the empty one basalt init sends included, that BasaltDB is
-	// removed from it: init then asks the person on the REMOVED link.
+	// removed from it, until its removal job stops it.
 	for _, req := range []setup.Request{{}, f.agentJob(setup.JobUpdate), f.agentJob(setup.JobRemove)} {
 		_, err = svc.Check(ctx, req)
 		refusal(t, err, setup.CodeEngineRemoved)
 		_, err = svc.Run(ctx, req)
 		refusal(t, err, setup.CodeEngineRemoved)
 	}
-	// "Set up BasaltDB again", and basalt init --demo: an INSTALL runs as
-	// a first install on the same engine, writes its config again and has
-	// the engine serve it.
+	// basalt init on an engine its removal job did not remove yet: an
+	// INSTALL runs as a first install on the same engine, writes its config
+	// again and has the engine serve it.
 	reinstalled := 0
 	again, err := setup.NewLocal(setup.LocalOptions{
 		Backend:    setupbackend.Backend{},
@@ -289,6 +303,8 @@ func TestRemoveKeepsOtherAgentsOfTheEngine(t *testing.T) {
 	kept, err := svc.Run(ctx, f.removeRun(t))
 	require.NoError(t, err)
 	require.False(t, kept.EngineRemoved, "another agent is left: the service stays")
+	require.False(t, kept.EngineRemoving)
+	require.NoFileExists(t, markerOf(f), "no removal job is asked")
 	cfg, err = config.Load(f.config)
 	require.NoError(t, err)
 	require.Len(t, cfg.Agents, 1)

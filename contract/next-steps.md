@@ -187,6 +187,7 @@ Status problems (`status` tool, every one +pm):
 |---|---|---|
 | `ENGINE_START_FAILED` | `ERROR` | The same steps as `ENGINE_UNREACHABLE`; its message is why `basalt mcp` could not start the engine ([Startup failures](#next-steps)) |
 | `ENGINE_GAVE_UP` | `ERROR` | The same steps as `ENGINE_UNREACHABLE`; its message is why the engine's supervisor gave up restarting it, from `engine.lastStop`, and, during the 1-minute hold-off after that give-up, when the next try happens ([`basalt mcp` starts a same-user engine](#next-steps)) |
+| `REMOVED` | `ERROR` | A `STOP` whose text tells the agent to remove its own MCP entry for `basalt mcp --agent <agent>` and call its tools no more; `basalt mcp` answers it in place of `ENGINE_UNREACHABLE` when no engine answers, it could read no config, and the config's folder is gone (the person removed BasaltDB from this computer: [Removing the engine service](setup-page.md#the-local-setup-page)). Its `personMessage` says the agent drops its connection and that `basalt init` sets BasaltDB up again |
 | `ENGINE_UNREACHABLE` | `ERROR` | P `RUN_COMMAND` (start the engine), P `TELL_AGENT`, A `STOP` |
 | `DATABASE_UNREACHABLE` | `ERROR` | A `ASK_PERSON` (check the database is up) |
 | `TOO_MANY_CONNECTIONS` | `ERROR` | A `ASK_PERSON` (stop a second engine for the agent, or wait for stale sessions to close; the error's person message) |

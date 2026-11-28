@@ -12,8 +12,8 @@ import (
 // system config path: it takes no --config, so the removal script's
 // engine.json check (service.RemoveScript) is about the config it runs. It prints every
 // step first; --dry-run stops there. The removal is the setup page's
-// Remove, after which basalt init removes the service through the
-// administrator dialog (service.RemoveScript).
+// Remove, after which the install's removal job removes the service
+// (service.RemovalJobScript).
 func RunService(ctx context.Context, args []string, io cli.Stdio, h Host) int {
 	return h.RunServiceAt(ctx, args, io, config.DefaultPath(runtime.GOOS))
 }

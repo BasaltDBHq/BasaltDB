@@ -159,14 +159,17 @@ func CheckTypedName(ctx context.Context, b SetuprunBackend, tx Querier, confirmN
 	return nil
 }
 
-// RunRemove removes BasaltDB in tx: it refuses a confirmName that is not
-// current_database() before it plans or drops anything, plans again and
-// runs the drops. demoKept reports a sample schema another object depends
+// RunRemove removes BasaltDB in tx: with a confirmName (the connect
+// page's typed name) it refuses one that is not current_database() before
+// it plans or drops anything; the local page sends none, its admin string
+// being the confirmation. It plans again and runs the drops. demoKept reports a sample schema another object depends
 // on, which stays. A failed drop refuses SETUP_FAILED; the caller rolls
 // tx back.
 func RunRemove(ctx context.Context, b SetuprunBackend, tx Querier, prefix, confirmName string) (p RemovePlan, demoKept bool, err error) {
-	if err := CheckTypedName(ctx, b, tx, confirmName); err != nil {
-		return RemovePlan{}, false, err
+	if confirmName != "" {
+		if err := CheckTypedName(ctx, b, tx, confirmName); err != nil {
+			return RemovePlan{}, false, err
+		}
 	}
 	if p, err = PlanRemove(ctx, b, tx, prefix); err != nil {
 		return RemovePlan{}, false, err

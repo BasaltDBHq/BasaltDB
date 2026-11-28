@@ -226,6 +226,34 @@ func downTools(down EngineDown) []mcpserver.Tool {
 	return out
 }
 
+// A shim that read its config at start, still running when the engine
+// removed itself (the connect page's removal, or the local page's job),
+// answers REMOVED once the disk shows the config gone: the check runs at
+// each call, not on the config read at start.
+func TestEngineDownStatusSaysRemovedAfterTheConfigWentAwayDuringTheSession(t *testing.T) {
+	t.Parallel()
+	gone := false
+	host := testEngineHost()
+	host.ConfigDirGone = func(string) bool { return gone }
+	cfg := &config.Config{OperatedBy: mcpcontract.OperatedByAgent, Agents: []config.Agent{{Name: "bot"}}}
+	down := EngineDown{
+		Host: host, Name: "bot", Commands: newCommands(t, "/srv/basalt/engine.json"), Config: cfg, ConfigPath: "/srv/basalt/engine.json",
+		Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
+	}
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, downTools(down)...)
+	code := func() any {
+		body, _ := serveCall(t, srv, guidance.ToolStatus, map[string]any{})
+		problems, ok := body["problems"].([]any)
+		require.True(t, ok)
+		first, ok := problems[0].(map[string]any)
+		require.True(t, ok)
+		return first["code"]
+	}
+	require.Equal(t, "ENGINE_UNREACHABLE", code(), "the config is there at start")
+	gone = true
+	require.Equal(t, "REMOVED", code(), "gone at the status call")
+}
+
 // After a removal (no engine, no config, and the config's folder gone),
 // status answers the one problem REMOVED, whose step has the agent remove
 // its own MCP entry and stop; a config folder that is there keeps

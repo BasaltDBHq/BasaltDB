@@ -62,6 +62,11 @@ func TestInitRemoteRemoveMakesARemovalLink(t *testing.T) {
 	require.True(t, again.res.Reused)
 	require.Equal(t, r.res.Code, again.res.Code)
 	require.Contains(t, again.stderr, "a removal link is pending")
+
+	// A setup run meanwhile keeps the pending removal.
+	setupRun := remote(t, cfg, connectOnlyArgs...)
+	require.NotNil(t, setupRun.cfg.Agents[0].Removal)
+	require.Equal(t, r.res.SetupID, setupRun.cfg.Agents[0].Removal.SetupID)
 }
 
 // Without --remote, --remove on a config this user finds whose operatedBy

@@ -14,6 +14,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 
+	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -135,15 +136,32 @@ func NewAgentCatalog(c *postgres.Catalog) agentsvc.Catalog { return agentcatalog
 // NewAgentProbe is the store's probe as the agent reads it.
 func NewAgentProbe(p postgres.Probe) status.Probe { return agentProbe{p} }
 
-// configDirGone reports whether BasaltDB is gone from this computer: the
-// folder of configPath does not exist, and neither do the engine service's
-// unit and its removal job (status REMOVED). A service still installed is
-// not removed. Any other error is not a removal.
+// configDirGone reports whether BasaltDB is gone from this computer, read
+// from the disk at each call: engine.json does not exist, nor its folder
+// when it is a default one (the system's or this user's; with a config
+// elsewhere the folder is not the engine's, so engine.json alone counts),
+// and neither do the engine service's unit and its removal job (status
+// REMOVED). A service still installed is not removed. Any other error is
+// not a removal.
 func configDirGone(configPath string) bool {
-	for _, p := range []string{filepath.Dir(configPath), osservice.UnitPath(runtime.GOOS), osservice.RemovalJobUnit(runtime.GOOS)} {
+	paths := []string{configPath, osservice.UnitPath(runtime.GOOS), osservice.RemovalJobUnit(runtime.GOOS)}
+	if defaultConfigPath(configPath) {
+		paths = append(paths, filepath.Dir(configPath))
+	}
+	for _, p := range paths {
 		if _, err := os.Lstat(p); !errors.Is(err, fs.ErrNotExist) {
 			return false
 		}
 	}
 	return true
+}
+
+// defaultConfigPath reports whether configPath is the system's engine.json
+// or this user's default one.
+func defaultConfigPath(configPath string) bool {
+	if filepath.Clean(configPath) == filepath.Clean(config.DefaultPath(runtime.GOOS)) {
+		return true
+	}
+	base, err := os.UserConfigDir()
+	return err == nil && filepath.Clean(configPath) == config.UserPath(base)
 }

@@ -58,7 +58,7 @@ func newSelfRemoveRun(t *testing.T, hold Collected, login error, pending *config
 			}
 			return *s.pending, true, nil
 		},
-		Confirmed: func(_ context.Context, r Removed) { s.got = append(s.got, r) },
+		Confirmed: func(_ context.Context, r Removed) bool { s.got = append(s.got, r); return true },
 		Log:       slog.New(slog.DiscardHandler), Now: now,
 	})
 	return s

@@ -744,7 +744,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	// credential, as the approval routes do.
 	deps.Plugin.Approvals, deps.Plugin.Requests = store, requests
 	svc := NewService(deps)
-	runs := bothRuns(newRepin(env, a, pool.Config().ConnConfig, log), newSelfRemove(env, a, pool.Config().ConnConfig, url, log))
+	runs := bothRuns(newRepin(env, a, pool.Config().ConnConfig, log), newSelfRemove(env, a, pool.Config().ConnConfig, files.ReadCredential, log))
 	return agentRuntime{
 		svc:  svc,
 		run:  runs,

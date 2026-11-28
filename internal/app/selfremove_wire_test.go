@@ -49,7 +49,7 @@ func TestSelfRemoveOverTheConnectProtocol(t *testing.T) {
 			Agent: "bot", Credential: setupcode.Address(target), Collector: client,
 			Login:     func(context.Context) error { return login },
 			Pending:   func() (config.Removal, bool, error) { return rm, true, nil },
-			Confirmed: func(_ context.Context, r handoff.Removed) { got = append(got, r) },
+			Confirmed: func(_ context.Context, r handoff.Removed) bool { got = append(got, r); return true },
 			Log:       slog.New(slog.DiscardHandler), Now: time.Now,
 		})
 		r.Step(context.Background())

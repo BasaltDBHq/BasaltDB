@@ -77,6 +77,13 @@ var plainConfigLoads = map[string]string{
 	// The hand-off reads a connect-only agent's pending setup from the
 	// engine config, as the engine's own user, refusing a link at it.
 	"internal/handoff/out/handofffiles/setupfiles.go:PendingSetup:LoadNoFollow": "the engine's hand-off, as the engine's user",
+	// The removal watch reads the agent's pending removal; newSelfRemove
+	// never builds one for an engine that runs as root.
+	"internal/handoff/out/handofffiles/setupfiles.go:PendingRemoval:LoadNoFollow": "the engine's removal watch, never as root (newSelfRemove refuses an engine that runs as root)",
+	// A confirmed removal reads engine.json again before it acts; only the
+	// removal watch confirms one, never as root, and the deletion refuses
+	// to run as root too (removeEngineFiles).
+	"internal/app/selfremove.go:currentRemoval:LoadNoFollow": "a confirmed removal, never as root (newSelfRemove refuses an engine that runs as root)",
 	// The setup page's agent jobs (update, remove, repair) refuse an
 	// engine that runs as root before they read the config.
 	"internal/setup/local_agentjobs.go:configuredAgent:Load": "the setup page's agent jobs, after refusing an engine that runs as root",
@@ -101,6 +108,7 @@ var plainConfigLoads = map[string]string{
 	"internal/setup/out/enginefiles/enginefiles.go:RemoveAgents:RemoveAgents":         "a one-line forward; its caller, forget, is listed above",
 	"internal/setup/out/enginefiles/enginefiles.go:UpsertAgentVault:UpsertAgentVault": "a one-line forward; its callers, the two writeConfig, are listed here (the setup page's above, init --remote's below)",
 	"internal/setup/remote_init.go:writeConfig:UpsertAgentVault":                      "not as root: as root the upsert goes through the config directory opened without following links (configDir)",
+	"internal/setup/remote_removal.go:writeRemoval:UpsertAgentVault":                  "as writeConfig: not as root; as root the upsert goes through the config directory opened without following links (configDir)",
 }
 
 // configLoadsIn lists the config loaders f refers to, as

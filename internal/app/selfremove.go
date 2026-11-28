@@ -69,36 +69,82 @@ const reportTimeout = 20 * time.Second
 // it reads engine.json at every tick, so a removal link basalt init
 // --remove writes while the engine runs is collected without a restart.
 // nil when the engine is person-operated, runs as root or its key is
-// refused. dsn is the agent's credential, as the engine read it, for the
-// fresh login that shows its role is gone.
-func newSelfRemove(env agentEnv, a config.Agent, cc *pgx.ConnConfig, dsn string, log *slog.Logger) func(context.Context) {
+// refused. readCredential reads the agent's credential file at the time of
+// the fresh login that shows its role is gone.
+func newSelfRemove(env agentEnv, a config.Agent, cc *pgx.ConnConfig, readCredential func() (string, error), log *slog.Logger) func(context.Context) {
 	if !env.cfg.AgentOperated() || env.asRoot || env.keys == nil {
 		return nil
 	}
 	files := handofffiles.SetupFiles{ConfigPath: env.configPath, Agent: a.Name, CredFile: a.Store.CredentialFile, Pins: trustPins{}}
 	t := setupcode.ConnTarget(cc.Host, int(cc.Port), cc.Database, cc.User)
-	agents := len(env.cfg.Agents)
-	service := env.cfg.Service()
 	r := handoff.NewSelfRemove(handoff.SelfRemoveOptions{
 		Agent: a.Name, Credential: setupcode.Address(t),
 		Collector: handoff.NewClient(connectrpc.New(env.handoff.HTTP, env.handoff.serviceURL()), env.keys, env.handoff.now()),
-		Login:     func(ctx context.Context) error { return freshLogin(ctx, dsn) },
-		Pending:   files.PendingRemoval,
-		Confirmed: func(ctx context.Context, rm handoff.Removed) {
-			// A service engine is removed by its removal job, and one that
-			// serves other agents stays for them: both report and serve on.
-			switch {
-			case service:
-				reportRemoved(ctx, rm, handoff.RemovedKept, handoff.KeptService, log)
-			case agents > 1:
-				reportRemoved(ctx, rm, handoff.RemovedKept, handoff.KeptOtherAgents, log)
-			case env.removal != nil:
-				env.removal.confirm(rm)
+		Login: func(ctx context.Context) error {
+			dsn, err := readCredential()
+			if err != nil {
+				return err
 			}
+			return freshLogin(ctx, dsn)
+		},
+		Pending: files.PendingRemoval,
+		Confirmed: func(ctx context.Context, rm handoff.Removed) bool {
+			return takeRemoval(ctx, env.configPath, rm, env.removal, log)
 		},
 		Log: log.With("component", "connect"), Now: env.handoff.now(),
 	})
 	return r.Run
+}
+
+// errRemovalGone is a confirmed removal engine.json no longer records:
+// nothing is removed.
+var errRemovalGone = errors.New("engine.json no longer records this removal")
+
+// currentRemoval reads engine.json again for the confirmed removal rm, so
+// what happens follows the config now, not the one the engine started
+// with: errRemovalGone when the agent's pending removal is no longer
+// rm's; KEPT SERVICE for a service engine (its removal job removes it);
+// KEPT OTHER_AGENTS when any other agent is configured, so the engine stays
+// for it and nothing of it is deleted.
+func currentRemoval(configPath string, rm handoff.Removed) (config.Config, string, error) {
+	cfg, err := config.LoadNoFollow(configPath)
+	if err != nil {
+		return config.Config{}, "", err
+	}
+	mine := false
+	for _, a := range cfg.Agents {
+		if a.Name == rm.Agent && a.Removal != nil && a.Removal.SetupID == rm.SetupID {
+			mine = true
+		}
+	}
+	switch {
+	case !mine:
+		return cfg, "", errRemovalGone
+	case cfg.Service():
+		return cfg, handoff.KeptService, nil
+	case len(cfg.Agents) > 1:
+		return cfg, handoff.KeptOtherAgents, nil
+	}
+	return cfg, "", nil
+}
+
+// takeRemoval decides on a confirmed removal: it reports KEPT and serves
+// on when the engine stays, stops the engine for it otherwise, and keeps
+// the watch going (false) when engine.json no longer records it.
+func takeRemoval(ctx context.Context, configPath string, rm handoff.Removed, removal *selfRemoval, log *slog.Logger) bool {
+	_, kept, err := currentRemoval(configPath, rm)
+	switch {
+	case err != nil:
+		log.Warn("the removal is not taken", "setupId", rm.SetupID, "err", err)
+		return false
+	case kept != "":
+		reportRemoved(ctx, rm, handoff.RemovedKept, kept, log)
+		return true
+	case removal == nil:
+		return false
+	}
+	removal.confirm(rm)
+	return true
 }
 
 // bothRuns is one agent run of a and b, either of which may be nil; nil
@@ -147,8 +193,20 @@ func reportRemoved(ctx context.Context, rm handoff.Removed, result, reason strin
 
 // finishSelfRemoval deletes the engine's folders after runWith returned for
 // the removal rm and reports the result. Nothing of the engine runs any
-// more, so nothing writes a file again.
-func finishSelfRemoval(ctx context.Context, cfg config.Config, configPath string, rm *handoff.Removed, log *slog.Logger) {
+// more, so nothing writes a file again. engine.json is read once more:
+// the folders and files come from it as it is now, and an agent added or a
+// removal replaced since the confirmation deletes nothing.
+func finishSelfRemoval(ctx context.Context, configPath string, rm *handoff.Removed, log *slog.Logger) {
+	cfg, kept, err := currentRemoval(configPath, *rm)
+	switch {
+	case err != nil:
+		log.Warn("BasaltDB did not remove itself from this machine", "err", err)
+		reportRemoved(ctx, *rm, handoff.RemovedKept, handoff.KeptDeleteFailed, log)
+		return
+	case kept != "":
+		reportRemoved(ctx, *rm, handoff.RemovedKept, kept, log)
+		return
+	}
 	result, reason := handoff.RemovedAll, ""
 	if err := removeEngineFiles(cfg, configPath, rm.Agent); err != nil {
 		result, reason = handoff.RemovedKept, keptReason(err)
@@ -161,7 +219,7 @@ func finishSelfRemoval(ctx context.Context, cfg config.Config, configPath string
 
 // errCredentialKept is a credential file outside the engine's folders that
 // is not a plain file of the engine's user: it stays.
-var errCredentialKept = errors.New("the agent's credential file is outside the engine's folders and is not a plain file of this user, so it stays")
+var errCredentialKept = errors.New("the agent's credential file is not one basalt wrote, or not a plain file of this user, so it stays")
 
 func keptReason(err error) string {
 	if errors.Is(err, errCredentialKept) {

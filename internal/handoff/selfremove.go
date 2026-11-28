@@ -47,8 +47,10 @@ type SelfRemoveOptions struct {
 	// Pending is the agent's pending removal in engine.json now; false when
 	// none.
 	Pending func() (config.Removal, bool, error)
-	// Confirmed asks the engine to remove itself; it is called once.
-	Confirmed func(ctx context.Context, r Removed)
+	// Confirmed asks the engine to remove itself. It reports whether the
+	// engine took the removal (removing itself, or reporting why it stays);
+	// false keeps the watch going, as when engine.json changed meanwhile.
+	Confirmed func(ctx context.Context, r Removed) bool
 	Log       *slog.Logger
 	Now       func() time.Time
 }
@@ -188,9 +190,6 @@ func (r *SelfRemove) Step(ctx context.Context) bool {
 		r.o.Log.Warn("check that the agent's role is gone before removing BasaltDB from this machine", "setupId", id, "err", err)
 		return true
 	}
-	r.mu.Lock()
-	r.done = true
-	r.mu.Unlock()
 	r.o.Log.Info("BasaltDB was removed from the agent's database on the connect page; the engine removes itself from this machine", "setupId", id)
 	c, ok := r.o.Collector.(RemovedReporter)
 	report := func(context.Context, string, string) error { return nil }
@@ -199,7 +198,12 @@ func (r *SelfRemove) Step(ctx context.Context) bool {
 			return c.ReportRemoved(ctx, id, rm.Fingerprint, result, reason)
 		}
 	}
-	r.o.Confirmed(ctx, Removed{Agent: r.o.Agent, SetupID: id, Fingerprint: rm.Fingerprint, Report: report})
+	if !r.o.Confirmed(ctx, Removed{Agent: r.o.Agent, SetupID: id, Fingerprint: rm.Fingerprint, Report: report}) {
+		return true
+	}
+	r.mu.Lock()
+	r.done = true
+	r.mu.Unlock()
 	return false
 }
 

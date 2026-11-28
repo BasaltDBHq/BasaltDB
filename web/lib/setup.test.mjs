@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { b64urlEncode, utf8 } from "./codec.js";
 import { Labels, restNote } from "./picks.js";
 // Imported before any document exists, so the page's main() does not run.
-import { startJob, agentProbe, answerFits, CHECK_PATH, CHOICES, DOCTOR_PATH, doneText, Install, labelFields, startUpdate, UpdateCheck, JOB_TEXT, JOBS, labelWords, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, removeConfirmed, REMOVE_ENGINE_PATH, REMOVE_LAST_STEP, REMOVED_TEXT, REPLACE_RUN, REPLACE_TITLE, replaceLines, replaceOf, ENGINE_PATH, NOT_MINE_PATH, SetupError, setupRequest, startReal, startRemoved, suggestionOf } from "./setup.js";
+import { startJob, agentProbe, answerFits, CHECK_PATH, CHOICES, DOCTOR_PATH, doneText, Install, labelFields, startUpdate, UpdateCheck, JOB_TEXT, JOBS, labelWords, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, removeConfirmed, removeButtonText, removalSteps, engineGone, HEALTHZ_PATH, isMac, showRemoved, REPLACE_RUN, REPLACE_TITLE, replaceLines, replaceOf, ENGINE_PATH, NOT_MINE_PATH, SetupError, setupRequest, startReal, suggestionOf } from "./setup.js";
 
 const link = (job) => "#1." + b64urlEncode(utf8(JSON.stringify(job)));
 const job = { job: "INSTALL", agent: "demo_bot", osUser: "alice", demo: true };
@@ -82,7 +82,7 @@ test("a refusal comes back with its code and the engine's fixed message", async 
 });
 
 test("the link may name an update or a removal of the agent, never with the sample database", () => {
-  for (const name of ["UPDATE", "REMOVE", "CHANGE", "REMOVED"]) {
+  for (const name of ["UPDATE", "REMOVE", "CHANGE"]) {
     const j = { ...job, job: name, demo: false };
     assert.deepEqual(parseSetupLink(link(j)), j);
     assert.deepEqual(setupRequest(j, "postgres://u@h/d"), { ...j, databaseUrl: "postgres://u@h/d" });
@@ -91,7 +91,7 @@ test("the link may name an update or a removal of the agent, never with the samp
 
 test("every job has its own fixed words, which name the agent", () => {
   assert.match(JOB_TEXT.CHANGE.intro("demo_bot"), /demo_bot/);
-  for (const name of JOBS.filter((j) => j !== "CHANGE" && j !== "REMOVED")) {
+  for (const name of JOBS.filter((j) => j !== "CHANGE")) {
     const t = JOB_TEXT[name];
     assert.ok(t.title && t.run, name);
     assert.match(t.intro("demo_bot"), /demo_bot/, name);
@@ -670,7 +670,7 @@ test("a run refused because the tables changed goes back to the string", async (
   assert.equal(nodes.back.hidden, false, "Back is offered again");
 });
 
-test("a removal runs only once the database name is typed exactly as the check named it", () => {
+test("an install that replaces an old one runs only once the database name is typed exactly as the check named it", () => {
   const checked = { database: "app" };
   assert.equal(removeConfirmed("app", checked), true);
   for (const typed of ["", "App", "app ", " app", "ap"]) assert.equal(removeConfirmed(typed, checked), false, typed);
@@ -757,53 +757,57 @@ test("the restPublic note counts every unlabeled column when more than 500 label
   assert.deepEqual(restNote({ count: 501, forced: true, personal: ["orders.email"] }), ["All 501 unlabeled columns will be marked not personal, including these that look personal:", "orders.email"]);
 });
 
-test("a removal that removed the engine's last agent ends with the last step", () => {
-  const job = { job: "REMOVE", agent: "demo_bot" };
-  assert.ok(doneText(job, { agent: "demo_bot", engineRemoved: true }).endsWith(REMOVE_LAST_STEP));
-  assert.match(REMOVE_LAST_STEP, /ask your agent to run basalt init\. The page that opens lets you finish removing BasaltDB from this computer/);
-  assert.ok(!doneText(job, { agent: "demo_bot", engineRemoved: false }).includes("Last step"));
-  assert.ok(!doneText({ job: "UPDATE", agent: "demo_bot" }, { engineRemoved: true }).includes("Last step"));
+test("a removal is confirmed by its admin string: the button names the database and its host", () => {
+  assert.equal(removeButtonText({ database: "app", host: "db.example.com:5432" }), "Remove BasaltDB from app on db.example.com:5432");
+  assert.equal(removeButtonText({ database: "app" }), "Remove BasaltDB from app");
+  assert.doesNotMatch(HTML, /To confirm, type the database name <strong id="remove-name">/, "no typed name for a removal");
+  assert.match(HTML, /The admin connection string you typed is the confirmation\./);
+  assert.ok(!JOBS.includes("REMOVED"), "no second choice page after a removal");
 });
 
-// ---- A REMOVED link: set BasaltDB up again, or remove it from this computer too ----
-
-const removedLink = { job: "REMOVED", agent: "demo_bot", osUser: "alice", demo: false };
-
-test("a REMOVED link asks: set BasaltDB up again opens the install, on the same engine, with nothing sent", () => {
-  const nodes = fakePage();
-  const e = fakeEngine();
-  let install = null;
-  startRemoved(removedLink, { fetchFn: e.fetchFn, onSetUp: (j) => { install = j; } });
-  assert.equal(nodes.removed.hidden, false);
-  assert.equal(nodes.main.hidden, true);
-  assert.equal(globalThis.document.title, REMOVED_TEXT.title);
-  assert.match(HTML, /<button id="removed-again" type="button">Set up BasaltDB again<\/button>/);
-  assert.match(HTML, /<button id="removed-remove" type="button" class="secondary">Remove it from this computer too<\/button>/);
-  assert.match(HTML, /The engine is still on this computer, serving no agent\./);
-  nodes["removed-again"].click();
-  assert.deepEqual(install, { job: "INSTALL", agent: "demo_bot", osUser: "alice", demo: false });
-  assert.equal(nodes.removed.hidden, true);
-  assert.equal(e.bodies.length, 0, "setting up again asks the engine nothing yet");
+test("the removal's checklist: the database, this computer, the agent's connection", () => {
+  assert.deepEqual(removalSteps("app", "removing"), ["✓ Database app: BasaltDB removed", "… This computer: removing the engine", "Your agent: drops its connection the next time you talk to it."]);
+  assert.equal(removalSteps("app", "removed")[1], "✓ This computer: engine removed");
+  assert.match(removalSteps("app", "stuck")[1], /still running/);
+  assert.match(removalSteps("app", "kept")[1], /serving your other agents/);
+  assert.ok(isMac({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" }));
+  assert.ok(!isMac({ userAgent: "Mozilla/5.0 (X11; Linux x86_64)" }));
 });
 
-test("Remove it from this computer too only tells the engine, for basalt init, which asks for the password", async () => {
-  const nodes = fakePage();
-  const e = fakeEngine({ answer: (path) => (path === REMOVE_ENGINE_PATH ? new Response("{}", { status: 200 }) : null) });
-  let install = null;
-  startRemoved(removedLink, { fetchFn: e.fetchFn, onSetUp: (j) => { install = j; } });
-  await nodes["removed-remove"].click();
-  assert.deepEqual(e.bodies, [{ path: REMOVE_ENGINE_PATH, body: {} }], "an empty body, never the admin string");
-  assert.equal(nodes["removed-status"].textContent, REMOVED_TEXT.asked);
-  assert.equal(nodes["removed-remove"].disabled, true);
-  assert.equal(nodes["removed-again"].disabled, true);
-  assert.equal(install, null);
+test("engineGone: true once the engine's health route stops answering, false when the wait is up", async () => {
+  let calls = 0;
+  const stops = async (path, init) => {
+    assert.equal(path, HEALTHZ_PATH);
+    assert.equal(init.body, undefined, "it sends nothing");
+    calls++;
+    if (calls < 3) return new Response("ok", { status: 200 });
+    throw new TypeError("Failed to fetch");
+  };
+  assert.equal(await engineGone(stops, { sleep: async () => {} }), true);
+  assert.equal(calls, 3);
+  let t = 0;
+  const up = async () => new Response("ok", { status: 200 });
+  assert.equal(await engineGone(up, { sleep: async (ms) => { t += ms; }, now: () => t, waitMs: 5000 }), false);
+  assert.equal(t, 5000);
+});
 
-  const refused = fakeEngine({ answer: () => new Response(JSON.stringify({ code: "JOB_UNAVAILABLE", message: "This engine is not removed." }), { status: 409 }) });
-  const again = fakePage();
-  startRemoved(removedLink, { fetchFn: refused.fetchFn, onSetUp: () => {} });
-  await again["removed-remove"].click();
-  assert.equal(again["removed-status"].textContent, "This engine is not removed.");
-  assert.equal(again["removed-remove"].disabled, false, "a refusal can be tried again");
+test("after a removal of the engine's last agent the page ticks this computer when the engine stops, with the macOS note", async () => {
+  const nodes = fakePage();
+  const gone = async () => {
+    throw new TypeError("Failed to fetch");
+  };
+  const done = { agent: "demo_bot", lines: ["BasaltDB removed from the database app"], warnings: [], passkeys: [], engineRemoved: true, engineRemoving: true };
+  await showRemoved({ job: "REMOVE", agent: "demo_bot" }, done, "app", gone, { sleep: async () => {}, navigator: { userAgent: "Macintosh" } });
+  assert.equal(nodes["done-title"].textContent, "BasaltDB is removed");
+  assert.deepEqual(nodes["removal-steps"].children.map((c) => c.textContent), removalSteps("app", "removed"));
+  assert.equal(nodes["removal-mac"].hidden, false, "macOS keeps the engine's account: one line, no command");
+  assert.doesNotMatch(HTML, /sysadminctl|dscl/, "the page gives no command");
+  assert.equal(nodes["done-lines"].hidden, true);
+
+  const other = fakePage();
+  await showRemoved({ job: "REMOVE", agent: "demo_bot" }, { ...done, engineRemoved: false, engineRemoving: false }, "app", gone, { navigator: { userAgent: "Macintosh" } });
+  assert.deepEqual(other["removal-steps"].children.map((c) => c.textContent), removalSteps("app", "kept"));
+  assert.equal(other["removal-mac"].hidden, true, "the engine stays: nothing is kept behind");
 });
 
 // ---- The Update check: a CHANGE link opens on doctor ----
@@ -1408,18 +1412,40 @@ test("the Update check's fix, paste and confirm buttons show their working label
   delete globalThis.localStorage;
 });
 
-test("the removed page's Remove it from this computer too shows Sending… and comes back on a refusal", async () => {
+test("a removal is one press: Removing BasaltDB… on the button, no name sent, then the checklist ticks this computer once the engine stops", async () => {
   const nodes = fakePage();
-  const refused = gated(async () => new Response(JSON.stringify({ code: "JOB_UNAVAILABLE", message: "This engine is not removed." }), { status: 409 }));
-  startRemoved({ job: "REMOVED", agent: "bot", osUser: "alice", demo: false }, { fetchFn: refused.fetchFn, onSetUp: () => {} });
-  nodes["removed-remove"].textContent = "Remove it from this computer too";
-  const release = refused.hold();
-  const press = nodes["removed-remove"].click();
-  working(nodes["removed-remove"], "Sending…");
-  await nodes["removed-remove"].click();
-  assert.equal(refused.calls.length, 1, "a second press sends nothing");
+  nodes["database-url"].value = ADMIN;
+  const check = { database: "app", host: "db.example.com:5432", lines: ["a line"], notes: [], sql: "DROP SCHEMA IF EXISTS basalt_meta CASCADE", passkeyNeeded: false };
+  let engineUp = true;
+  const runs = [];
+  const g = gated(async (path, init) => {
+    if (path === HEALTHZ_PATH) {
+      if (engineUp) return new Response("ok", { status: 200 });
+      throw new TypeError("Failed to fetch");
+    }
+    const body = JSON.parse(init.body);
+    if (path === CHECK_PATH && !body.databaseUrl) return new Response(JSON.stringify({ code: "CONNECTION_STRING_REFUSED", message: "x" }), { status: 400 });
+    if (path === CHECK_PATH) return new Response(JSON.stringify(check), { status: 200 });
+    runs.push(body);
+    engineUp = false;
+    return new Response(JSON.stringify({ agent: "bot", lines: [], warnings: [], passkeys: [], mcpCommand: "", engineRemoved: true, engineRemoving: true }), { status: 200 });
+  });
+  await startJob({ job: "REMOVE", agent: "bot", osUser: "alice", demo: false }, "", { fetchFn: g.fetchFn });
+  assert.equal(nodes["remove-note"].hidden, false);
+  nodes["confirm-os-user"].checked = true;
+  nodes["confirm-os-user"].fire("change");
+  await nodes.check.click();
+  assert.equal(nodes.run.textContent, "Remove BasaltDB from app on db.example.com:5432");
+  assert.equal(nodes.run.disabled, false, "no name to type: the admin string is the confirmation");
+  const release = g.hold();
+  const press = nodes.run.click();
+  working(nodes.run, "Removing BasaltDB…");
+  await nodes.run.click();
   release();
   await press;
-  rested(nodes["removed-remove"], "Remove it from this computer too");
-  assert.equal(nodes["removed-status"].textContent, "This engine is not removed.");
+  assert.equal(runs.length, 1, "a second press sends nothing");
+  assert.equal(runs[0].confirmName, undefined, "no typed name is sent");
+  for (let n = 0; n < 5 && nodes["done-title"].textContent !== "BasaltDB is removed"; n++) await settle();
+  assert.equal(nodes["done-title"].textContent, "BasaltDB is removed");
+  assert.deepEqual(nodes["removal-steps"].children.map((c) => c.textContent), removalSteps("app", "removed"));
 });

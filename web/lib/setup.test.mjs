@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { b64urlEncode, utf8 } from "./codec.js";
 import { Labels, restNote } from "./picks.js";
 // Imported before any document exists, so the page's main() does not run.
-import { agentProbe, answerFits, CHECK_PATH, CHOICES, DOCTOR_PATH, doneText, Install, labelFields, startUpdate, UpdateCheck, JOB_TEXT, JOBS, labelWords, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, removeConfirmed, REMOVE_ENGINE_PATH, REMOVE_LAST_STEP, REMOVED_TEXT, REPLACE_RUN, REPLACE_TITLE, replaceLines, replaceOf, ENGINE_PATH, NOT_MINE_PATH, SetupError, setupRequest, startReal, startRemoved, suggestionOf } from "./setup.js";
+import { startJob, agentProbe, answerFits, CHECK_PATH, CHOICES, DOCTOR_PATH, doneText, Install, labelFields, startUpdate, UpdateCheck, JOB_TEXT, JOBS, labelWords, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, removeConfirmed, REMOVE_ENGINE_PATH, REMOVE_LAST_STEP, REMOVED_TEXT, REPLACE_RUN, REPLACE_TITLE, replaceLines, replaceOf, ENGINE_PATH, NOT_MINE_PATH, SetupError, setupRequest, startReal, startRemoved, suggestionOf } from "./setup.js";
 
 const link = (job) => "#1." + b64urlEncode(utf8(JSON.stringify(job)));
 const job = { job: "INSTALL", agent: "demo_bot", osUser: "alice", demo: true };
@@ -1192,4 +1192,234 @@ test("Check the certificate sends the same string with only its sslmode replaced
   await i.run(async () => ({}));
   assert.equal(e.bodies.at(-1).path, RUN_PATH);
   assert.equal(e.bodies.at(-1).body.databaseUrl, supa.replace("sslmode=require", "sslmode=verify-full"), "the run writes the agent's string with verify-full");
+});
+
+// ---- A pressed button says it is working ----
+
+// working: the button is busy, with its working label and off. rested: it is
+// back as it was.
+const working = (n, label) => {
+  assert.equal(n.getAttribute("aria-busy"), "true");
+  assert.equal(n.textContent, label);
+  assert.equal(n.disabled, true);
+};
+const rested = (n, label) => {
+  assert.notEqual(n.getAttribute("aria-busy"), "true");
+  assert.equal(n.textContent, label);
+  assert.equal(n.disabled, false);
+};
+
+// gated holds every call of fetchFn until released.
+function gated(fetchFn) {
+  let gate = null;
+  const calls = [];
+  return {
+    calls,
+    fetchFn: async (path, init) => {
+      calls.push(path);
+      if (gate) await gate;
+      return fetchFn(path, init);
+    },
+    hold() {
+      let release;
+      gate = new Promise((r) => { release = r; });
+      return () => { gate = null; release(); };
+    },
+  };
+}
+
+const refusedRun = () => fakeEngine({ answer: (path) => (path === RUN_PATH ? new Response(JSON.stringify({ code: "BOOM", message: "The engine said no." }), { status: 500 }) : null) });
+const cancelled = () => Object.assign(new Error("x"), { name: "NotAllowedError" });
+
+async function toApprove(nodes, e, makePasskey) {
+  startReal(real, { fetchFn: e.fetchFn, makePasskey });
+  nodes["user-confirm"].checked = true;
+  nodes["user-confirm"].fire("change");
+  nodes["user-next"].click();
+  nodes["paste-url"].value = ADMIN;
+  await nodes["paste-next"].click();
+  if (screenOf(nodes) === "s-confirm") await nodes["confirm-go"].click();
+  await nodes["tables-next"].click();
+  await nodes["labels-next"].click();
+  assert.equal(screenOf(nodes), "s-approve");
+}
+
+test("the real install's Continue buttons show a spinner and a working label, and a second press sends nothing", async () => {
+  const nodes = fakePage();
+  const g = gated(fakeEngine().fetchFn);
+  startReal(real, { fetchFn: g.fetchFn, makePasskey: async () => ({ credentialId: "aWQ" }) });
+  nodes["user-confirm"].checked = true;
+  nodes["user-confirm"].fire("change");
+  nodes["user-next"].click();
+  nodes["paste-next"].textContent = "Continue";
+  nodes["paste-url"].value = ADMIN;
+  let release = g.hold();
+  const first = nodes["paste-next"].click();
+  working(nodes["paste-next"], "Checking…");
+  nodes["paste-url"].value = ADMIN;
+  await nodes["paste-next"].click();
+  assert.equal(g.calls.length, 1, "a second press sends nothing");
+  release();
+  await first;
+  rested(nodes["paste-next"], "Continue");
+  if (screenOf(nodes) === "s-confirm") await nodes["confirm-go"].click();
+
+  nodes["tables-next"].textContent = "Continue";
+  release = g.hold();
+  const before = g.calls.length;
+  const next = nodes["tables-next"].click();
+  working(nodes["tables-next"], "Checking…");
+  await nodes["tables-next"].click();
+  assert.equal(g.calls.length, before + 1, "a second press sends nothing");
+  release();
+  await next;
+  rested(nodes["tables-next"], "Continue");
+});
+
+test("a failed check puts the install's Continue back, with the engine's words shown", async () => {
+  const nodes = fakePage();
+  const refused = gated(async () => new Response(JSON.stringify({ code: "LOGIN_FAILED", message: "The database refused the login." }), { status: 400 }));
+  startReal(real, { fetchFn: refused.fetchFn, makePasskey: async () => ({}) });
+  nodes["user-confirm"].checked = true;
+  nodes["user-confirm"].fire("change");
+  nodes["user-next"].click();
+  nodes["paste-next"].textContent = "Continue";
+  nodes["paste-url"].value = ADMIN;
+  await nodes["paste-next"].click();
+  rested(nodes["paste-next"], "Continue");
+  assert.equal(nodes["paste-error"].textContent, "The database refused the login.");
+});
+
+test("the real install's Set up waits for the passkey, then says Setting up…, and a cancelled prompt or a refusal puts the button back", async () => {
+  const nodes = fakePage();
+  const e = fakeEngine();
+  let prompts = 0;
+  let answer;
+  await toApprove(nodes, e, () => {
+    prompts++;
+    return new Promise((resolve, reject) => { answer = { resolve, reject }; });
+  });
+  const label = nodes.approve.textContent;
+  assert.equal(label, "Set up with passkey");
+  const first = nodes.approve.click();
+  working(nodes.approve, "Waiting for your passkey…");
+  await nodes.approve.click();
+  assert.equal(prompts, 1, "a second press opens no second prompt");
+  answer.reject(cancelled());
+  await first;
+  rested(nodes.approve, label);
+  assert.match(nodes["approve-status"].textContent, /cancelled or timed out/);
+
+  const second = nodes.approve.click();
+  working(nodes.approve, "Waiting for your passkey…");
+  answer.resolve({ credentialId: "aWQ" });
+  await second;
+  rested(nodes.approve, label);
+  assert.equal(nodes.done.hidden, false);
+
+  const nodes2 = fakePage();
+  await toApprove(nodes2, refusedRun(), async () => ({ credentialId: "aWQ" }));
+  await nodes2.approve.click();
+  assert.equal(nodes2["approve-status"].textContent, "The engine said no.");
+  rested(nodes2.approve, "Set up with passkey");
+});
+
+test("the demo, update and removal page's Check and Set up buttons show their working labels, and a cancelled prompt puts them back", async () => {
+  const nodes = fakePage();
+  nodes["database-url"].value = ADMIN;
+  const check = { database: "app", lines: ["a line"], notes: [], sql: "SELECT 1", passkeyNeeded: true, challenge };
+  const g = gated(async (path) => new Response(JSON.stringify(path === CHECK_PATH ? check : { code: "BOOM", message: "The engine said no." }), { status: path === CHECK_PATH ? 200 : 500 }));
+  let prompt;
+  const demo = { job: "INSTALL", agent: "demo_bot", osUser: "alice", demo: true };
+  await startJob(demo, "", { fetchFn: g.fetchFn, makePasskey: () => new Promise((resolve, reject) => { prompt = { resolve, reject }; }) });
+  nodes["confirm-os-user"].checked = true;
+  nodes["confirm-os-user"].fire("change");
+  nodes.check.textContent = "Check";
+  const release = g.hold();
+  const press = nodes.check.click();
+  working(nodes.check, "Checking…");
+  await nodes.check.click();
+  assert.equal(g.calls.length, 1, "a second press sends nothing");
+  release();
+  await press;
+  rested(nodes.check, "Check");
+  assert.equal(nodes.review.hidden, false);
+
+  nodes.run.textContent = "Set up";
+  const run = nodes.run.click();
+  working(nodes.run, "Waiting for your passkey…");
+  await nodes.run.click();
+  prompt.reject(cancelled());
+  await run;
+  rested(nodes.run, "Set up");
+  assert.match(nodes.status.textContent, /cancelled or timed out/);
+
+  const again = nodes.run.click();
+  working(nodes.run, "Waiting for your passkey…");
+  prompt.resolve({ credentialId: "aWQ" });
+  await settle();
+  await again;
+  rested(nodes.run, "Set up");
+});
+
+test("the Update check's fix, paste and confirm buttons show their working labels and come back, with the refusal shown", async () => {
+  const nodes = fakePage();
+  const store = new Map();
+  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+  const e = updateEngine([needs, allGood], {
+    TRUST: (path, body) => {
+      if (!body.trustRoot) return { code: "CERTIFICATE_NOT_VERIFIED", message: "x", trustRoot: ROOT, pinned: FP };
+      return path === RUN_PATH ? { code: "BOOM", message: "The engine said no." } : { database: "shop_db", lines: [], sql: "" };
+    },
+  });
+  const g = gated(e.fetchFn);
+  startUpdate(change, { fetchFn: g.fetchFn, origin: ORIGIN, makePasskey: async () => ({}), pkc: null, now: () => new Date("2026-11-22T12:00:00Z"), onPick: () => {} });
+  await settle();
+  const fix = find(nodes["u-rows"], (n) => n.tagName === "BUTTON" && n.textContent === "Check");
+  const press = fix.click();
+  working(fix, "Checking the certificate…");
+  await press;
+  rested(fix, "Check");
+  assert.deepEqual(shown(nodes), ["s-paste"]);
+
+  nodes["paste-next"].textContent = "Continue";
+  nodes["paste-url"].value = ADMIN;
+  let release = g.hold();
+  const paste = nodes["paste-next"].click();
+  working(nodes["paste-next"], "Checking…");
+  const before = g.calls.length;
+  nodes["paste-url"].value = ADMIN;
+  await nodes["paste-next"].click();
+  assert.equal(g.calls.length, before, "a second press sends nothing");
+  release();
+  await paste;
+  await settle();
+  rested(nodes["paste-next"], "Continue");
+  assert.deepEqual(shown(nodes), ["s-confirm"]);
+
+  const yes = nodes["confirm-go"].textContent;
+  release = g.hold();
+  const trust = nodes["confirm-go"].click();
+  working(nodes["confirm-go"], "Updating…");
+  release();
+  await trust;
+  rested(nodes["confirm-go"], yes);
+  assert.equal(nodes["confirm-error"].textContent, "The engine said no.");
+  delete globalThis.localStorage;
+});
+
+test("the removed page's Remove it from this computer too shows Sending… and comes back on a refusal", async () => {
+  const nodes = fakePage();
+  const refused = gated(async () => new Response(JSON.stringify({ code: "JOB_UNAVAILABLE", message: "This engine is not removed." }), { status: 409 }));
+  startRemoved({ job: "REMOVED", agent: "bot", osUser: "alice", demo: false }, { fetchFn: refused.fetchFn, onSetUp: () => {} });
+  nodes["removed-remove"].textContent = "Remove it from this computer too";
+  const release = refused.hold();
+  const press = nodes["removed-remove"].click();
+  working(nodes["removed-remove"], "Sending…");
+  await nodes["removed-remove"].click();
+  assert.equal(refused.calls.length, 1, "a second press sends nothing");
+  release();
+  await press;
+  rested(nodes["removed-remove"], "Remove it from this computer too");
+  assert.equal(nodes["removed-status"].textContent, "This engine is not removed.");
 });

@@ -28,7 +28,7 @@ import {
   visibleText,
 } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, RelayError, relayPaths } from "./local.js";
-import { $, NO_CARRIER, el, fail, loadOrPaste, openSession, personText, relayFailure, setPill, showDone, showEngine, showRelayFailed, showWithdrawn, webauthnError, whenText, withdrawnText } from "./page.js";
+import { $, NO_CARRIER, busy, el, fail, loadOrPaste, openSession, personText, relayFailure, setPill, showDone, showEngine, showRelayFailed, showWithdrawn, webauthnError, whenText, withdrawnText } from "./page.js";
 import { BUSY, ENGINE_NOT_CONNECTED, VAULT_UNREACHABLE } from "./relay.js";
 import { agentName } from "./scope.js";
 import { pageTransport } from "./transport.js";
@@ -350,7 +350,8 @@ async function finish(response, relay) {
 async function approve(rp, state) {
   if (!gate(state)) return;
   const { req, relay } = state;
-  $("approve").disabled = true;
+  const done = busy($("approve"), "Waiting for your passkey…");
+  if (!done) return;
   try {
     const cred = await navigator.credentials.get({
       publicKey: {
@@ -362,6 +363,7 @@ async function approve(rp, state) {
       },
     });
     const r = cred.response;
+    done.label("Sending…");
     await finish(
       {
         approvalId: req.approvalId,
@@ -372,7 +374,11 @@ async function approve(rp, state) {
       },
       relay,
     );
+    // Signed, and the page says how it went: the button stays off.
+    done();
+    $("approve").disabled = true;
   } catch (err) {
+    done();
     gate(state);
     $("status").textContent = webauthnError(err, req.credentialIds.length);
   }

@@ -1,7 +1,7 @@
 // The passkey registration page: create an ES256 passkey for this relying
 // party and show the code to paste back.
 import { ALG_ES256, encodeRegistrationResponse, parseRegistrationRequest, relyingParty } from "./codec.js";
-import { $, fail, loadOrPaste, showCode, webauthnError } from "./page.js";
+import { $, busy, fail, loadOrPaste, showCode, webauthnError } from "./page.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
 
@@ -16,8 +16,9 @@ function prfEnabled(cred) {
   }
 }
 
-async function register(rp, req) {
-  $("register").disabled = true;
+export async function register(rp, req) {
+  const done = busy($("register"), "Waiting for your passkey…");
+  if (!done) return;
   try {
     const cred = await navigator.credentials.create({
       publicKey: {
@@ -46,8 +47,9 @@ async function register(rp, req) {
       prfSupported: prfEnabled(cred),
     };
     showCode(encodeRegistrationResponse(fields));
+    done();
   } catch (err) {
-    $("register").disabled = false;
+    done();
     $("status").textContent = webauthnError(err);
   }
 }

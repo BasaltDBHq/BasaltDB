@@ -20,6 +20,11 @@ function fakeDocument() {
     "request-box", "request-file", "request-paste", "request-read", "request-status"];
   for (const id of ids) {
     nodes[id] = { hidden: true, textContent: "", value: "", disabled: false, files: [], listeners: {} };
+    nodes[id].attrs = {};
+    nodes[id].setAttribute = (k, v) => {
+      nodes[id].attrs[k] = String(v);
+    };
+    nodes[id].getAttribute = (k) => nodes[id].attrs[k] ?? null;
     nodes[id].addEventListener = (type, fn) => {
       nodes[id].listeners[type] = fn;
     };

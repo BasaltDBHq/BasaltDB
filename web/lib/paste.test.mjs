@@ -10,6 +10,11 @@ function fakeDocument() {
   const nodes = {};
   for (const id of ["error", "error-text", "main", "paste-box", "paste", "paste-read", "paste-status"]) {
     nodes[id] = { hidden: false, textContent: "", value: "", disabled: false, listeners: {} };
+    nodes[id].attrs = {};
+    nodes[id].setAttribute = (k, v) => {
+      nodes[id].attrs[k] = String(v);
+    };
+    nodes[id].getAttribute = (k) => nodes[id].attrs[k] ?? null;
     nodes[id].addEventListener = (type, fn) => {
       nodes[id].listeners[type] = fn;
     };

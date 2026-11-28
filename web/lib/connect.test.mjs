@@ -1834,3 +1834,226 @@ test("a code without a readable pin asks the plain question", async () => {
   assert.equal(nodes["confirm-ok"].hidden, true);
   assert.match(nodes["confirm-sub"].textContent, /Your provider signs its own security certificate/);
 });
+const working = (n, label) => {
+  assert.equal(n.getAttribute("aria-busy"), "true");
+  assert.equal(n.textContent, label);
+  assert.equal(n.disabled, true);
+};
+const rested = (n, label) => {
+  assert.notEqual(n.getAttribute("aria-busy"), "true");
+  assert.equal(n.textContent, label);
+  assert.equal(n.disabled, false);
+};
+
+function held() {
+  let gate = Promise.resolve();
+  return {
+    wait: () => gate,
+    hold() {
+      let release;
+      gate = new Promise((r) => { release = r; });
+      return release;
+    },
+  };
+}
+
+function prompting() {
+  const creds = credentials();
+  const out = { creates: 0, gets: 0, creds };
+  creds.create = () => {
+    out.creates++;
+    return new Promise((resolve, reject) => { out.answer = { resolve, reject }; });
+  };
+  creds.get = () => {
+    out.gets++;
+    return new Promise((resolve, reject) => { out.answer = { resolve, reject }; });
+  };
+  out.ok = () => credentials().create({});
+  out.cancel = () => Object.assign(new Error("x"), { name: "NotAllowedError" });
+  return out;
+}
+
+test("the connect page's code, passkey, check, confirm and approve buttons show a spinner and a working label, and a second press sends nothing", async () => {
+  guardStorage();
+  const nodes = fakeDocument();
+  const h = held();
+  let polls = 0;
+  const { calls, fetchFn } = service({
+    DescribeSetup: async () => {
+      await h.wait();
+      return { body: { summary: connectOnly(), challenge: challenge() } };
+    },
+    CheckSetup: async () => {
+      await h.wait();
+      return { body: connectOnlyCheck() };
+    },
+    HandoffStatus: () => {
+      polls++;
+      return { body: { state: "HELD", phase: "PREVIEW", ticket: `${PREVIEW_TICKET}${polls}`, reach: { result: "REACHABLE", reportedAt: "2026-11-20T10:00:15Z" } } };
+    },
+    RunSetup: async () => {
+      await h.wait();
+      return { status: 500, body: refusalBody("failed_precondition", "LOGIN_FAILED", "The database refused the login.") };
+    },
+  });
+  const p = prompting();
+  start(env(fetchFn, p.creds, ""));
+  assert.equal(shown(nodes), "s-code");
+
+  nodes["code-read"].textContent = "Continue";
+  nodes["code-paste"].value = CODE;
+  let release = h.hold();
+  const read = nodes["code-read"].click();
+  working(nodes["code-read"], "Checking…");
+  nodes["code-paste"].value = CODE;
+  await nodes["code-read"].click();
+  assert.equal(calls.length, 1, "a second press sends nothing");
+  release();
+  await read;
+  rested(nodes["code-read"], "Continue");
+  assert.equal(shown(nodes), "s-bot");
+  await nodes["same-code"].click();
+
+  const create = nodes["passkey-go"].textContent;
+  const first = nodes["passkey-go"].click();
+  working(nodes["passkey-go"], "Waiting for your passkey…");
+  await nodes["passkey-go"].click();
+  assert.equal(p.creates, 1, "a second press opens no second prompt");
+  p.answer.reject(p.cancel());
+  await first;
+  rested(nodes["passkey-go"], create);
+  assert.match(nodes["passkey-status"].textContent, /cancelled or timed out/);
+  const second = nodes["passkey-go"].click();
+  working(nodes["passkey-go"], "Waiting for your passkey…");
+  p.answer.resolve(await p.ok());
+  await second;
+  rested(nodes["passkey-go"], create);
+  assert.equal(shown(nodes), "s-paste");
+
+  nodes.check.textContent = "Check";
+  nodes["database-url"].value = MARKER;
+  release = h.hold();
+  const check = nodes.check.click();
+  working(nodes.check, "Checking…");
+  nodes["database-url"].value = MARKER;
+  const before = calls.length;
+  await nodes.check.click();
+  assert.equal(calls.length, before, "a second press sends nothing");
+  release();
+  await check;
+  rested(nodes.check, "Check");
+  assert.equal(shown(nodes), "s-confirm");
+  const yes = nodes["confirm-go"].textContent;
+  const go = nodes["confirm-go"].click();
+  working(nodes["confirm-go"], "Checking…");
+  await go;
+  rested(nodes["confirm-go"], yes);
+  assert.equal(shown(nodes), "s-tables");
+  await nodes["tables-next"].click();
+  await nodes["labels-next"].click();
+  if (shown(nodes) === "s-labels") {
+    nodes["rest-mark"].checked = false;
+    await nodes["labels-next"].click();
+  }
+  assert.equal(shown(nodes), "s-approve");
+
+  nodes.approve.textContent = "Approve with passkey";
+  release = h.hold();
+  const approve = nodes.approve.click();
+  working(nodes.approve, "Setting up…");
+  const runs = calls.filter((c) => c.method === "RunSetup").length;
+  await nodes.approve.click();
+  assert.equal(calls.filter((c) => c.method === "RunSetup").length, runs, "a second press sends nothing");
+  release();
+  await approve;
+  rested(nodes.approve, "Approve with passkey");
+  assert.match(nodes["paste-error"].textContent, /refused the login/);
+});
+
+test("the Remove tab's Continue and Remove buttons show their working labels and come back on a refusal", async () => {
+  guardStorage();
+  const nodes = fakeDocument();
+  const h = held();
+  let refuse = true;
+  const { calls, fetchFn } = service({
+    CheckRemove: async () => {
+      await h.wait();
+      return refuse ? { status: 400, body: refusalBody("invalid_argument", "LOGIN_FAILED", "The database refused the login.") } : { body: removeCheck() };
+    },
+    RunRemove: async () => {
+      await h.wait();
+      return { status: 500, body: refusalBody("failed_precondition", "LOGIN_FAILED", "The database refused the login.") };
+    },
+  });
+  start(env(fetchFn, credentials(), "#remove"));
+  nodes["r-check"].textContent = "Continue";
+  nodes["r-database-url"].value = REMOVE_URL;
+  let release = h.hold();
+  const check = nodes["r-check"].click();
+  working(nodes["r-check"], "Checking…");
+  nodes["r-database-url"].value = REMOVE_URL;
+  await nodes["r-check"].click();
+  assert.equal(calls.length, 1, "a second press sends nothing");
+  release();
+  await check;
+  rested(nodes["r-check"], "Continue");
+  assert.equal(shownRemove(nodes), "r-paste");
+  assert.match(nodes["r-paste-error"].textContent, /refused the login/);
+
+  refuse = false;
+  nodes["r-database-url"].value = REMOVE_URL;
+  await nodes["r-check"].click();
+  assert.equal(shownRemove(nodes), "r-review");
+  nodes["r-remove"].textContent = "Remove BasaltDB";
+  nodes["r-confirm"].value = "shop";
+  nodes["r-confirm"].fire("input");
+  release = h.hold();
+  const remove = nodes["r-remove"].click();
+  working(nodes["r-remove"], "Removing BasaltDB…");
+  await nodes["r-remove"].click();
+  assert.equal(calls.filter((c) => c.method === "RunRemove").length, 1, "a second press sends nothing");
+  release();
+  await remove;
+  assert.notEqual(nodes["r-remove"].getAttribute("aria-busy"), "true");
+  assert.equal(nodes["r-remove"].textContent, "Remove BasaltDB");
+  assert.equal(shownRemove(nodes), "r-paste");
+});
+
+test("the passkey list's Remove and Create passkey buttons show their working labels, and a refusal or a cancelled prompt puts them back", async () => {
+  const nodes = fakeDocument();
+  const h = held();
+  const { fetchFn } = updateService({
+    revoke: async () => {
+      await h.wait();
+      return { status: 400, body: refusalBody("invalid_argument", "ANSWERS_INVALID", "This passkey is not active any more. Nothing changed.") };
+    },
+    remaining: 0,
+  });
+  const p = prompting();
+  const e = env(fetchFn, p.creds);
+  await toCheck(nodes, e);
+  find(nodes["doc-rows"], (n) => n.tagName === "BUTTON" && n.textContent === "Manage").click();
+  find(nodes["pk-list"].children[0], (n) => n.textContent === "Remove").click();
+  nodes["revoke-go"].textContent = "Remove passkey";
+  const release = h.hold();
+  const press = nodes["revoke-go"].click();
+  working(nodes["revoke-go"], "Removing…");
+  await nodes["revoke-go"].click();
+  release();
+  await press;
+  rested(nodes["revoke-go"], "Remove passkey");
+  assert.equal(nodes["revoke-error"].textContent, "This passkey is not active any more. Nothing changed.");
+
+  nodes["revoke-cancel"].click();
+  nodes["pk-add"].click();
+  assert.equal(shown(nodes), "s-addpk");
+  const label = nodes["addpk-go"].textContent;
+  const add = nodes["addpk-go"].click();
+  working(nodes["addpk-go"], "Waiting for your passkey…");
+  await nodes["addpk-go"].click();
+  assert.equal(p.creates, 1, "a second press opens no second prompt");
+  p.answer.reject(p.cancel());
+  await add;
+  rested(nodes["addpk-go"], label);
+  assert.match(nodes["addpk-status"].textContent, /cancelled or timed out/);
+});

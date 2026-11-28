@@ -56,7 +56,11 @@ function fakeNode(id, attrs) {
   node.replaceChildren = (...children) => {
     node.children = children;
   };
-  node.setAttribute = () => {};
+  node.attrs = {};
+  node.setAttribute = (k, v) => {
+    node.attrs[k] = String(v);
+  };
+  node.getAttribute = (k) => node.attrs[k] ?? null;
   node.select = () => {};
   node.classList = { toggle: () => {} };
   return node;
@@ -576,4 +580,42 @@ test("a session that fails says so in a plugin approval's words, never offering 
   assert.equal(told(BUSY), PLUGIN_SESSION_TEXT.busy);
   assert.equal(told("The secure session to your engine failed (PROTOCOL), and this page used nothing from it."), PLUGIN_SESSION_TEXT.broken);
   for (const text of Object.values(PLUGIN_SESSION_TEXT)) assert.doesNotMatch(text, /long link|basalt approve|basalt revert/);
+});
+test("the approve button waits for the passkey and says so, a second press opens no second prompt, and a cancelled prompt puts it back", async () => {
+  const v = vector("level-1-known-local");
+  const id = JSON.parse(v.binding).approvalId;
+  const e = engine({ approvalId: id, binding: v.binding, settings: v.settings, credentialIds: goLinks.get(v.name).credentialIds },
+    { status: 200, body: JSON.stringify({ approvalId: id, status: "APPROVED", approvedAt: "2026-11-19T12:00:01Z" }) });
+  const page = await open(`${ORIGIN}/plugins/${id}#s=q3Jv8sLk2mT0xYp1aBcD9w`, { fetch: e.fetch });
+  const approve = page.$("approve");
+  approve.textContent = "Approve";
+  const real = navigator.credentials.get;
+  let asked = 0;
+  let answer;
+  navigator.credentials.get = () => {
+    asked++;
+    return new Promise((resolve, reject) => { answer = { resolve, reject }; });
+  };
+
+  const first = approve.listeners.click();
+  assert.equal(approve.getAttribute("aria-busy"), "true");
+  assert.equal(approve.textContent, "Waiting for your passkey…");
+  assert.equal(approve.disabled, true);
+  await approve.listeners.click();
+  assert.equal(asked, 1, "a second press opens no second prompt");
+  answer.reject(Object.assign(new Error("x"), { name: "NotAllowedError" }));
+  await first;
+  assert.notEqual(approve.getAttribute("aria-busy"), "true");
+  assert.equal(approve.textContent, "Approve");
+  assert.equal(approve.disabled, false, "not stuck busy");
+  assert.match(page.$("status").textContent, /cancelled or timed out/);
+
+  const second = approve.listeners.click();
+  assert.equal(approve.textContent, "Waiting for your passkey…");
+  answer.resolve(await real({}));
+  await second;
+  assert.notEqual(approve.getAttribute("aria-busy"), "true");
+  assert.equal(approve.textContent, "Approve");
+  assert.equal(approve.disabled, true, "signed: the page says how it went and the button stays off");
+  navigator.credentials.get = real;
 });

@@ -11,6 +11,7 @@
 //
 // The calls and refusals are connect.js's, handed in (rpc) so this module
 // never loads the page's entry module itself.
+import { busy } from "./page.js";
 import { hostOf, trustText } from "./picks.js";
 
 // MAX_URL_CHARS and POSTGRES_URL are the Connect a bot tab's.
@@ -222,13 +223,18 @@ export function startRemove(env) {
     showScreen("r-review");
   };
 
-  const checked = async (run) => {
+  const checked = async (run, button, label) => {
+    const done = busy($(button), label);
+    if (!done) return;
     $("r-paste-error").hidden = true;
     $("r-trust-error").hidden = true;
     showScreen("r-checking");
     try {
-      review(await run());
+      const check = await run();
+      done();
+      review(check);
     } catch (err) {
+      done();
       if (flow.step === "trust") {
         $("r-trust-text").textContent = trustText(flow.trustHost, flow.asking);
         showScreen("r-trust");
@@ -242,25 +248,28 @@ export function startRemove(env) {
   $("r-check").addEventListener("click", () => {
     const url = $("r-database-url").value;
     $("r-database-url").value = "";
-    return checked(() => flow.checkRemove(url));
+    return checked(() => flow.checkRemove(url), "r-check", "Checking…");
   });
-  $("r-trust-go").addEventListener("click", () => checked(() => flow.trust()));
+  $("r-trust-go").addEventListener("click", () => checked(() => flow.trust(), "r-trust-go", "Checking…"));
   $("r-trust-cancel").addEventListener("click", toPaste);
   $("r-back").addEventListener("click", toPaste);
   $("r-confirm").addEventListener("input", () => {
     $("r-remove").disabled = !removeConfirmed($("r-confirm").value, flow.check?.database);
   });
   $("r-remove").addEventListener("click", async () => {
-    $("r-remove").disabled = true;
+    const done = busy($("r-remove"), "Removing BasaltDB…");
+    if (!done) return;
     $("r-back").hidden = true;
     try {
-      const done = await flow.remove($("r-confirm").value);
-      $("r-done-db").textContent = done.database;
-      $("r-done-bots").textContent = done.bots.length > 0 ? `Bots that lost their access: ${done.bots.join(", ")}.` : "";
-      fill($("r-done-warnings"), done.warnings.map((w) => el("li", "", w)));
-      $("r-done-warnings").hidden = done.warnings.length === 0;
+      const result = await flow.remove($("r-confirm").value);
+      done();
+      $("r-done-db").textContent = result.database;
+      $("r-done-bots").textContent = result.bots.length > 0 ? `Bots that lost their access: ${result.bots.join(", ")}.` : "";
+      fill($("r-done-warnings"), result.warnings.map((w) => el("li", "", w)));
+      $("r-done-warnings").hidden = result.warnings.length === 0;
       showScreen("r-done");
     } catch (err) {
+      done();
       showScreen("r-paste");
       showError("r-paste-error", err, env.rpc);
     }

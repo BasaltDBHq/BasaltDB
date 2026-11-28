@@ -359,12 +359,12 @@ export function reachText(reason, bot) {
 // connect page).
 export function disclosure(summary) {
   if (!isConnectOnly(summary)) {
-    return "Your database password goes to Basalt Vault's connect service for this one setup and is never stored.";
+    return "Your database password goes to BasaltVault's connect service for this one setup and is never stored.";
   }
   if (summary.kind === "INSTALL") {
-    return "Your database password goes to Basalt Vault's connect service for this one setup and is never stored. The database's address (not the password) is kept in the service's memory for up to 30 minutes: while your bot tests that its server can reach it, without signing in, and after you approve, until your bot picks it up. Until then your bot asks the service for it regularly, for up to 24 hours.";
+    return "Your database password goes to BasaltVault's connect service for this one setup and is never stored. The database's address (not the password) is kept in the service's memory for up to 30 minutes: while your bot tests that its server can reach it, without signing in, and after you approve, until your bot picks it up. Until then your bot asks the service for it regularly, for up to 24 hours.";
   }
-  return "Your database password goes to Basalt Vault's connect service for this one setup and is never stored. The database's address (not the password) is kept in the service's memory for up to 30 minutes, until your bot picks it up.";
+  return "Your database password goes to BasaltVault's connect service for this one setup and is never stored. The database's address (not the password) is kept in the service's memory for up to 30 minutes, until your bot picks it up.";
 }
 
 const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

@@ -42,10 +42,10 @@ const LINK_GONE = new Set(["LINK", "LINK_REFUSED", "LINK_UNKNOWN"]);
 const ENGINE_OFFLINE = new Set(["ENGINE_OFFLINE", "ENGINE_SHUTDOWN", "ENGINE_REVOKED"]);
 const TRY_LATER = new Set(["RATE_LIMITED", "SESSION_LIMIT", "TIMEOUT"]);
 
-export const VAULT_UNREACHABLE = `This page cannot reach the Basalt Vault (relay.basaltvault.app), which carries it to your engine. ${LONG_LINK}`;
+export const VAULT_UNREACHABLE = `This page cannot reach the BasaltVault (relay.basaltvault.app), which carries it to your engine. ${LONG_LINK}`;
 export const ENGINE_NOT_CONNECTED =
-  `Your engine is not connected to the Basalt Vault right now. Ask the agent to check its status, then ask it for a new link.`;
-export const BUSY = "Your engine or the Basalt Vault is busy. Wait a minute and open the link again. " + LONG_LINK;
+  `Your engine is not connected to the BasaltVault right now. Ask the agent to check its status, then ask it for a new link.`;
+export const BUSY = "Your engine or the BasaltVault is busy. Wait a minute and open the link again. " + LONG_LINK;
 export const ENGINE_CHANGED =
   "The engine answered this link with a different key than the one this page showed you, so the page stopped. Open the link again and " +
   "compare the fingerprint with the one the agent showed you in the chat before you sign.";

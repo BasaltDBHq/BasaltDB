@@ -35,7 +35,7 @@ func requireConnectPending(t *testing.T, kind, code, reason string, pm string, l
 	require.Equal(t, "TELL_AGENT", steps[1].Action, "the agent tells the person after the link")
 	require.Equal(t, []toolresult.Link{{Label: guidance.LabelConnect, URL: url}}, ls)
 	require.Contains(t, pm, "\n\n"+url+"\n\n", "the link on a line of its own")
-	require.Contains(t, pm, "Basalt Vault, a hosted service")
+	require.Contains(t, pm, "BasaltVault, a hosted service")
 	require.Contains(t, pm, testFingerprint)
 	require.NotContains(t, pm, "basalt init", "the person runs no command")
 	require.True(t, strings.Index(pm, url) > 0, "the link is in the message")

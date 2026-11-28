@@ -26,11 +26,11 @@ func ConnectLink(code string, budget int) string {
 }
 
 // ConnectMessage is the personMessage that hands the person the connect
-// link. lead says what is pending; it names the Basalt Vault, a hosted
+// link. lead says what is pending; it names the BasaltVault, a hosted
 // service, as what the link uses.
 func ConnectMessage(lead, url, fingerprint string) (string, []toolresult.Link) {
 	return NewMessage().
-		Text(lead+" Open this link and follow the page, and check that it shows the setup fingerprint "+fingerprint+". The link uses Basalt Vault, a hosted service, to run the setup once:").
+		Text(lead+" Open this link and follow the page, and check that it shows the setup fingerprint "+fingerprint+". The link uses BasaltVault, a hosted service, to run the setup once:").
 		Link(LabelConnect, url).
 		Text("Then tell the agent it is done. Never paste your database password into this chat.").
 		Build()
@@ -38,7 +38,7 @@ func ConnectMessage(lead, url, fingerprint string) (string, []toolresult.Link) {
 
 // ConnectStepText is the text of the PERSON OPEN_LINK step of a pending
 // setup.
-const ConnectStepText = "Open the link on your own computer or phone, check that it shows the same setup fingerprint and follow the page. It uses Basalt Vault, a hosted service."
+const ConnectStepText = "Open the link on your own computer or phone, check that it shows the same setup fingerprint and follow the page. It uses BasaltVault, a hosted service."
 
 // ConnectOnlyMessage is the personMessage of a connect-only setup code,
 // which only the connect page runs (CONTRACT.md, Connect-only setup codes):
@@ -46,7 +46,7 @@ const ConnectStepText = "Open the link on your own computer or phone, check that
 // database's connection string, which the agent never needs.
 func ConnectOnlyMessage(lead, url, fingerprint string) (string, []toolresult.Link) {
 	return NewMessage().
-		Text(lead+" Open this link, check that it shows the setup fingerprint "+fingerprint+", and follow the page. It uses Basalt Vault, a hosted service:").
+		Text(lead+" Open this link, check that it shows the setup fingerprint "+fingerprint+", and follow the page. It uses BasaltVault, a hosted service:").
 		Link(LabelConnect, url).
 		Text("The page asks for your database's connection string: paste it there only. The agent never needs it, so never paste it into this chat.").
 		Build()
@@ -54,4 +54,4 @@ func ConnectOnlyMessage(lead, url, fingerprint string) (string, []toolresult.Lin
 
 // ConnectOnlyStepText is the text of the PERSON OPEN_LINK step of a pending
 // connect-only setup.
-const ConnectOnlyStepText = "Open the link on your own computer or phone, check that it shows the same setup fingerprint, and paste your database's connection string on that page only. It uses Basalt Vault, a hosted service."
+const ConnectOnlyStepText = "Open the link on your own computer or phone, check that it shows the same setup fingerprint, and paste your database's connection string on that page only. It uses BasaltVault, a hosted service."

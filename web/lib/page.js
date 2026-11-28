@@ -151,11 +151,11 @@ export const APPROVE_REOPEN = "ask the agent for a new link to this approval";
 export const REVERT_REOPEN = "ask the agent for a new link to this revert";
 
 // NO_CARRIER is what a page says on a long link: it shows the change, but
-// only a short link (from the engine's own pages, or from Basalt Vault)
+// only a short link (from the engine's own pages, or from BasaltVault)
 // can send a signature to the engine, so the page offers no passkey prompt.
 export const NO_CARRIER =
   "This link shows the change but cannot send your signature to the engine, so it cannot be signed here. " +
-  "Only a short link from the engine's own pages or from Basalt Vault can. Nothing was signed.";
+  "Only a short link from the engine's own pages or from BasaltVault can. Nothing was signed.";
 
 const NO_LINK_IN_PASTE =
   "No link found in that text. Paste the whole message from your agent, from the line before the link to the line after it.";
@@ -308,7 +308,7 @@ export function showEngine(session) {
   const engine = session?.engine;
   if (!engine) return;
   const fp = engineFingerprint(engine.engineId);
-  $("engine").textContent = `Through the Basalt Vault to the engine with fingerprint ${fp}. Before you sign, check that your agent's status shows the same fingerprint (vault.fingerprint).`;
+  $("engine").textContent = `Through the BasaltVault to the engine with fingerprint ${fp}. Before you sign, check that your agent's status shows the same fingerprint (vault.fingerprint).`;
   $("engine").hidden = false;
 }
 

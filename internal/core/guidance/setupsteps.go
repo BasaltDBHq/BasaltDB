@@ -168,7 +168,7 @@ func SetupExpiredSteps(b *Steps, cmds Commands) string {
 // or UPGRADE code does not.
 //
 // With a connect link (budget is not 0 and the whole link fits it) the
-// person opens it, and the message says the link uses Basalt Vault, a
+// person opens it, and the message says the link uses BasaltVault, a
 // hosted service (CONTRACT.md, Next steps with the connect link). Without
 // one there is no page to hand over: the agent runs basalt init, which
 // prints the link. The links are those of the message.

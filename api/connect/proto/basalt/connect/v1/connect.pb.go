@@ -1,5 +1,5 @@
 // The connect service's API (CONTRACT.md, Connect). The connect service is
-// a hosted service of Basalt Vault, used only at setup: it runs a bot's
+// a hosted service of BasaltVault, used only at setup: it runs a bot's
 // setup code against the person's database, once, and writes nothing
 // anywhere of its own. For a connect-only setup code it holds the
 // database's address (never the password) in memory for up to 30 minutes:

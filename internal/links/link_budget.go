@@ -87,7 +87,7 @@ func requestBeside(withBlocks, sent bool) string {
 
 // reviewOnly is how a message that hands over a long or hash link says the
 // page cannot be signed: only a short link (the engine's own pages, or the
-// portal through Basalt Vault) carries a signature back to the engine. An
+// portal through BasaltVault) carries a signature back to the engine. An
 // engine whose Vault connection is down hands one over too; once it is back,
 // a new link from the agent (reissueLink) is a short link.
 const (

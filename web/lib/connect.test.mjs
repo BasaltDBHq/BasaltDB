@@ -841,7 +841,7 @@ test("a code with a target: no reach check, the code's tables without ticks, and
     RunSetup: () => ({ body: { warnings: ["row-level security still hides public.notes"], passkeys: [{ credentialId: CRED_ID, checkCode: BASE_POINT_CODE }] } }),
   });
   await toPaste(nodes, env(fetchFn));
-  assert.match(nodes.disclosure.textContent, /^Your database password goes to Basalt Vault's connect service for this one setup and is never stored\.$/);
+  assert.match(nodes.disclosure.textContent, /^Your database password goes to BasaltVault's connect service for this one setup and is never stored\.$/);
   await paste(nodes);
   assert.equal(shown(nodes), "s-tables");
   assert.equal(nodes["db-name"].textContent, "db.example.com");

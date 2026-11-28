@@ -166,8 +166,17 @@ A release tag publishes the GitHub Release (binaries, packages, `SHA256SUMS`, `p
 
 | Channel | Variable | Secret it needs | Notes |
 |---------|----------|-----------------|-------|
-| Homebrew | `PUBLISH_HOMEBREW` | `HOMEBREW_TAP_GITHUB_TOKEN_BASALTDB` (write access to the tap) | Tap defaults to `BasaltDBHq/homebrew-tap`; override with the variables `HOMEBREW_TAP_OWNER` / `HOMEBREW_TAP_NAME`. Install: `brew install basaltdbhq/tap/basaltdb`. |
+| Homebrew | `PUBLISH_HOMEBREW` | `HOMEBREW_TAP_GITHUB_TOKEN_BASALTDB` (write access to the tap) | Tap defaults to `BasaltDBHq/homebrew-tap`; override with the variables `HOMEBREW_TAP_OWNER` / `HOMEBREW_TAP_NAME`. Install: `brew install basaltdbhq/tap/basaltdb`. The release publishes a cask (`Casks/basaltdb.rb`), not a formula. |
 | npm | `PUBLISH_NPM` | `NPM_TOKEN` | Scope `@basaltdb`, owned by the personal npm account `basaltdb` (unscoped `basaltdb` is a different product). Publishes `@basaltdb/cli` and `@basaltdb/{linux-x64,linux-arm64,darwin-x64,darwin-arm64}` with `--access public`. Prereleases use the dist-tag `alpha`/`beta`/`rc`, not `latest`. |
 | MCP registry | `PUBLISH_MCP_REGISTRY` | `MCP_REGISTRY_TOKEN` | `server.json` name and npm `mcpName` are `io.github.basaltdbhq/basaltdb`. Runs after the npm job when npm is on, and alone when npm is off; the registry entry points at the npm package, so that package must already exist. |
 
-With `PUBLISH_NPM` or `PUBLISH_MCP_REGISTRY` on but its secret empty, the script exits 0 and publishes nothing. With `PUBLISH_HOMEBREW` on but no tap token, the release job fails at the formula upload.
+With `PUBLISH_NPM` or `PUBLISH_MCP_REGISTRY` on but its secret empty, the script exits 0 and publishes nothing. With `PUBLISH_HOMEBREW` on but no tap token, the release job fails at the cask upload.
+
+### Moving the tap from the formula to the cask
+
+Releases before 0.1.0-alpha published `Formula/basaltdb.rb`; the release now publishes `Casks/basaltdb.rb`. Once, right after the first release that publishes the cask, commit to the tap in one commit:
+
+- delete `Formula/basaltdb.rb`;
+- add `tap_migrations.json` at the tap's root: `{ "basaltdb": "basaltdb" }`.
+
+Do it after the cask is in the tap, not before: Homebrew moves an installed formula to a cask only when the cask exists. While both are in the tap, `brew install basaltdbhq/tap/basaltdb` still installs the old formula. On the next `brew update`, a person with the formula installed gets the cask, or, when they have not trusted the tap, the `brew trust` and `brew install --cask` commands to run.

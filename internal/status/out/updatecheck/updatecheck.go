@@ -341,14 +341,15 @@ func serviceCopy(exePath string) bool {
 }
 
 // homebrew reports whether the binary at exePath, symlinks resolved, sits in
-// a Homebrew prefix: a Cellar, or the Apple-silicon or Linux prefix.
+// a Homebrew prefix: a Cellar (formula), a Caskroom (the cask the release
+// publishes), or the Apple-silicon or Linux prefix.
 func homebrew(exePath string) bool {
 	paths := []string{exePath}
 	if resolved, err := filepath.EvalSymlinks(exePath); err == nil {
 		paths = append(paths, resolved)
 	}
 	for _, p := range paths {
-		if strings.Contains(p, "/Cellar/") || strings.Contains(p, "/opt/homebrew/") || strings.Contains(p, "/home/linuxbrew/.linuxbrew/") {
+		if strings.Contains(p, "/Cellar/") || strings.Contains(p, "/Caskroom/") || strings.Contains(p, "/opt/homebrew/") || strings.Contains(p, "/home/linuxbrew/.linuxbrew/") {
 			return true
 		}
 	}

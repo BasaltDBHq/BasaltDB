@@ -252,6 +252,10 @@ func TestHomebrewFollowsSymlinks(t *testing.T) {
 	if !homebrew(link) {
 		t.Error("a symlink into a Cellar is not seen")
 	}
+	// The cask installs into a Caskroom, /usr/local/Caskroom on an Intel Mac.
+	if !homebrew("/usr/local/Caskroom/basaltdb/0.1.0/basalt") {
+		t.Error("a Caskroom binary is not seen")
+	}
 	if homebrew(filepath.Join(dir, "other")) {
 		t.Error("a plain path counted as Homebrew")
 	}

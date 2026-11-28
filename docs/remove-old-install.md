@@ -6,7 +6,7 @@ Removing BasaltDB deletes its ledger in that database: the record of what agents
 
 ## The setup page does it
 
-Upgrade `basalt` (`brew upgrade basaltdb`), then ask your agent to run `basalt init`. The setup page it opens finds the old install and says so first: `This BasaltDB install is too old to update`, the release that set it up when the database records one (or its guard version), and the guard version this release needs. Then it runs the normal install steps. The last button, **Remove the old install and set up**, asks you to type the database's name, then removes the old install and installs the new one in one transaction. If the setup fails, the old install stays as it was.
+Upgrade `basalt` (from Homebrew: `brew uninstall --formula basaltdb`, then `brew install basaltdbhq/tap/basaltdb`), then ask your agent to run `basalt init`. The setup page it opens finds the old install and says so first: `This BasaltDB install is too old to update`, the release that set it up when the database records one (or its guard version), and the guard version this release needs. Then it runs the normal install steps. The last button, **Remove the old install and set up**, asks you to type the database's name, then removes the old install and installs the new one in one transaction. If the setup fails, the old install stays as it was.
 
 The connect page does the same for an agent on a computer you cannot reach, once its service offers it.
 
@@ -95,7 +95,7 @@ If `basalt init` cannot do it (no administrator dialog, such as in an SSH sessio
    sudo mv /etc/basalt /etc/basalt.old                                                       # Linux
    ```
 
-3. Update the binary: `brew upgrade basaltdb`, or install the new archive or package.
+3. Update the binary: `brew uninstall --formula basaltdb`, then `brew install basaltdbhq/tap/basaltdb`, or install the new archive or package.
 
 4. Ask your agent to run `basalt init`: the setup page replaces the old install in the database.
 

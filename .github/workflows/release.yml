@@ -310,7 +310,7 @@ jobs:
         run: sh scripts/release-notes.sh "${GITHUB_REF_NAME}" > "${RUNNER_TEMP}/release-notes.md"
 
       # Only the GitHub release needs the default GITHUB_TOKEN. The Homebrew
-      # formula is uploaded only when the repository variable PUBLISH_HOMEBREW
+      # cask is uploaded only when the repository variable PUBLISH_HOMEBREW
       # is "true"; the tap token is passed in only then (docs/RELEASING.md).
       - uses: goreleaser/goreleaser-action@v7
         with:

@@ -239,6 +239,7 @@ func waitForEngineBuild(c *cli.IO) (string, error) {
 // install. The page's Update for the agent ends the wait at once: the
 // agent goes on.
 func changeLink(c *cli.IO, h LocalHost, job localsetup.Job) (code int, reset bool) {
+	demoAsked := job.Demo
 	job.Job, job.Demo = setup.JobChange, false
 	link, err := localsetup.Link(links.DefaultLocal, job)
 	if err != nil {
@@ -252,6 +253,9 @@ func changeLink(c *cli.IO, h LocalHost, job localsetup.Job) (code int, reset boo
 		fmt.Fprintln(c.Stderr, "basalt: the browser did not open; open the link above by hand")
 	}
 	fmt.Fprintln(c.Stderr, "basalt: the engine on this computer is already set up. On the page that opened, update the guard or remove BasaltDB: type your database's admin connection string there, never here.")
+	if demoAsked {
+		fmt.Fprintln(c.Stderr, "basalt: --demo starts a fresh demo, and BasaltDB is already set up on this computer. To start over with the demo: on the page that opened, press Remove, then run basalt init --demo again.")
+	}
 	switch waitForRemoval(c, job.Agent, opened) {
 	case setup.EngineRemoved:
 		return removeEngineService(c, h), false

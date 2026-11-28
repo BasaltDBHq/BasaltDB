@@ -26,7 +26,7 @@ func ConnectLink(code string, budget int) string {
 }
 
 // ConnectMessage is the personMessage that hands the person the connect
-// link. lead says what is pending; it names the BasaltVault, a hosted
+// link. lead says what is pending; it names BasaltVault, a hosted
 // service, as what the link uses.
 func ConnectMessage(lead, url, fingerprint string) (string, []toolresult.Link) {
 	return NewMessage().

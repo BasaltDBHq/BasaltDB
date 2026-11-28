@@ -308,7 +308,7 @@ export function showEngine(session) {
   const engine = session?.engine;
   if (!engine) return;
   const fp = engineFingerprint(engine.engineId);
-  $("engine").textContent = `Through the BasaltVault to the engine with fingerprint ${fp}. Before you sign, check that your agent's status shows the same fingerprint (vault.fingerprint).`;
+  $("engine").textContent = `Through the BasaltVault relay to the engine with fingerprint ${fp}. Before you sign, check that your agent's status shows the same fingerprint (vault.fingerprint).`;
   $("engine").hidden = false;
 }
 

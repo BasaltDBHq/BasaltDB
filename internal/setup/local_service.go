@@ -223,6 +223,10 @@ type LocalOptions struct {
 	// (config.DefaultStateDir, as the engine.json the install writes names
 	// none).
 	StateDir string
+	// Marks are the finished jobs basalt init's probe reads. The engine
+	// passes the same one to every LocalService it builds, so a reload does
+	// not lose them; nil gives the service marks of its own.
+	Marks *Marks
 }
 
 // LocalService runs the setup jobs. One runs at a time.
@@ -236,7 +240,7 @@ type LocalService struct {
 	mark resetMark
 	// updated is when each agent's last UPDATE finished, for basalt init's
 	// probe.
-	updated updateMarks
+	updated *Marks
 }
 
 // New returns the setup of an engine with no config.
@@ -290,11 +294,14 @@ func NewLocal(o LocalOptions) (*LocalService, error) {
 	if o.StateDir == "" {
 		o.StateDir = config.DefaultStateDir(runtime.GOOS)
 	}
+	if o.Marks == nil {
+		o.Marks = NewMarks()
+	}
 	key, err := newKey()
 	if err != nil {
 		return nil, err
 	}
-	return &LocalService{opts: o, be: o.Backend, key: key, rp: rp}, nil
+	return &LocalService{opts: o, be: o.Backend, key: key, rp: rp, updated: o.Marks}, nil
 }
 
 // job is a validated request's job: the agent's role and its spec.

@@ -189,3 +189,42 @@ func TestTrustFixTurnsTheCertificateCheckOn(t *testing.T) {
 	_, err = cf.svc.Check(ctx, cf.trust())
 	refusal(t, err, setup.CodeNothingToFix)
 }
+
+// The engine builds a new setup service each time it serves its config
+// again, which the TRUST fix asks for as it finishes. The finished fix is
+// kept in the marks the engine shares between those services, so basalt
+// init's probe, answered by the new service, still ends the wait.
+func TestTrustFixIsAnsweredByTheServiceAReloadBuilt(t *testing.T) {
+	t.Parallel()
+	cf := newCertCheckFixture(t)
+	ctx := context.Background()
+	marks := setup.NewMarks()
+	var next *setup.LocalService
+	opts := func(reload func()) setup.LocalOptions {
+		return setup.LocalOptions{
+			Backend:    setupbackend.Backend{},
+			ConfigPath: cf.config, Origin: origin, Users: fakeUsers{}, Prefix: cf.db.Names.Prefix, Configured: true,
+			Now: func() time.Time { return cf.now }, Profiles: trustprofile.BuiltInSet, Dial: cf.dial.dial,
+			Marks: marks, Reload: reload,
+		}
+	}
+	rebuild := func() {
+		svc, err := setup.NewLocal(opts(func() {}))
+		require.NoError(t, err)
+		next = svc
+	}
+	old, err := setup.NewLocal(opts(rebuild))
+	require.NoError(t, err)
+
+	before := cf.now.Add(-time.Second)
+	probe := func(svc *setup.LocalService, code string) {
+		t.Helper()
+		_, err := svc.Check(ctx, setup.Request{Agent: "demo_bot", Since: &before})
+		refusal(t, err, code)
+	}
+	_, err = old.Run(ctx, cf.trust())
+	require.NoError(t, err)
+	require.NotNil(t, next, "the fix asked the engine to serve its config again")
+	require.NotSame(t, old, next)
+	probe(next, setup.CodeChangedPrefix+setup.JobTrust)
+}

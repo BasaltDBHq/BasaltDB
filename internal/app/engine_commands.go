@@ -60,8 +60,9 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	if err != nil {
 		return fail(io.Err, "engine", err)
 	}
+	marks := setup.NewMarks()
 	run := func(ctx context.Context, r engine.Restart) error {
-		o := restartOptions{Restart: r, Removal: &selfRemoval{}}
+		o := restartOptions{Restart: r, Removal: &selfRemoval{}, SetupMarks: marks}
 		o.StartedBy = *startedBy
 		o.PagesListener, handed = handed, nil
 		err := runWith(ctx, cfg, engine.EnginePath(*configPath), log, o)

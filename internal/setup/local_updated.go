@@ -32,76 +32,104 @@ const CodeChangedPrefix = "CHANGED_"
 
 // updateMarks are when each agent's last UPDATE finished, and when a
 // REMOVE removed it, in the engine's memory only.
-type updateMarks struct {
+// Marks are the setup page's finished jobs, for basalt init's probe: when
+// each agent's last UPDATE and fix finished and when a REMOVE removed it.
+// The engine builds a new LocalService each time it serves its config again
+// (after a fix rewrote a connection string, say), so the engine creates one
+// Marks, keeps it in memory for its whole life and gives it to every
+// LocalService through LocalOptions.Marks.
+type Marks struct {
 	mu      sync.Mutex
 	at      map[string]time.Time
 	removed map[string]time.Time
 	fixed   map[string]fixMark
 }
 
-// fixMark is a fix that finished for an agent: its job and when.
+// NewMarks returns empty marks.
+func NewMarks() *Marks { return &Marks{} }
+
 type fixMark struct {
 	job string
 	at  time.Time
 }
 
-// markFixed records that agent's fix job finished now.
-func (s *LocalService) markFixed(agent, job string) {
-	s.updated.mu.Lock()
-	defer s.updated.mu.Unlock()
-	if s.updated.fixed == nil {
-		s.updated.fixed = map[string]fixMark{}
+// MarkFixed records that agent's fix job finished at at.
+func (m *Marks) MarkFixed(agent, job string, at time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.fixed == nil {
+		m.fixed = map[string]fixMark{}
 	}
-	s.updated.fixed[agent] = fixMark{job: job, at: s.opts.Now()}
+	m.fixed[agent] = fixMark{job: job, at: at}
 }
 
-// fixedSince is the job of agent's last fix when it finished after since,
-// else "".
-func (s *LocalService) fixedSince(agent string, since time.Time) string {
-	s.updated.mu.Lock()
-	defer s.updated.mu.Unlock()
-	m, ok := s.updated.fixed[agent]
-	if !ok || !m.at.After(since) {
+// FixedSince is the job of agent's last fix when it finished after since.
+func (m *Marks) FixedSince(agent string, since time.Time) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	f, ok := m.fixed[agent]
+	if !ok || !f.at.After(since) {
 		return ""
 	}
-	return m.job
+	return f.job
 }
 
-// markRemoved records that a REMOVE removed agents now.
-func (s *LocalService) markRemoved(agents []string) {
-	s.updated.mu.Lock()
-	defer s.updated.mu.Unlock()
-	if s.updated.removed == nil {
-		s.updated.removed = map[string]time.Time{}
+// MarkUpdated records that agent's UPDATE finished at at.
+func (m *Marks) MarkUpdated(agent string, at time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.at == nil {
+		m.at = map[string]time.Time{}
+	}
+	m.at[agent] = at
+}
+
+// UpdatedSince is whether agent's last UPDATE finished after since.
+func (m *Marks) UpdatedSince(agent string, since time.Time) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	at, ok := m.at[agent]
+	return ok && at.After(since)
+}
+
+func (m *Marks) markRemoved(agents []string, at time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.removed == nil {
+		m.removed = map[string]time.Time{}
 	}
 	for _, a := range agents {
-		s.updated.removed[a] = s.opts.Now()
+		m.removed[a] = at
 	}
 }
 
-// removedSince: a REMOVE removed agent after since.
+func (m *Marks) removedSince(agent string, since time.Time) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	at, ok := m.removed[agent]
+	return ok && at.After(since)
+}
+
+func (s *LocalService) markFixed(agent, job string) {
+	s.updated.MarkFixed(agent, job, s.opts.Now())
+}
+
+func (s *LocalService) fixedSince(agent string, since time.Time) string {
+	return s.updated.FixedSince(agent, since)
+}
+
+func (s *LocalService) markRemoved(agents []string) {
+	s.updated.markRemoved(agents, s.opts.Now())
+}
+
 func (s *LocalService) removedSince(agent string, since time.Time) bool {
-	s.updated.mu.Lock()
-	defer s.updated.mu.Unlock()
-	at, ok := s.updated.removed[agent]
-	return ok && at.After(since)
+	return s.updated.removedSince(agent, since)
 }
 
-// markUpdated records that agent's UPDATE finished now.
 func (s *LocalService) markUpdated(agent string) {
-	s.updated.mu.Lock()
-	defer s.updated.mu.Unlock()
-	if s.updated.at == nil {
-		s.updated.at = map[string]time.Time{}
-	}
-	s.updated.at[agent] = s.opts.Now()
+	s.updated.MarkUpdated(agent, s.opts.Now())
 }
 
-// updatedSince: an UPDATE for agent finished after since. It is not read
-// once: every init waiting for that agent's page ends.
 func (s *LocalService) updatedSince(agent string, since time.Time) bool {
-	s.updated.mu.Lock()
-	defer s.updated.mu.Unlock()
-	at, ok := s.updated.at[agent]
-	return ok && at.After(since)
+	return s.updated.UpdatedSince(agent, since)
 }

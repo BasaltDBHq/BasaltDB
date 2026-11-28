@@ -114,17 +114,20 @@ changelog:
 snapshot:
   version_template: "0.0.0-nightly"
 
-# The formula is uploaded only on stable v* tags (RELEASE_KIND "tag"; never
+# The cask is uploaded only on stable v* tags (RELEASE_KIND "tag"; never
 # "rc" or "snapshot") and only when PUBLISH_HOMEBREW is
 # "true" (the release workflow sets it from the repository variable of the same
 # name, default off). Unset or anything else means no upload and no tap token
 # needed. Default tap is BasaltDBHq/homebrew-tap (install: brew install basaltdbhq/tap/basaltdb).
-brews:
+# A cask, not a formula: GoReleaser deprecated `brews` in favour of
+# `homebrew_casks`. The tap's tap_migrations.json moves installs of the old
+# formula to this cask on the next brew upgrade.
+homebrew_casks:
   - name: basaltdb
+    binaries: [basalt]
     homepage: "https://github.com/{{ .Env.GITHUB_REPOSITORY }}"
-    description: The action ledger for AI agents on your Postgres
-    license: Apache-2.0
-    directory: Formula
+    # brew style refuses a description that starts with an article.
+    description: Action ledger for AI agents on your Postgres
     repository:
       owner: '{{ or (envOrDefault "HOMEBREW_TAP_OWNER" "") "BasaltDBHq" }}'
       name: '{{ or (envOrDefault "HOMEBREW_TAP_NAME" "") "homebrew-tap" }}'
@@ -134,8 +137,15 @@ brews:
     commit_author:
       name: goreleaserbot
       email: bot@goreleaser.com
-    install: |
-      bin.install "basalt"
+    # basalt is not notarized, so Gatekeeper would block the first run of a
+    # downloaded binary. The release's signature is the cosign bundle on
+    # SHA256SUMS, and Homebrew checks the archive against the cask's sha256.
+    hooks:
+      post:
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/basalt"]
+          end
     skip_upload: '{{ or (ne (envOrDefault "RELEASE_KIND" "") "tag") (ne (envOrDefault "PUBLISH_HOMEBREW" "") "true") }}'
 
 release:

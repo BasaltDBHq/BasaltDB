@@ -2,9 +2,11 @@
 
 Walks the built `basalt` binary through the main path of a person-operated
 engine: install the engine service, set up on the setup page with a passkey,
-the agent's MCP session, a held write's approval, a revert, and removal:
-the page's Remove, then `basalt init --demo` and the page's Set up BasaltDB
-again on the removed engine, and its Remove it from this computer too.
+the agent's MCP session, a held write's approval, a revert, and removal: the
+page's one-press Remove, after which the install's removal job removes the
+engine from the computer (macOS keeps the `_basalt` account, Linux deletes
+it) and the agent's `status` answers `REMOVED`; then the install again, as a
+first install.
 
 ```
 sh e2e/release/run.sh <bin-dir>     # <bin-dir> holds the basalt binary under test

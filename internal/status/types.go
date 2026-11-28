@@ -35,6 +35,9 @@ const (
 	// problemEngineGaveUp: the supervisor gave up restarting a crashing
 	// engine (status engine.lastStop).
 	problemEngineGaveUp = "ENGINE_GAVE_UP"
+	// problemRemoved: no engine answers and its config folder is gone:
+	// the person removed BasaltDB from this computer.
+	problemRemoved = "REMOVED"
 )
 
 // status.engineRecord.state (CONTRACT.md, Configuration and status).

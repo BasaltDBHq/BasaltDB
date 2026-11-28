@@ -18,11 +18,37 @@ import (
 // finished after since.
 const CodeGuardUpdated = "GUARD_UPDATED"
 
-// updateMarks are when each agent's last UPDATE finished, in the engine's
-// memory only.
+// CodeAgentRemoved is the answer to that probe once a REMOVE that left the
+// engine other agents removed that agent after since: the engine stays, so
+// no ENGINE_REMOVED comes, and the waiting init ends at once.
+const CodeAgentRemoved = "AGENT_REMOVED"
+
+// updateMarks are when each agent's last UPDATE finished, and when a
+// REMOVE removed it, in the engine's memory only.
 type updateMarks struct {
-	mu sync.Mutex
-	at map[string]time.Time
+	mu      sync.Mutex
+	at      map[string]time.Time
+	removed map[string]time.Time
+}
+
+// markRemoved records that a REMOVE removed agents now.
+func (s *LocalService) markRemoved(agents []string) {
+	s.updated.mu.Lock()
+	defer s.updated.mu.Unlock()
+	if s.updated.removed == nil {
+		s.updated.removed = map[string]time.Time{}
+	}
+	for _, a := range agents {
+		s.updated.removed[a] = s.opts.Now()
+	}
+}
+
+// removedSince: a REMOVE removed agent after since.
+func (s *LocalService) removedSince(agent string, since time.Time) bool {
+	s.updated.mu.Lock()
+	defer s.updated.mu.Unlock()
+	at, ok := s.updated.removed[agent]
+	return ok && at.After(since)
 }
 
 // markUpdated records that agent's UPDATE finished now.

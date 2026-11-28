@@ -65,9 +65,9 @@ type Request struct {
 	// TrustRoot is the SHA-256 of the certificate authority the person
 	// trusted for the database's host.
 	TrustRoot string `json:"trustRoot,omitempty"`
-	// ConfirmName is the database name the person typed to confirm a
-	// REMOVE, or an INSTALL that replaces a guard below the update floor;
-	// only their runs carry it.
+	// ConfirmName is the database name the person typed to confirm an
+	// INSTALL that replaces a guard below the update floor; only its run
+	// carries it.
 	ConfirmName string `json:"confirmName,omitempty"`
 	// Pinned is the engine's pin a TRUST check showed for a ledger that
 	// names another, which its run records: a pin that changed since is
@@ -158,8 +158,12 @@ type RunAnswer struct {
 	Passkeys   []RegisteredPasskey `json:"passkeys"`
 	MCPCommand string              `json:"mcpCommand"`
 	// EngineRemoved: a REMOVE removed this engine's last agent and deleted
-	// engine.json; basalt init then asks the person what is next.
+	// engine.json.
 	EngineRemoved bool `json:"engineRemoved"`
+	// EngineRemoving: the engine then created the removal job's marker, so
+	// the job stops it and removes it from this computer; the page ticks
+	// that step once the engine stops answering.
+	EngineRemoving bool `json:"engineRemoving"`
 	// Remaining is a PASSKEY_REMOVE's: the active passkeys of this page's
 	// origin left.
 	Remaining *int `json:"remaining,omitempty"`
@@ -230,9 +234,6 @@ type LocalService struct {
 	busy sync.Mutex
 	// mark is the person's "No, this isn't mine" (Not your database).
 	mark resetMark
-	// removing is the person's "Remove it from this computer too" on a
-	// removed engine.
-	removing removeMark
 	// updated is when each agent's last UPDATE finished, for basalt init's
 	// probe.
 	updated updateMarks

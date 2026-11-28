@@ -98,6 +98,10 @@ func TestInstallScriptChecksBeforeItCreates(t *testing.T) {
 		require.NoError(t, err)
 		_, rest, ok := strings.Cut(script, osservice.ScriptHelpersEnd)
 		require.True(t, ok)
+		// The wait for a removal job comes first, before any check reads an
+		// account or a folder; it only reads the service manager.
+		require.True(t, strings.HasPrefix(rest, osservice.RemovalJobWait(v.goos)), v.goos)
+		rest = strings.TrimPrefix(rest, osservice.RemovalJobWait(v.goos))
 		checks, _, ok := strings.Cut(rest, osservice.ScriptPreflightEnd)
 		require.True(t, ok)
 		dest := osservice.ServiceBinary(v.goos)
@@ -164,6 +168,7 @@ func TestInstallScriptQuotesTheSourcePath(t *testing.T) {
 		require.NoError(t, err, bin)
 		_, rest, ok := strings.Cut(script, osservice.ScriptHelpersEnd)
 		require.True(t, ok)
+		rest = strings.TrimPrefix(rest, osservice.RemovalJobWait("linux"))
 		line, _, _ := strings.Cut(rest, "\n")
 		out, err := exec.Command("/bin/sh", "-c", line+"\nprintf %s \"$src\"").Output()
 		require.NoError(t, err, bin)
@@ -406,7 +411,10 @@ func TestRestartScript(t *testing.T) {
 			require.NoError(t, err)
 			checks, body, ok := strings.Cut(got, osservice.ScriptPreflightEnd)
 			require.True(t, ok)
-			require.True(t, strings.HasSuffix(body, "else\n"+restart+"fi\n"), "%s %s: the restart is the branch without a reset", goos, name)
+			_, plain, ok := strings.Cut(body, "else\n"+restart)
+			require.True(t, ok, "%s %s: the restart is the branch without a reset", goos, name)
+			require.Contains(t, plain, osservice.RemovalMarkerName, "%s %s: a plain restart writes the removal job too", goos, name)
+			require.True(t, strings.HasSuffix(plain, "fi\n"), "%s %s", goos, name)
 			require.Contains(t, checks, "breaking_reset=\n", "%s %s: the verdict is a check", goos, name)
 			reset := strings.Index(body, `if [ -n "$breaking_reset" ]; then`)
 			require.GreaterOrEqual(t, reset, 0, "%s %s: the reset step", goos, name)
@@ -415,7 +423,7 @@ func TestRestartScript(t *testing.T) {
 				require.Contains(t, body, "copy_binary \"$src\" "+osservice.ServiceBinary(goos)+" "+dialogSum+" 4096\n")
 				require.Less(t, strings.Index(body, "copy_binary"), reset, "copied before the reset and the restart")
 			} else {
-				require.NotContains(t, body, "copy_binary")
+				require.NotContains(t, body, `copy_binary "$src"`)
 			}
 			out, err := exec.Command("/bin/sh", "-n", "-c", got).CombinedOutput()
 			require.NoError(t, err, "the script parses: %s", out)

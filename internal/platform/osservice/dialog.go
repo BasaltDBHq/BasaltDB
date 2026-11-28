@@ -258,6 +258,9 @@ func InstallScript(goos string, src Source) (string, error) {
 	b.WriteString(scriptHelpers(goos))
 	b.WriteString(breakingHelpers)
 	b.WriteString(ScriptHelpersEnd)
+	// First, before any check reads an account or a folder: a removal job
+	// still at work may be deleting them.
+	b.WriteString(RemovalJobWait(goos))
 	// Every check runs before anything is created: a refused folder never
 	// leaves a new OS user or folder behind.
 	if src.copies(goos) {
@@ -288,7 +291,8 @@ func installPreflight(goos string, spec servicespec.Spec) string {
 }
 
 // installSteps makes the engine's account and folders, writes the unit and
-// starts it: the install script's steps after its checks.
+// starts it, then writes and loads the removal job (removalJobSteps): the
+// install script's steps after its checks.
 func installSteps(goos string, spec servicespec.Spec) (string, error) {
 	body := linuxScript(spec)
 	unit := SystemdUnit(spec)
@@ -301,7 +305,11 @@ func installSteps(goos string, spec servicespec.Spec) (string, error) {
 	if strings.Contains(unit, "\n"+unitEnd+"\n") {
 		return "", errors.New("the unit holds the script's own end marker")
 	}
-	return body + fmt.Sprintf("put_file %s <<'%s'\n%s%s\n%s", scriptWord(UnitPath(goos)), unitEnd, unit, unitEnd, start), nil
+	job, err := removalJobSteps(goos)
+	if err != nil {
+		return "", err
+	}
+	return body + fmt.Sprintf("put_file %s <<'%s'\n%s%s\n%s", scriptWord(UnitPath(goos)), unitEnd, unit, unitEnd, start) + job, nil
 }
 
 // scriptHelpers are the shell functions the install script uses. stat

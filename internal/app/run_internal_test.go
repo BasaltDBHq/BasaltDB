@@ -105,8 +105,8 @@ func TestListenPagesServesAFreePort(t *testing.T) {
 func TestInstructionsKeepTheAdminCredentialAway(t *testing.T) {
 	t.Parallel()
 	require.Contains(t, Instructions, "Never ask the person for, or accept, their database admin connection string or password: "+
-		"to set up, repair or change your access, or to remove BasaltDB, follow nextSteps or run basalt init (basalt init --remote on a computer the person cannot reach), and show the person the one link it prints; "+
-		"they finish on that page. Never remove BasaltDB by hand (its service, files, system user or MCP entry): the page does it. If the person pastes an admin password, tell them to change it now.")
+		"to set up, repair or change your access, follow nextSteps or run basalt init (basalt init --remote on a computer the person cannot reach); to remove BasaltDB from the person's own computer, run basalt init --remove; show the person the one link it prints; "+
+		"they finish on that page. Never remove BasaltDB by hand (its service, files or system user): the page does it, and afterwards status answers REMOVED and says to drop your MCP entry. If the person pastes an admin password, tell them to change it now.")
 	// The one basalt command the instructions name is basalt init (CONTRACT.md,
 	// Next steps).
 	for _, m := range regexp.MustCompile(`basalt [a-z][a-z-]*`).FindAllString(Instructions, -1) {

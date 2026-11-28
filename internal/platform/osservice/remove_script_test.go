@@ -34,6 +34,7 @@ func TestRemoveScriptIsBuiltFromConstants(t *testing.T) {
 			"if ( trusted /usr/libexec \"\" ) >/dev/null 2>&1; then\n\trm -f /usr/libexec/basalt /usr/libexec/basalt.basalt-new\n",
 			"remove_dir /etc/basalt", "remove_dir /var/lib/basalt", "remove_dir /run/basalt", "remove_dir /opt/basalt",
 			"grep '^basalt-plugin-'", `delete_account "$p"`, "delete_account basalt", `[ -z "$kept" ] ||`, `[ -z "$orphaned" ] ||`,
+			"systemctl disable --now basalt-remove.path >/dev/null 2>&1 || true\nrm -f /etc/systemd/system/basalt-remove.path /etc/systemd/system/basalt-remove.service /usr/libexec/basalt-remove\n",
 		}},
 		{"darwin", []string{
 			"[ ! -e '/Library/Application Support/Basalt/engine.json' ]",
@@ -49,7 +50,8 @@ func TestRemoveScriptIsBuiltFromConstants(t *testing.T) {
 			"if ( trusted /usr/local/libexec \"\" ) >/dev/null 2>&1; then\n\trm -f /usr/local/libexec/basalt /usr/local/libexec/basalt.basalt-new\n",
 			"remove_dir '/Library/Application Support/Basalt'", "remove_dir /Library/Logs/Basalt", "remove_dir /Library/Basalt",
 			"for old in /Library/Logs/Basalt.old-*; do",
-			"grep '^_basalt-plugin-'", `delete_account "$p"`, "delete_account _basalt", `[ -z "$kept" ] ||`, `[ -z "$orphaned" ] ||`, "Full Disk Access",
+			"macOS keeps its hidden system accounts",
+			"rm -f /Library/LaunchDaemons/dev.basaltdb.remove.plist /usr/local/libexec/basalt-remove /var/log/basalt-remove.log\nlaunchctl bootout system/dev.basaltdb.remove >/dev/null 2>&1 || true\n",
 		}},
 	} {
 		t.Run(v.goos, func(t *testing.T) {

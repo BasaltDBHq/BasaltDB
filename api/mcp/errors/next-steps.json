@@ -165,6 +165,7 @@
     { "code": "ENGINE_UNREACHABLE", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
     { "code": "ENGINE_START_FAILED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
     { "code": "ENGINE_GAVE_UP", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
+    { "code": "REMOVED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
     { "code": "DATABASE_UNREACHABLE", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }] },
     { "code": "TOO_MANY_CONNECTIONS", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }] },
     { "code": "CREDENTIAL_REJECTED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },

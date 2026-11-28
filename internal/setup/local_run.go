@@ -29,8 +29,7 @@ const (
 	CodeInvalidArgument = "INVALID_ARGUMENT"
 	CodeJobUnavailable  = "JOB_UNAVAILABLE"
 	// CodeEngineRemoved: a configured engine whose engine.json a REMOVE
-	// deleted; basalt init then asks the person, on the REMOVED link, to
-	// set BasaltDB up again or remove the engine from this computer too.
+	// deleted; its removal job removes it from this computer next.
 	CodeEngineRemoved           = "ENGINE_REMOVED"
 	CodeBusy                    = "BUSY"
 	CodeConnectionStringRefused = "CONNECTION_STRING_REFUSED"

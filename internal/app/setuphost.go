@@ -96,9 +96,9 @@ func (setupHost) OSInstallScript(goos, binary string) (string, error) {
 	return osservice.InstallScriptFor(goos, binary)
 }
 
-func (setupHost) OSRemoveScript(goos string) (string, error) { return osservice.RemoveScript(goos) }
-
 func (setupHost) OSResetScript(goos string) (string, error) { return osservice.ResetScript(goos) }
+
+func (setupHost) OSRemoveScript(goos string) (string, error) { return osservice.RemoveScript(goos) }
 
 func (setupHost) OSRestartScript(goos, binary string) (string, error) {
 	return osservice.RestartScriptFor(goos, binary)

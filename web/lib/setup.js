@@ -16,15 +16,17 @@ export const RUN_PATH = "/api/v1/setup/run";
 export const DOCTOR_PATH = "/api/v1/setup/doctor";
 export const ENGINE_PATH = "/api/v1/setup/engine";
 export const NOT_MINE_PATH = "/api/v1/setup/not-mine";
-export const REMOVE_ENGINE_PATH = "/api/v1/setup/remove-engine";
+// HEALTHZ_PATH is the engine's health route: after a removal of its last
+// agent the page watches it stop answering, when the removal job stopped
+// the engine.
+export const HEALTHZ_PATH = "/healthz";
 export const LINK_PREFIX = "1.";
 
 // JOBS are the jobs this page runs: INSTALL on an engine with no config,
 // UPDATE (the guard's missing migrations) and REMOVE (BasaltDB out of the
-// agent's database) on one that has it. CHANGE and REMOVED are links only:
-// the pick of Update or Remove, and the question of an engine the page
-// removed.
-export const JOBS = ["INSTALL", "UPDATE", "REMOVE", "CHANGE", "REMOVED"];
+// agent's database, then off this computer) on one that has it. CHANGE is a
+// link only: the pick of Update or Remove.
+export const JOBS = ["INSTALL", "UPDATE", "REMOVE", "CHANGE"];
 
 // CHOICES are the jobs a CHANGE link offers: basalt init's link for an
 // engine that is already set up. The page sends the one the person picks.
@@ -63,6 +65,7 @@ export const JOB_TEXT = {
     intro: (agent) => `This page removes BasaltDB from the database of your agent ${agent}: the guard, the ledger of every action and the agents' roles. Nothing can undo it.`,
     run: "Remove BasaltDB",
     done: (agent) => `BasaltDB is removed from the database, and this computer's engine no longer serves ${agent}.`,
+    removed: "BasaltDB is removed",
   },
 };
 
@@ -117,10 +120,16 @@ export async function agentProbe(fetchFn, link) {
     await postSetup(fetchFn, CHECK_PATH, setupRequest(job, ""));
   } catch (err) {
     if (err.code === "CONNECTION_STRING_REFUSED") return null;
+    // A REMOVE link on an engine the page removed: the engine asked its
+    // removal job again, and the page watches it stop.
+    if (link.job === "REMOVE" && err.code === ENGINE_REMOVED) return ENGINE_REMOVED;
     return err.message;
   }
   return null;
 }
+
+// ENGINE_REMOVED is the engine's answer once a removal took its last agent.
+export const ENGINE_REMOVED = "ENGINE_REMOVED";
 
 // answerFits reports whether a check's answer, asked for job asked, is
 // still the one to run: a pick changed during the check makes it stale.
@@ -129,9 +138,72 @@ export function answerFits(asked, current) {
 }
 
 // removeConfirmed reports whether the typed text is the database name the
-// removal's check named, exactly: the Remove button waits for it.
+// check named, exactly: the button of an install that replaces an old one
+// waits for it. A removal needs none: its admin string is the confirmation.
 export function removeConfirmed(typed, checked) {
   return Boolean(checked) && typeof checked.database === "string" && checked.database !== "" && typed === checked.database;
+}
+
+// removeButtonText is the Remove button of a checked removal: it names the
+// database and its host, which the admin string opens.
+export function removeButtonText(checked) {
+  return checked.host ? `Remove BasaltDB from ${checked.database} on ${checked.host}` : `Remove BasaltDB from ${checked.database}`;
+}
+
+// REMOVAL_TEXT is the checklist after a removal (CONTRACT.md, The local
+// setup page, Removing the engine service): the database, this computer and
+// the agent's connection.
+export const REMOVAL_TEXT = {
+  database: (db) => (db ? `✓ Removed from the database ${db}` : "✓ Removed from the database"),
+  removing: "Removing from this computer…",
+  removed: "✓ Removed from this computer",
+  stuck: "This computer: the engine is still running. Ask your agent to run basalt init --remove: your computer asks for your password once and removes the rest.",
+  kept: "This computer: the engine stays, serving your other agents.",
+  notAsked: "This computer: the engine stays, serving no agent (the warning below says why).",
+  agent: "Agent connection: your agent drops it the next time you talk to it.",
+  agentKept: "Agent connection: this agent's calls to that database now fail; your other agents go on.",
+  done: (db) => (db ? `From the database ${db} and from this computer. You can close this tab.` : "From the database and from this computer. You can close this tab."),
+};
+
+// removalSteps are the checklist's lines; computer is "removing",
+// "removed", "stuck", "kept" or "notAsked".
+export function removalSteps(database, computer) {
+  return [REMOVAL_TEXT.database(database), REMOVAL_TEXT[computer], computer === "kept" ? REMOVAL_TEXT.agentKept : REMOVAL_TEXT.agent];
+}
+
+// REMOVAL_WAIT_MS bounds the wait for the engine to stop after a removal,
+// and REMOVAL_POLL_MS is how often the page asks.
+export const REMOVAL_WAIT_MS = 60000;
+
+// CHECK_DELAY_MS is how long a removal's page waits after the admin string
+// changed before it checks it by itself: a paste is one change.
+export const CHECK_DELAY_MS = 400;
+export const REMOVAL_POLL_MS = 1000;
+
+// engineGone waits, up to REMOVAL_WAIT_MS, for the engine's health route
+// to stop answering: true once a request fails (the removal job stopped
+// the engine), false when the time is up. It sends no body.
+export async function engineGone(fetchFn, { sleep = defaultSleep, now = () => Date.now(), waitMs = REMOVAL_WAIT_MS } = {}) {
+  const until = now() + waitMs;
+  for (;;) {
+    try {
+      await fetchFn(HEALTHZ_PATH, { method: "GET", cache: "no-store" });
+    } catch {
+      return true;
+    }
+    if (now() >= until) return false;
+    await sleep(REMOVAL_POLL_MS);
+  }
+}
+
+function defaultSleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// isMac reports whether the browser runs on macOS, which keeps the
+// engine's system account after a removal.
+export function isMac(nav) {
+  return /Macintosh|Mac OS X/.test(nav?.userAgent || "");
 }
 
 // REPLACE_TITLE and REPLACE_RUN are the words of an install that replaces
@@ -637,13 +709,6 @@ function main() {
     startReal(link, { fetchFn: browserFetch, makePasskey: (c) => createPasskey(c, "localhost") });
     return;
   }
-  if (link.job === "REMOVED") {
-    startRemoved(link, {
-      fetchFn: browserFetch,
-      onSetUp: (install) => startReal(install, { fetchFn: browserFetch, makePasskey: (c) => createPasskey(c, "localhost") }),
-    });
-    return;
-  }
   if (link.job === "CHANGE") {
     startUpdate(link, {
       fetchFn: browserFetch,
@@ -671,7 +736,13 @@ export async function startJob(link, preset, env = {}) {
     document.title = text.title;
     $("title").textContent = text.title;
     $("intro").textContent = JOB_TEXT[link.job].intro(link.agent);
-    $("remove-confirm").hidden = !job || job.job !== "REMOVE";
+    // A removal is one box and one press: its admin string is the
+    // confirmation, the check runs once the string is pasted, and it asks
+    // nothing about the OS user.
+    const removing = job?.job === "REMOVE";
+    $("remove-note").hidden = !removing;
+    $("os-user-panel").hidden = removing;
+    $("check").hidden = removing;
   };
   showJob();
   $("job-os-user").textContent = link.osUser;
@@ -682,6 +753,17 @@ export async function startJob(link, preset, env = {}) {
   const fetchFn = env.fetchFn ?? browserFetch;
   $("admin-panel").hidden = true;
   const refused = await agentProbe(fetchFn, link);
+  if (refused === ENGINE_REMOVED) {
+    // Ask the engine to ask its removal job again: a run with no admin
+    // string, which it answers ENGINE_REMOVED.
+    try {
+      await postSetup(fetchFn, RUN_PATH, setupRequest(link, ""));
+    } catch {
+      // ENGINE_REMOVED, or no engine any more: the checklist shows which.
+    }
+    await showRemoved(link, { agent: link.agent, lines: [], warnings: [], passkeys: [], engineRemoved: true, engineRemoving: true }, "", fetchFn, env);
+    return;
+  }
   if (refused !== null) {
     $("main").hidden = true;
     $("error-text").textContent = refused;
@@ -695,11 +777,11 @@ export async function startJob(link, preset, env = {}) {
   const setChoices = (disabled) => {
     for (const name of CHOICES) $("choice-" + name.toLowerCase()).disabled = disabled;
   };
-  const confirmed = () => job !== null && $("confirm-os-user").checked;
-  // A removal, and an install that replaces an old one, also need the
-  // database's name typed as the check named it.
-  const typedName = () => (replaceOf(checked?.replace) ? $("confirm-replace").value : $("confirm-remove").value);
-  const runnable = () => confirmed() && checked !== null && (job.job !== "REMOVE" && !replaceOf(checked.replace) || removeConfirmed(typedName(), checked));
+  const confirmed = () => job !== null && (job.job === "REMOVE" || $("confirm-os-user").checked);
+  // An install that replaces an old one also needs the database's name
+  // typed as the check named it; a removal is confirmed by its admin string.
+  const typedName = () => $("confirm-replace").value;
+  const runnable = () => confirmed() && checked !== null && (!replaceOf(checked.replace) || removeConfirmed(typedName(), checked));
   const sync = () => {
     $("check").disabled = !confirmed() || $("database-url").value === "";
   };
@@ -709,42 +791,72 @@ export async function startJob(link, preset, env = {}) {
       job = pickJob(link, name);
       checked = null;
       checkedFor = null;
-      $("confirm-remove").value = "";
       $("review").hidden = true;
       showJob();
       sync();
     });
   }
-  for (const id of ["confirm-remove", "confirm-replace"]) {
-    $(id).addEventListener("input", () => {
-      if (checked) $("run").disabled = !runnable();
-    });
-  }
+  $("confirm-replace").addEventListener("input", () => {
+    if (checked) $("run").disabled = !runnable();
+  });
+  let autoCheck = null;
+  // checkSeq numbers the checks: only the newest one's answer or refusal
+  // is shown. A removal checks by itself on every change of the box, so a
+  // check for an older string may still run when the next one starts.
+  let checkSeq = 0;
+  // checking counts the checks in flight: a stale one gives the choices
+  // back only when no newer check still holds them.
+  let checking = 0;
   $("database-url").addEventListener("input", () => {
     checked = null;
-    $("confirm-remove").value = "";
     $("review").hidden = true;
+    $("remove-target").hidden = true;
+    // A check still running is for an older string: its answer is dropped.
+    checkSeq++;
+    $("status").textContent = "";
     sync();
+    clearTimeout(autoCheck);
+    if (job?.job === "REMOVE" && $("database-url").value !== "") autoCheck = setTimeout(runCheck, env.checkDelayMs ?? CHECK_DELAY_MS);
   });
-  $("check").addEventListener("click", async () => {
-    const done = working($("check"), "Checking…");
+  const runCheck = async () => {
+    if ($("database-url").value === "") return;
+    const auto = job?.job === "REMOVE";
+    const done = auto ? () => {} : working($("check"), "Checking…");
     if (!done) return;
+    const seq = ++checkSeq;
+    checking++;
     $("status").textContent = "Checking your database…";
-    databaseUrl = $("database-url").value;
+    const url = $("database-url").value;
+    databaseUrl = url;
     const asked = job;
     setChoices(true);
     let answer;
     try {
-      answer = await postSetup(fetchFn, CHECK_PATH, setupRequest(asked, databaseUrl));
+      answer = await postSetup(fetchFn, CHECK_PATH, setupRequest(asked, url));
     } catch (err) {
-      setChoices(false);
       done();
+      checking--;
+      if (seq !== checkSeq) {
+        if (checking === 0) setChoices(false);
+        return;
+      }
+      setChoices(false);
+      if (auto && err.code === "BUSY") {
+        // The engine still runs the check of an earlier string.
+        autoCheck = setTimeout(runCheck, env.checkDelayMs ?? CHECK_DELAY_MS);
+        return;
+      }
       showError(err);
       sync();
       return;
     }
-    setChoices(false);
     done();
+    checking--;
+    if (seq !== checkSeq) {
+      if (checking === 0) setChoices(false);
+      return;
+    }
+    setChoices(false);
     if (!answerFits(asked, job)) {
       $("status").textContent = "";
       sync();
@@ -754,8 +866,10 @@ export async function startJob(link, preset, env = {}) {
     checkedFor = asked;
     $("status").textContent = "";
     $("database").textContent = checked.database;
-    $("remove-name").textContent = checked.database;
-    $("confirm-remove").value = "";
+    if (asked.job === "REMOVE") {
+      $("remove-target").textContent = checked.host ? `It opens ${checked.database} on ${checked.host}.` : `It opens ${checked.database}.`;
+      $("remove-target").hidden = false;
+    }
     const replace = replaceOf(checked.replace);
     $("replace-confirm").hidden = replace === null;
     $("replace-name").textContent = checked.database;
@@ -763,11 +877,12 @@ export async function startJob(link, preset, env = {}) {
     list("lines", replace ? [REPLACE_TITLE + ".", ...replaceLines(replace), ...checked.lines] : checked.lines);
     list("notes", checked.notes);
     $("sql").textContent = checked.sql;
-    $("run").textContent = replace ? REPLACE_RUN : checked.passkeyNeeded ? "Create passkey and set up" : text.run;
+    $("run").textContent = replace ? REPLACE_RUN : checked.passkeyNeeded ? "Create passkey and set up" : asked.job === "REMOVE" ? removeButtonText(checked) : text.run;
     $("review").hidden = false;
     $("run").disabled = !runnable();
     sync();
-  });
+  };
+  $("check").addEventListener("click", runCheck);
   $("run").addEventListener("click", async () => {
     if (!checked || !runnable() || !answerFits(checkedFor, job)) return;
     const running = checkedFor;
@@ -775,7 +890,7 @@ export async function startJob(link, preset, env = {}) {
     const stop = working($("run"), checked.passkeyNeeded ? "Waiting for your passkey…" : workText);
     if (!stop) return;
     setChoices(true);
-    let extra = running.job === "REMOVE" || replaceOf(checked.replace) ? { confirmName: typedName() } : {};
+    let extra = replaceOf(checked.replace) ? { confirmName: typedName() } : {};
     try {
       if (checked.passkeyNeeded) {
         $("status").textContent = "Create the passkey in your browser's prompt.";
@@ -788,7 +903,7 @@ export async function startJob(link, preset, env = {}) {
       return;
     }
     stop.label(workText);
-    $("status").textContent = "Setting up…";
+    $("status").textContent = running.job === "REMOVE" ? "Removing…" : "Setting up…";
     try {
       const done = await postSetup(fetchFn, RUN_PATH, setupRequest(running, databaseUrl, extra));
       databaseUrl = "";
@@ -796,6 +911,10 @@ export async function startJob(link, preset, env = {}) {
       $("status").textContent = "";
       stop();
       $("run").disabled = true;
+      if (running.job === "REMOVE") {
+        showRemoved(running, done, checked.database, fetchFn);
+        return;
+      }
       showDone(running, done);
     } catch (err) {
       stop();
@@ -1989,56 +2108,9 @@ function list2(id, lines) {
   ul.hidden = lines.length === 0;
 }
 
-// REMOVE_LAST_STEP is the removal's last step when it removed the engine's
-// last agent: the basalt init that opened the page removes the engine
-// service now, or a later one opens the REMOVED link, which asks.
-export const REMOVE_LAST_STEP = "Last step: if your computer does not ask for your password now, ask your agent to run basalt init. The page that opens lets you finish removing BasaltDB from this computer, or set it up again.";
-
-// REMOVED_TEXT is the page of a REMOVED link: an engine the page removed,
-// which still runs on this computer, serving no agent.
-export const REMOVED_TEXT = {
-  title: "BasaltDB was removed from your database",
-  asked: "Your computer asks for your password, in its own dialog, to remove the engine. If no dialog appears, ask your agent to run basalt init and press this again.",
-};
-
-// startRemoved is the page of a REMOVED link (CONTRACT.md, The local setup
-// page, Removing the engine service). "Set up BasaltDB again" hands the
-// install of a real database to env.onSetUp, on the same engine; "Remove it
-// from this computer too" only tells the engine, for the basalt init that
-// waits, which then asks for the computer's password in its own dialog.
-// env has fetchFn and onSetUp.
-export function startRemoved(link, env) {
-  document.title = REMOVED_TEXT.title;
-  $("removed").hidden = false;
-  const again = $("removed-again");
-  const remove = $("removed-remove");
-  again.addEventListener("click", () => {
-    $("removed").hidden = true;
-    env.onSetUp({ ...link, job: "INSTALL", demo: false });
-  });
-  remove.addEventListener("click", async () => {
-    const stop = working(remove, "Sending…");
-    if (!stop) return;
-    again.disabled = true;
-    $("removed-status").textContent = "";
-    try {
-      await postSetup(env.fetchFn, REMOVE_ENGINE_PATH, {});
-    } catch (err) {
-      $("removed-status").textContent = err.message;
-      again.disabled = false;
-      stop();
-      return;
-    }
-    stop();
-    remove.disabled = true;
-    $("removed-status").textContent = REMOVED_TEXT.asked;
-  });
-}
-
 // doneText is the done screen's sentence for job and the run's answer.
 export function doneText(job, done) {
-  const text = JOB_TEXT[job.job].done(done.agent || job.agent);
-  return job.job === "REMOVE" && done.engineRemoved ? `${text} ${REMOVE_LAST_STEP}` : text;
+  return JOB_TEXT[job.job].done(done.agent || job.agent);
 }
 
 function showDone(job, done) {
@@ -2053,6 +2125,29 @@ function showDone(job, done) {
   const codes = (done.passkeys || []).map((p) => `${p.label || "Passkey"}: ${p.checkCode}`);
   list("check-codes", codes);
   $("check-codes-box").hidden = codes.length === 0;
+}
+
+// showRemoved is the done screen of a removal: the checklist ticks the
+// database at once, and this computer when the engine stops answering
+// (the removal job stopped it), when the removal took the engine's last
+// agent; "BasaltDB is removed" once nothing is left to wait for.
+export async function showRemoved(job, done, database, fetchFn, env = {}) {
+  showDone(job, done);
+  const steps = (computer) => list("removal-steps", removalSteps(database, computer));
+  $("done-text").textContent = "";
+  list("done-lines", []);
+  $("removal-mac").hidden = !(done.engineRemoving && isMac(env.navigator ?? globalThis.navigator));
+  if (!done.engineRemoving) {
+    steps(done.engineRemoved ? "notAsked" : "kept");
+    $("done-title").textContent = JOB_TEXT.REMOVE.removed;
+    return;
+  }
+  steps("removing");
+  $("done-title").textContent = "Removing BasaltDB…";
+  const gone = await engineGone(fetchFn, env);
+  steps(gone ? "removed" : "stuck");
+  $("done-title").textContent = gone ? JOB_TEXT.REMOVE.removed : "Removing BasaltDB…";
+  if (gone) $("done-text").textContent = REMOVAL_TEXT.done(database);
 }
 
 if (typeof document !== "undefined") main();

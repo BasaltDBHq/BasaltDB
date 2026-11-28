@@ -218,45 +218,31 @@ A container usually has no service manager: PID 1 is your process or a small ini
 
 An install a newer alpha or beta cannot use, or one too broken for the page's Remove: see [Remove an older install](remove-old-install.md).
 
-Ask your agent to remove BasaltDB. On the page that opens, pick **Remove BasaltDB**, paste the admin connection string, read the SQL and type the database's name to confirm. In one transaction it drops the `basalt_meta` schema (the ledger goes for good), the guard's policies and the `basalt_*` roles, and removes the agent from the engine's config. It also drops the demo data (`basalt_demo`) when the schema carries the comment `BasaltDB demo data` and nothing of yours depends on it. It asks for no passkey.
+Ask your agent to remove BasaltDB (it runs `basalt init --remove`). On the page that opens, paste the admin connection string: the page checks it by itself and says which database it opens, with the SQL under a disclosure. The one button names the database and its host, **Remove BasaltDB from <database> on <host>**: the connection string you pasted is the confirmation. One press removes it everywhere. In one transaction it drops the `basalt_meta` schema (the ledger goes for good), the guard's policies and the `basalt_*` roles, and removes the agent from the engine's config. It also drops the demo data (`basalt_demo`) when the schema carries the comment `BasaltDB demo data` and nothing of yours depends on it. It asks for no passkey and no password.
 
-If you remove within 90 seconds of the page opening, your computer then asks for your password once, in its own administrator dialog. Otherwise the page says **Last step**: ask your agent to run `basalt init`. The page that opens asks what to do next: **Set up BasaltDB again** sets it up on the same engine, with no password; **Remove it from this computer too** brings the password dialog. Nothing is removed from the computer until you pick that and type your password, and `basalt init --demo` always sets the demo up again instead. The removal stops and removes the engine service, and everything it put on the computer:
+Then the engine removes itself from this computer: the setup put a small removal job there, which stops the engine service and deletes everything it put on the computer. The page ticks each step (the database, this computer) and says **BasaltDB is removed**. Your agent drops its connection the next time you talk to it.
 
 | Removed | Linux | macOS |
 |---|---|---|
 | The service unit | `/etc/systemd/system/basalt-engine.service` | `/Library/LaunchDaemons/dev.basaltdb.engine.plist` |
+| The removal job | `/etc/systemd/system/basalt-remove.path`, `basalt-remove.service`, `/usr/libexec/basalt-remove` | `/Library/LaunchDaemons/dev.basaltdb.remove.plist`, `/usr/local/libexec/basalt-remove` |
 | The service's copy of `basalt` | `/usr/libexec/basalt` | `/usr/local/libexec/basalt` |
 | Config directory: `engine.json` and the agents' credentials | `/etc/basalt` | `/Library/Application Support/Basalt` |
 | State directory: the engine's keys, PII dictionary, ledger chain heads and link secrets | `/var/lib/basalt` | `/Library/Application Support/Basalt/state` |
 | Socket directory | `/run/basalt` | `/Library/Application Support/Basalt/run` |
 | Logs | none on disk; the journal keeps what the engine logged | `/Library/Logs/Basalt`, and `/Library/Logs/Basalt.old-*` from an upgrade |
 | Plugins: their service units, installed copies, trusted keys, sockets, logs and log rules | `/etc/systemd/system/basalt-plugin-*.service`, `/opt/basalt` | `/Library/LaunchDaemons/dev.basaltdb.plugin-*.plist`, `/etc/newsyslog.d/basalt-plugin-*.conf`, `/Library/Basalt` |
-| OS users and groups | `basalt` and every `basalt-plugin-*` | `_basalt` and every `_basalt-plugin-*` |
+| OS users and groups | `basalt` and every `basalt-plugin-*` | kept (below) |
 
-The service stays when the engine still serves an agent of another database: remove that one too, and the service goes with the last. An OS user that can log in is never deleted; the dialog names it instead. If you close the dialog, ask your agent again: the dialog comes back, with no page.
+The `basalt` binary you installed stays: you need it to set up again. The service stays when the engine still serves an agent of another database: remove that one too, and the service goes with the last. On Linux an OS user that can log in is never deleted.
 
-**Limit: a restart in between.** If the computer restarted after the page's Remove and before the dialog ran, the engine has no config and waits for a new install, so the agent can no longer finish the removal. Remove the service by hand then. On Linux:
-
-```sh
-sudo systemctl disable --now basalt-engine.service
-sudo rm -f /etc/systemd/system/basalt-engine.service /etc/systemd/system/basalt-plugin-*.service
-sudo systemctl daemon-reload
-sudo rm -rf /etc/basalt /var/lib/basalt /opt/basalt
-sudo rm -f /usr/libexec/basalt
-sudo userdel basalt
-```
-
-On macOS:
+**macOS keeps the hidden system accounts.** macOS lets a background job delete a user only with Full Disk Access, so the removal keeps `_basalt` (and any `_basalt-plugin-*`) with its group. They cannot log in and own nothing once the folders are gone, and a new setup uses them again. To delete them anyway, in Terminal, the user and then its group (a new setup refuses a `_basalt` group left without its user):
 
 ```sh
-sudo launchctl bootout system/dev.basaltdb.engine
-sudo rm -f /Library/LaunchDaemons/dev.basaltdb.engine.plist /Library/LaunchDaemons/dev.basaltdb.plugin-*.plist /etc/newsyslog.d/basalt-plugin-*.conf
-sudo rm -rf "/Library/Application Support/Basalt" /Library/Logs/Basalt /Library/Logs/Basalt.old-* /Library/Basalt
-sudo rm -f /usr/local/libexec/basalt
-sudo dscl . -delete /Users/_basalt
-sudo dscl . -delete /Groups/_basalt
+sudo sysadminctl -deleteUser _basalt
+sudo dseditgroup -o delete _basalt
 ```
 
-Plugin OS users (`basalt-plugin-*`, `_basalt-plugin-*`) are deleted the same way, with `userdel` or `dscl`.
+To set BasaltDB up again, ask your agent to run `basalt init`; your computer asks for your password once, as on the first setup.
 
 For a bot on a server you cannot log in to, see [`bot-setup.md`](bot-setup.md).

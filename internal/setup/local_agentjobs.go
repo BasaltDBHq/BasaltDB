@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
@@ -101,11 +103,11 @@ func (s *LocalService) configuredAgent(agent, osUser string) (config.Agent, stri
 }
 
 // engineRemoved: a REMOVE deleted engine.json with the engine's last
-// agent. The engine serves no agent any more; basalt init asks the person
-// to set it up again or remove it from this computer too (local_removed.go).
+// agent. The engine serves no agent any more and its removal job removes
+// it from this computer (local_removed.go).
 func (s *LocalService) engineRemoved() error {
 	if err := s.be.Lstat(s.opts.ConfigPath); errors.Is(err, os.ErrNotExist) {
-		return refuse(CodeEngineRemoved, "BasaltDB was removed from your database: this engine serves no agent any more. Ask the agent to run basalt init: its page lets you set BasaltDB up again or remove it from this computer too.")
+		return refuse(CodeEngineRemoved, "BasaltDB was removed from your database, and this engine is removing itself from this computer. To set BasaltDB up again, ask the agent to run basalt init.")
 	}
 	return nil
 }
@@ -117,7 +119,14 @@ func (s *LocalService) engineRemoved() error {
 // before anything connects with it. run is a run's request, which may carry
 // what its check does not.
 func (s *LocalService) validateAgentJob(req Request, run bool) (agentJob, error) {
-	if err := s.removedProbe(req, run); err != nil {
+	if err := s.engineRemoved(); err != nil {
+		if run && req.Job == JobRemove && req.DatabaseURL == "" && req.Agent != "" {
+			// The run a REMOVE link's page sends when it finds the engine
+			// removed: ask the job again (the marker is all it reads). A
+			// check never does: it changes nothing.
+			var answer RunAnswer
+			s.askRemoval(&answer)
+		}
 		return agentJob{}, err
 	}
 	if req.Job == JobChange {
@@ -133,6 +142,11 @@ func (s *LocalService) validateAgentJob(req Request, run bool) (agentJob, error)
 	if req.Job == "" && req.Since != nil && s.updatedSince(req.Agent, *req.Since) {
 		// basalt init's probe, after the page's Update for its agent.
 		return agentJob{}, refuse(CodeGuardUpdated, "The guard is updated. basalt init tells the agent to go on.")
+	}
+	if req.Job == "" && req.Since != nil && s.removedSince(req.Agent, *req.Since) {
+		// basalt init's probe, after the page's Remove of its agent on an
+		// engine that keeps other agents.
+		return agentJob{}, refuse(CodeAgentRemoved, "BasaltDB is removed from this agent's database; the engine goes on serving its other agents.")
 	}
 	if !isAgentJob(req.Job) {
 		return agentJob{}, refuse(CodeJobUnavailable, alreadySetUp)
@@ -459,10 +473,16 @@ func (s *LocalService) checkAgentJob(ctx context.Context, req Request) (CheckAns
 	if err != nil {
 		return CheckAnswer{}, timeLimit(ctx, err)
 	}
-	return CheckAnswer{
+	answer := CheckAnswer{
 		Database: database, Lines: p.lines, SQL: p.sql(req.Job),
 		Questions: []Question{}, Notes: p.notes, PasskeyNeeded: false,
-	}, nil
+	}
+	if req.Job == JobRemove {
+		// The page names the database and its host on the Remove button:
+		// the admin string is the confirmation.
+		answer.Host = j.host
+	}
+	return answer, nil
 }
 
 // runAgentJob runs an UPDATE or REMOVE: it repeats every check, plans
@@ -477,11 +497,8 @@ func (s *LocalService) runAgentJob(ctx context.Context, req Request) (RunAnswer,
 	if isFix(req.Job) {
 		return s.runFix(ctx, j)
 	}
-	if req.Job == JobUpdate && req.ConfirmName != "" {
-		return RunAnswer{}, refuse(CodeAnswersInvalid, "An update is not confirmed with the database name.")
-	}
-	if req.Job == JobRemove && CheckDatabaseName(req.ConfirmName) != nil {
-		return RunAnswer{}, refuse(CodeAnswersInvalid, WrongDatabaseName)
+	if req.ConfirmName != "" {
+		return RunAnswer{}, refuse(CodeAnswersInvalid, "An update or a removal is confirmed by the admin connection string, not the database name.")
 	}
 	conn, err := s.connect(ctx, req.DatabaseURL)
 	if err != nil {
@@ -496,10 +513,8 @@ func (s *LocalService) runAgentJob(ctx context.Context, req Request) (RunAnswer,
 			return err
 		}
 		if req.Job == JobRemove {
-			// The typed name is read against the database inside the
-			// transaction, before anything is planned or dropped
-			// (RunRemove, as the connect page's removal).
-			rp, kept, err := RunRemove(ctx, s.be, tx.Port(), s.opts.Prefix, req.ConfirmName)
+			// The admin string is the confirmation: no typed name.
+			rp, kept, err := RunRemove(ctx, s.be, tx.Port(), s.opts.Prefix, "")
 			if err != nil {
 				return s.removeRefusal(err)
 			}
@@ -532,10 +547,29 @@ func (s *LocalService) runAgentJob(ctx context.Context, req Request) (RunAnswer,
 	}
 	answer.Lines = []string{fmt.Sprintf("BasaltDB removed from the database %s", database), "removed from this engine: " + strings.Join(p.removed, ", ")}
 	answer.EngineRemoved = gone
+	s.markRemoved(p.removed)
+	if gone {
+		answer.EngineRemoving = s.askRemoval(&answer)
+	}
 	if demoKept {
 		answer.Warnings = append(answer.Warnings, "the sample schema "+s.be.DemoSchema()+" stays: another object depends on it")
 	}
 	return answer, nil
+}
+
+// askRemoval creates the removal job's marker in the config folder, after
+// the removal committed and engine.json is gone (CONTRACT.md, The local
+// setup page, Removing the engine service): the root job then stops this
+// engine and removes it from this computer. It reports whether the marker
+// is there; when it is not, a warning says so and the engine stays,
+// serving no agent.
+func (s *LocalService) askRemoval(answer *RunAnswer) bool {
+	marker := filepath.Join(filepath.Dir(s.opts.ConfigPath), servicespec.RemovalMarkerName)
+	if err := s.be.CreateMarker(marker); err != nil {
+		answer.Warnings = append(answer.Warnings, "this engine could not ask to be removed from this computer, so it stays, serving no agent: "+err.Error())
+		return false
+	}
+	return true
 }
 
 // removeRefusal is an internal/setup removal refusal as this page's.

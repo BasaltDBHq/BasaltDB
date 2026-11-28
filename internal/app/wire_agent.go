@@ -2,6 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"runtime"
 	"time"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
@@ -62,7 +67,10 @@ func AgentErrors() guidance.ErrorMap { return pgerrors.Map() }
 // agentEngineHost is what the status of an engine that is down reads from
 // the host.
 func agentEngineHost() status.EngineHost {
-	return status.EngineHost{LatestGuardVersion: guard.LatestVersion, ReadLastStop: engine.LastStopReader(engineos.OS{}), StartHoldOffUntil: agentStartHoldOffUntil}
+	return status.EngineHost{
+		LatestGuardVersion: guard.LatestVersion, ReadLastStop: engine.LastStopReader(engineos.OS{}), StartHoldOffUntil: agentStartHoldOffUntil,
+		ConfigDirGone: configDirGone,
+	}
 }
 
 func agentStartHoldOffUntil(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool) {
@@ -126,3 +134,16 @@ func NewAgentCatalog(c *postgres.Catalog) agentsvc.Catalog { return agentcatalog
 
 // NewAgentProbe is the store's probe as the agent reads it.
 func NewAgentProbe(p postgres.Probe) status.Probe { return agentProbe{p} }
+
+// configDirGone reports whether BasaltDB is gone from this computer: the
+// folder of configPath does not exist, and neither do the engine service's
+// unit and its removal job (status REMOVED). A service still installed is
+// not removed. Any other error is not a removal.
+func configDirGone(configPath string) bool {
+	for _, p := range []string{filepath.Dir(configPath), osservice.UnitPath(runtime.GOOS), osservice.RemovalJobUnit(runtime.GOOS)} {
+		if _, err := os.Lstat(p); !errors.Is(err, fs.ErrNotExist) {
+			return false
+		}
+	}
+	return true
+}

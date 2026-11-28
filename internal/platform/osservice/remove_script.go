@@ -22,6 +22,14 @@ import (
 // script finds them by their fixed name prefixes; a plugin OS user is
 // deleted only when it cannot log in, and the engine's only when the
 // install would have taken it over (a system account that cannot log in).
+// RemoveScript removes the engine service, built from constants only: it
+// refuses while engine.json exists, then stops and removes the engine and
+// plugin units, the removal job, the service's copy of basalt and the
+// system folders. On Linux it deletes the OS users the install made (with
+// userdel -f: the engine is stopped first, and a process it left does not
+// keep its account); macOS keeps them, since a root job cannot delete a
+// user without Full Disk Access, and a new install uses them again. The
+// removal job runs it (RemovalJobScript); the e2e test runs it under sudo.
 func RemoveScript(goos string) (string, error) {
 	var b strings.Builder
 	b.WriteString(scriptHelpers(goos))
@@ -50,13 +58,7 @@ func RemoveScript(goos string) (string, error) {
 // refuses a group without its user. A user it cannot delete is kept with
 // its group (kept); a group left without its user is an error (orphaned).
 func removeHelpers(goos string) string {
-	deleteUser, userGone, deleteGroup, groupGone := `userdel "$1"`, `! getent passwd "$1" >/dev/null 2>&1`,
-		`groupdel "$1"`, `! getent group "$1" >/dev/null 2>&1`
-	if goos == goosDarwin {
-		deleteUser, userGone, deleteGroup, groupGone = `dscl . -delete "/Users/$1"`, `! dscl . -read "/Users/$1" >/dev/null 2>&1`,
-			`dscl . -delete "/Groups/$1"`, `! dscl . -read "/Groups/$1" >/dev/null 2>&1`
-	}
-	return `no_login() {
+	helpers := `no_login() {
 	case $1 in
 	/usr/sbin/nologin | /sbin/nologin | /usr/bin/false | /bin/false) return 0 ;;
 	esac
@@ -66,21 +68,28 @@ remove_dir() {
 	no_link "$1"
 	rm -rf "$1"
 }
-kept=
+`
+	if goos == goosDarwin {
+		return helpers
+	}
+	return helpers + `kept=
 orphaned=
-# delete_account NAME: wait up to 10 seconds for NAME's processes to end
-# (its service is stopped above), delete the user, and its group only once
-# the user is gone.
+# delete_account NAME: end NAME's processes (its service is stopped above;
+# a process it left is killed, up to 10 tries a second apart), then delete
+# the user, and its group only once the user is gone. A user with a process
+# still alive is kept: deleting it would leave that process on a uid a new
+# account can get.
 delete_account() {
 	n=0
 	while [ "$n" -lt 10 ] && pgrep -U "$1" >/dev/null 2>&1; do
+		pkill -KILL -U "$1" >/dev/null 2>&1 || true
 		sleep 1
 		n=$((n + 1))
 	done
-	` + deleteUser + ` || true
-	if ` + userGone + `; then
-		` + groupGone + ` || ` + deleteGroup + ` >/dev/null 2>&1 || true
-		` + groupGone + ` || orphaned="$orphaned $1"
+	pgrep -U "$1" >/dev/null 2>&1 || userdel "$1" || true
+	if ! getent passwd "$1" >/dev/null 2>&1; then
+		! getent group "$1" >/dev/null 2>&1 || groupdel "$1" >/dev/null 2>&1 || true
+		! getent group "$1" >/dev/null 2>&1 || orphaned="$orphaned $1"
 	else
 		kept="$kept $1"
 	fi
@@ -149,7 +158,7 @@ for unit in %[2]s%[3]s*.service; do
 	rm -f "$unit"
 done
 rm -f %[4]s
-systemctl daemon-reload >/dev/null 2>&1 || true
+`+linuxRemoveJob()+`systemctl daemon-reload >/dev/null 2>&1 || true
 `+removeServiceBinary(goosLinux)+`remove_dir %[5]s
 remove_dir %[6]s
 remove_dir %[7]s
@@ -207,7 +216,6 @@ trusted %[7]s ""
 // rules, the directories (the socket and state directories are inside the
 // config directory) and the users with their groups.
 func darwinRemove() string {
-	u := DefaultUser(goosDarwin)
 	return fmt.Sprintf(`launchctl bootout system/%[1]s >/dev/null 2>&1 || true
 for unit in %[2]s%[3]s*.plist; do
 	[ -e "$unit" ] || [ -L "$unit" ] || continue
@@ -217,6 +225,12 @@ for unit in %[2]s%[3]s*.plist; do
 done
 rm -f %[4]s
 rm -f %[5]s%[6]s*.conf
+# The accounts stay: end every process they still run (one that left its
+# session would outlive the bootouts), so none survives into a reinstall
+# that takes the account over.
+for u in %[10]s $(dscl . -list /Users | grep '^%[11]s' || true); do
+	pkill -KILL -U "$u" >/dev/null 2>&1 || true
+done
 `+removeServiceBinary(goosDarwin)+`remove_dir %[7]s
 remove_dir %[8]s
 for old in %[8]s.old-*; do
@@ -224,23 +238,8 @@ for old in %[8]s.old-*; do
 	remove_dir "$old"
 done
 remove_dir %[9]s
-for p in $(dscl . -list /Users | grep '^%[10]s' || true); do
-	if no_login "$(dscl . -read "/Users/$p" UserShell | awk '{ print $2 }')"; then
-		delete_account "$p"
-	else
-		echo "basalt: the OS user $p can log in, so it was left in place" >&2
-	fi
-done
-if [ -n "$engine_uid" ]; then
-	delete_account %[11]s
-elif id -u %[11]s >/dev/null 2>&1; then
-	echo "basalt: the OS user %[11]s is not the system account the install made, so it was left in place" >&2
-fi
-[ -z "$kept" ] ||
-	echo "basalt: the engine service is removed, but macOS refused to delete the OS user${kept} (it does, for example, when the app that ran basalt init has no Full Disk Access), so it stays with its group: the next install uses it again. To delete it, in a terminal with Full Disk Access: $(for k in $kept; do printf 'sudo dscl . -delete /Users/%%s, then sudo dscl . -delete /Groups/%%s; ' "$k" "$k"; done)"
-[ -z "$orphaned" ] ||
-	fail "the engine service is removed, but the group${orphaned} stays without its user, and an install refuses that group: delete it with $(for g in $orphaned; do printf 'sudo dscl . -delete /Groups/%%s; ' "$g"; done)"
-`, servicespec.LaunchdLabel, launchDaemonsDir, pluginLabelPrefix, LaunchdPlist, newsyslogDir, pluginUnitPrefix,
+echo "basalt: the engine service is removed. macOS keeps its hidden system accounts (%[10]s and its plugins' %[11]s*): a new install uses them again."
+`+darwinRemoveJob(), servicespec.LaunchdLabel, launchDaemonsDir, pluginLabelPrefix, LaunchdPlist, newsyslogDir, pluginUnitPrefix,
 		scriptWord(filepath.Dir(config.DefaultPath(goosDarwin))), scriptWord(darwinLogDir), scriptWord(darwinPluginBase),
-		darwinPluginUserPrefix, u)
+		DefaultUser(goosDarwin), darwinPluginUserPrefix)
 }

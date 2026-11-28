@@ -364,6 +364,7 @@
                 "ENGINE_UNREACHABLE",
                 "ENGINE_START_FAILED",
                 "ENGINE_GAVE_UP",
+                "REMOVED",
                 "DATABASE_UNREACHABLE",
                 "TOO_MANY_CONNECTIONS",
                 "CREDENTIAL_REJECTED",

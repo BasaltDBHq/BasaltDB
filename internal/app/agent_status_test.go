@@ -220,6 +220,21 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			require.NoError(t, err)
 			return r
 		}},
+		"REMOVED": {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
+			t.Helper()
+			cmds, err := newCommands("bot", "", "linux", osservice.Manager())
+			require.NoError(t, err)
+			host := testEngineHost()
+			host.ConfigDirGone = func(string) bool { return true }
+			r, err := statussvc.EngineDownStatusAfterStart(host, "bot", cmds, nil, os.ErrNotExist, "test", statusNow, "", "/etc/basalt/engine.json")
+			require.NoError(t, err)
+			// A removal leaves no config to say who operated the engine:
+			// the steps are the same for both.
+			if operatedBy != "" {
+				r.OperatedBy = operatedBy
+			}
+			return r
+		}},
 		guidance.ReasonDatabaseUnreachable: {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: fmt.Errorf("dial %s: %w", statusCredential, context.DeadlineExceeded)}, 1, nil)},
 		guidance.ReasonTooManyConnections: {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{
 			Code:    "53300",

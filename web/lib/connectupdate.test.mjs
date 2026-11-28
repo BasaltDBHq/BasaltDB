@@ -65,7 +65,7 @@ test("removing names the passkey, and warns when it is the site's last", () => {
     "This removes the passkey a, added 3 Nov. It can no longer approve writes or sign undos.",
     "It is the last passkey for this site: until you add one, your agents' held writes and undos wait.",
   ]);
-  assert.equal(ADD_AGAIN, "Add a passkey so your agents can be approved again.");
+  assert.equal(ADD_AGAIN, "Add a passkey so your agents' writes and undos can be approved again.");
 });
 
 test("the browser is told only of a removed portal passkey, where it can be", async () => {

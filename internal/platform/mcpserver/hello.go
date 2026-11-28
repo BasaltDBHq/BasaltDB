@@ -91,7 +91,7 @@ func HelloAnswer(line []byte) (h Hello, known, ok bool) {
 func ShimTooOldMessage(shim, engine Hello, need int) string {
 	return fmt.Sprintf("this basalt mcp (build %s, protocol %d) is too old for the basalt engine (build %s), which needs protocol %d or newer. "+
 		"BasaltDB was upgraded while this MCP server was running. Reconnect the MCP server so the client starts the upgraded `basalt mcp` "+
-		"(in Claude Code run /mcp and reconnect basalt, or restart the agent client), then call again. Nothing was run for this call",
+		"(reconnect basalt in your client's MCP settings, or restart the agent client), then call again. Nothing was run for this call",
 		orUnknown(shim.Build), shim.Protocol, orUnknown(engine.Build), need)
 }
 

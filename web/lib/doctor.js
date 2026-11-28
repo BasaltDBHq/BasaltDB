@@ -78,7 +78,7 @@ export const FIX_ORDER = ["TRUST", "UPDATE", "PASSKEY_ADD", "REPAIR"];
 
 export const MAX_WARNINGS = 3;
 export const READY_SUB = "BasaltDB is running and your agents can connect.";
-export const ALL_SET = { title: "All set", text: "Close this tab and go back to your agent. It can work now.", later: "Run `basalt init` to change it." };
+export const ALL_SET = { title: "All set", text: "Close this tab and go back to your agent. It can work now.", later: "Ask your agent to run basalt init to change them." };
 export const LEFT_NOTE = "you chose to leave them for now";
 
 // localPasskeys counts the passkeys of origin: the devices that approve on
@@ -222,7 +222,7 @@ export function passkeyItems(passkeys, origin, now) {
 
 // PASSKEYS_NOTE is the note under the list.
 export const PASSKEYS_NOTE =
-  "Removing asks for the database's admin connection string, so it works even if the lost device was your only passkey. If you remove the last one, the page asks you to add one before agents can be approved again.";
+  "Removing asks for the database's admin connection string, so it works even if the lost device was your only passkey. If you remove the last one, the page asks you to add one before your agents' writes and undos can be approved again.";
 
 // signalRemoved tells the browser a passkey of rpId is gone, so a password
 // manager may hide it. It is a hint: a browser without it, or a call that

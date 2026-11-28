@@ -1536,7 +1536,7 @@ test("Remove BasaltDB: string, what goes, one press, done", async () => {
   const steps = nodes["r-steps"].textContent;
   assert.match(steps, /✓ Removed from the database shop/);
   assert.match(steps, /not opened from your bot's removal link/);
-  assert.match(steps, /Agent connection/);
+  assert.match(steps, /The bot's connection/);
   assert.match(nodes["r-done-bots"].textContent, /ops_bot, sales_bot/);
   assert.ok(!everything(nodes).includes("s3cret-pw"), "the string is on the page nowhere");
 });
@@ -1779,7 +1779,7 @@ test("the passkey list: Manage, Remove with RevokePasskey, the browser told, the
   assert.deepEqual(rv.body, { code: CODE, databaseUrl: MARKER, credentialId: PORTAL_KEY.credentialId });
   assert.deepEqual(signals, [{ rpId: "basaltvault.app", credentialId: PORTAL_KEY.credentialId }]);
   assert.equal(shown(nodes), "s-addpk");
-  assert.equal(nodes["addpk-lead"].textContent, "Add a passkey so your agents can be approved again.");
+  assert.equal(nodes["addpk-lead"].textContent, "Add a passkey so your agents' writes and undos can be approved again.");
   assert.equal(flow.holdsConnectionString, true, "the string stays for the fixes that follow");
   await nodes["addpk-go"].click();
   assert.equal(shown(nodes), "s-doctor");

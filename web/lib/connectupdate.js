@@ -113,7 +113,7 @@ export function revokeLines(p, passkeys) {
 }
 
 // ADD_AGAIN is the add screen after the last portal passkey went.
-export const ADD_AGAIN = "Add a passkey so your agents can be approved again.";
+export const ADD_AGAIN = "Add a passkey so your agents' writes and undos can be approved again.";
 
 // signalRemoved tells the browser a removed portal passkey is gone
 // (PublicKeyCredential.signalUnknownCredential, feature-detected), as the

@@ -70,7 +70,7 @@ What happens from then on:
 
 - When a tool call finds the engine down (after a reboot, after an update, or after the engine stopped), `basalt mcp` starts it and waits up to 15 seconds. The first call after a restart is a few seconds slower. A crash is restarted by a small parent process, so you notice at most a short retry.
 - If it cannot start the engine it answers at once with the reason and the engine's log, `/workspace/basalt/state/engine.log`, and `status` shows the problem `ENGINE_START_FAILED`. Show the person its `personMessage`.
-- `status` says why the engine is running: `engine.startedBy` is `HAND` (started without `--started-by`: by hand, or by the system service), `MCP` (the first call after a restart started it) or `CRASH` (it was restarted after a crash). When the restarts kept failing, `status` shows the problem `ENGINE_GAVE_UP` and `engine.lastStop` says why and when.
+- `status` says why the engine is running: `engine.startedBy` is `HAND` (started without `--started-by`: by hand), `SERVICE` (the computer's service manager started it), `MCP` (the first call after a restart started it) or `CRASH` (it was restarted after a crash). When the restarts kept failing, `status` shows the problem `ENGINE_GAVE_UP` and `engine.lastStop` says why and when.
 - If your database runs on this computer too, it is gone after a restart as well, and BasaltDB does not start it. The engine waits for it and reconnects when it is back.
 
 The limit: nothing runs between a restart and your next session. The engine starts only when you make a tool call. A person who approves a held write from their phone in that time finds the page waiting, and the approval takes effect when your next session starts the engine. Tell the person that before they rely on it.

@@ -4,6 +4,15 @@ All notable changes to BasaltDB are recorded in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- The Remove page no longer shows setup words: the box says the string is used to remove BasaltDB from the database, and the passkey footnote shows only under a button that asks for a passkey. The same sweep fixed wording on the other pages and in `basalt init`, the agent's instructions and `status`: the All set screen's "Left for later" line no longer shows code marks, the service is called the Basalt Vault everywhere, and the removal text says the engine goes only when no other agent uses it.
+- `basalt init` now tells the agent to register the MCP server line it prints, and its wait ends at once when the setup page finishes a fix (a certificate check, labels, a passkey, the agent's login) for that agent, as it does for an update. When the wait runs out it tells the agent to run `status`.
+- `status` reports `startedBy` `SERVICE` for an engine the computer's service manager started, not `HAND`.
+- A removal, update or check-up link no longer carries `"demo": false`.
+
 ## [0.1.0-alpha] - 2026-11-24
 
 The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup moves from the terminal to a page: the agent runs `basalt init` and the person finishes on the page it links. The CLI only starts things. Expect bugs and breaking changes between alpha releases, and read "Breaking for alpha installs" before you upgrade.

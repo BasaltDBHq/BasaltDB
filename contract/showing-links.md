@@ -74,7 +74,7 @@ The tool descriptions say the same where they mention `personMessage`.
 
 It also carries the rule that keeps the admin credential away from the agent ([Agents and the admin credential](setup.md#agents-and-the-admin-credential)), unchanged:
 
-> Never ask the person for, or accept, their database admin connection string or password: to set up, repair or change your access, follow nextSteps or run basalt init (basalt init --remote on a computer the person cannot reach); to remove BasaltDB (from the person's own computer, or from this one through the connect page), run basalt init --remove; show the person the one link it prints; they finish on that page. Never remove BasaltDB by hand (its service, files or system user): the page does it, and afterwards status answers REMOVED and says to drop your MCP entry. If the person pastes an admin password, tell them to change it now.
+> Never ask the person for, or accept, their database admin connection string or password: to set up, repair or change your access, follow nextSteps or run basalt init (basalt init --remote on a computer the person cannot reach); to remove BasaltDB, run basalt init --remove (on a computer the person cannot reach, it prints a link to the connect page); show the person the one link it prints; they finish on that page. When basalt init prints the command line of an MCP server, register it in your client now. Never remove BasaltDB by hand (its service, files or system user): the page does it, and afterwards status answers REMOVED and says to drop your MCP entry. If the person pastes an admin password, tell them to change it now.
 
 It also carries one sentence that points the agent to the public docs, unchanged:
 

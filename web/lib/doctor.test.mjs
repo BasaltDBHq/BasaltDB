@@ -62,7 +62,7 @@ test("unlabeled columns are a warning that never blocks; a saved choice is said"
   assert.equal(v.done.enabled, true);
   assert.deepEqual([v.rows[0].tone, v.rows[0].mark, v.rows[0].title, v.rows[0].text, v.rows[0].action], ["warning", "!", "2 columns have no label", "orders.a, orders.b", "Label"]);
   assert.deepEqual(v.allSet.later, ["2 columns have no label"]);
-  assert.equal(laterText(v.allSet.later), "Left for later: 2 columns have no label. Run `basalt init` to change it.");
+  assert.equal(laterText(v.allSet.later), "Left for later: 2 columns have no label. Ask your agent to run basalt init to change them.");
   assert.equal(laterText([]), "");
   const chosen = checkView({ ...good, labels }, ORIGIN, ["public.orders.a", "public.orders.b"]);
   assert.equal(chosen.rows[0].text, "orders.a, orders.b · you chose to leave them for now");

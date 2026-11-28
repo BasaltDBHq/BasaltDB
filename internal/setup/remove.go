@@ -66,7 +66,7 @@ func (p RemovePlan) Lines() []string {
 		lines = append(lines, fmt.Sprintf("This removes BasaltDB from the database %s: the guard's row-level security policies, the schema basalt_meta with the ledger of every action, and every %s_ role. A view or other object of yours that uses the ledger is dropped with it (CASCADE).", p.Database, p.Prefix))
 	}
 	if len(p.Agents) > 0 {
-		lines = append(lines, fmt.Sprintf("The bots that lose their access: %s. Nothing can undo this.", strings.Join(p.Agents, ", ")))
+		lines = append(lines, fmt.Sprintf("The agents that lose their access: %s. Nothing can undo this.", strings.Join(p.Agents, ", ")))
 	}
 	if len(p.DemoDrops) > 0 {
 		lines = append(lines, "It drops the sample schema "+p.demoSchema+" with its rows, which the sample-database setup made. If another object depends on it, the schema stays.")

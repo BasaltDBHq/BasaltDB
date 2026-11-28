@@ -8,6 +8,7 @@ import (
 	"io"
 	"os/user"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
@@ -39,7 +40,7 @@ func RunLocal(c *cli.IO, h LocalHost, args []string) int {
 		return c.Fail(err)
 	}
 	if c.Host.Euid() == 0 {
-		return c.Fail(fmt.Errorf("%w: run basalt init as your own OS user, not root: the agent runs as that user, and the setup page asks for your password when it needs one", cli.ErrUsage))
+		return c.Fail(fmt.Errorf("%w: run basalt init as your own OS user, not root: the agent runs as that user, and basalt init asks for your password in the system's dialog when it needs one", cli.ErrUsage))
 	}
 	me, err := user.Current()
 	if err != nil {
@@ -94,7 +95,7 @@ func RunLocal(c *cli.IO, h LocalHost, args []string) int {
 		// agent (its removal job did not run): it sets up again as a first
 		// install, --demo or not.
 		fmt.Fprintln(c.Stderr, removedAgainLine)
-	case setup.EngineWaiting, setup.EngineResetAsked, setup.EngineUpdated, setup.EngineAgentRemoved:
+	case setup.EngineWaiting, setup.EngineResetAsked, setup.EngineUpdated, setup.EngineAgentRemoved, setup.EngineChanged:
 		// EngineResetAsked is never the answer here: waitForSetupPage
 		// takes a "No" it finds at the start as an engine set up.
 		// EngineUpdated is only waitForRemoval's.
@@ -108,7 +109,7 @@ func RunLocal(c *cli.IO, h LocalHost, args []string) int {
 	if err := c.Host.OpenURL(c.Ctx, link); err != nil {
 		fmt.Fprintln(c.Stderr, "basalt: the browser did not open; open the link above by hand")
 	}
-	fmt.Fprintln(c.Stderr, "basalt: finish the setup on the page that opened: type your database's admin connection string there, never here. The last line above is the MCP server the agent registers.")
+	fmt.Fprintln(c.Stderr, "basalt: finish the setup on the page that opened: the person types their database's admin connection string there, never here. Agent: register the last line above as an MCP server in your client now, then show the person the link.")
 	return cli.ExitOK
 }
 
@@ -270,12 +271,16 @@ func changeLink(c *cli.IO, h LocalHost, job localsetup.Job) (code int, reset boo
 	if job.Job == setup.JobRemove {
 		fmt.Fprintln(c.Stderr, "basalt: on the page that opened, paste your database's admin connection string and press Remove: it removes BasaltDB from the database and this computer. Type the string there, never here.")
 	} else {
-		fmt.Fprintln(c.Stderr, "basalt: the engine on this computer is already set up. On the page that opened, update the guard or remove BasaltDB: type your database's admin connection string there, never here.")
+		fmt.Fprintln(c.Stderr, "basalt: the engine on this computer is already set up. The page that opened checks it: fix what it shows, or update or remove BasaltDB. Type your database's admin connection string there when it asks, never here.")
 	}
 	if demoAsked {
-		fmt.Fprintln(c.Stderr, "basalt: --demo starts a fresh demo, and BasaltDB is already set up on this computer. To start over with the demo: on the page that opened, press Remove, then run basalt init --demo again.")
+		fmt.Fprintln(c.Stderr, "basalt: --demo starts a fresh demo, and BasaltDB is already set up on this computer. To start over with the demo: on the page that opened, choose Update or remove BasaltDB, then Remove, then run basalt init --demo again.")
 	}
-	switch waitForRemoval(c, job.Agent, opened) {
+	state, changed := waitForRemoval(c, job.Agent, opened)
+	switch state {
+	case setup.EngineChanged:
+		fmt.Fprintf(c.Stderr, "basalt: the setup page finished a change for the agent %s: %s. The agent can go on; it needs no restart.\n", job.Agent, changeText(changed))
+		return cli.ExitOK, false
 	case setup.EngineRemoved:
 		fmt.Fprintln(c.Stderr, removedLine)
 		return cli.ExitOK, false
@@ -292,7 +297,7 @@ func changeLink(c *cli.IO, h LocalHost, job localsetup.Job) (code int, reset boo
 		return cli.ExitOK, false
 	case setup.EngineWaiting, setup.EngineSetUp:
 	}
-	fmt.Fprintln(c.Stderr, "basalt: this init stops waiting. The page needs nothing more from the agent.")
+	fmt.Fprintln(c.Stderr, "basalt: this init stops waiting. Run status to see what the page changed; show the person the link above again only if they ask.")
 	return cli.ExitOK, false
 }
 
@@ -301,6 +306,24 @@ func changeLink(c *cli.IO, h LocalHost, job localsetup.Job) (code int, reset boo
 // no agent (the page removed it and its removal job did not finish, or it
 // never had an agent) is removed by the fixed removal script through the
 // administrator dialog: one password, and nothing left.
+// changeText is what a fix the page finished did, for the line that ends
+// the wait.
+func changeText(job string) string {
+	switch job {
+	case setup.JobTrust:
+		return "the database's certificate is checked"
+	case setup.JobLabels:
+		return "columns are labeled"
+	case setup.JobPasskeyAdd:
+		return "a passkey is added"
+	case setup.JobPasskeyRemove:
+		return "a passkey is removed"
+	case setup.JobRepair:
+		return "the agent's login is fixed"
+	}
+	return "its setup is changed"
+}
+
 func removeLink(c *cli.IO, h LocalHost, job localsetup.Job, state setup.BasaltEngineState) int {
 	job.Job = setup.JobRemove
 	if state == setup.EngineSetUp {
@@ -332,30 +355,33 @@ const (
 // approval wait), whether the page's Remove deleted engine.json
 // (ENGINE_REMOVED, or no engine answers and its config folder is gone: the
 // removal job removed it, EngineRemoved), the person answered "No, this
-// isn't mine" (RESET_ASKED, EngineResetAsked) or the page's Update for
+// isn't mine" (RESET_ASKED, EngineResetAsked), the page's Update for
 // agent finished after opened, when init opened the link (GUARD_UPDATED,
-// EngineUpdated). Any other answer, a fix included, keeps waiting until
-// the time is up (EngineSetUp).
-func waitForRemoval(c *cli.IO, agent string, opened time.Time) setup.BasaltEngineState {
+// EngineUpdated), or a fix finished for agent after opened (CHANGED_<job>,
+// EngineChanged, with the job). A fix before opened never ends it. Any other
+// answer keeps waiting until the time is up (EngineSetUp).
+func waitForRemoval(c *cli.IO, agent string, opened time.Time) (setup.BasaltEngineState, string) {
 	ctx, cancel := context.WithTimeout(c.Ctx, setup.RemovalWait)
 	defer cancel()
 	for {
 		code, err := c.Host.SetupState(ctx, links.DefaultLocal, agent, opened)
 		switch {
 		case err == nil && code == setup.CodeEngineRemoved:
-			return setup.EngineRemoved
+			return setup.EngineRemoved, ""
 		case err == nil && code == setup.CodeResetAsked:
-			return setup.EngineResetAsked
+			return setup.EngineResetAsked, ""
 		case err == nil && code == setup.CodeGuardUpdated:
-			return setup.EngineUpdated
+			return setup.EngineUpdated, ""
 		case err == nil && code == setup.CodeAgentRemoved:
-			return setup.EngineAgentRemoved
+			return setup.EngineAgentRemoved, ""
+		case err == nil && strings.HasPrefix(code, setup.CodeChangedPrefix):
+			return setup.EngineChanged, strings.TrimPrefix(code, setup.CodeChangedPrefix)
 		case err != nil && !c.Host.System(io.Discard, io.Discard).Exists(filepath.Dir(config.DefaultPath(c.Goos))):
-			return setup.EngineRemoved
+			return setup.EngineRemoved, ""
 		}
 		select {
 		case <-ctx.Done():
-			return setup.EngineSetUp
+			return setup.EngineSetUp, ""
 		case <-time.After(setup.RemovalWaitStep):
 		}
 	}

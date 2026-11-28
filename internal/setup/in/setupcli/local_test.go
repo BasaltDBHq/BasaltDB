@@ -512,6 +512,12 @@ func TestInitOnASetUpEngineOpensTheChangeLink(t *testing.T) {
 		require.Equal(t, localsetup.Job{Job: setup.JobChange, Agent: agent, OSUser: me752(t)}, linkJob(t, lines[0]), "%v", args)
 		require.Equal(t, []string{lines[0]}, h.opened, "init opens its own link")
 		require.Contains(t, r.stderr, "update the guard or remove BasaltDB")
+		const demoLine = "basalt: --demo starts a fresh demo, and BasaltDB is already set up on this computer. To start over with the demo: on the page that opened, press Remove, then run basalt init --demo again.\n"
+		if len(args) == 1 && args[0] == "--demo" {
+			require.Contains(t, r.stderr, demoLine)
+		} else {
+			require.NotContains(t, r.stderr, "--demo starts a fresh demo", "%v", args)
+		}
 		require.NotContains(t, read, envAdminURL)
 	}
 }

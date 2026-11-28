@@ -35,7 +35,7 @@ import (
 // describe reads it through the Postgres catalog adapter (agentcatalog).
 type fakeCatalog struct {
 	visible    []pgcatalog.Relation
-	notGranted int
+	notGranted map[string]int
 	details    map[uint32]pgcatalog.Detail
 	matches    []pgcatalog.Match
 	lines      []string
@@ -45,7 +45,7 @@ type fakeCatalog struct {
 	searched []pgcatalog.ColumnKey
 }
 
-func (f *fakeCatalog) Relations(context.Context) ([]pgcatalog.Relation, int, error) {
+func (f *fakeCatalog) Relations(context.Context) ([]pgcatalog.Relation, map[string]int, error) {
 	return f.visible, f.notGranted, nil
 }
 
@@ -401,7 +401,7 @@ func TestOverviewLargeListsSchemas(t *testing.T) {
 func TestOverviewNotGrantedHasNoAskPerson(t *testing.T) {
 	t.Parallel()
 	for _, operatedBy := range []string{mcpcontract.OperatedByPerson, mcpcontract.OperatedByAgent} {
-		cat := &fakeCatalog{visible: manyRelations(3), notGranted: 3}
+		cat := &fakeCatalog{visible: manyRelations(3), notGranted: map[string]int{"auth": 3}}
 		body, isError := callDescribe(t, describeService(t, cat, fakeClasses{}, operatedBy), map[string]any{})
 		require.False(t, isError, body)
 		m := decodeBody(t, body)
@@ -413,9 +413,28 @@ func TestOverviewNotGrantedHasNoAskPerson(t *testing.T) {
 	}
 }
 
+// TestOverviewSplitsNotGrantedByNamespace: the counts and the message tell the
+// ungranted resources in the agent's own schemas from those in schemas it has
+// no grant in, and name only the first kind of schema.
+func TestOverviewSplitsNotGrantedByNamespace(t *testing.T) {
+	t.Parallel()
+	cat := &fakeCatalog{visible: manyRelations(3), notGranted: map[string]int{"app": 2, "auth": 7, "storage": 5}}
+	body, isError := callDescribe(t, describeService(t, cat, fakeClasses{}, ""), map[string]any{})
+	require.False(t, isError, body)
+	m := decodeBody(t, body)
+	require.Equal(t, map[string]any{
+		"namespaces": 2.0, "resources": 3.0, "notGranted": 14.0,
+		"notGrantedInGrantedNamespaces": 2.0, "notGrantedInOtherNamespaces": 12.0, "notGrantedNamespaces": 2.0,
+	}, m["counts"])
+	require.Equal(t, "2 resources in app and 12 in 2 other schemas are not granted to the agent. "+
+		"To give it one, tell the agent: it gives you a link where you pick the resources.", m["personMessage"])
+	require.NotContains(t, body, "auth")
+	require.NotContains(t, body, "storage")
+}
+
 func TestOverviewLargeAndNotGrantedCarriesBoth(t *testing.T) {
 	t.Parallel()
-	cat := &fakeCatalog{visible: manyRelations(60), notGranted: 1}
+	cat := &fakeCatalog{visible: manyRelations(60), notGranted: map[string]int{"auth": 1}}
 	body, isError := callDescribe(t, describeService(t, cat, fakeClasses{}, ""), map[string]any{})
 	require.False(t, isError, body)
 	require.Equal(t, []string{"AGENT CALL_TOOL", "PERSON TELL_AGENT"}, stepKinds(t, decodeBody(t, body)))
@@ -431,7 +450,7 @@ func TestOverviewFingerprintFollowsStructureGrantsAndPII(t *testing.T) {
 	base := fp(&fakeCatalog{visible: manyRelations(2), lines: []string{"a"}}, fakeClasses{})
 	require.Equal(t, base, fp(&fakeCatalog{visible: manyRelations(2), lines: []string{"a"}}, fakeClasses{}))
 	require.NotEqual(t, base, fp(&fakeCatalog{visible: manyRelations(2), lines: []string{"a", "b"}}, fakeClasses{}))
-	require.NotEqual(t, base, fp(&fakeCatalog{visible: manyRelations(2), lines: []string{"a"}, notGranted: 1}, fakeClasses{}))
+	require.NotEqual(t, base, fp(&fakeCatalog{visible: manyRelations(2), lines: []string{"a"}, notGranted: map[string]int{"auth": 1}}, fakeClasses{}))
 	require.NotEqual(t, base, fp(&fakeCatalog{visible: manyRelations(2), lines: []string{"a"}}, fakeClasses{print: "x"}))
 }
 
@@ -440,7 +459,7 @@ func TestDescribeNotFoundSameForAbsentAndHidden(t *testing.T) {
 	for _, operatedBy := range []string{mcpcontract.OperatedByPerson, mcpcontract.OperatedByAgent} {
 		// shop.secret exists but is not granted: the catalog does not find it,
 		// exactly as it does not find a table that does not exist.
-		cat := &fakeCatalog{visible: manyRelations(2), notGranted: 1}
+		cat := &fakeCatalog{visible: manyRelations(2), notGranted: map[string]int{"auth": 1}}
 		s := describeService(t, cat, fakeClasses{}, operatedBy)
 		hidden, isError := callDescribe(t, s, map[string]any{"resource": "shop.secret"})
 		require.True(t, isError)
@@ -660,7 +679,7 @@ func TestDescribeAnswersMatchTheOutputSchema(t *testing.T) {
 	schema := outputSchema(t)
 	cat, classes := ordersCatalog()
 	cat.visible = append(cat.visible, manyRelations(60)...)
-	cat.notGranted = 2
+	cat.notGranted = map[string]int{"auth": 2}
 	cat.matches = []pgcatalog.Match{{Relation: cat.visible[0], Rank: 1, Matched: "column id"}}
 	large := describeService(t, cat, classes, "")
 	small := describeService(t, &fakeCatalog{visible: manyRelations(3)}, fakeClasses{}, "")
@@ -690,8 +709,8 @@ type errCatalog struct {
 	err error
 }
 
-func (e *errCatalog) Relations(context.Context) ([]pgcatalog.Relation, int, error) {
-	return nil, 0, e.err
+func (e *errCatalog) Relations(context.Context) ([]pgcatalog.Relation, map[string]int, error) {
+	return nil, nil, e.err
 }
 
 func (e *errCatalog) Find(context.Context, string, string) (pgcatalog.Relation, bool, error) {

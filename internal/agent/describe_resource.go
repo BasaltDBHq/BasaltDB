@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -231,15 +230,15 @@ func resourceFingerprint(r Resource, pii string) (string, error) {
 
 // catalogFingerprint is the sha256 of the catalog's structure lines (every
 // relation, visible column, constraint and index the agent can see),
-// notGranted and the PII catalog fingerprint: it moves on a structural
+// notGranted (the total and its split) and the PII catalog fingerprint: it moves on a structural
 // change or a grant, never on rows.
-func catalogFingerprint(lines []string, notGranted int, pii string) string {
+func catalogFingerprint(lines []string, notGranted string, pii string) string {
 	h := sha256.New()
 	for _, l := range lines {
 		h.Write([]byte(l))
 		h.Write([]byte{'\n'})
 	}
-	h.Write([]byte("notGranted:" + strconv.Itoa(notGranted) + "\npii:" + pii))
+	h.Write([]byte("notGranted:" + notGranted + "\npii:" + pii))
 	return hex.EncodeToString(h.Sum(nil))
 }
 

@@ -24,8 +24,8 @@ type noCatalog struct{}
 
 var errNoCatalog = errors.New("describe: no catalog configured")
 
-func (noCatalog) Resources(context.Context) ([]agentstore.Resource, int, error) {
-	return nil, 0, errNoCatalog
+func (noCatalog) Resources(context.Context) ([]agentstore.Resource, agentstore.NotGranted, error) {
+	return nil, agentstore.NotGranted{}, errNoCatalog
 }
 
 func (noCatalog) Find(context.Context, string, string) (agentstore.Resource, bool, error) {
@@ -123,6 +123,13 @@ type Counts struct {
 	Namespaces int `json:"namespaces"`
 	Resources  int `json:"resources"`
 	NotGranted int `json:"notGranted"`
+	// NotGrantedInGrantedNamespaces and NotGrantedInOtherNamespaces split
+	// NotGranted: the resources in namespaces where the agent can read at
+	// least one resource, and those in namespaces where it can read none
+	// (NotGrantedNamespaces of them, never named).
+	NotGrantedInGrantedNamespaces int `json:"notGrantedInGrantedNamespaces,omitzero"`
+	NotGrantedInOtherNamespaces   int `json:"notGrantedInOtherNamespaces,omitzero"`
+	NotGrantedNamespaces          int `json:"notGrantedNamespaces,omitzero"`
 }
 
 // OverviewLimits are the read limits and the write policy.

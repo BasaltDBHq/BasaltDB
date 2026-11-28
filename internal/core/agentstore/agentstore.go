@@ -59,6 +59,31 @@ type Resource struct {
 	Actions []action.Op
 }
 
+// Noun is a store's word for something, in the singular and the plural: a
+// Postgres schema.
+type Noun struct{ One, Many string }
+
+// NotGranted counts the resources in user namespaces the agent cannot read,
+// by namespace. Names are never shown: describe uses only the namespaces
+// where the agent can read a resource.
+type NotGranted struct {
+	// Namespaces maps a namespace to the number of resources in it the
+	// agent cannot read; a namespace with none is absent.
+	Namespaces map[string]int
+	// Namespace is the store's word for a namespace. The zero value is
+	// read as "namespace".
+	Namespace Noun
+}
+
+// Total is the number of resources the agent cannot read.
+func (n NotGranted) Total() int {
+	total := 0
+	for _, c := range n.Namespaces {
+		total += c
+	}
+	return total
+}
+
 // Field is one field of a resource. Readable is false so the service can
 // count what it hides; it never shows such a field.
 type Field struct {

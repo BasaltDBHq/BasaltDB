@@ -28,7 +28,7 @@ const (
 
 // Postgres is the store's catalog in pgcatalog's types (*postgres.Catalog).
 type Postgres interface {
-	Relations(ctx context.Context) ([]pgcatalog.Relation, int, error)
+	Relations(ctx context.Context) ([]pgcatalog.Relation, map[string]int, error)
 	Find(ctx context.Context, schema, name string) (pgcatalog.Relation, bool, error)
 	Describe(ctx context.Context, oid uint32) (pgcatalog.Detail, error)
 	Guarded(ctx context.Context, oid uint32) (bool, error)
@@ -48,16 +48,16 @@ type Catalog struct {
 // New is the store's catalog pg as the agent reads it.
 func New(pg Postgres) Catalog { return Catalog{pg: pg} }
 
-func (c Catalog) Resources(ctx context.Context) ([]agentstore.Resource, int, error) {
-	rs, n, err := c.pg.Relations(ctx)
+func (c Catalog) Resources(ctx context.Context) ([]agentstore.Resource, agentstore.NotGranted, error) {
+	rs, bySchema, err := c.pg.Relations(ctx)
 	if err != nil {
-		return nil, 0, err
+		return nil, agentstore.NotGranted{}, err
 	}
 	out := make([]agentstore.Resource, len(rs))
 	for i, r := range rs {
 		out[i] = pgResource(r)
 	}
-	return out, n, nil
+	return out, agentstore.NotGranted{Namespaces: bySchema, Namespace: agentstore.Noun{One: "schema", Many: "schemas"}}, nil
 }
 
 func (c Catalog) Find(ctx context.Context, namespace, name string) (agentstore.Resource, bool, error) {

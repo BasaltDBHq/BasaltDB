@@ -90,23 +90,26 @@ func (r *Relation) scanTargets() []any {
 }
 
 // Relations lists the relations session_user can read, ordered by schema and
-// name, and counts the ones it cannot, without naming them.
-func Relations(ctx context.Context, db Querier) (visible []Relation, notGranted int, err error) {
+// name, and counts the ones it cannot by schema, without naming them.
+func Relations(ctx context.Context, db Querier) (visible []Relation, notGranted map[string]int, err error) {
 	// Plain SQL: a pg_catalog read, not table DML.
 	rows, err := db.Query(ctx, `SELECT `+relationColumns+`, `+privilegeColumns+` `+relationFrom+`
 		ORDER BY n.nspname, c.relname`)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var r Relation
 		var privs [4]bool
 		if err := rows.Scan(append(r.scanTargets(), &privs[0], &privs[1], &privs[2], &privs[3])...); err != nil {
-			return nil, 0, err
+			return nil, nil, err
 		}
 		if !privs[0] {
-			notGranted++
+			if notGranted == nil {
+				notGranted = map[string]int{}
+			}
+			notGranted[r.Schema]++
 			continue
 		}
 		r.Privileges = privilegeNames(privs)

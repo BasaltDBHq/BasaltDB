@@ -25,7 +25,7 @@ import (
 // its wrapper here.
 
 // Relations is pgcatalog.Relations.
-func (c *Catalog) Relations(ctx context.Context) ([]pgcatalog.Relation, int, error) {
+func (c *Catalog) Relations(ctx context.Context) ([]pgcatalog.Relation, map[string]int, error) {
 	r0, r1, err := c.relationsRaw(ctx)
 	return r0, r1, MapError(err)
 }

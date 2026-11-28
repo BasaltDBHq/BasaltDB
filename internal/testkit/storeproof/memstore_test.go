@@ -479,8 +479,8 @@ func (s *memStore) customers() agentstore.Resource {
 	}
 }
 
-func (s *memStore) Resources(context.Context) ([]agentstore.Resource, int, error) {
-	return []agentstore.Resource{s.customers()}, 0, nil
+func (s *memStore) Resources(context.Context) ([]agentstore.Resource, agentstore.NotGranted, error) {
+	return []agentstore.Resource{s.customers()}, agentstore.NotGranted{}, nil
 }
 
 func (s *memStore) Find(_ context.Context, namespace, name string) (agentstore.Resource, bool, error) {

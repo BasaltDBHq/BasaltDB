@@ -127,6 +127,8 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 - An install from the local setup page records the engine's key in the database, as a setup code's install does, so `status` reports `engineRecord.state` `RECORDED`. It reported `NOT_RECORDED`.
 - A statement with no placeholders sent with parameters is `INVALID_ARGUMENT` `the statement uses no parameters but N were given`, instead of `uses 0 parameters ($1..$0)`.
 
+- `describe` no longer says that hundreds of resources "cannot be seen" when they belong to the host's own schemas (Supabase's `auth`, `storage`, `realtime`). The message now splits the count: what is held back in the schemas the agent can read from ("3 resources in public"), and a count of the other schemas the agent has no grant in ("204 in 11 other schemas"), which are never named. `counts` carries the split as `notGrantedInGrantedNamespaces`, `notGrantedInOtherNamespaces` and `notGrantedNamespaces`.
+
 ### Security
 
 - The agent's credential file is read without following a symlink at its path, and a file with a second hard link or owned by another user than the engine's or root is refused. Before, a symlink was followed and only the mode of the file it pointed to was checked. A credential file that is a symlink must be replaced by the file itself.

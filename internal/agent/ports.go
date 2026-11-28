@@ -22,8 +22,9 @@ import (
 // decides what is hidden.
 type Catalog interface {
 	// Resources lists the readable resources by namespace and name, and
-	// counts the ones in user namespaces the agent cannot read.
-	Resources(ctx context.Context) ([]agentstore.Resource, int, error)
+	// counts, by namespace, the ones in user namespaces the agent cannot
+	// read.
+	Resources(ctx context.Context) ([]agentstore.Resource, agentstore.NotGranted, error)
 	// Find returns namespace.name, or false when it is absent or unreadable.
 	Find(ctx context.Context, namespace, name string) (agentstore.Resource, bool, error)
 	// Describe reads one resource Find or Resources returned.

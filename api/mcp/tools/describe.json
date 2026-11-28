@@ -101,6 +101,21 @@
             "type": "integer",
             "minimum": 0,
             "description": "Resources this agent cannot read (Postgres: tables in user schemas). Counted, never named."
+          },
+          "notGrantedInGrantedNamespaces": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Of notGranted, the resources in namespaces where this agent can read at least one resource. Absent when 0."
+          },
+          "notGrantedInOtherNamespaces": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Of notGranted, the resources in namespaces where this agent can read none (Postgres: platform schemas). Absent when 0."
+          },
+          "notGrantedNamespaces": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "How many namespaces notGrantedInOtherNamespaces are in. Never named. Absent when 0."
           }
         }
       },

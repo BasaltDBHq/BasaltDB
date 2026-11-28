@@ -84,7 +84,8 @@ func (m *Marks) MarkUpdated(agent string, at time.Time) {
 	m.at[agent] = at
 }
 
-// UpdatedSince is whether agent's last UPDATE finished after since.
+// UpdatedSince is whether agent's last UPDATE finished after since. It is
+// not read once: every init waiting for that agent's page ends.
 func (m *Marks) UpdatedSince(agent string, since time.Time) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()

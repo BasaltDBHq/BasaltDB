@@ -236,8 +236,10 @@ func TestEngineDownStatusSaysRemovedWhenTheConfigFolderIsGone(t *testing.T) {
 		host := testEngineHost()
 		host.ConfigDirGone = func(string) bool { return gone }
 		cmds := newCommands(t, "/srv/basalt/engine.json")
-		down := EngineDown{Host: host, Name: "bot", Commands: cmds, ConfigErr: os.ErrNotExist, ConfigPath: "/srv/basalt/engine.json",
-			Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
+		down := EngineDown{
+			Host: host, Name: "bot", Commands: cmds, ConfigErr: os.ErrNotExist, ConfigPath: "/srv/basalt/engine.json",
+			Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
+		}
 		srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, downTools(down)...)
 		body, isError := serveCall(t, srv, guidance.ToolStatus, map[string]any{})
 		require.False(t, isError)

@@ -16,7 +16,7 @@ import (
 // removedService is the setup of an engine that ran with config, whose
 // engine.json a REMOVE deleted: the file is not there. Nothing here
 // connects to a database.
-func removedService(t *testing.T, configured bool, now *time.Time) (*setup.LocalService, string) {
+func removedService(t *testing.T, configured bool, now *time.Time) *setup.LocalService {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "engine.json")
 	svc, err := setup.NewLocal(setup.LocalOptions{
@@ -28,7 +28,7 @@ func removedService(t *testing.T, configured bool, now *time.Time) (*setup.Local
 		},
 	})
 	require.NoError(t, err)
-	return svc, path
+	return svc
 }
 
 // A removed engine answers every job but an INSTALL ENGINE_REMOVED,
@@ -36,7 +36,7 @@ func removedService(t *testing.T, configured bool, now *time.Time) (*setup.Local
 func TestARemovedEngineAnswersEngineRemoved(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
-	svc, _ := removedService(t, true, &now)
+	svc := removedService(t, true, &now)
 	ctx := context.Background()
 	_, err := svc.Check(ctx, setup.Request{})
 	refusal(t, err, setup.CodeEngineRemoved)
@@ -52,7 +52,7 @@ func TestARemovedEngineAnswersEngineRemoved(t *testing.T) {
 func TestAnInstallOnARemovedEngineIsAFirstInstall(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
-	svc, _ := removedService(t, true, &now)
+	svc := removedService(t, true, &now)
 	ctx := context.Background()
 	bad := setup.Request{Job: setup.JobInstall, Agent: "Not A Name", OSUser: "alice", Demo: true, DatabaseURL: unusedAdminURL}
 	_, err := svc.Check(ctx, bad)
